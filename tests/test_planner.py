@@ -1,0 +1,35 @@
+from __future__ import annotations
+
+import pytest
+
+from gws_assistant.exceptions import ValidationError
+from gws_assistant.planner import CommandPlanner
+
+
+def test_list_services_contains_expected_services():
+    planner = CommandPlanner()
+    services = planner.list_services()
+    assert "drive" in services
+    assert "sheets" in services
+    assert "gmail" in services
+    assert "calendar" in services
+
+
+def test_build_drive_list_command_uses_default_page_size():
+    planner = CommandPlanner()
+    args = planner.build_command("drive", "list_files", {})
+    assert args[:3] == ["drive", "files", "list"]
+    assert "--params" in args
+
+
+def test_build_calendar_create_event_requires_parameters():
+    planner = CommandPlanner()
+    with pytest.raises(ValidationError):
+        planner.build_command("calendar", "create_event", {"summary": "Test"})
+
+
+def test_build_command_rejects_unknown_service():
+    planner = CommandPlanner()
+    with pytest.raises(ValidationError):
+        planner.build_command("unknown", "list", {})
+

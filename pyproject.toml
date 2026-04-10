@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "google-workspace-assistant"
+version = "0.1.0"
+description = "Professional CLI and GUI assistant for Google Workspace gws commands."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.40.0",
+    "python-dotenv>=1.0.1",
+    "typer>=0.12.3",
+    "rich>=13.7.1",
+    "questionary>=2.0.1",
+    "customtkinter>=5.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-mock>=3.14.0",
+]
+
+[project.scripts]
+gws-assistant-cli = "gws_assistant.cli_app:main"
+gws-assistant-gui = "gws_assistant.gui_app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
