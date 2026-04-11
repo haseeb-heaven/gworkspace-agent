@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,16 +11,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
-from .config import AppConfig
-from .conversation import ConversationEngine
-from .execution import PlanExecutor
 from .exceptions import ValidationError
-from .gws_runner import GWSRunner
 from .logging_utils import setup_logging
-from .models import PlannedTask
-from .output_formatter import HumanReadableFormatter
-from .planner import CommandPlanner
 from .setup_wizard import run_setup_wizard
 
 app = typer.Typer(invoke_without_command=True, no_args_is_help=False, help="Google Workspace Assistant CLI")
@@ -41,7 +33,7 @@ def _ask_non_empty(prompt: str, default: str | None = None) -> str:
         console.print("[yellow]This value cannot be empty.[/yellow]")
 
 
-def _pick_service(engine: ConversationEngine) -> str:
+def _pick_service(engine: Any) -> str:
     services = engine.planner.list_services()
     choice = Prompt.ask("Which Google service do you want to use?", choices=services)
     if not choice:
@@ -49,7 +41,7 @@ def _pick_service(engine: ConversationEngine) -> str:
     return choice
 
 
-def _pick_action(engine: ConversationEngine, service: str) -> str:
+def _pick_action(engine: Any, service: str) -> str:
     actions = engine.action_choices(service)
     choice = Prompt.ask("Which action should I run?", choices=actions)
     if not choice:
@@ -63,14 +55,25 @@ def _save_output(path: Path, text: str) -> None:
         handle.write(text.rstrip() + "\n\n")
 
 
-from .langgraph_workflow import run_workflow
-
 def _run_application(save_output: Path | None = None, task: str | None = None, no_langchain: bool = False) -> None:
     """Runs the terminal assistant (interactive or single-task)."""
+    # Heavy imports are deferred here so that importing cli_app at the
+    # module level (e.g. for --help) does not trigger the full
+    # langchain / transformers / numpy chain.
+    from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem  # noqa: F401
+    from .config import AppConfig
+    from .conversation import ConversationEngine
+    from .execution import PlanExecutor
+    from .gws_runner import GWSRunner
+    from .langgraph_workflow import run_workflow
+    from .models import PlannedTask  # noqa: F401
+    from .output_formatter import HumanReadableFormatter  # noqa: F401
+    from .planner import CommandPlanner
+
     config = AppConfig.from_env()
     if no_langchain:
-         config.api_key = None
-         config.langchain_enabled = False
+        config.api_key = None
+        config.langchain_enabled = False
 
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
@@ -102,6 +105,7 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
             )
         )
         raise typer.Exit(code=1)
+
     if not config.api_key and config.langchain_enabled:
         console.print(
             Panel.fit(
@@ -153,9 +157,8 @@ def run(
     no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
-    # Typer sets resilient_parsing=True during --help and shell-completion
-    # resolution. Returning early prevents _run_application() from being
-    # invoked (which would block on stdin / validate binaries / etc.).
+    # resilient_parsing is True during --help rendering and shell-completion;
+    # returning early prevents any I/O, binary validation, or blocking stdin.
     if ctx.resilient_parsing:
         return
     if setup:
