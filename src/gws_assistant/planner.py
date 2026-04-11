@@ -105,6 +105,13 @@ class CommandPlanner:
         if action == "delete_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
+        if action == "export_file":
+            file_id = self._required_text(params, "file_id")
+            mime_type = str(params.get("mime_type") or "text/plain").strip()
+            return [
+                "drive", "files", "export",
+                "--params", json.dumps({"fileId": file_id, "mimeType": mime_type}),
+            ]
         raise ValidationError(f"Unsupported drive action: {action}")
 
     def _build_sheets_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -237,7 +244,6 @@ class CommandPlanner:
             start_date = start_date_raw.split("T")[0]
             if len(start_date) > 10:
                 start_date = start_date[:10]
-            
             return [
                 "calendar",
                 "events",
@@ -253,6 +259,28 @@ class CommandPlanner:
         if action == "get_document":
             document_id = self._required_text(params, "document_id")
             return ["docs", "documents", "get", "--params", json.dumps({"documentId": document_id})]
+        if action == "create_document":
+            title = self._required_text(params, "title")
+            return [
+                "docs", "documents", "create",
+                "--json", json.dumps({"title": title}, ensure_ascii=True),
+            ]
+        if action == "batch_update":
+            document_id = self._required_text(params, "document_id")
+            text = str(params.get("text") or "").strip()
+            requests_payload = [
+                {
+                    "insertText": {
+                        "location": {"index": 1},
+                        "text": text,
+                    }
+                }
+            ]
+            return [
+                "docs", "documents", "batchUpdate",
+                "--params", json.dumps({"documentId": document_id}),
+                "--json", json.dumps({"requests": requests_payload}, ensure_ascii=True),
+            ]
         raise ValidationError(f"Unsupported docs action: {action}")
 
     def _build_slides_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -337,9 +365,7 @@ class CommandPlanner:
         range_str = range_str.strip()
         if "!" not in range_str:
             return range_str
-        
         sheet_part, cell_part = range_str.split("!", 1)
-        # If it has spaces and is not already quoted, quote it.
         if " " in sheet_part and not (sheet_part.startswith("'") and sheet_part.endswith("'")):
             return f"'{sheet_part}'!{cell_part}"
         return range_str
@@ -347,14 +373,15 @@ class CommandPlanner:
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
         value = params.get(key)
-        if not value:
-            # Fallback to variations (e.g. spreadsheet_id -> spreadsheetId)
-            variations = [key.lower().replace("_", ""), key.replace("_", "")]
-            for k, v in params.items():
-                if k.lower().replace("_", "") in variations:
-                    return str(v)
-            raise ValidationError(f"Missing required parameter: {key}")
-        return str(value)
+        # Explicit None or empty string → check variations
+        if value is not None and str(value).strip():
+            return str(value)
+        # Try camelCase / no-underscore variations
+        variations = [key.lower().replace("_", ""), key.replace("_", "")]
+        for k, v in params.items():
+            if k.lower().replace("_", "") in variations and v is not None and str(v).strip():
+                return str(v)
+        raise ValidationError(f"Missing required parameter: {key}")
 
     @staticmethod
     def _safe_positive_int(value: Any, default: int) -> int:

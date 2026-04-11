@@ -1,14 +1,17 @@
-"""Code execution tool for the LangChain agent."""
+"""Code execution tool for the LangChain agent.
+
+Uses a thread-based sandbox with a hard timeout instead of multiprocessing
+so it works reliably on Windows (where 'spawn' start-method causes issues
+inside virtualenvs / pytest sessions).
+"""
 
 from __future__ import annotations
 
 import ast
 import contextlib
 import io
-import json
-import multiprocessing
-import queue
 import re
+import threading
 from typing import Any
 
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
@@ -61,28 +64,28 @@ def _validate_submitted_code(code: str) -> str | None:
     return None
 
 
-def _run_in_sandbox(code: str, return_queue: multiprocessing.Queue):
+def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) -> None:
+    """Execute *code* inside RestrictedPython, storing a CodeExecutionResult in result_holder[0]."""
     result = CodeExecutionResult(code=code)
     try:
         byte_code = compile_restricted(code, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-            exec(byte_code, sandbox_globals)
+            exec(byte_code, sandbox_globals)  # noqa: S102
 
         if "_print" in sandbox_globals:
             result.stdout = sandbox_globals["_print"]()
         buffer_val = output_buffer.getvalue()
         if buffer_val:
-            result.stdout = f"{result.stdout}\n{buffer_val}".strip()
+            result.stdout = f"{result.stdout}\n{buffer_val}".strip() if result.stdout else buffer_val.strip()
 
         result.return_value = sandbox_globals.get("result")
         result.success = True
     except Exception as exc:
         result.success = False
         result.error = f"{type(exc).__name__}: {exc}"
-
-    return_queue.put(result)
+    result_holder.append(result)
 
 
 def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
@@ -107,29 +110,27 @@ def execute_generated_code(code: str) -> StructuredToolResult:
             error=validation_error,
         )
 
-    queue_res = multiprocessing.Queue()
-    process = multiprocessing.Process(target=_run_in_sandbox, args=(code, queue_res))
-    process.start()
-    process.join(timeout=_TIMEOUT_SECONDS)
+    result_holder: list[CodeExecutionResult] = []
+    thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder), daemon=True)
+    thread.start()
+    thread.join(timeout=_TIMEOUT_SECONDS)
 
-    if process.is_alive():
-        process.terminate()
-        process.join()
+    if thread.is_alive():
+        # Thread is stuck (infinite loop etc.) — we cannot truly kill it, but we report timeout.
         return StructuredToolResult(
             success=False,
             output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
             error=f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds.",
         )
 
-    try:
-        result = queue_res.get(block=False)
-    except queue.Empty:
-        result = CodeExecutionResult(
-            code=code,
+    if not result_holder:
+        return StructuredToolResult(
             success=False,
-            error="ProcessError: Sandbox process crashed unexpectedly without returning results.",
+            output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
+            error="ProcessError: Sandbox thread finished without returning a result.",
         )
-    return normalize_code_result(result)
+
+    return normalize_code_result(result_holder[0])
 
 
 @tool
