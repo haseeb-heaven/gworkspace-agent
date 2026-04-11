@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from typing import Any
 
 from .models import ExecutionResult, PlanExecutionReport
@@ -13,33 +14,33 @@ class HumanReadableFormatter:
 
     def format_execution_result(self, result: ExecutionResult) -> str:
         if not result.success:
-            return result.stderr or result.error or "Command failed with unknown error."
-        return self._format_stdout(result.stdout)
+            return _clean_text(result.stderr or result.error or "Command failed with unknown error.")
+        return _clean_text(self._format_stdout(result.stdout))
 
     def format_report(self, plan: RequestPlan, executions: list[TaskExecution]) -> str:
         lines: list[str] = []
         if plan.summary:
-            lines.append(plan.summary)
+            lines.append(_clean_text(plan.summary))
             lines.append("")
         for index, execution in enumerate(executions, start=1):
             task = execution.task
             result = execution.result
             status = "completed" if result.success else "failed"
-            lines.append(f"{index}. {task.service}.{task.action} {status}.")
+            lines.append(_clean_text(f"{index}. {task.service}.{task.action} {status}."))
             detail = self.format_execution_result(result)
             if detail:
                 lines.append(detail)
             if not result.success:
                 break
             lines.append("")
-        return "\n".join(line for line in lines if line is not None).strip()
+        return _clean_text("\n".join(line for line in lines if line is not None).strip())
 
     def _format_stdout(self, stdout: str) -> str:
         if not stdout:
             return "Command succeeded with no output."
         payload = _parse_json(stdout)
         if payload is None:
-            return stdout.strip()
+            return _clean_text(stdout.strip())
         if "id" in payload and "payload" in payload:
             return _format_gmail_message(payload)
         if "messages" in payload or "resultSizeEstimate" in payload:
@@ -51,23 +52,23 @@ class HumanReadableFormatter:
             range_name = payload.get("range") or "the requested range"
             preview = _tabular_preview(rows)
             summary = f"Read {row_count} row{'s' if row_count != 1 else ''} and {cell_count} cell{'s' if cell_count != 1 else ''} from {range_name}."
-            return f"{summary}\n{preview}" if preview else summary
+            return _clean_text(f"{summary}\n{preview}" if preview else summary)
         if "updates" in payload:
             updates = payload.get("updates") or {}
             cells = updates.get("updatedCells")
             rows = updates.get("updatedRows")
             target = updates.get("updatedRange") or payload.get("tableRange") or "the spreadsheet"
             if cells or rows:
-                return f"Saved {rows or 0} row{'s' if rows != 1 else ''} and {cells or 0} cell{'s' if cells != 1 else ''} to {target}."
-            return f"Saved rows to {target}."
+                return _clean_text(f"Saved {rows or 0} row{'s' if rows != 1 else ''} and {cells or 0} cell{'s' if cells != 1 else ''} to {target}.")
+            return _clean_text(f"Saved rows to {target}.")
         if "spreadsheetId" in payload:
             title = _nested(payload, "properties", "title") or "spreadsheet"
             url = payload.get("spreadsheetUrl")
             if url:
-                return f"Created {title} in Google Sheets: {url}"
-            return f"Created {title} in Google Sheets. Spreadsheet ID: {payload.get('spreadsheetId')}"
+                return _clean_text(f"Created {title} in Google Sheets: {url}")
+            return _clean_text(f"Created {title} in Google Sheets. Spreadsheet ID: {payload.get('spreadsheetId')}")
         if "labelIds" in payload and "id" in payload:
-            return f"Email sent successfully. Message ID: {payload.get('id')}"
+            return _clean_text(f"Email sent successfully. Message ID: {payload.get('id')}")
         if "files" in payload:
             return _format_drive_files(payload)
         if "connections" in payload and isinstance(payload.get("connections"), list):
@@ -101,9 +102,9 @@ def _nested(payload: dict[str, Any], *keys: str) -> Any | None:
 def _compact_json_summary(payload: dict[str, Any]) -> str:
     keys = [key for key in payload.keys() if not key.startswith("@")]
     if not keys:
-        return "Command succeeded."
+        return _clean_text("Command succeeded.")
     visible = ", ".join(keys[:6])
-    return f"Command succeeded. Returned fields: {visible}."
+    return _clean_text(f"Command succeeded. Returned fields: {visible}.")
 
 
 def _safe_int(value: Any) -> int:
@@ -122,7 +123,7 @@ def _format_gmail_list(payload: dict[str, Any]) -> str:
         prefix = f"Found an estimated {estimate} Gmail message{'s' if estimated_count != 1 else ''}."
     else:
         prefix = f"Found {count} Gmail message{'s' if count != 1 else ''}."
-    return prefix
+    return _clean_text(prefix)
 
 
 def _format_gmail_message(payload: dict[str, Any]) -> str:
@@ -139,7 +140,7 @@ def _format_gmail_message(payload: dict[str, Any]) -> str:
         pieces.append(f"Date: {date}")
     if snippet:
         pieces.append(f"Snippet: {snippet}")
-    return "\n".join(pieces)
+    return _clean_text("\n".join(pieces))
 
 
 def _format_drive_files(payload: dict[str, Any]) -> str:
@@ -158,7 +159,7 @@ def _format_drive_files(payload: dict[str, Any]) -> str:
                 ]
             )
     preview = _tabular_preview(rows)
-    return f"{header}\n{preview}" if preview else header
+    return _clean_text(f"{header}\n{preview}" if preview else header)
 
 
 def _format_contacts(payload: dict[str, Any]) -> str:
@@ -178,13 +179,13 @@ def _format_contacts(payload: dict[str, Any]) -> str:
             ]
         )
     preview = _tabular_preview(rows)
-    return f"{header}\n{preview}" if preview else header
+    return _clean_text(f"{header}\n{preview}" if preview else header)
 
 
 def _format_slides(payload: dict[str, Any]) -> str:
     title = str(payload.get("title") or "presentation")
     slides = payload.get("slides") if isinstance(payload.get("slides"), list) else []
-    return f"Presentation: {title}\nSlides: {len(slides)}\nPresentation ID: {payload.get('presentationId')}"
+    return _clean_text(f"Presentation: {title}\nSlides: {len(slides)}\nPresentation ID: {payload.get('presentationId')}")
 
 
 def _format_docs(payload: dict[str, Any]) -> str:
@@ -194,7 +195,7 @@ def _format_docs(payload: dict[str, Any]) -> str:
     lines = [f"Document: {title}", f"Document ID: {doc_id}"]
     if snippet:
         lines.append(f"Preview: {snippet}")
-    return "\n".join(lines)
+    return _clean_text("\n".join(lines))
 
 
 def _format_calendar_items(payload: dict[str, Any]) -> str:
@@ -209,7 +210,7 @@ def _format_calendar_items(payload: dict[str, Any]) -> str:
             end = _nested(event, "end", "dateTime") or _nested(event, "end", "date") or ""
             rows.append([str(event.get("summary") or ""), str(start), str(end), str(event.get("id") or "")])
     preview = _tabular_preview(rows)
-    return f"{header}\n{preview}" if preview else header
+    return _clean_text(f"{header}\n{preview}" if preview else header)
 
 
 def _tabular_preview(rows: list[list[Any]], max_rows: int = 12, max_col_width: int = 42) -> str:
@@ -231,11 +232,11 @@ def _tabular_preview(rows: list[list[Any]], max_rows: int = 12, max_col_width: i
             rendered.append("-+-".join("-" * width for width in widths))
     if len(rows) > max_rows:
         rendered.append(f"... {len(rows) - max_rows} more row(s)")
-    return "\n".join(rendered)
+    return _clean_text("\n".join(rendered))
 
 
 def _clip_cell(value: Any, max_width: int) -> str:
-    text = str(value or "").replace("\n", " ").strip()
+    text = _clean_text(str(value or "").replace("\n", " ").strip())
     if len(text) <= max_width:
         return text
     return text[: max_width - 3] + "..."
@@ -295,7 +296,26 @@ def _gmail_headers(payload: dict[str, Any]) -> dict[str, str]:
     for header in headers:
         if isinstance(header, dict):
             name = str(header.get("name") or "").lower()
-            value = str(header.get("value") or "")
+            value = _clean_text(str(header.get("value") or ""))
             if name and value:
                 parsed[name] = value
     return parsed
+
+
+def _clean_text(value: str) -> str:
+    """Remove control and formatting characters that can break terminal rendering."""
+    if not value:
+        return ""
+    cleaned: list[str] = []
+    for char in value:
+        if char in "\n\r\t":
+            cleaned.append(char)
+            continue
+        if unicodedata.category(char).startswith("C"):
+            continue
+        cleaned.append(char)
+    text = "".join(cleaned)
+    try:
+        return text.encode("cp1252", errors="ignore").decode("cp1252", errors="ignore")
+    except Exception:
+        return text

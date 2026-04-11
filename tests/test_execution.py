@@ -167,6 +167,31 @@ def test_executor_builds_email_body_from_sheet_values():
     raw_json = runner.commands[1][runner.commands[1].index("--json") + 1]
     assert "raw" in raw_json
 
+
+def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    plan = RequestPlan(
+        raw_text="save gmail body to sheet",
+        tasks=[
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}),
+            PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Tickets"}),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": [["$gmail_message_body"]],
+                },
+            ),
+        ],
+    )
+    report = executor.execute(plan)
+    assert report.success is True
+    assert "m1" in runner.commands[2][runner.commands[2].index("--json") + 1]
+
 def test_execute_single_task(tmp_path):
     runner = FakeRunner()
     runner.commands = []

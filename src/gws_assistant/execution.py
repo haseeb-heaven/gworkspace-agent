@@ -142,40 +142,7 @@ class PlanExecutor:
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         parameters = dict(task.parameters)
         for key, value in list(parameters.items()):
-            if value == "$last_spreadsheet_id":
-                parameters[key] = context.get("last_spreadsheet_id") or ""
-            elif value == "$last_document_id":
-                parameters[key] = context.get("last_document_id") or ""
-            elif value == "$last_drive_file_id":
-                parameters[key] = context.get("last_drive_file_id") or ""
-            elif value == "$last_folder_id":
-                parameters[key] = context.get("last_folder_id") or ""
-            elif value == "$gmail_summary_values":
-                parameters[key] = self._gmail_summary_values(context)
-            elif value == "$sheet_email_body":
-                parameters[key] = self._sheet_email_body(context)
-            elif value == "$drive_summary_values":
-                parameters[key] = self._drive_summary_values(context)
-            elif value == "$document_table_values":
-                parameters[key] = self._document_table_values(context)
-            elif value == "$document_table_text":
-                parameters[key] = self._document_table_text(context)
-            elif value == "$web_search_results":
-                parameters[key] = context.get("web_search_summary") or "No search results found."
-            elif value == "$web_search_table_values":
-                parameters[key] = self._web_search_table_values(context)
-            elif value == "$web_search_markdown":
-                parameters[key] = self._web_search_markdown(context)
-            elif value == "$gmail_message_body":
-                parameters[key] = context.get("last_message_body") or ""
-            elif value == "$exported_file_paths":
-                parameters[key] = [item["path"] for item in context.get("exported_files", []) if item.get("path")]
-            elif isinstance(value, str) and _is_gmail_values_placeholder(value) and key in ("body", "values"):
-                parameters[key] = self._gmail_summary_values(context)
-            elif isinstance(value, str) and _is_sheet_body_placeholder(value) and key in ("body", "values"):
-                parameters[key] = self._sheet_email_body(context)
-            elif isinstance(value, str) and "$drive_summary" in value.lower() and key in ("body", "values"):
-                parameters[key] = self._drive_summary_values(context)
+            parameters[key] = self._resolve_parameter_value(task, key, value, context)
             
             # Additional context injection: if body wants a link and we have one
             if key == "body" and isinstance(parameters[key], str):
@@ -216,6 +183,65 @@ class PlanExecutor:
             parameters=parameters,
             reason=task.reason,
         )
+
+    def _resolve_parameter_value(self, task: PlannedTask, key: str, value: Any, context: dict[str, Any]) -> Any:
+        if isinstance(value, dict):
+            return {inner_key: self._resolve_parameter_value(task, inner_key, inner_value, context) for inner_key, inner_value in value.items()}
+        if isinstance(value, list):
+            if task.service == "sheets" and task.action == "append_values" and key == "values":
+                if self._contains_placeholder(value, "$gmail_message_body"):
+                    return self._gmail_summary_values(context)
+            return [self._resolve_parameter_value(task, key, item, context) for item in value]
+        if not isinstance(value, str):
+            return value
+
+        if value == "$last_spreadsheet_id":
+            return context.get("last_spreadsheet_id") or ""
+        if value == "$last_document_id":
+            return context.get("last_document_id") or ""
+        if value == "$last_drive_file_id":
+            return context.get("last_drive_file_id") or ""
+        if value == "$last_folder_id":
+            return context.get("last_folder_id") or ""
+        if value == "$gmail_summary_values":
+            return self._gmail_summary_values(context)
+        if value == "$sheet_email_body":
+            return self._sheet_email_body(context)
+        if value == "$drive_summary_values":
+            return self._drive_summary_values(context)
+        if value == "$document_table_values":
+            return self._document_table_values(context)
+        if value == "$document_table_text":
+            return self._document_table_text(context)
+        if value == "$web_search_results":
+            return context.get("web_search_summary") or "No search results found."
+        if value == "$web_search_table_values":
+            return self._web_search_table_values(context)
+        if value == "$web_search_markdown":
+            return self._web_search_markdown(context)
+        if value == "$gmail_message_body":
+            if task.service == "sheets" and task.action == "append_values" and key == "values":
+                return self._gmail_summary_values(context)
+            return context.get("last_message_body") or ""
+        if value == "$exported_file_paths":
+            return [item["path"] for item in context.get("exported_files", []) if item.get("path")]
+        if _is_gmail_values_placeholder(value) and key in ("body", "values"):
+            return self._gmail_summary_values(context)
+        if _is_sheet_body_placeholder(value) and key in ("body", "values"):
+            return self._sheet_email_body(context)
+        if "$drive_summary" in value.lower() and key in ("body", "values"):
+            return self._drive_summary_values(context)
+        return value
+
+    @staticmethod
+    def _contains_placeholder(value: Any, token: str) -> bool:
+        if isinstance(value, str):
+            return token in value
+        if isinstance(value, dict):
+            return any(PlanExecutor._contains_placeholder(child, token) for child in value.values())
+        if isinstance(value, list):
+            return any(PlanExecutor._contains_placeholder(child, token) for child in value)
+        return False
 
     def _update_context(self, task: PlannedTask, result: ExecutionResult, context: dict[str, Any]) -> None:
         stdout = result.stdout
