@@ -58,6 +58,7 @@ class AppConfig:
         setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
         
         max_retries = int((os.getenv("MAX_RETRIES") or "3").strip())
+        max_replans = int((os.getenv("MAX_REPLANS") or "1").strip())
         langchain_enabled = _to_bool(os.getenv("LANGCHAIN_ENABLED"), default=True)
 
         return AppConfigModel(
@@ -73,6 +74,7 @@ class AppConfig:
             env_file_path=env_file_path,
             setup_complete=setup_complete,
             max_retries=max_retries,
+            max_replans=max_replans,
             langchain_enabled=langchain_enabled,
         )
 

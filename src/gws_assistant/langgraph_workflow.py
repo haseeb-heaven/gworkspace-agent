@@ -116,7 +116,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             decision = ReflectionDecision(action="continue", reason="Code execution is disabled by configuration.")
         elif attempts < config.max_retries:
             decision = ReflectionDecision(action="retry", reason="Retrying failed task.")
-        elif state.get("plan") and context.get("replan_count", 0) < 1:
+        elif state.get("plan") and context.get("replan_count", 0) < config.max_replans:
             context["replan_count"] = int(context.get("replan_count", 0)) + 1
             updates["context"] = context
             updates["current_attempt"] = 0

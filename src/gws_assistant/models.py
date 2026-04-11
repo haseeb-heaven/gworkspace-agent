@@ -22,6 +22,7 @@ class AppConfigModel:
     setup_complete: bool
     max_retries: int
     langchain_enabled: bool
+    max_replans: int = 1
     use_heuristic_fallback: bool = False
     code_execution_enabled: bool = True
 
