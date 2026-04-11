@@ -65,3 +65,12 @@ def test_agent_reports_no_service(tmp_path):
     plan = agent.plan("Remind me to drink water")
     assert plan.no_service_detected is True
     assert plan.summary == NO_SERVICE_MESSAGE
+
+
+def test_agent_lists_email_with_detail_fetch(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("List all received emails from assistant@glider.ai")
+    assert [(task.service, task.action) for task in plan.tasks] == [
+        ("gmail", "list_messages"),
+        ("gmail", "get_message"),
+    ]

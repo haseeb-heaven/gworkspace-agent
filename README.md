@@ -62,6 +62,12 @@ GUI:
 python gws_gui.py
 ```
 
+Browser GUI (Gradio):
+
+```bash
+python gws_gradio.py --host 127.0.0.1 --port 7860
+```
+
 Optional output capture:
 
 ```bash
@@ -93,6 +99,7 @@ No Google Workspace service detected in your request.
 |-- cli.py
 |-- gws_cli.py
 |-- gws_gui.py
+|-- gws_gradio.py
 |-- requirements.txt
 |-- src/
 |   `-- gws_assistant/
@@ -101,6 +108,7 @@ No Google Workspace service detected in your request.
 |       |-- config.py
 |       |-- conversation.py
 |       |-- execution.py
+|       |-- gradio_app.py
 |       |-- gws_runner.py
 |       |-- output_formatter.py
 |       |-- planner.py

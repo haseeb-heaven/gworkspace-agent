@@ -54,6 +54,14 @@ def test_gws_binary_help_smoke():
     assert "SERVICES:" in output
 
 
+def test_gradio_launcher_help_smoke():
+    result = _run_command([sys.executable, "gws_gradio.py", "--help"])
+    output = f"{result.stdout}\n{result.stderr}"
+    assert result.returncode == 0
+    assert "Run Google Workspace Assistant in Gradio" in output
+    assert "--port" in output
+
+
 @pytest.mark.skipif(os.getenv("RUN_OPENROUTER_SMOKE") != "1", reason="Set RUN_OPENROUTER_SMOKE=1 to run API smoke test")
 def test_openrouter_chat_completion_smoke():
     env_file = dotenv_values(ROOT / ".env")

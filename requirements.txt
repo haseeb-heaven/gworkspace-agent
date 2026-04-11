@@ -5,5 +5,6 @@ typer>=0.12.3
 rich>=13.7.1
 questionary>=2.0.1
 customtkinter>=5.2.2
+gradio>=5.0.0
 pytest>=8.2.0
 pytest-mock>=3.14.0

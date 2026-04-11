@@ -167,6 +167,8 @@ class WorkspaceAgentSystem:
             tasks = self._sheet_to_email_tasks(text, lowered)
         elif "gmail" in services and "sheets" in services and _has_any(lowered, ("save", "write", "export", "append")):
             tasks = self._gmail_to_sheets_tasks(text, lowered)
+        elif services == ["gmail"]:
+            tasks = self._gmail_read_tasks(lowered)
         else:
             tasks = [self._single_service_task(service, lowered, index) for index, service in enumerate(services, start=1)]
 
@@ -251,6 +253,27 @@ class WorkspaceAgentSystem:
                 reason="Compose and send an email using spreadsheet data.",
             ),
         ]
+
+    def _gmail_read_tasks(self, lowered: str) -> list[PlannedTask]:
+        list_task = PlannedTask(
+            id="task-1",
+            service="gmail",
+            action="list_messages",
+            parameters={"q": _gmail_query_from_text(lowered), "max_results": _first_int(lowered) or 10},
+            reason="Find matching Gmail messages first.",
+        )
+        if _wants_email_details(lowered):
+            return [
+                list_task,
+                PlannedTask(
+                    id="task-2",
+                    service="gmail",
+                    action="get_message",
+                    parameters={"message_id": "$gmail_message_ids"},
+                    reason="Read message headers and snippets so the output is human-readable.",
+                ),
+            ]
+        return [list_task]
 
     def _single_service_task(self, service: str, lowered: str, index: int) -> PlannedTask:
         action = _detect_action(service, lowered) or next(iter(SERVICES[service].actions))
@@ -388,6 +411,19 @@ def _is_sheet_to_email_request(text: str) -> bool:
         "email it",
     )
     return any(term in text for term in send_terms)
+
+
+def _wants_email_details(text: str) -> bool:
+    terms = (
+        "list all",
+        "show all",
+        "view emails",
+        "read emails",
+        "received emails",
+        "emails from",
+        "show emails",
+    )
+    return any(term in text for term in terms)
 
 
 def _json_from_text(text: str) -> dict[str, Any]:

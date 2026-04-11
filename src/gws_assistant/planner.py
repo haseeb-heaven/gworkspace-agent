@@ -74,9 +74,12 @@ class CommandPlanner:
                 "files",
                 "list",
                 "--params",
-                json.dumps({"pageSize": page_size}),
-                "--format",
-                "table",
+                json.dumps(
+                    {
+                        "pageSize": page_size,
+                        "fields": "files(id,name,mimeType,modifiedTime,owners(displayName,emailAddress)),nextPageToken",
+                    }
+                ),
             ]
         if action == "create_folder":
             folder_name = self._required_text(params, "folder_name")
@@ -160,7 +163,11 @@ class CommandPlanner:
         if action == "list_messages":
             max_results = self._safe_positive_int(params.get("max_results"), default=10)
             query = str(params.get("q") or "").strip()
-            request_params: dict[str, Any] = {"userId": "me", "maxResults": max_results}
+            request_params: dict[str, Any] = {
+                "userId": "me",
+                "maxResults": max_results,
+                "fields": "messages(id,threadId),nextPageToken,resultSizeEstimate",
+            }
             if query:
                 request_params["q"] = query
             return [
@@ -206,9 +213,14 @@ class CommandPlanner:
                 "events",
                 "list",
                 "--params",
-                json.dumps({"calendarId": calendar_id}),
-                "--format",
-                "table",
+                json.dumps(
+                    {
+                        "calendarId": calendar_id,
+                        "singleEvents": True,
+                        "orderBy": "startTime",
+                        "maxResults": 20,
+                    }
+                ),
             ]
         if action == "create_event":
             summary = self._required_text(params, "summary")

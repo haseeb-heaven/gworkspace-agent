@@ -16,6 +16,7 @@ dependencies = [
     "rich>=13.7.1",
     "questionary>=2.0.1",
     "customtkinter>=5.2.2",
+    "gradio>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
 [project.scripts]
 gws-assistant-cli = "gws_assistant.cli_app:main"
 gws-assistant-gui = "gws_assistant.gui_app:main"
+gws-assistant-gradio = "gws_assistant.gradio_app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
