@@ -16,6 +16,21 @@ from .langchain_agent import plan_with_langchain
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
 
+# Keywords that signal the user wants to search/find external information first.
+_WEB_SEARCH_TRIGGERS = (
+    "find top",
+    "search for",
+    "look up",
+    "find best",
+    "find latest",
+    "what are the top",
+    "top 3",
+    "top 5",
+    "top 10",
+    "best ",
+    "list of",
+)
+
 
 class WorkspaceAgentSystem:
     """Plans one or more gws tasks from a natural-language request."""
@@ -57,8 +72,6 @@ class WorkspaceAgentSystem:
 
         return self._plan_with_heuristics(text)
 
-
-
     def _plan_from_payload(self, text: str, payload: dict[str, Any], source: str) -> RequestPlan:
         tasks: list[PlannedTask] = []
         for index, item in enumerate(payload.get("tasks") or [], start=1):
@@ -95,14 +108,61 @@ class WorkspaceAgentSystem:
     def _plan_with_heuristics(self, text: str) -> RequestPlan:
         lowered = text.lower()
         services = _detect_services_in_order(lowered)
-        print(f"DEBUG: heuristic detected {services}")
         self.logger.info(f"Heuristic planning: detected services {services}")
+
         if not services:
+            # If query looks like a web search + save intent, mark for web_search routing.
+            if _is_web_search_and_save(lowered):
+                return RequestPlan(
+                    raw_text=text,
+                    summary="Web search and save intent detected — routing to web search.",
+                    confidence=0.4,
+                    no_service_detected=True,
+                    needs_web_search=True,
+                )
             return RequestPlan(
                 raw_text=text,
                 summary=NO_SERVICE_MESSAGE,
                 confidence=0.2,
                 no_service_detected=True,
+            )
+
+        has_save_intent = _has_any(lowered, ("save", "write", "store", "export", "append", "document", "doc"))
+
+        # Pattern: find/search + save to docs + sheets (e.g. "Find top 3 AI frameworks and save to Docs and Sheets")
+        if _is_web_search_and_save(lowered) and "docs" in services and "sheets" in services:
+            tasks = self._web_search_to_docs_and_sheets_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: web search → docs.create_document + sheets.create_spreadsheet + sheets.append_values",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern: find/search + save to sheets only
+        if _is_web_search_and_save(lowered) and "sheets" in services and "docs" not in services:
+            tasks = self._web_search_to_sheets_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: web search → sheets.create_spreadsheet + sheets.append_values",
+                confidence=0.65,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern: find/search + save to docs only
+        if _is_web_search_and_save(lowered) and "docs" in services and "sheets" not in services:
+            tasks = self._web_search_to_docs_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: web search → docs.create_document",
+                confidence=0.65,
+                no_service_detected=False,
+                source="heuristic",
             )
 
         if "drive" in services and "sheets" in services and "gmail" in services:
@@ -124,6 +184,75 @@ class WorkspaceAgentSystem:
             confidence=0.55,
             no_service_detected=False,
         )
+
+    def _web_search_to_docs_and_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Plan tasks: web_search result → create Docs document + create Sheets + append data."""
+        topic = _extract_search_topic(lowered) or "Research Results"
+        title = topic.title()
+        return [
+            PlannedTask(
+                id="task-1",
+                service="docs",
+                action="create_document",
+                parameters={"title": title, "content": "$web_search_summary"},
+                reason="Create a Google Doc to store the research findings.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": title},
+                reason="Create a Google Sheet to store the structured data.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": "$web_search_rows",
+                },
+                reason="Append the search results as rows in the spreadsheet.",
+            ),
+        ]
+
+    def _web_search_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        topic = _extract_search_topic(lowered) or "Research Results"
+        title = topic.title()
+        return [
+            PlannedTask(
+                id="task-1",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": title},
+                reason="Create a Google Sheet for the search results.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": "$web_search_rows",
+                },
+                reason="Append search results as rows.",
+            ),
+        ]
+
+    def _web_search_to_docs_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        topic = _extract_search_topic(lowered) or "Research Results"
+        title = topic.title()
+        return [
+            PlannedTask(
+                id="task-1",
+                service="docs",
+                action="create_document",
+                parameters={"title": title, "content": "$web_search_summary"},
+                reason="Create a Google Doc with the research findings.",
+            ),
+        ]
 
     def _drive_to_sheets_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(lowered)
@@ -278,6 +407,13 @@ class WorkspaceAgentSystem:
                 parameters["q"] = drive_query
         elif service == "contacts" and action == "list_contacts":
             parameters["page_size"] = _first_int(lowered) or 10
+        elif service == "docs" and action == "create_document":
+            topic = _extract_search_topic(lowered) or "Document"
+            parameters["title"] = topic.title()
+            parameters["content"] = "$web_search_summary"
+        elif service == "sheets" and action == "create_spreadsheet":
+            topic = _extract_search_topic(lowered) or "Data"
+            parameters["title"] = topic.title()
         return PlannedTask(
             id=f"task-{index}",
             service=service,
@@ -285,8 +421,6 @@ class WorkspaceAgentSystem:
             parameters=parameters,
             reason=f"Detected {SERVICES[service].label} in the request.",
         )
-
-
 
 
 def _detect_services_in_order(text: str) -> list[str]:
@@ -322,25 +456,50 @@ def _gmail_query_from_text(text: str) -> str:
 
 
 def _drive_query_from_text(text: str) -> str:
-    """Extract a Drive API query filter from user text.
-    
-    Looks for quoted terms first, then falls back to keyword extraction.
-    Returns Google Drive query syntax like: fullText contains 'term'
-    """
-    # Look for quoted strings first (single or double quotes)
+    """Extract a Drive API query filter from user text."""
     quoted = re.findall(r"""['"]([^'"]{2,80})['"]""", text)
     if quoted:
-        # Use the first meaningful quoted term
         parts = [f"fullText contains '{q.strip()}'" for q in quoted[:2]]
         return " or ".join(parts)
-    
-    # Fall back to extracting search terms after "for" / "about" / "search"
+
     match = re.search(r"(?:search|find|for|about)\s+([a-z0-9 _.-]{3,60})", text)
     if match:
         term = _trim_follow_on_instruction(match.group(1)).strip()
         if term and len(term) > 2:
             return f"fullText contains '{term}'"
     return ""
+
+
+def _extract_search_topic(text: str) -> str | None:
+    """Extract the main search topic from a 'find X and save' style query."""
+    patterns = [
+        r"find\s+(?:top\s+\d+\s+)?(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|\s+and\s+export|$)",
+        r"search\s+(?:for\s+)?(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
+        r"top\s+\d+\s+(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
+        r"best\s+(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            topic = match.group(1).strip(" .")
+            # Strip trailing workspace service keywords
+            topic = re.sub(
+                r"\s+(to\s+(google\s+)?(docs|sheets|documents|document|spreadsheet).*|and\s+(save|write|store).*)$",
+                "",
+                topic,
+                flags=re.IGNORECASE,
+            ).strip()
+            if len(topic) > 2:
+                return topic
+    return None
+
+
+def _is_web_search_and_save(text: str) -> bool:
+    """Return True if the query is a 'find/search X and save to Workspace' intent."""
+    has_search = any(trigger in text for trigger in _WEB_SEARCH_TRIGGERS)
+    has_save = _has_any(text, ("save", "write", "store", "export", "document", "doc", "sheet", "spreadsheet"))
+    return has_search or has_save
+
 
 def _spreadsheet_title_from_query(query: str) -> str:
     suffix = query.replace(" OR ", " ").strip() or "Gmail"
@@ -420,5 +579,3 @@ def _wants_email_details(text: str) -> bool:
         "show emails",
     )
     return any(term in text for term in terms)
-
-

@@ -238,7 +238,7 @@ class CommandPlanner:
             start_date = start_date_raw.split("T")[0]
             if len(start_date) > 10:
                 start_date = start_date[:10]
-            
+
             return [
                 "calendar",
                 "events",
@@ -251,6 +251,27 @@ class CommandPlanner:
         raise ValidationError(f"Unsupported calendar action: {action}")
 
     def _build_docs_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "create_document":
+            title = self._required_text(params, "title") if params.get("title") else "Untitled Document"
+            body_content = str(params.get("content") or "").strip()
+            doc_body: dict[str, Any] = {"title": title}
+            if body_content:
+                doc_body["body"] = {
+                    "content": [
+                        {
+                            "paragraph": {
+                                "elements": [{"textRun": {"content": body_content}}]
+                            }
+                        }
+                    ]
+                }
+            return [
+                "docs",
+                "documents",
+                "create",
+                "--json",
+                json.dumps(doc_body, ensure_ascii=True),
+            ]
         if action == "get_document":
             document_id = self._required_text(params, "document_id")
             return ["docs", "documents", "get", "--params", json.dumps({"documentId": document_id})]
@@ -338,9 +359,8 @@ class CommandPlanner:
         range_str = range_str.strip()
         if "!" not in range_str:
             return range_str
-        
+
         sheet_part, cell_part = range_str.split("!", 1)
-        # If it has spaces and is not already quoted, quote it.
         if " " in sheet_part and not (sheet_part.startswith("'") and sheet_part.endswith("'")):
             return f"'{sheet_part}'!{cell_part}"
         return range_str
@@ -351,7 +371,6 @@ class CommandPlanner:
         if value is not None and str(value).strip():
             return str(value).strip()
 
-        # Fallback to variations (e.g. spreadsheet_id -> spreadsheetId)
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
         for k, v in params.items():
             if k.lower().replace("_", "") in variations:

@@ -9,7 +9,8 @@ SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",
         label="Google Drive",
-        aliases=("drive", "documents", "files", "google documents", "google docs", "doc"),
+        # Removed 'documents', 'doc', 'google documents', 'google docs' — those belong to docs service.
+        aliases=("drive", "files", "google drive"),
         actions={
             "list_files": ActionSpec(
                 key="list_files",
@@ -150,8 +151,18 @@ SERVICES: dict[str, ServiceSpec] = {
     "docs": ServiceSpec(
         key="docs",
         label="Google Docs",
-        aliases=("docs", "doc", "document", "documents"),
+        # 'documents' and 'doc' moved here exclusively (removed from drive).
+        aliases=("docs", "doc", "document", "documents", "google docs", "google documents"),
         actions={
+            "create_document": ActionSpec(
+                key="create_document",
+                label="Create document",
+                keywords=("create", "new", "write", "save", "document", "doc"),
+                parameters=(
+                    ParameterSpec("title", "What should the document title be?", "My Document"),
+                    ParameterSpec("content", "Initial document content", "", required=False),
+                ),
+            ),
             "get_document": ActionSpec(
                 key="get_document",
                 label="Get document",
