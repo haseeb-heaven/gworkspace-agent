@@ -57,7 +57,6 @@ def _pick_action(engine: ConversationEngine, service: str) -> str:
     return choice
 
 
-
 def _save_output(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -72,7 +71,7 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
     if no_langchain:
          config.api_key = None
          config.langchain_enabled = False
-         
+
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
 
@@ -126,7 +125,7 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
                 break
 
             output = run_workflow(user_text, config, agent_system, executor, logger)
-            
+
             if save_output:
                 _save_output(save_output, output)
             console.print(Panel(output, title="Result", border_style="green"))
@@ -147,12 +146,18 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
 
 @app.callback(invoke_without_command=True)
 def run(
+    ctx: typer.Context,
     setup: bool = typer.Option(False, "--setup", help="Run setup mode and save configuration."),
     save_output: Path | None = typer.Option(None, "--save-output", help="Append readable output to a file."),
     task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
     no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
+    # Typer sets resilient_parsing=True during --help and shell-completion
+    # resolution. Returning early prevents _run_application() from being
+    # invoked (which would block on stdin / validate binaries / etc.).
+    if ctx.resilient_parsing:
+        return
     if setup:
         run_setup_wizard()
         return
