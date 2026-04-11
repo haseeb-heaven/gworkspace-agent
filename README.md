@@ -146,120 +146,66 @@ graph TD
 
 ## Setup
 
-Install dependencies:
+1. Install dependencies:
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-Run setup explicitly:
+2. Create your env file if needed:
 
-```bash
-python cli.py --setup
+```powershell
+Copy-Item .env.example .env
 ```
 
-Setup mode:
-- Detects a local, npm/global, or PATH-provided `gws` binary.
-- Saves the resolved `GWS_BINARY_PATH`.
-- Saves OpenAI or OpenRouter model settings.
-- Saves API keys if provided (including optional Tavily key for `langchain-ai` branch web search).
-- Writes `.env`.
+3. Run the interactive setup wizard:
 
-> Setup is **never triggered automatically**. Normal app startup expects setup to already be complete.
-
-### Environment precedence and execution flags
-
-- Provider/model/key resolution priority is:
-  1. `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`
-  2. Provider-specific fallbacks (`OPENAI_*`, `OPENROUTER_*`)
-- If `LLM_PROVIDER` is omitted, runtime defaults to `openrouter` when `OPENROUTER_API_KEY` is present, otherwise `openai`.
-- `USE_HEURISTIC_FALLBACK=false` disables deterministic planning fallback when LLM planning is unavailable or fails.
-- `CODE_EXECUTION_ENABLED=false` disables the `generate_code -> sandbox_execute` path entirely.
-
----
-
-## Run
-
-Default CLI:
-
-```bash
-python cli.py
+```powershell
+python .\gws_cli.py --setup
 ```
 
-Backward-compatible launcher:
+The preferred launcher on this branch is `gws_cli.py`. `cli.py` is kept as a compatibility shim.
 
-```bash
-python gws_cli.py
+## Environment Variables
+
+Required or commonly used keys:
+
+- `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`
+- `GWS_BINARY_PATH`
+- `LANGCHAIN_ENABLED`
+- `TAVILY_API_KEY` for higher-quality search fallback
+- `CODE_EXECUTION_ENABLED`
+- `CODE_EXECUTION_BACKEND` with `restricted_subprocess`, `docker`, or `e2b`
+- `E2B_API_KEY` when `CODE_EXECUTION_BACKEND=e2b`
+- `DEFAULT_RECIPIENT_EMAIL` for email workflows when the prompt omits a recipient
+
+See `.env.example` for the full template.
+
+## Usage
+
+Run a single task:
+
+```powershell
+python .\gws_cli.py --task "List my unread Gmail messages about invoices and save them to a new Google Sheet"
 ```
 
-GUI (Tkinter):
+Force heuristic mode:
 
-```bash
-python gws_gui.py
+```powershell
+python .\gws_cli.py --no-langchain --task "Search Drive for quarterly planning docs"
 ```
 
-Browser GUI (Gradio):
+Launch Gradio:
 
-```bash
-python gws_gradio.py --host 127.0.0.1 --port 7860
+```powershell
+python .\gws_gradio.py
 ```
 
-Legacy / No-LLM fallback (`langchain-ai` branch):
+## Example Workflows
 
-```bash
-python cli.py --no-langchain --task "Search Drive for projects"
-```
+Research + Docs + Sheets + Gmail:
 
-Optional output capture:
-
-```bash
-python cli.py --save-output outputs/session.txt
-```
-
----
-
-## Example Requests
-
-**Simple search:**
-```text
->: List all emails from boss@company.com
-```
-
-**Multi-service workflow:**
-```text
->: Search Google Documents for "Agentic AI - Builders" and create a Sheet
-   from the results, then send email to user@example.com with the sheet link
-```
-
-The agent plans this as:
-1. Search Drive for documents matching "Agentic AI - Builders" (with query filter).
-2. Create a Google Sheet titled "Agentic AI Builders Data".
-3. Append the filtered Drive results into the sheet.
-4. Send an email with the sheet link automatically injected.
-
-**Research + Workspace workflow (`langchain-ai` branch):**
-```text
->: Search the web for the latest AI tools released this week and save a summary to a new Google Sheet
-```
-
-The agent routes this as:
-1. Web search via DuckDuckGo/Tavily for "latest AI tools this week".
-2. LLM summarizes the search results.
-3. Create a Google Sheet and append the summarized data.
-
-**Code + Workspace workflow (`langchain-ai` branch):**
-```text
->: Calculate the total revenue from my last 10 Gmail invoice emails and write the result to a Sheet
-```
-
-The agent routes this as:
-1. `gmail.list_messages` + `gmail.get_message` × 10 to extract invoice data.
-2. Run sandboxed Python to sum the values.
-3. `sheets.create_spreadsheet` + `sheets.append_values` with the result.
-
-If no Workspace service is detected:
 ```text
 No Google Workspace service detected in your request.
 ```
