@@ -13,3 +13,4 @@ customtkinter>=5.2.2
 gradio>=5.0.0
 pytest>=9.0.3
 pytest-cov>=7.1.0
+pytest-mock>=3.14.0
