@@ -98,7 +98,9 @@ class PlanExecutor:
         ]
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
-        parameters = dict(task.parameters)
+        parameters = _resolve_template(task.parameters, context)
+        
+        # Legacy $ resolution for backward compatibility
         for key, value in list(parameters.items()):
             if value == "$last_spreadsheet_id":
                 parameters[key] = context.get("last_spreadsheet_id") or ""
@@ -151,6 +153,19 @@ class PlanExecutor:
     def _update_context(self, task: PlannedTask, stdout: str, context: dict[str, Any]) -> None:
         payload = _parse_json(stdout)
         user_keywords = extract_keywords(str(context.get("request_text") or ""))
+        
+        # Store raw task results for general placeholder resolution
+        if payload and task.id:
+            results = context.setdefault("task_results", {})
+            results[task.id] = payload
+            # Handle numeric version if id is "task-N"
+            if task.id.startswith("task-"):
+                try:
+                    num_id = task.id.removeprefix("task-")
+                    results[num_id] = payload
+                except Exception:
+                    pass
+
         if task.service == "gmail" and task.action == "list_messages":
             context["gmail_query"] = task.parameters.get("q") or ""
             context["gmail_payload"] = payload or {}
@@ -283,6 +298,41 @@ class PlanExecutor:
                 rendered = " | ".join(str(cell) for cell in row)
                 lines.append(rendered)
         return "\n".join(lines).strip()
+
+
+def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
+    """Recursively resolves {{task_id.key}} placeholders in parameters."""
+    if isinstance(value, dict):
+        return {k: _resolve_template(v, context) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_template(v, context) for v in value]
+    if not isinstance(value, str):
+        return value
+
+    def replacer(match: re.Match) -> str:
+        task_id = match.group(1)
+        key = match.group(2)
+        results = context.get("task_results", {})
+        task_payload = results.get(task_id)
+
+        if not isinstance(task_payload, dict):
+            return match.group(0)
+
+        # Try direct match
+        val = task_payload.get(key)
+        if val is not None:
+            return str(val)
+
+        # Handle common mappings: spreadsheet_id -> spreadsheetId
+        normalized_key = key.lower().replace("_", "")
+        for p_key, p_val in task_payload.items():
+            if p_key.lower().replace("_", "") == normalized_key:
+                return str(p_val)
+
+        return match.group(0)
+
+    # Resolve {{task_id.key}}
+    return re.sub(r"\{\{([\w\-]+)\.(\w+)\}\}", replacer, value)
 
 
 def _parse_json(stdout: str) -> dict[str, Any] | None:
