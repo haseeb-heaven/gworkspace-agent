@@ -1,55 +1,148 @@
-import pytest
 import logging
 from unittest.mock import MagicMock
-from gws_assistant.models import AppConfigModel, RequestPlan, PlannedTask, ExecutionResult
+
+import pytest
+
 from gws_assistant.langgraph_workflow import create_workflow, run_workflow
+from gws_assistant.models import AppConfigModel, ExecutionResult, PlannedTask, RequestPlan
+
 
 @pytest.fixture
 def config(tmp_path):
     return AppConfigModel(
-        provider="openai", model="gpt-4.1-mini", api_key="sk-test", base_url=None, timeout_seconds=30,
-        gws_binary_path=tmp_path/"gws.exe", log_file_path=tmp_path/"l.log", log_level="INFO",
-        verbose=True, env_file_path=tmp_path/".env", setup_complete=True, max_retries=3, langchain_enabled=True
+        provider="openai",
+        model="gpt-4.1-mini",
+        api_key="sk-test",
+        base_url=None,
+        timeout_seconds=30,
+        gws_binary_path=tmp_path / "gws.exe",
+        log_file_path=tmp_path / "l.log",
+        log_level="INFO",
+        verbose=True,
+        env_file_path=tmp_path / ".env",
+        setup_complete=True,
+        max_retries=3,
+        langchain_enabled=True,
+        use_heuristic_fallback=False,
     )
 
-def test_run_workflow_normal_execution(config):
+
+def test_reflection_retry_then_success(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    
-    # Setup mock plan
-    plan = RequestPlan(raw_text="List files", tasks=[PlannedTask(id="1", service="drive", action="list_files")], no_service_detected=False)
+
+    task = PlannedTask(id="1", service="drive", action="list_files")
+    plan = RequestPlan(raw_text="List files", tasks=[task], no_service_detected=False)
     system.plan.return_value = plan
-    
-    # Setup mock executor
-    executor._expand_task.return_value = [plan.tasks[0]]
-    executor._resolve_task.return_value = plan.tasks[0]
-    executor.execute_single_task.return_value = ExecutionResult(success=True, command=["mock"], stdout="Mocked output")
-    
+
+    executor._expand_task.return_value = [task]
+    executor._resolve_task.return_value = task
+    executor.execute_single_task.side_effect = [
+        ExecutionResult(success=False, command=["mock"], error="transient"),
+        ExecutionResult(success=True, command=["mock"], stdout="Recovered"),
+    ]
+
     output = run_workflow("List files", config, system, executor, logger)
-    
-    assert "Mocked output" in output or output != ""
-    system.plan.assert_called_once_with("List files")
-    executor.execute_single_task.assert_called_once()
+    assert "Recovered" in output
+    assert executor.execute_single_task.call_count == 2
 
-def test_run_workflow_web_search(config):
+
+def test_replan_path_retains_history(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    
-    # Flow with no plan but web search
-    system.plan.return_value = RequestPlan(raw_text="web search test", no_service_detected=True)
-    
-    output = run_workflow("web search test", config, system, executor, logger)
-    assert output is not None
 
-def test_run_workflow_no_plan(config):
+    first_task = PlannedTask(id="1", service="drive", action="list_files")
+    second_task = PlannedTask(id="2", service="drive", action="list_files")
+    system.plan.side_effect = [
+        RequestPlan(raw_text="x", tasks=[first_task], no_service_detected=False),
+        RequestPlan(raw_text="x", tasks=[second_task], no_service_detected=False),
+    ]
+
+    executor._expand_task.side_effect = [[first_task], [first_task], [second_task]]
+    executor._resolve_task.side_effect = [first_task, first_task, second_task]
+    executor.execute_single_task.side_effect = [
+        ExecutionResult(success=False, command=["mock"], error="fail1"),
+        ExecutionResult(success=False, command=["mock"], error="fail2"),
+        ExecutionResult(success=True, command=["mock"], stdout="after replan"),
+    ]
+    config.max_retries = 1
+
+    app = create_workflow(config, system, executor, logger)
+    final_state = app.invoke(
+        {
+            "user_text": "x",
+            "context": {"request_text": "x"},
+            "current_task_index": 0,
+            "executions": [],
+            "current_attempt": 0,
+            "conversation_history": [],
+        }
+    )
+    assert system.plan.call_count == 2
+    assert len(final_state["conversation_history"]) >= 1
+
+
+def test_silent_failure_guard(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    
-    # Flow with no plan and not search/code
-    system.plan.return_value = RequestPlan(raw_text="hello", no_service_detected=True, summary="Hello to you too!")
-    
-    output = run_workflow("hello", config, system, executor, logger)
-    assert output is not None
+
+    task = PlannedTask(id="1", service="drive", action="list_files")
+    system.plan.return_value = RequestPlan(raw_text="x", tasks=[task], no_service_detected=False)
+    executor._expand_task.return_value = [task]
+    executor._resolve_task.return_value = task
+    executor.execute_single_task.return_value = ExecutionResult(success=False, command=["mock"], error="boom")
+
+    output = run_workflow("x", config, system, executor, logger)
+    assert "failure" in output.lower() or "failed" in output.lower()
+
+
+def test_history_trimming(config):
+    logger = logging.getLogger("test")
+    system = MagicMock()
+    executor = MagicMock()
+    task = PlannedTask(id="1", service="drive", action="list_files")
+    system.plan.return_value = RequestPlan(raw_text="x", tasks=[task], no_service_detected=False)
+    executor._expand_task.return_value = [task]
+    executor._resolve_task.return_value = task
+    executor.execute_single_task.return_value = ExecutionResult(success=True, command=["mock"], stdout="ok")
+
+    app = create_workflow(config, system, executor, logger)
+    final_state = app.invoke(
+        {
+            "user_text": "x",
+            "context": {"request_text": "x"},
+            "current_task_index": 0,
+            "executions": [],
+            "current_attempt": 0,
+            "conversation_history": [{"i": i} for i in range(25)],
+        }
+    )
+    assert len(final_state.get("conversation_history", [])) <= 10
+
+
+def test_computation_routes_generate_code_and_executes(config):
+    logger = logging.getLogger("test")
+    system = MagicMock()
+    executor = MagicMock()
+    system.plan.return_value = RequestPlan(raw_text="compute 2+2", tasks=[], no_service_detected=True)
+    config.use_heuristic_fallback = True
+    config.api_key = None
+
+    output = run_workflow("calculate 2+2", config, system, executor, logger)
+    assert "4" in output
+
+
+def test_code_execution_respects_config_flag(config):
+    logger = logging.getLogger("test")
+    system = MagicMock()
+    executor = MagicMock()
+    config.code_execution_enabled = False
+    config.use_heuristic_fallback = True
+    config.api_key = None
+    system.plan.return_value = RequestPlan(raw_text="compute 2+2", tasks=[], no_service_detected=True)
+
+    output = run_workflow("calculate 2+2", config, system, executor, logger)
+    assert "disabled" in output.lower()

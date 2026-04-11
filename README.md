@@ -1,14 +1,15 @@
 # Google Workspace Agent
 
-An intelligent, agentic CLI and GUI for Google Workspace automation powered by a **dual-framework LLM-driven ReAct planning loop** — choose between **CrewAI** (lightweight, fast) or **LangChain + LangGraph**.
+An intelligent, agentic CLI and GUI for Google Workspace automation with a shared execution contract (typed state, structured tool results, reflection-aware retries).
 
-> 🔀 **Two specialized branches are available:**
-> - [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) — CrewAI-based agent: fast, lightweight, multi-step Workspace automation
-> - [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) — LangChain + LangGraph agent: full-power with **internet web search** + **sandboxed code execution**
+> 🔀 **Repository branch roles:**
+> - [`master`](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) — core generic ReAct engine
+> - [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) — deterministic generic research pipeline
+> - [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) — generic multi-step computation-first tool agent
 
 ---
 
-## Why Two Branches?
+## Why Three Branches?
 
 | Feature | [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) | [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
 |---------|----------|--------------|
@@ -167,6 +168,15 @@ Setup mode:
 - Writes `.env`.
 
 > Setup is **never triggered automatically**. Normal app startup expects setup to already be complete.
+
+### Environment precedence and execution flags
+
+- Provider/model/key resolution priority is:
+  1. `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`
+  2. Provider-specific fallbacks (`OPENAI_*`, `OPENROUTER_*`)
+- If `LLM_PROVIDER` is omitted, runtime defaults to `openrouter` when `OPENROUTER_API_KEY` is present, otherwise `openai`.
+- `USE_HEURISTIC_FALLBACK=false` disables deterministic planning fallback when LLM planning is unavailable or fails.
+- `CODE_EXECUTION_ENABLED=false` disables the `generate_code -> sandbox_execute` path entirely.
 
 ---
 

@@ -2,12 +2,78 @@ name: CI
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "langchain-ai", "crew-ai"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_live_integration:
+        description: "Run live Google Workspace integration tests"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  test:
+  mocked-tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch_profile: [master, langchain-ai, crew-ai]
+    if: >
+      (matrix.branch_profile == 'master' && github.ref_name == 'master') ||
+      (matrix.branch_profile == 'langchain-ai' && github.ref_name == 'langchain-ai') ||
+      (matrix.branch_profile == 'crew-ai' && github.ref_name == 'crew-ai') ||
+      (github.event_name == 'pull_request')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov ruff mypy
+
+      - name: Dependency validation
+        run: pip check
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy src --ignore-missing-imports
+
+      - name: Run deterministic mocked suite with coverage gate
+        run: pytest -q -m "not live_integration" --cov=src --cov-report=term --cov-fail-under=80
+
+      - name: Branch profile smoke checks
+        env:
+          BRANCH_PROFILE: ${{ matrix.branch_profile }}
+        run: |
+          if [ "${BRANCH_PROFILE}" = "langchain-ai" ]; then
+            pytest -q tests/test_langgraph_workflow.py tests/test_code_execution.py
+          elif [ "${BRANCH_PROFILE}" = "crew-ai" ]; then
+            pytest -q tests/test_agent_system.py tests/test_execution.py
+          else
+            pytest -q tests/test_config.py tests/test_output_formatter.py
+          fi
+
+  live-integration:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_integration }}
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      GWS_BINARY_PATH: ${{ secrets.GWS_BINARY_PATH }}
+      LOG_LEVEL: INFO
+      RUN_LIVE_INTEGRATION: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +88,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests
-        run: pytest
-
+      - name: Run live integration tests (opt-in)
+        run: pytest -q -m live_integration

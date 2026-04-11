@@ -1,20 +1,25 @@
-import pytest
 from gws_assistant.tools.code_execution import code_execution_tool
 
+
 def test_code_execution_tool_basic_math():
-    code = "print(2 + 2)"
-    result = code_execution_tool.invoke({"code": code})
+    result = code_execution_tool.invoke({"code": "print(2 + 2)"})
     assert result["success"] is True
     assert result["stdout"].strip() == "4"
 
-def test_code_execution_tool_restricted():
-    code = "import os; print(os.name)"
-    result = code_execution_tool.invoke({"code": code})
+
+def test_code_execution_tool_restricted_import():
+    result = code_execution_tool.invoke({"code": "import os\nprint(os.name)"})
     assert result["success"] is False
-    assert "ImportError" in result["error"] or "NameError" in result["error"] or "NotImplementedError" in result["error"]
+    assert "SecurityError" in (result["error"] or "") or "ImportError" in (result["error"] or "")
+
 
 def test_code_execution_tool_timeout():
-    code = "while True: pass"
-    result = code_execution_tool.invoke({"code": code})
+    result = code_execution_tool.invoke({"code": "while True: pass"})
     assert result["success"] is False
-    assert "TimeoutError" in result["error"]
+    assert "TimeoutError" in (result["error"] or "")
+
+
+def test_code_execution_tool_returns_structured_contract():
+    result = code_execution_tool.invoke({"code": "result = {'a': 1}\nprint('done')"})
+    assert set(["success", "output", "error"]).issubset(result.keys())
+    assert result["output"]["parsed_value"] == {"a": 1}

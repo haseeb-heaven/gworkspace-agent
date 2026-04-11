@@ -22,6 +22,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
+        use_heuristic_fallback=True,
     )
 
 
@@ -76,3 +77,13 @@ def test_agent_lists_email_with_detail_fetch(tmp_path):
         ("gmail", "list_messages"),
         ("gmail", "get_message"),
     ]
+
+
+def test_agent_disables_heuristics_when_flag_false(tmp_path):
+    config = _config(tmp_path)
+    config.use_heuristic_fallback = False
+    config.api_key = None
+    agent = WorkspaceAgentSystem(config=config, logger=logging.getLogger("test"))
+    plan = agent.plan("Find tickets in Gmail and save to Sheets")
+    assert plan.no_service_detected is True
+    assert "disabled" in plan.summary.lower()

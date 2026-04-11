@@ -29,8 +29,6 @@ class HumanReadableFormatter:
             detail = self.format_execution_result(result)
             if detail:
                 lines.append(detail)
-            if not result.success:
-                break
             lines.append("")
         return "\n".join(line for line in lines if line is not None).strip()
 

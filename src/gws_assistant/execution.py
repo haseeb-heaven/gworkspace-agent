@@ -38,8 +38,7 @@ class PlanExecutor:
                 result = self.execute_single_task(resolved_task, context)
                 executions.append(TaskExecution(task=resolved_task, result=result))
                 if not result.success:
-                    self.logger.warning("Stopping plan after failed task id=%s", resolved_task.id)
-                    return PlanExecutionReport(plan=plan, executions=executions)
+                    self.logger.warning("Task failed id=%s; continuing to capture full execution trace.", resolved_task.id)
         return PlanExecutionReport(plan=plan, executions=executions)
 
     def execute_single_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
@@ -62,6 +61,13 @@ class PlanExecutor:
         else:
             result = self.runner.run(args)
             
+        parsed_payload = _parse_json(result.stdout)
+        result.output = {
+            "command": result.command,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "parsed_payload": parsed_payload,
+        }
         self._update_context(task, result.stdout, context)
         return result
 

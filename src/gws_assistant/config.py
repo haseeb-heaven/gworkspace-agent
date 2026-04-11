@@ -33,32 +33,43 @@ class AppConfig:
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
         openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        generic_api_key = (os.getenv("LLM_API_KEY") or "").strip()
 
         if not provider:
             provider = "openrouter" if openrouter_key else "openai"
 
+        generic_model = (os.getenv("LLM_MODEL") or "").strip()
         if provider == "openrouter":
-            api_key = openrouter_key or openai_key or None
-            model = (os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
+            api_key = generic_api_key or openrouter_key or openai_key or None
+            model = generic_model or (os.getenv("OPENROUTER_MODEL") or os.getenv("OPENAI_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
             base_url = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
         else:
             provider = "openai"
-            api_key = openai_key or None
-            model = (os.getenv("OPENAI_MODEL") or OPENAI_DEFAULT_MODEL).strip()
+            api_key = generic_api_key or openai_key or openrouter_key or None
+            model = generic_model or (os.getenv("OPENAI_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENAI_DEFAULT_MODEL).strip()
             base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
         gws_binary_value = os.getenv("GWS_BINARY_PATH", "gws.exe")
         gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
-        log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file_path = log_dir / "gws_assistant.log"
-        log_level = (os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
+
+        log_level = (os.getenv("LOG_LEVEL") or os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
+        configured_log_file = (os.getenv("LOG_FILE_PATH") or "").strip()
+        if configured_log_file:
+            log_file_path = Path(configured_log_file).expanduser().resolve()
+            log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file_path = log_dir / "gws_assistant.log"
+
         verbose = _to_bool(os.getenv("APP_VERBOSE"), default=True)
         setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
-        
+
         max_retries = int((os.getenv("MAX_RETRIES") or "3").strip())
         langchain_enabled = _to_bool(os.getenv("LANGCHAIN_ENABLED"), default=True)
+        use_heuristic_fallback = _to_bool(os.getenv("USE_HEURISTIC_FALLBACK"), default=False)
+        code_execution_enabled = _to_bool(os.getenv("CODE_EXECUTION_ENABLED"), default=True)
 
         return AppConfigModel(
             provider=provider,
@@ -74,6 +85,8 @@ class AppConfig:
             setup_complete=setup_complete,
             max_retries=max_retries,
             langchain_enabled=langchain_enabled,
+            use_heuristic_fallback=use_heuristic_fallback,
+            code_execution_enabled=code_execution_enabled,
         )
 
 
