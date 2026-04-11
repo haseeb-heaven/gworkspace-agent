@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any
 
+from .exceptions import ValidationError
 from .gws_runner import GWSRunner
 from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPlan, TaskExecution
 from .planner import CommandPlanner
@@ -50,17 +51,30 @@ class PlanExecutor:
                 command=[],
                 error=f"Plan contained an unresolved placeholder: {placeholder}",
             )
-            
-        args = self.planner.build_command(
-            task.service,
-            task.action,
-            task.parameters,
-        )
+
+        # Wrap build_command so that missing-parameter errors are returned
+        # as failed ExecutionResults instead of raising and crashing the workflow.
+        try:
+            args = self.planner.build_command(
+                task.service,
+                task.action,
+                task.parameters,
+            )
+        except ValidationError as exc:
+            self.logger.warning(
+                "Task id=%s build_command failed: %s", task.id, exc
+            )
+            return ExecutionResult(
+                success=False,
+                command=[],
+                error=str(exc),
+            )
+
         if hasattr(self.runner, "run_with_retry"):
             result = self.runner.run_with_retry(args)
         else:
             result = self.runner.run(args)
-            
+
         parsed_payload = _parse_json(result.stdout)
         result.output = {
             "command": result.command,
@@ -83,7 +97,7 @@ class PlanExecutor:
         if not message_ids:
             self.logger.info("Skipping gmail.get_message task id=%s because no message IDs were returned.", task.id)
             return []
-        
+
         # Limit details to the first 5 messages to keep output readable and execution fast.
         limit = 5
         return [
@@ -99,7 +113,7 @@ class PlanExecutor:
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         parameters = _resolve_template(task.parameters, context)
-        
+
         # Legacy $ resolution for backward compatibility
         for key, value in list(parameters.items()):
             if value == "$last_spreadsheet_id":
@@ -116,13 +130,13 @@ class PlanExecutor:
                 parameters[key] = self._sheet_email_body(context)
             elif isinstance(value, str) and "$drive_summary" in value.lower() and key in ("body", "values"):
                 parameters[key] = self._drive_summary_values(context)
-            
+
             # Additional context injection: if body wants a link and we have one
             if key == "body" and isinstance(parameters[key], str):
                 link = context.get("last_spreadsheet_url")
                 if link and link not in parameters[key] and ("link" in parameters[key].lower() or "sheet" in parameters[key].lower()):
                     parameters[key] = f"{parameters[key]}\n\nLink to spreadsheet: {link}"
-                    
+
         # Automatic injection for missing but required IDs
         if "spreadsheet_id" not in parameters and context.get("last_spreadsheet_id"):
             parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
@@ -133,8 +147,20 @@ class PlanExecutor:
         if "message_id" not in parameters and context.get("last_message_id"):
             parameters["message_id"] = context["last_message_id"]
 
+        # Auto-resolve to_email for gmail.send_message when it is still missing
+        # or contains an unresolved placeholder (e.g. {2.from}, {2.snippet}).
+        if task.service == "gmail" and task.action == "send_message":
+            to_email_val = str(parameters.get("to_email") or "").strip()
+            if not to_email_val or _is_placeholder(to_email_val):
+                resolved_addr = _resolve_to_email_from_context(context)
+                if resolved_addr:
+                    self.logger.info(
+                        "Auto-resolved to_email from context gmail_messages: %s", resolved_addr
+                    )
+                    parameters["to_email"] = resolved_addr
+
         # Fix range to use correct tab name when using a just-created spreadsheet
-        if (task.service == "sheets" and task.action == "append_values" 
+        if (task.service == "sheets" and task.action == "append_values"
                 and "range" in parameters and context.get("last_spreadsheet_tab")):
             rng = str(parameters.get("range") or "")
             tab = context["last_spreadsheet_tab"]
@@ -155,7 +181,7 @@ class PlanExecutor:
     def _update_context(self, task: PlannedTask, stdout: str, context: dict[str, Any]) -> None:
         payload = _parse_json(stdout)
         user_keywords = extract_keywords(str(context.get("request_text") or ""))
-        
+
         # Store raw task results for general placeholder resolution
         if payload and task.id:
             results = context.setdefault("task_results", {})
@@ -209,7 +235,7 @@ class PlanExecutor:
         files = payload.get("files") if isinstance(payload, dict) else []
         if not isinstance(files, list) or not files:
             return [["Search", "File Name", "File Type", "Link"], [query, "No files found", "", ""]]
-        
+
         rows = [["Search", "File Name", "File Type", "Link"]]
         for item in files[:50]:
             if isinstance(item, dict):
@@ -302,8 +328,20 @@ class PlanExecutor:
         return "\n".join(lines).strip()
 
 
+# ---------------------------------------------------------------------------
+# Template resolution
+# ---------------------------------------------------------------------------
+
 def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolves {{task_id.key}} or {{task_id.val1.val2}} placeholders in parameters."""
+    """Recursively resolves placeholder references in task parameters.
+
+    Supported syntaxes:
+    - ``{{task_id.key.subkey}}``  – original double-brace format.
+    - ``{task_id.key.subkey}``    – single-brace format produced by some LLM
+                                    planners (e.g. ``{2.internalDate}``).
+
+    Both resolve against ``context['task_results'][task_id]``.
+    """
     if isinstance(value, dict):
         return {k: _resolve_template(v, context) for k, v in value.items()}
     if isinstance(value, list):
@@ -334,14 +372,14 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
                         current = v
                         found = True
                         break
-                
+
                 if not found:
-                    # Heuristic: if looking for id/file_id and we have a 'files' list (Google Drive list_files)
+                    # Heuristic: if looking for id/file_id and we have a 'files' list
                     if norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
                         current = current["files"][0].get("id")
                         if current:
                             found = True
-                    
+
                 if not found:
                     return match.group(0)
             elif isinstance(current, list):
@@ -358,8 +396,39 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 
         return str(current)
 
-    # Resolve {{task_id.any_nested_key_path}}
-    return re.sub(r"\{\{([\w\-]+)\.([\w\.]+)\}\}", replacer, value)
+    # Double-brace: {{task_id.key_path}}
+    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.]+)\}\}", replacer, value)
+    # Single-brace: {task_id.key_path}  (LLM-generated variant)
+    # Only match when task_id is a numeric string or "task-N" to avoid
+    # accidentally consuming Python format strings or other curly-brace uses.
+    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\}", replacer, resolved)
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Helper utilities
+# ---------------------------------------------------------------------------
+
+def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
+    """Extract a sender e-mail address from fetched gmail_messages context.
+
+    Returns the first valid e-mail address found in the ``From`` header of
+    the fetched messages, or an empty string when nothing useful is found.
+    """
+    fetched = context.get("gmail_messages") or []
+    for message in fetched:
+        if not isinstance(message, dict):
+            continue
+        headers = _gmail_headers(message)
+        from_value = headers.get("from", "")
+        # Extract bare address from "Display Name <addr@domain>" or "addr@domain"
+        addr_match = re.search(r"<([^>]+@[^>]+)>", from_value)
+        if addr_match:
+            return addr_match.group(1).strip()
+        bare = from_value.strip()
+        if "@" in bare:
+            return bare
+    return ""
 
 
 def _parse_json(stdout: str) -> dict[str, Any] | None:
@@ -474,6 +543,8 @@ def _is_placeholder(value: str) -> bool:
         or "}}" in stripped
         or "_from_task_" in stripped
         or "from_task_" in stripped
+        # Single-brace LLM-generated references: {2.key}, {task-3.key}
+        or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.]+\}", stripped))
     )
 
 
