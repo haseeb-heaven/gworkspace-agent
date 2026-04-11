@@ -44,7 +44,7 @@ class WorkspaceAgentSystem:
         from .memory import recall_similar
         past = recall_similar(user_text)
         if past:
-            self.logger.info("Memory: found %d similar past episodes", len(past))
+            self.logger.info(f"Memory: found {len(past)} similar past episodes")
             # Inject past context into LLM prompt if available
 
         text = (user_text or "").strip()

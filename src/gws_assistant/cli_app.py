@@ -16,7 +16,8 @@ from .logging_utils import setup_logging
 from .setup_wizard import run_setup_wizard
 
 app = typer.Typer(invoke_without_command=True, no_args_is_help=False, help="Google Workspace Assistant CLI")
-console = Console()
+# Specifically force UTF-8 for Windows environments to avoid 'charmap' encoding errors.
+console = Console(force_terminal=True, legacy_windows=False)
 
 
 def _ask_non_empty(prompt: str, default: str | None = None) -> str:
@@ -84,7 +85,7 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
                 f"[red]Setup is missing or incomplete.[/red]\n"
                 f"Expected config file: {config.env_file_path}\n"
                 f"Expected gws binary: {config.gws_binary_path}\n\n"
-                "Run setup explicitly with:\npython cli.py --setup",
+                "Run setup explicitly with:\npython gws_cli.py --setup",
                 title="Setup Required",
             )
         )
@@ -100,7 +101,7 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
         console.print(
             Panel.fit(
                 f"[red]gws binary not found at:[/red]\n{config.gws_binary_path}\n"
-                "Run python cli.py --setup to configure it.",
+                "Run python gws_cli.py --setup to configure it.",
                 title="Setup Error",
             )
         )

@@ -1,56 +1,90 @@
 """Web search tool for Langchain agent."""
 
+import dataclasses
+import os
+
 from langchain_core.tools import tool
+
 try:
     from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchResults
 except ImportError:
     DuckDuckGoSearchResults = None
 
+try:
+    from langchain_community.tools.tavily_search import TavilySearchResults
+except ImportError:
+    TavilySearchResults = None
+
 from gws_assistant.models import WebSearchResult
-import dataclasses
+
 
 @tool
 def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | None]:
     """
-    Performs a web search using DuckDuckGo to find information.
-    Use this when you need external facts, news, documentation, or when the user asks a question that requires internet access.
-    
+    Performs a web search using DuckDuckGo (with Tavily as fallback) to find information.
+    Use this when you need external facts, news, documentation, or when the user asks a
+    question that requires internet access.
+
     Args:
         query: The search terms to look for.
         max_results: Max number of snippets to return (default 5).
-        
+
     Returns:
         Dictionary containing search query, resulting snippets and error message if any.
     """
-    if DuckDuckGoSearchResults is None:
-        return dataclasses.asdict(WebSearchResult(
-            query=query, 
-            error="DuckDuckGo Search isn't available. Ensure langchain-community is installed."
-        ))
+    ddg_error: str | None = None
 
-    try:
-        # We parse the result natively instead of relying solely on the pre-formatted string.
-        # But DGG wrapper in langchain-community natively returns string.
-        search = DuckDuckGoSearchResults(num_results=max_results)
-        raw_result_str = search.invoke({"query": query})
-        
-        # Simple extraction since DDG search returns formatted string "[snippet: ..., title: ..., link: ...]"
-        snippets = []
-        if raw_result_str:
-            # Not building full parser here, return text wrapper.
-            snippets.append({"content": raw_result_str, "title": "Search Snippets"})
-            
-        result = WebSearchResult(
-            query=query,
-            results=snippets,
-        )
-        return dataclasses.asdict(result)
+    # --- Primary: DuckDuckGo ---
+    if DuckDuckGoSearchResults is not None:
+        try:
+            search = DuckDuckGoSearchResults(num_results=max_results)
+            raw_result_str = search.invoke({"query": query})
+            snippets = []
+            if raw_result_str:
+                snippets.append({"content": raw_result_str, "title": "Search Snippets"})
+            if snippets:
+                return dataclasses.asdict(WebSearchResult(query=query, results=snippets))
+            ddg_error = "DuckDuckGo search failed or returned no usable results."
+        except Exception as exc:
+            ddg_error = f"DuckDuckGo search failed or returned no usable results. ({exc})"
+    else:
+        ddg_error = "DuckDuckGo search failed or returned no usable results."
 
-    except Exception as e:
-        return dataclasses.asdict(WebSearchResult(
-            query=query,
-            error=f"Web search failed: {str(e)}"
-        ))
+    # --- Fallback: Tavily ---
+    tavily_key = os.environ.get("TAVILY_API_KEY", "")
+    if TavilySearchResults is not None and tavily_key:
+        try:
+            tavily = TavilySearchResults(max_results=max_results)
+            raw = tavily.invoke({"query": query})
+            if isinstance(raw, dict):
+                results = raw.get("results", [])
+            elif isinstance(raw, list):
+                results = raw
+            else:
+                results = []
+            snippets = [
+                {"title": r.get("title", ""), "content": r.get("content", ""), "url": r.get("url", "")}
+                for r in results
+                if isinstance(r, dict)
+            ]
+            if snippets:
+                return dataclasses.asdict(WebSearchResult(query=query, results=snippets))
+        except Exception as exc:
+            return dataclasses.asdict(WebSearchResult(
+                query=query,
+                error=f"{ddg_error} Tavily fallback also failed: {exc}",
+            ))
+
+    # Neither backend available / returned results
+    tavily_msg = (
+        "Tavily search isn't available (no TAVILY_API_KEY or langchain-community not installed)."
+        if not tavily_key or TavilySearchResults is None
+        else "Tavily search isn't available."
+    )
+    return dataclasses.asdict(WebSearchResult(
+        query=query,
+        error=f"{ddg_error} {tavily_msg}",
+    ))
 
 
 @tool
@@ -58,14 +92,12 @@ def summarize_results(text: str) -> str:
     """
     Summarize a block of text into a concise, easily digestible format.
     Use this when search results or documents are too long to return raw.
-    
+
     Args:
         text: The text to summarize.
-        
+
     Returns:
         A concise summary string.
     """
-    # Simply echo the instructions back to the LLM. In an advanced version, this would invoke a separate chain. 
-    # Since this is a tool FOR the LLM, the LLM itself will read this text and process it if needed within its context.
-    # To truly have the tool summarize, we would need to pass an LLM instance here. 
-    return f"Please summarize the following content:\n{text}"
+    # Echo back — the LLM reading this tool output will perform the summarization.
+    return text

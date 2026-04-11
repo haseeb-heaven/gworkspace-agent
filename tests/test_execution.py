@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import json
 import logging
+import pytest
+from types import SimpleNamespace
 from pathlib import Path
 
 from gws_assistant.execution import PlanExecutor
@@ -48,6 +52,28 @@ class FakeRunner(GWSRunner):
                 command=["gws.exe", *args],
                 stdout='{"range":"Sheet1!A1:B2","values":[["Name","Role"],["Alice","Engineer"]]}',
             )
+        if args[:3] == ["docs", "documents", "create"]:
+            import json as _json
+
+            json_idx = args.index("--json") if "--json" in args else -1
+            title = "Document"
+            if json_idx >= 0:
+                try:
+                    body = _json.loads(args[json_idx + 1])
+                    title = body.get("title", "Document")
+                except Exception:
+                    pass
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout=_json.dumps({"documentId": "doc-1", "title": title}),
+            )
+        if args[:3] == ["docs", "documents", "batchUpdate"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"documentId":"doc-1","replies":[]}',
+            )
         if args[:4] == ["gmail", "users", "messages", "get"]:
             return ExecutionResult(
                 success=True,
@@ -90,6 +116,13 @@ class FakeRunner(GWSRunner):
             )
         return ExecutionResult(success=True, command=["gws.exe", *args], stdout='{"updates":{"updatedRows":2}}')
 
+@pytest.fixture(autouse=True)
+def mock_react(mocker):
+    """Mock ReACT thought/replan methods to keep tests fast and local."""
+    mocker.patch("gws_assistant.execution.PlanExecutor._think", return_value="Thought: Proceeding with planned task.")
+    mocker.patch("gws_assistant.execution.PlanExecutor._should_replan", return_value=False)
+    mocker.patch("gws_assistant.execution.PlanExecutor._verify_artifact_content", return_value=None)
+
 
 def test_executor_resolves_gmail_to_sheet_placeholders():
     runner = FakeRunner()
@@ -97,13 +130,13 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
     plan = RequestPlan(
         raw_text="tickets",
         tasks=[
-            PlannedTask("task-1", "gmail", "list_messages", {"q": "ticket", "max_results": 10}),
-            PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "Tickets"}),
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}),
+            PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Tickets"}),
             PlannedTask(
-                "task-3",
-                "sheets",
-                "append_values",
-                {"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
             ),
         ],
     )
@@ -119,14 +152,14 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
     plan = RequestPlan(
         raw_text="jobs",
         tasks=[
-            PlannedTask("task-1", "gmail", "list_messages", {"q": "jobs", "max_results": 10}),
-            PlannedTask("task-2", "gmail", "get_message", {"message_id": "{{message_id_from_task_1}}"}),
-            PlannedTask("task-3", "sheets", "create_spreadsheet", {"title": "Jobs"}),
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 10}),
+            PlannedTask(id="task-2", service="gmail", action="get_message", parameters={"message_id": "{{message_id_from_task_1}}"}),
+            PlannedTask(id="task-3", service="sheets", action="create_spreadsheet", parameters={"title": "Jobs"}),
             PlannedTask(
-                "task-4",
-                "sheets",
-                "append_values",
-                {
+                id="task-4",
+                service="sheets",
+                action="append_values",
+                parameters={
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": "{{company_names_from_task_2}}",
@@ -148,16 +181,16 @@ def test_executor_builds_email_body_from_sheet_values():
         raw_text="send sheet by email",
         tasks=[
             PlannedTask(
-                "task-1",
-                "sheets",
-                "get_values",
-                {"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
+                id="task-1",
+                service="sheets",
+                action="get_values",
+                parameters={"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
             ),
             PlannedTask(
-                "task-2",
-                "gmail",
-                "send_message",
-                {"to_email": "user@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={"to_email": "user@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
             ),
         ],
     )
@@ -166,6 +199,31 @@ def test_executor_builds_email_body_from_sheet_values():
     assert runner.commands[1][:4] == ["gmail", "users", "messages", "send"]
     raw_json = runner.commands[1][runner.commands[1].index("--json") + 1]
     assert "raw" in raw_json
+
+
+def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    plan = RequestPlan(
+        raw_text="save gmail body to sheet",
+        tasks=[
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}),
+            PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Tickets"}),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": [["$gmail_message_body"]],
+                },
+            ),
+        ],
+    )
+    report = executor.execute(plan)
+    assert report.success is True
+    assert "m1" in runner.commands[2][runner.commands[2].index("--json") + 1]
 
 def test_execute_single_task(tmp_path):
     runner = FakeRunner()
@@ -177,3 +235,68 @@ def test_execute_single_task(tmp_path):
     assert result.success is True
     assert len(runner.commands) == 1
     assert runner.commands[-1][:4] == ["gmail", "users", "messages", "list"]
+
+
+def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    mocker.patch(
+        "gws_assistant.execution.web_search_tool",
+        SimpleNamespace(
+            invoke=lambda payload: {
+                "query": "top 3 agentic ai frameworks",
+                "results": [
+                    {"title": "LangGraph", "content": "Graph-based agent orchestration", "link": "https://example.com/langgraph"},
+                    {"title": "CrewAI", "content": "Multi-agent workflow framework", "link": "https://example.com/crewai"},
+                    {"title": "AutoGen", "content": "Conversational multi-agent framework", "link": "https://example.com/autogen"},
+                ],
+                "error": None,
+            }
+        ),
+    )
+
+    plan = RequestPlan(
+        raw_text="Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to haseebmir.hm@gmail.com",
+        tasks=[
+            PlannedTask(id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}),
+            PlannedTask(id="task-2", service="docs", action="create_document", parameters={"title": "Agentic Ai Frameworks"}),
+            PlannedTask(id="task-3", service="docs", action="batch_update", parameters={"document_id": "$last_document_id", "text": "$web_search_markdown"}),
+            PlannedTask(id="task-4", service="sheets", action="create_spreadsheet", parameters={"title": "Agentic Ai Frameworks"}),
+            PlannedTask(
+                id="task-5",
+                service="sheets",
+                action="append_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$web_search_table_values"},
+            ),
+            PlannedTask(
+                id="task-6",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": "haseebmir.hm@gmail.com",
+                    "subject": "Agentic Ai Frameworks summary",
+                    "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
+                },
+            ),
+        ],
+    )
+
+    report = executor.execute(plan)
+    assert report.success is True
+
+    docs_update_cmd = runner.commands[1]
+    docs_payload = json.loads(docs_update_cmd[docs_update_cmd.index("--json") + 1])
+    inserted_text = docs_payload["requests"][0]["insertText"]["text"]
+    assert "LangGraph" in inserted_text
+    assert "CrewAI" in inserted_text
+
+    append_cmd = runner.commands[3]
+    sheet_payload = json.loads(append_cmd[append_cmd.index("--json") + 1])
+    assert sheet_payload["values"][1][0] == "LangGraph"
+    assert sheet_payload["values"][2][0] == "CrewAI"
+
+    send_cmd = runner.commands[4]
+    raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
+    decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
+    assert "https://docs.google.com/document/d/doc-1/edit" in decoded
+    assert "https://example.test/sheet" in decoded

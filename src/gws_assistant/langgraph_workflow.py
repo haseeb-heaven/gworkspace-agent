@@ -6,6 +6,7 @@ import logging
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from gws_assistant.models import (
@@ -196,11 +197,21 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             }
         result = execute_generated_code(str(code), config=config)
         _log_step("sandbox_execute", {"code": code}, result)
+        
+        # Update context for placeholders
+        context = dict(state.get("context", {}))
+        results_map = context.setdefault("task_results", {})
+        # Since this is a standalone code execution node (not part of sequence),
+        # we index it under 'code' and 'computation'
+        results_map["code"] = result.get("output", {})
+        results_map["computation"] = result.get("output", {})
+        
         return {
             "last_result": result,
             "error": result.get("error"),
             "final_output": result["output"].get("stdout", ""),
             "current_attempt": state.get("current_attempt", 0) + 1,
+            "context": context,
         }
 
     def generate_code_node(state: AgentState) -> dict[str, Any]:
@@ -302,6 +313,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "execute_task"
         return "format_output"
 
+    def route_after_search(state: AgentState) -> Literal["execute_task", "format_output"]:
+        plan = state.get("plan")
+        if plan and plan.tasks:
+             return "execute_task"
+        return "format_output"
+
     workflow = StateGraph(AgentState)
     workflow.add_node("generate_plan", plan_node)
     workflow.add_node("validate", validate_node)
@@ -339,7 +356,7 @@ def run_workflow(user_text: str, config: AppConfigModel, system, executor, logge
     )
     app = create_workflow(config, system, executor, logger)
     try:
-        final_state = app.invoke(initial_state)
+        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=100))
         return final_state.get("final_output", "Workflow returned no output.")
     except Exception as exc:
         logger.exception("Workflow failed.")

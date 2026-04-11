@@ -40,5 +40,5 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
-    logger.debug("Logging configured with level=%s", config.log_level)
+    logger.debug(f"Logging configured with level={config.log_level}")
     return logger

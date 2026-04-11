@@ -40,10 +40,18 @@ SERVICES: dict[str, ServiceSpec] = {
             "export_file": ActionSpec(
                 key="export_file",
                 label="Export file",
-                keywords=("export", "download", "convert"),
+                keywords=("export", "download", "attach", "attachment", "pdf", "xlsx", "sheet", "doc"),
                 parameters=(
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
-                    ParameterSpec("mime_type", "Target MIME type (e.g. text/plain, application/pdf)", "text/plain"),
+                    ParameterSpec("mime_type", "Target export MIME type", "application/pdf", required=False),
+                ),
+            ),
+            "delete_file": ActionSpec(
+                key="delete_file",
+                label="Delete file",
+                keywords=("delete", "remove", "trash"),
+                parameters=(
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
                 ),
             ),
         },
@@ -51,7 +59,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "sheets": ServiceSpec(
         key="sheets",
         label="Google Sheets",
-        aliases=("sheets", "spreadsheet", "excel", "sheet"),
+        aliases=("sheets", "sheet", "spreadsheet", "excel"),
         actions={
             "create_spreadsheet": ActionSpec(
                 key="create_spreadsheet",
@@ -120,6 +128,7 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("to_email", "Recipient email address", "person@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body", "Hello,\nPlease find the data below."),
+                    ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
                 ),
             ),
         },
@@ -171,6 +180,15 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),
                 ),
             ),
+            "batch_update": ActionSpec(
+                key="batch_update",
+                label="Update document content",
+                keywords=("update", "append", "write", "insert", "text", "content"),
+                parameters=(
+                    ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),
+                    ParameterSpec("text", "Text to append/insert", "Hello world"),
+                ),
+            ),
         },
     ),
     "slides": ServiceSpec(
@@ -184,6 +202,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("get", "open", "show", "read", "presentation", "slides", "deck"),
                 parameters=(
                     ParameterSpec("presentation_id", "Enter the Google Slides presentation ID", "1AbCdEFg123"),
+                ),
+            ),
+            "create_presentation": ActionSpec(
+                key="create_presentation",
+                label="Create presentation",
+                keywords=("create", "new", "presentation", "slides", "deck"),
+                parameters=(
+                    ParameterSpec("title", "What should the presentation title be?", "Sales Deck"),
                 ),
             ),
         },
@@ -262,6 +288,52 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Create meeting",
                 keywords=("create", "new", "start", "meeting", "meet", "video"),
                 parameters=(),
+            ),
+        },
+    ),
+    "search": ServiceSpec(
+        key="search",
+        label="Web Search",
+        aliases=("search", "web", "google", "find"),
+        actions={
+            "web_search": ActionSpec(
+                key="web_search",
+                label="Search the web",
+                keywords=("search", "find", "lookup", "info", "information", "web"),
+                parameters=(
+                    ParameterSpec("query", "What would you like to search for?", "Top Agentic AI frameworks"),
+                ),
+            ),
+        },
+    ),
+    "admin": ServiceSpec(
+        key="admin",
+        label="Google Admin SDK",
+        aliases=("admin", "directory", "users", "sdk"),
+        actions={
+            "log_activity": ActionSpec(
+                key="log_activity",
+                label="Log activity",
+                keywords=("log", "audit", "track", "metadata", "store"),
+                parameters=(
+                    ParameterSpec("data", "Metadata or activity to log", "User performed X"),
+                ),
+            ),
+        },
+    ),
+    "forms": ServiceSpec(
+        key="forms",
+        label="Google Forms",
+        aliases=("forms", "form", "survey", "sync"),
+        actions={
+            "sync_data": ActionSpec(
+                key="sync_data",
+                label="Sync data to form",
+                keywords=("sync", "save", "connect", "form"),
+                parameters=(
+                    ParameterSpec("form_id", "Google Form ID", "1AbCdEFg123", required=False),
+                    ParameterSpec("data", "Data to sync", "Result of tasks"),
+                ),
             ),
         },
     ),

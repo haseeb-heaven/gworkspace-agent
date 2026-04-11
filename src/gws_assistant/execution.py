@@ -14,6 +14,12 @@ from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPl
 from .planner import CommandPlanner
 from .relevance import extract_keywords, filter_drive_files, filter_gmail_messages
 
+# Import web_search_tool at module level so tests can patch gws_assistant.execution.web_search_tool
+try:
+    from .tools.web_search import web_search_tool
+except Exception:  # pragma: no cover
+    web_search_tool = None  # type: ignore[assignment]
+
 
 class PlanExecutor:
     """Executes planned gws tasks sequentially and carries context forward."""
@@ -26,39 +32,76 @@ class PlanExecutor:
     def execute(self, plan: RequestPlan) -> PlanExecutionReport:
         context: dict[str, Any] = {"request_text": plan.raw_text}
         executions: list[TaskExecution] = []
-        for task in plan.tasks:
+        thought_trace: list[dict] = []
+        task_list = list(plan.tasks)
+        current_index = 0
+
+        while current_index < len(task_list):
+            task = task_list[current_index]
             for expanded_task in self._expand_task(task, context):
-                self.logger.info(
-                    "Executing planned task id=%s service=%s action=%s reason=%s",
-                    expanded_task.id,
-                    expanded_task.service,
-                    expanded_task.action,
-                    expanded_task.reason,
+                # THOUGHT
+                thought = self._think(
+                    goal=plan.raw_text,
+                    context=context,
+                    next_task=expanded_task
                 )
+                self.logger.info(f"Thought [step {current_index + 1}]: {thought}")
+
+                # ACTION
                 resolved_task = self._resolve_task(expanded_task, context)
                 result = self.execute_single_task(resolved_task, context)
                 executions.append(TaskExecution(task=resolved_task, result=result))
+
+                # OBSERVATION
+                context["last_observation"] = result.stdout
+                thought_trace.append({
+                    "step": current_index + 1,
+                    "thought": thought,
+                    "action": f"{resolved_task.service}.{resolved_task.action}",
+                    "observation": (result.stdout or "")[:300],
+                    "success": result.success,
+                })
+
+                # REFLECTION on failure
                 if not result.success:
                     reflection = self._reflect_on_failure(resolved_task, result, context)
                     self.logger.warning("Reflection: %s", reflection)
                     context["last_reflection"] = reflection
                     self.logger.warning("Task failed id=%s; continuing to capture full execution trace.", resolved_task.id)
 
-        report = PlanExecutionReport(plan=plan, executions=executions)
+                # RE-PLAN if LLM signals it
+                if self._should_replan(thought, result, context):
+                    new_tasks = self._replan(plan.raw_text, context)
+                    if new_tasks:
+                        task_list[current_index + 1:] = new_tasks
+                        self.logger.info(f"Re-planned: {len(new_tasks)} new tasks injected.")
 
-        # Save episode to memory
+            current_index += 1
+
+        report = PlanExecutionReport(plan=plan, executions=executions)
+        report.thought_trace = thought_trace
+
+        # Save to memory
         from .memory import save_episode
         task_summaries = [
             {"service": e.task.service, "action": e.task.action, "success": e.result.success}
-            for e in report.executions
+            for e in executions
         ]
-        outcome = "success" if all(e.result.success for e in report.executions) else "partial_failure"
+        outcome = "success" if all(e.result.success for e in executions) else "partial_failure"
         save_episode(goal=plan.raw_text, tasks=task_summaries, outcome=outcome)
 
         return report
 
     def execute_single_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
         """Executes a single fully-resolved task and updates the context."""
+        # Handle virtual 'search' service
+        if task.service == "search":
+            return self._execute_web_search(task, context)
+
+        # Handle virtual 'code' service (computation/interpreter)
+        if task.service == "code" or task.service == "computation":
+            return self._execute_code_task(task, context)
+
         placeholder = _find_unresolved_placeholder(task.parameters)
         if placeholder:
             return ExecutionResult(
@@ -76,14 +119,8 @@ class PlanExecutor:
                 task.parameters,
             )
         except ValidationError as exc:
-            self.logger.warning(
-                "Task id=%s build_command failed: %s", task.id, exc
-            )
-            return ExecutionResult(
-                success=False,
-                command=[],
-                error=str(exc),
-            )
+            self.logger.warning("Task id=%s build_command failed: %s", task.id, exc)
+            return ExecutionResult(success=False, command=[], error=str(exc))
 
         if hasattr(self.runner, "run_with_retry"):
             result = self.runner.run_with_retry(args)
@@ -151,6 +188,53 @@ class PlanExecutor:
 
         return None
 
+    def _think(self, goal: str, context: dict, next_task: PlannedTask) -> str:
+        """ReACT: LLM reasons about whether next planned step is correct."""
+        try:
+            from .langchain_agent import create_agent
+            from .config import AppConfig
+            config = AppConfig.from_env()
+            agent = create_agent(config, self.logger)
+            if not agent:
+                return "No LLM configured — proceeding with planned task."
+            prompt = (
+                f"Goal: {goal}\n"
+                f"Completed steps: {len(context.get('task_results', {}))}\n"
+                f"Last observation: {str(context.get('last_observation', 'None'))[:300]}\n"
+                f"Last reflection: {str(context.get('last_reflection', 'None'))[:200]}\n"
+                f"Next planned action: {next_task.service}.{next_task.action}\n"
+                f"Parameters: {list(next_task.parameters.keys())}\n\n"
+                "In one sentence: Is this the right next step? "
+                "If not, state what should change. Be concise."
+            )
+            response = agent.invoke(prompt)
+            return getattr(response, "content", str(response)).strip()
+        except Exception as exc:
+            self.logger.warning("_think() failed: %s", exc)
+            return "Thought step skipped due to LLM error."
+
+    def _should_replan(self, thought: str, result: ExecutionResult, context: dict) -> bool:
+        """Decide if the remaining plan should be regenerated."""
+        if not result.success:
+            return False  # Let failure reflection handle it, don't replan on every error
+        lower_thought = thought.lower()
+        replan_signals = ("should change", "instead", "wrong step", "incorrect", "skip", "replan")
+        return any(signal in lower_thought for signal in replan_signals)
+
+    def _replan(self, goal: str, context: dict) -> list[PlannedTask]:
+        """Ask LLM to generate replacement tasks given current context."""
+        try:
+            from .langchain_agent import plan_with_langchain
+            from .config import AppConfig
+            config = AppConfig.from_env()
+            new_plan = plan_with_langchain(goal, config, self.logger)
+            if new_plan and new_plan.tasks:
+                completed_count = len(context.get("task_results", {}))
+                return new_plan.tasks[completed_count:]  # skip already-done tasks
+        except Exception as exc:
+            self.logger.warning("_replan() failed: %s", exc)
+        return []
+
     def _reflect_on_failure(self, task: PlannedTask, result: ExecutionResult, context: dict) -> str:
         return (
             f"Task {task.id} ({task.service}.{task.action}) failed. "
@@ -159,6 +243,66 @@ class PlanExecutor:
             f"Suggestion: Check if required IDs are resolved in context."
         )
 
+    def _execute_code_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
+        """Execute a code computation task and store the result."""
+        from .tools.code_execution import execute_generated_code
+        code = str(task.parameters.get("code") or "").strip()
+        if not code:
+            return ExecutionResult(success=False, command=[], error="Missing required parameter: code")
+
+        structured = execute_generated_code(code, config=self.planner.config)
+        output = structured.get("output") or {}
+        
+        # Store in context for placeholders
+        results_map = context.setdefault("task_results", {})
+        results_map[task.id] = output
+        if task.id.startswith("task-"):
+            results_map[task.id.removeprefix("task-")] = output
+
+        stdout = output.get("stdout") or ""
+        result = ExecutionResult(success=structured["success"], command=["code_execution"], stdout=stdout)
+        result.output = {
+            "command": result.command,
+            "stdout": stdout,
+            "stderr": output.get("stderr") or "",
+            "parsed_payload": output,
+            "parsed_value": output.get("parsed_value")
+        }
+        if not structured["success"]:
+            result.error = structured.get("error")
+        
+        return result
+
+    def _execute_web_search(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
+        """Execute a web search task using the web_search_tool and store results in context."""
+        query = str(task.parameters.get("query") or "").strip()
+        max_results = int(task.parameters.get("max_results") or 5)
+        try:
+            payload = web_search_tool.invoke({"query": query, "max_results": max_results})
+        except Exception as exc:
+            return ExecutionResult(success=False, command=[], error=str(exc))
+
+        results = payload.get("results") or []
+        error = payload.get("error")
+        if error and not results:
+            return ExecutionResult(success=False, command=[], error=error)
+
+        context["web_search_query"] = query
+        context["web_search_results"] = results
+        stdout = json.dumps(payload)
+        result = ExecutionResult(success=True, command=["web_search", query], stdout=stdout)
+        result.output = {"command": result.command, "stdout": stdout, "stderr": "", "parsed_payload": payload}
+
+        # Store under task_results for {{task_id.key}} resolution
+        results_map = context.setdefault("task_results", {})
+        results_map[task.id] = payload
+        if task.id.startswith("task-"):
+            try:
+                results_map[task.id.removeprefix("task-")] = payload
+            except Exception:
+                pass
+
+        return result
     def _expand_task(self, task: PlannedTask, context: dict[str, Any]) -> list[PlannedTask]:
         if task.service != "gmail" or task.action != "get_message":
             return [task]
@@ -188,6 +332,8 @@ class PlanExecutor:
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         parameters = _resolve_template(task.parameters, context)
 
+        # Resolve nested $ placeholders inside list/dict values (e.g. [["$gmail_message_body"]])
+        parameters = _resolve_nested_dollar(parameters, context, self)
         # Legacy $ resolution for backward compatibility
         for key, value in list(parameters.items()):
             if value == "$last_spreadsheet_id":
@@ -198,6 +344,10 @@ class PlanExecutor:
                 parameters[key] = self._sheet_email_body(context)
             elif value == "$drive_summary_values":
                 parameters[key] = self._drive_summary_values(context)
+            elif value == "$web_search_markdown":
+                parameters[key] = _web_search_markdown(context)
+            elif value == "$web_search_table_values":
+                parameters[key] = _web_search_table_values(context)
             elif isinstance(value, str) and _is_gmail_values_placeholder(value) and key in ("body", "values"):
                 parameters[key] = self._gmail_summary_values(context)
             elif isinstance(value, str) and _is_sheet_body_placeholder(value) and key in ("body", "values"):
@@ -205,11 +355,14 @@ class PlanExecutor:
             elif isinstance(value, str) and "$drive_summary" in value.lower() and key in ("body", "values"):
                 parameters[key] = self._drive_summary_values(context)
 
-            # Additional context injection: if body wants a link and we have one
+            # Inject spreadsheet/doc link into email body
             if key == "body" and isinstance(parameters[key], str):
                 link = context.get("last_spreadsheet_url")
                 if link and link not in parameters[key] and ("link" in parameters[key].lower() or "sheet" in parameters[key].lower()):
                     parameters[key] = f"{parameters[key]}\n\nLink to spreadsheet: {link}"
+                doc_link = context.get("last_document_url")
+                if doc_link and doc_link not in parameters[key]:
+                    parameters[key] = f"{parameters[key]}\n\nLink to document: {doc_link}"
 
         # Automatic injection for missing but required IDs
         if "spreadsheet_id" not in parameters and context.get("last_spreadsheet_id"):
@@ -260,7 +413,6 @@ class PlanExecutor:
         if payload and task.id:
             results = context.setdefault("task_results", {})
             results[task.id] = payload
-            # Handle numeric version if id is "task-N"
             if task.id.startswith("task-"):
                 try:
                     num_id = task.id.removeprefix("task-")
@@ -274,14 +426,12 @@ class PlanExecutor:
             context["gmail_message_ids"] = _gmail_message_ids(context)
         if task.service == "gmail" and task.action == "get_message" and payload:
             context.setdefault("gmail_messages", []).append(payload)
-            # Apply relevance filtering to accumulated messages
             all_msgs = context.get("gmail_messages", [])
             if len(all_msgs) > 1:
                 context["gmail_messages"] = filter_gmail_messages(all_msgs, user_keywords)
         if task.service == "sheets" and task.action == "create_spreadsheet" and payload:
             context["last_spreadsheet_id"] = payload.get("spreadsheetId") or ""
             context["last_spreadsheet_url"] = payload.get("spreadsheetUrl") or ""
-            # Track the tab name for range resolution
             sheets_list = payload.get("sheets")
             if isinstance(sheets_list, list) and sheets_list:
                 first_sheet = sheets_list[0]
@@ -291,8 +441,12 @@ class PlanExecutor:
             if not context.get("last_spreadsheet_tab"):
                 title = (payload.get("properties") or {}).get("title") or ""
                 context["last_spreadsheet_tab"] = title
+        if task.service == "docs" and task.action == "create_document" and payload:
+            doc_id = payload.get("documentId") or ""
+            context["last_document_id"] = doc_id
+            if doc_id:
+                context["last_document_url"] = f"https://docs.google.com/document/d/{doc_id}/edit"
         if task.service == "drive" and task.action == "list_files" and payload:
-            # Apply relevance filtering to Drive files
             files = payload.get("files") if isinstance(payload, dict) else []
             if isinstance(files, list):
                 filtered = filter_drive_files(files, user_keywords)
@@ -345,15 +499,7 @@ class PlanExecutor:
                         if key in seen:
                             continue
                         seen.add(key)
-                        rows.append(
-                            [
-                                query,
-                                company,
-                                subject,
-                                from_value,
-                                str(message.get("id") or ""),
-                            ]
-                        )
+                        rows.append([query, company, subject, from_value, str(message.get("id") or "")])
                 if len(rows) == 1:
                     rows.append([query, "No company names detected", "", "", ""])
                 return rows
@@ -363,26 +509,18 @@ class PlanExecutor:
                 if isinstance(message, dict):
                     headers = _gmail_headers(message)
                     from_value = headers.get("from", "")
-                    rows.append(
-                        [
-                            query,
-                            _company_from_sender(from_value),
-                            from_value,
-                            headers.get("subject", ""),
-                            str(message.get("id") or ""),
-                        ]
-                    )
+                    rows.append([
+                        query,
+                        _company_from_sender(from_value),
+                        from_value,
+                        headers.get("subject", ""),
+                        str(message.get("id") or ""),
+                    ])
             return rows
 
         rows = [["Search", "Message ID", "Thread ID"]]
         for message in _gmail_messages(context)[:50]:
-            rows.append(
-                [
-                    query,
-                    str(message.get("id") or ""),
-                    str(message.get("threadId") or ""),
-                ]
-            )
+            rows.append([query, str(message.get("id") or ""), str(message.get("threadId") or "")])
         if len(rows) == 1:
             rows.append([query, "No messages returned", ""])
         return rows
@@ -403,7 +541,92 @@ class PlanExecutor:
 
 
 # ---------------------------------------------------------------------------
-# Template resolution
+def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanExecutor") -> Any:
+    """Recursively resolve $-style placeholders that may appear inside lists/dicts."""
+    if isinstance(value, dict):
+        return {k: _resolve_nested_dollar(v, context, executor) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_nested_dollar(item, context, executor) for item in value]
+    if not isinstance(value, str):
+        return value
+    known_resolvers: dict[str, Any] = {
+        "$last_spreadsheet_id": context.get("last_spreadsheet_id") or "",
+        "$last_document_id": context.get("last_document_id") or "",
+        "$gmail_summary_values": executor._gmail_summary_values(context),
+        "$sheet_email_body": executor._sheet_email_body(context),
+        "$drive_summary_values": executor._drive_summary_values(context),
+        "$web_search_markdown": _web_search_markdown(context),
+        "$web_search_table_values": _web_search_table_values(context),
+        "$gmail_message_body": _gmail_messages_body_text(context),
+    }
+    if value in known_resolvers:
+        return known_resolvers[value]
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Web-search context helpers
+# ---------------------------------------------------------------------------
+
+def _web_search_markdown(context: dict[str, Any]) -> str:
+    """Format web search results as a Markdown document body."""
+    results = context.get("web_search_results") or []
+    if not results:
+        return "No web search results available."
+    lines: list[str] = []
+    for item in results:
+        if isinstance(item, dict):
+            title = item.get("title") or "Result"
+            content = item.get("content") or ""
+            link = item.get("link") or item.get("url") or ""
+            lines.append(f"## {title}\n{content}")
+            if link:
+                lines.append(f"Source: {link}")
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
+    """Format web search results as a 2-D list suitable for Sheets append."""
+    results = context.get("web_search_results") or []
+    rows: list[list[str]] = [["Title", "Content", "Link"]]
+    for item in results:
+        if isinstance(item, dict):
+            rows.append([
+                str(item.get("title") or ""),
+                str(item.get("content") or ""),
+                str(item.get("link") or item.get("url") or ""),
+            ])
+    if len(rows) == 1:
+        rows.append(["No results", "", ""])
+    return rows
+
+
+def _gmail_messages_body_text(context: dict[str, Any]) -> str:
+    """Return body text of fetched full messages, or fall back to listing message IDs."""
+    full_messages = context.get("gmail_messages")
+    if isinstance(full_messages, list) and full_messages:
+        parts: list[str] = []
+        for msg in full_messages[:5]:
+            if isinstance(msg, dict):
+                text = _gmail_body_text(msg) or str(msg.get("snippet") or "")
+                if text:
+                    parts.append(text)
+        if parts:
+            return "\n\n".join(parts)
+
+    stub_messages = _gmail_messages(context)
+    if stub_messages:
+        id_lines = [str(m.get("id") or m.get("threadId") or "") for m in stub_messages if m]
+        non_empty = [line for line in id_lines if line]
+        if non_empty:
+            return "\n".join(non_empty)
+
+    return "No Gmail message body available."
+
+
+# ---------------------------------------------------------------------------
+# Template / placeholder utilities
 # ---------------------------------------------------------------------------
 
 def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
@@ -448,9 +671,14 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
                         break
 
                 if not found:
-                    # Heuristic: if looking for id/file_id and we have a 'files' list
+                    # Heuristic: if looking for id/file_id and we have a 'files' list (Drive)
                     if norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
                         current = current["files"][0].get("id")
+                        if current:
+                            found = True
+                    # Heuristic: if looking for id/message_id and we have a 'messages' list (Gmail)
+                    elif norm_part in ("id", "messageid") and "messages" in current and isinstance(current["messages"], list) and current["messages"]:
+                        current = current["messages"][0].get("id")
                         if current:
                             found = True
 
@@ -553,7 +781,6 @@ def _extract_company_candidates(from_value: str, subject: str, body_text: str) -
     sender_company = _company_from_sender(from_value)
     if sender_company and sender_company.lower() not in {"gmail", "googlemail"}:
         candidates.append(sender_company)
-
     patterns = (
         r"(?:offer|position|role)\s+(?:from|at)\s+([A-Z][A-Za-z0-9&.,' -]{1,60})",
         r"company\s*[:\-]\s*([A-Z][A-Za-z0-9&.,' -]{1,60})",

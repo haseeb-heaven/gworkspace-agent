@@ -26,6 +26,11 @@ class _SimpleMocker:
         self._patchers.append(patcher)
         return mocked
 
+    def _patch_dict(self, in_dict, values=None, clear=False, **kwargs):
+        patcher = patch.dict(in_dict, values or {}, clear=clear, **kwargs)
+        patcher.start()
+        self._patchers.append(patcher)
+
 
 class _PatchProxy:
     def __init__(self, owner: _SimpleMocker) -> None:
@@ -36,6 +41,9 @@ class _PatchProxy:
 
     def object(self, target, attribute, *args, **kwargs):
         return self._owner._patch_object(target, attribute, *args, **kwargs)
+
+    def dict(self, in_dict, values=None, clear=False, **kwargs):
+        return self._owner._patch_dict(in_dict, values, clear=clear, **kwargs)
 
 
 @pytest.fixture

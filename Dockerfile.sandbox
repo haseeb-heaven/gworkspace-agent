@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir "RestrictedPython>=8.1"
+
+RUN adduser --system sandbox --no-create-home
+
+COPY src/gws_assistant/tools/code_execution_inner.py /app/code_execution_inner.py
+
+USER sandbox
+WORKDIR /app
+
+CMD ["python3", "/app/code_execution_inner.py"]

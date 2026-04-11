@@ -1,4 +1,9 @@
-"""Code execution tool for the LangChain agent."""
+"""Code execution tool for the LangChain agent.
+
+Uses a thread-based sandbox with a hard timeout instead of multiprocessing
+so it works reliably on Windows (where 'spawn' start-method causes issues
+inside virtualenvs / pytest sessions).
+"""
 
 from __future__ import annotations
 
@@ -38,6 +43,13 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_getiter_"] = iter
     safe_g["_getitem_"] = lambda obj, key: obj[key]
     safe_g["_write_"] = lambda obj: obj
+    def _inplacevar(op, target, expr):
+        if op == '+=': return target + expr
+        if op == '-=': return target - expr
+        if op == '*=': return target * expr
+        if op == '/=': return target / expr
+        return expr
+    safe_g["_inplacevar_"] = _inplacevar
     return safe_g
 
 
@@ -59,8 +71,8 @@ def _validate_submitted_code(code: str) -> str | None:
     return None
 
 
-def _run_in_thread(code: str, result_holder: list) -> None:
-    """Execute sandboxed code in the current thread and store a CodeExecutionResult in result_holder[0]."""
+def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) -> None:
+    """Execute *code* inside RestrictedPython, storing a CodeExecutionResult in result_holder[0]."""
     exec_result = CodeExecutionResult(code=code)
     try:
         byte_code = compile_restricted(code, filename="<string>", mode="exec")
@@ -73,26 +85,37 @@ def _run_in_thread(code: str, result_holder: list) -> None:
             exec_result.stdout = sandbox_globals["_print"]()
         buffer_val = output_buffer.getvalue()
         if buffer_val:
-            exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip()
+            exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
 
-        exec_result.return_value = sandbox_globals.get("result")
+        # Capture all variables from sandbox_globals except builtins/internals
+        results_vars = {
+            k: v for k, v in sandbox_globals.items()
+            if not k.startswith("_") and k != "__builtins__" and not callable(v)
+        }
+        exec_result.return_value = results_vars
+        if "result" in sandbox_globals:
+            exec_result.return_value["_result"] = sandbox_globals["result"]
         exec_result.success = True
     except Exception as exc:
         exec_result.success = False
         exec_result.error = f"{type(exc).__name__}: {exc}"
-
     result_holder.append(exec_result)
 
 
 def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
+    output = {
+        "code": result.code,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "parsed_value": result.return_value,
+    }
+    # Flatten variables into top-level for easier placeholder and verification access
+    if isinstance(result.return_value, dict):
+        output.update(result.return_value)
+
     return StructuredToolResult(
         success=result.success,
-        output={
-            "code": result.code,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "parsed_value": result.return_value,
-        },
+        output=output,
         error=result.error,
     )
 
@@ -143,13 +166,13 @@ def execute_generated_code(code: str, config: AppConfigModel | None = None) -> S
         return _execute_e2b(code, config.e2b_api_key)
 
     # Default to local RestrictedPython
-    result_holder: list = []
-    thread = threading.Thread(target=_run_in_thread, args=(code, result_holder), daemon=True)
+    result_holder: list[CodeExecutionResult] = []
+    thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder), daemon=True)
     thread.start()
     thread.join(timeout=_TIMEOUT_SECONDS)
 
     if thread.is_alive():
-        # Thread is still running after timeout — treat as timeout (daemon thread will be GC'd)
+        # Thread is stuck (infinite loop etc.) — we cannot truly kill it, but we report timeout.
         return StructuredToolResult(
             success=False,
             output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
@@ -157,15 +180,13 @@ def execute_generated_code(code: str, config: AppConfigModel | None = None) -> S
         )
 
     if not result_holder:
-        result = CodeExecutionResult(
-            code=code,
+        return StructuredToolResult(
             success=False,
-            error="ProcessError: Sandbox thread finished without returning results.",
+            output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
+            error="ProcessError: Sandbox thread finished without returning a result.",
         )
-    else:
-        result = result_holder[0]
 
-    return normalize_code_result(result)
+    return normalize_code_result(result_holder[0])
 
 
 def code_execution_tool_with_config(config: AppConfigModel, logger: Any):
