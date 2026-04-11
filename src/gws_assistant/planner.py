@@ -49,6 +49,11 @@ class CommandPlanner:
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
+        
+        # LOG PARAMS FOR DEBUGGING
+        import logging
+        logger = logging.getLogger("gws_assistant")
+        logger.info("Building command for %s.%s with params: %s", service_key, action_key, params)
 
         if service_key == "drive":
             return self._build_drive_command(action_key, params)
@@ -68,6 +73,12 @@ class CommandPlanner:
             return self._build_chat_command(action_key, params)
         if service_key == "meet":
             return self._build_meet_command(action_key, params)
+        if service_key == "search":
+            return self._build_search_command(action_key, params)
+        if service_key == "admin":
+            return self._build_admin_command(action_key, params)
+        if service_key == "forms":
+            return self._build_forms_command(action_key, params)
         raise ValidationError(f"No command builder for service: {service_key}")
 
     def _build_drive_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -253,12 +264,32 @@ class CommandPlanner:
         if action == "get_document":
             document_id = self._required_text(params, "document_id")
             return ["docs", "documents", "get", "--params", json.dumps({"documentId": document_id})]
+        if action == "create_document":
+            title = self._required_text(params, "title")
+            return ["docs", "documents", "create", "--json", json.dumps({"title": title})]
+        if action == "batch_update":
+            document_id = self._required_text(params, "document_id")
+            text = self._required_text(params, "text")
+            # Simple append (insert at index 1)
+            requests = [{"insertText": {"location": {"index": 1}, "text": text}}]
+            return [
+                "docs",
+                "documents",
+                "batchUpdate",
+                "--params",
+                json.dumps({"documentId": document_id}),
+                "--json",
+                json.dumps({"requests": requests}),
+            ]
         raise ValidationError(f"Unsupported docs action: {action}")
 
     def _build_slides_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "get_presentation":
             presentation_id = self._required_text(params, "presentation_id")
             return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": presentation_id})]
+        if action == "create_presentation":
+            title = self._required_text(params, "title")
+            return ["slides", "presentations", "create", "--json", json.dumps({"title": title})]
         raise ValidationError(f"Unsupported slides action: {action}")
 
     def _build_contacts_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -331,6 +362,20 @@ class CommandPlanner:
         if action == "create_meeting":
             return ["meet", "spaces", "create"]
         raise ValidationError(f"Unsupported meet action: {action}")
+
+    def _build_search_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "web_search":
+            query = self._required_text(params, "query")
+            return ["INTERNAL", "search", query]
+        raise ValidationError(f"Unsupported search action: {action}")
+
+    def _build_admin_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        # Implementation placeholder
+        return ["INTERNAL", "placeholder", "admin_activity_logged"]
+
+    def _build_forms_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        # Implementation placeholder
+        return ["INTERNAL", "placeholder", "forms_sync_logged"]
 
     def _format_range(self, range_str: str) -> str:
         """Ensure sheet names with spaces are quoted correctly."""

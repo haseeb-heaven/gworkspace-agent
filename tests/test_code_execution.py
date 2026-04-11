@@ -4,6 +4,8 @@ from gws_assistant.tools.code_execution import code_execution_tool
 def test_code_execution_tool_basic_math():
     code = "print(2 + 2)"
     result = code_execution_tool.invoke({"code": code})
+    if not result["success"]:
+         print(f"DEBUG Result: {result}")
     assert result["success"] is True
     assert result["stdout"].strip() == "4"
 

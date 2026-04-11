@@ -2,17 +2,48 @@
 
 import io
 import contextlib
+import subprocess
+import sys
+import json
+import base64
 from typing import Any
 from RestrictedPython import compile_restricted, safe_globals, safe_builtins, utility_builtins
 from RestrictedPython.PrintCollector import PrintCollector
 
 from langchain_core.tools import tool
 from gws_assistant.models import CodeExecutionResult
-import multiprocessing
-import queue
 
-# Restricted Python safe environmnt
-def get_safe_globals() -> dict[str, Any]:
+@tool
+def code_execution_tool(code: str) -> dict[str, Any]:
+    """
+    Executes Python 3 code in a restricted, sandboxed environment.
+    Use this to perform complex mathematical processing, formatting text, or logical steps that require actual code execution.
+    Features:
+    - Supported builtins: basic math, string manipulation, dicts, lists.
+    - Unsupported: File I/O, networking, imports.
+    - Max execution time: 10 seconds.
+    - Captures STDOUT and returns it.
+    
+    Args:
+        code: The Python 3 code to execute.
+        
+    Returns:
+        JSON compatible dict with STDOUT, success status and error messages.
+    """
+    # Encapsulated script to run in a separate process for maximum isolation and reliability on Windows
+    # We use base64 encoding for the user code to avoid shell escaping issues
+    code_b64 = base64.b64encode(code.encode('utf-8')).decode('utf-8')
+    
+    bootstrap_script = f"""
+import sys
+import io
+import contextlib
+import json
+import base64
+from RestrictedPython import compile_restricted, safe_globals, safe_builtins, utility_builtins
+from RestrictedPython.PrintCollector import PrintCollector
+
+def get_safe_globals():
     safe_g = safe_globals.copy()
     safe_g["__builtins__"] = safe_builtins.copy()
     safe_g["__builtins__"].update(utility_builtins)
@@ -24,92 +55,100 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_write_"] = lambda obj: obj
     return safe_g
 
-def _run_in_sandbox(code: str, return_queue: multiprocessing.Queue):
-    """Executes the code securely and posts results to a queue."""
-    result = CodeExecutionResult(code=code)
+def run():
+    code_base64 = "{code_b64}"
+    code = base64.b64decode(code_base64).decode('utf-8')
+    
+    result = {{"stdout": "", "stderr": "", "success": False, "error": None}}
     try:
-        # Compile source code with RestrictedPython
-        byte_code = compile_restricted(
-            code,
-            filename="<string>",
-            mode="exec"
-        )
+        byte_code = compile_restricted(code, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
         
-        # Capture standard output correctly via restricted python mechanism
-        # Using contextlib redirect_stdout helps catch any print calls not caught by RestrictedPython 
-        # (Though with _print_ mechanism it is typically caught in printed).
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)
 
-        # Get `_print()` output from PrintCollector 
         if "_print" in sandbox_globals:
-             result.stdout = sandbox_globals["_print"]()
+             result["stdout"] = str(sandbox_globals["_print"]())
              
-        # Add normal stdout buffer to it
         buffer_val = output_buffer.getvalue()
         if buffer_val:
-             if result.stdout:
-                  result.stdout += "\n" + buffer_val
+             if result["stdout"]:
+                  result["stdout"] += "\\n" + buffer_val
              else:
-                  result.stdout = buffer_val
+                  result["stdout"] = buffer_val
              
-             
-        result.success = True
-        
+        result["success"] = True
     except Exception as e:
-        result.success = False
-        result.error = f"{type(e).__name__}: {str(e)}"
-        
-    return_queue.put(result)
+        result["success"] = False
+        result["error"] = f"{{type(e).__name__}}: {{str(e)}}"
+    
+    sys.stdout = sys.__stdout__ # Reset stdout to print the JSON result
+    print(json.dumps(result))
 
-
-@tool
-def code_execution_tool(code: str) -> dict[str, Any]:
-    """
-    Executes Python 3 code in a restricted, sandboxed environment.
-    Use this to perform complex mathematical processing, formatting text, or logical steps that require actual code execution.
-    Features:
-    - Supported builtins: basic math, string manipulation, dicts, lists.
-    - Unsupported: File I/O, networking, imports (`os`, `sys`, `socket` etc. are heavily restricted).
-    - Max execution time: 5 seconds.
-    - Captures STDOUT and returns it.
+if __name__ == "__main__":
+    run()
+"""
     
-    Args:
-        code: The Python 3 code to execute.
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", bootstrap_script],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
         
-    Returns:
-        JSON compatible dict with STDOUT, success status and error messages.
-    """
-    queue_res = multiprocessing.Queue()
-    process = multiprocessing.Process(target=_run_in_sandbox, args=(code, queue_res))
-    process.start()
-    
-    # Wait for completion or timeout
-    process.join(timeout=5)
-    
-    result = CodeExecutionResult(code=code)
-    
-    if process.is_alive():
-        # Timeout occurred -> terminate the process forcefully
-        process.terminate()
-        process.join()  # wait for it to actually terminate
-        result.success = False
-        result.error = "TimeoutError: Execution exceeded 5 seconds limit."
-    else:
+        if proc.returncode != 0:
+             return {
+                 "code": code,
+                 "stdout": proc.stdout,
+                 "stderr": proc.stderr,
+                 "success": False,
+                 "error": f"Process exited with code {proc.returncode}"
+             }
+             
+        # Extract the JSON payload from the last line of output
+        lines = proc.stdout.strip().splitlines()
+        if not lines:
+             return {
+                 "code": code,
+                 "stdout": "",
+                 "stderr": proc.stderr,
+                 "success": False,
+                 "error": "No output from sandbox process"
+             }
+             
         try:
-            # Process ended gracefully, retrieve the result
-            result = queue_res.get(block=False)
-        except queue.Empty:
-            result.success = False
-            result.error = "ProcessError: Sandbox process crashed unexpectedly without returning results."
-            
-    # Serialize to dictionary for LangChain agent compatibility
-    return {
-        "code": result.code,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "success": result.success,
-        "error": result.error
-    }
+             payload = json.loads(lines[-1])
+             return {
+                 "code": code,
+                 "stdout": payload.get("stdout", ""),
+                 "stderr": proc.stderr,
+                 "success": payload.get("success", False),
+                 "error": payload.get("error")
+             }
+        except json.JSONDecodeError:
+             return {
+                 "code": code,
+                 "stdout": proc.stdout,
+                 "stderr": proc.stderr,
+                 "success": False,
+                 "error": "Failed to parse sandbox output as JSON"
+             }
+
+    except subprocess.TimeoutExpired:
+        return {
+            "code": code,
+            "stdout": "",
+            "stderr": "",
+            "success": False,
+            "error": "TimeoutError: Execution exceeded 10 seconds limit."
+        }
+    except Exception as e:
+        return {
+            "code": code,
+            "stdout": "",
+            "stderr": "",
+            "success": False,
+            "error": f"InternalError: {str(e)}"
+        }

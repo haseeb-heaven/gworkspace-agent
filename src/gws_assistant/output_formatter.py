@@ -16,12 +16,12 @@ class HumanReadableFormatter:
             return result.stderr or result.error or "Command failed with unknown error."
         return self._format_stdout(result.stdout)
 
-    def format_report(self, report: PlanExecutionReport) -> str:
+    def format_report(self, plan: RequestPlan, executions: list[TaskExecution]) -> str:
         lines: list[str] = []
-        if report.plan.summary:
-            lines.append(report.plan.summary)
+        if plan.summary:
+            lines.append(plan.summary)
             lines.append("")
-        for index, execution in enumerate(report.executions, start=1):
+        for index, execution in enumerate(executions, start=1):
             task = execution.task
             result = execution.result
             status = "completed" if result.success else "failed"

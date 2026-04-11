@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, Optional, List
+from pydantic import BaseModel, Field
 
 
 @dataclass(slots=True)
@@ -35,19 +36,17 @@ class Intent:
     clarification_reason: str | None = None
 
 
-@dataclass(slots=True)
-class PlannedTask:
+class PlannedTask(BaseModel):
     id: str
     service: str
     action: str
-    parameters: dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
     reason: str = ""
 
 
-@dataclass(slots=True)
-class RequestPlan:
+class RequestPlan(BaseModel):
     raw_text: str
-    tasks: list[PlannedTask] = field(default_factory=list)
+    tasks: List[PlannedTask] = Field(default_factory=list)
     summary: str = ""
     confidence: float = 0.0
     no_service_detected: bool = False

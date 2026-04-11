@@ -97,13 +97,13 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
     plan = RequestPlan(
         raw_text="tickets",
         tasks=[
-            PlannedTask("task-1", "gmail", "list_messages", {"q": "ticket", "max_results": 10}),
-            PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "Tickets"}),
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}),
+            PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Tickets"}),
             PlannedTask(
-                "task-3",
-                "sheets",
-                "append_values",
-                {"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
             ),
         ],
     )
@@ -119,14 +119,14 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
     plan = RequestPlan(
         raw_text="jobs",
         tasks=[
-            PlannedTask("task-1", "gmail", "list_messages", {"q": "jobs", "max_results": 10}),
-            PlannedTask("task-2", "gmail", "get_message", {"message_id": "{{message_id_from_task_1}}"}),
-            PlannedTask("task-3", "sheets", "create_spreadsheet", {"title": "Jobs"}),
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 10}),
+            PlannedTask(id="task-2", service="gmail", action="get_message", parameters={"message_id": "{{message_id_from_task_1}}"}),
+            PlannedTask(id="task-3", service="sheets", action="create_spreadsheet", parameters={"title": "Jobs"}),
             PlannedTask(
-                "task-4",
-                "sheets",
-                "append_values",
-                {
+                id="task-4",
+                service="sheets",
+                action="append_values",
+                parameters={
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": "{{company_names_from_task_2}}",
@@ -148,16 +148,16 @@ def test_executor_builds_email_body_from_sheet_values():
         raw_text="send sheet by email",
         tasks=[
             PlannedTask(
-                "task-1",
-                "sheets",
-                "get_values",
-                {"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
+                id="task-1",
+                service="sheets",
+                action="get_values",
+                parameters={"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
             ),
             PlannedTask(
-                "task-2",
-                "gmail",
-                "send_message",
-                {"to_email": "user@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={"to_email": "user@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
             ),
         ],
     )

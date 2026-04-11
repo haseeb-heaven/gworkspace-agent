@@ -24,6 +24,8 @@ def create_workflow(config: AppConfigModel, system: WorkspaceAgentSystem, execut
         logger.info("Executing plan node.")
         try:
             plan = system.plan(state["user_text"])
+            if plan:
+                 logger.info("Generated Plan: %s", plan.model_dump_json(indent=2))
             return {"plan": plan, "messages": state.get("messages", []) + [AIMessage(content=f"Planned {len(plan.tasks)} tasks.")], "error": None}
         except Exception as e:
             logger.error(f"Planning failed: {e}")

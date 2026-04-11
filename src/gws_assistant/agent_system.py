@@ -47,14 +47,25 @@ class WorkspaceAgentSystem:
 
     def _plan_from_payload(self, text: str, payload: dict[str, Any], source: str) -> RequestPlan:
         tasks: list[PlannedTask] = []
-        for index, item in enumerate(payload.get("tasks") or [], start=1):
+        raw_tasks = payload.get("tasks") or payload.get("plan") or payload.get("steps") or []
+        if not isinstance(raw_tasks, list):
+            raw_tasks = []
+            
+        for index, item in enumerate(raw_tasks, start=1):
             if not isinstance(item, dict):
                 continue
             service = normalize_service(str(item.get("service") or ""))
             action = str(item.get("action") or "").strip()
+            
+            # Be resilient to 'params' vs 'parameters'
+            parameters = item.get("parameters") or item.get("params")
+            if not isinstance(parameters, dict):
+                parameters = {}
+                
             if not service or action not in SERVICES[service].actions:
+                self.logger.warning("Skipping unknown service/action in plan: %s.%s", service, action)
                 continue
-            parameters = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+                
             tasks.append(
                 PlannedTask(
                     id=str(item.get("id") or f"task-{index}"),
@@ -69,11 +80,12 @@ class WorkspaceAgentSystem:
         summary = str(payload.get("summary") or "").strip()
         if no_service_detected:
             summary = NO_SERVICE_MESSAGE
+            
         return RequestPlan(
-            raw_text=text,
+            raw_text=payload.get("raw_text") or text,
             tasks=tasks,
             summary=summary,
-            confidence=float(payload.get("confidence") or 0.0),
+            confidence=float(payload.get("confidence") or (0.9 if tasks else 0.0)),
             no_service_detected=no_service_detected,
             source=source,
         )

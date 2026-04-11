@@ -12,6 +12,7 @@ from .gws_runner import GWSRunner
 from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPlan, TaskExecution
 from .planner import CommandPlanner
 from .relevance import extract_keywords, filter_drive_files, filter_gmail_messages
+from .tools import web_search_tool
 
 
 class PlanExecutor:
@@ -52,18 +53,57 @@ class PlanExecutor:
                 error=f"Plan contained an unresolved placeholder: {placeholder}",
             )
             
-        args = self.planner.build_command(
+        cmd = self.planner.build_command(
             task.service,
             task.action,
             task.parameters,
         )
-        if hasattr(self.runner, "run_with_retry"):
-            result = self.runner.run_with_retry(args)
+
+        # Handle INTERNAL pseudo-commands
+        if cmd and cmd[0] == "INTERNAL":
+            result = self._handle_internal_command(cmd, task)
         else:
-            result = self.runner.run(args)
+            if hasattr(self.runner, "run_with_retry"):
+                result = self.runner.run_with_retry(cmd)
+            else:
+                result = self.runner.run(cmd)
             
-        self._update_context(task, result.stdout, context)
+        self._update_context(task, result, context)
         return result
+
+    def _handle_internal_command(self, cmd: list[str], task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
+        """Handles commands that are executed internally by Python tools rather than gws binary."""
+        self.logger.info("Handling internal command: %s", cmd)
+        service = cmd[1]
+        params = task.parameters
+        task_id = task.id
+        
+        if service == "search":
+             query = params.get("query")
+             # LangChain tools must be called with .invoke()
+             search_res = web_search_tool.invoke({"query": query})
+             
+             # Store results in context for subsequent tasks
+             context["web_search_summary"] = str(search_res.get("results") or "")
+             return ExecutionResult(
+                 id=task_id,
+                 success=True,
+                 command=["INTERNAL", "search", query],
+                 stdout=json.dumps(search_res),
+             )
+             
+        if service == "code":
+             code = params.get("code")
+             # LangChain tools must be called with .invoke()
+             code_res = code_execution_tool.invoke({"code": code})
+             return ExecutionResult(
+                 id=task_id,
+                 success=True,
+                 command=["INTERNAL", "code", code[:50] + "..."],
+                 stdout=json.dumps(code_res)
+             )
+            
+        return ExecutionResult(success=False, command=cmd, error=f"Unknown internal command: {cmd[1]}")
 
     def _expand_task(self, task: PlannedTask, context: dict[str, Any]) -> list[PlannedTask]:
         if task.service != "gmail" or task.action != "get_message":
@@ -96,12 +136,20 @@ class PlanExecutor:
         for key, value in list(parameters.items()):
             if value == "$last_spreadsheet_id":
                 parameters[key] = context.get("last_spreadsheet_id") or ""
+            elif value == "$last_document_id":
+                parameters[key] = context.get("last_document_id") or ""
+            elif value == "$last_folder_id":
+                parameters[key] = context.get("last_folder_id") or ""
             elif value == "$gmail_summary_values":
                 parameters[key] = self._gmail_summary_values(context)
             elif value == "$sheet_email_body":
                 parameters[key] = self._sheet_email_body(context)
             elif value == "$drive_summary_values":
                 parameters[key] = self._drive_summary_values(context)
+            elif value == "$web_search_results":
+                parameters[key] = context.get("web_search_summary") or "No search results found."
+            elif value == "$gmail_message_body":
+                parameters[key] = context.get("last_message_body") or ""
             elif isinstance(value, str) and _is_gmail_values_placeholder(value) and key in ("body", "values"):
                 parameters[key] = self._gmail_summary_values(context)
             elif isinstance(value, str) and _is_sheet_body_placeholder(value) and key in ("body", "values"):
@@ -111,9 +159,9 @@ class PlanExecutor:
             
             # Additional context injection: if body wants a link and we have one
             if key == "body" and isinstance(parameters[key], str):
-                link = context.get("last_spreadsheet_url")
-                if link and link not in parameters[key] and ("link" in parameters[key].lower() or "sheet" in parameters[key].lower()):
-                    parameters[key] = f"{parameters[key]}\n\nLink to spreadsheet: {link}"
+                link = context.get("last_spreadsheet_url") or context.get("last_document_url")
+                if link and link not in parameters[key] and any(term in parameters[key].lower() for term in ("link", "sheet", "doc", "file")):
+                    parameters[key] = f"{parameters[key]}\n\nLink: {link}"
                     
         # Fix range to use correct tab name when using a just-created spreadsheet
         if (task.service == "sheets" and task.action == "append_values" 
@@ -142,19 +190,29 @@ class PlanExecutor:
             reason=task.reason,
         )
 
-    def _update_context(self, task: PlannedTask, stdout: str, context: dict[str, Any]) -> None:
+    def _update_context(self, task: PlannedTask, result: ExecutionResult, context: dict[str, Any]) -> None:
+        stdout = result.stdout
         payload = _parse_json(stdout)
         user_keywords = extract_keywords(str(context.get("request_text") or ""))
+        
         if task.service == "gmail" and task.action == "list_messages":
             context["gmail_query"] = task.parameters.get("q") or ""
             context["gmail_payload"] = payload or {}
             context["gmail_message_ids"] = _gmail_message_ids(context)
+        
         if task.service == "gmail" and task.action == "get_message" and payload:
             context.setdefault("gmail_messages", []).append(payload)
+            # Fetch message body/snippet for later tasks
+            context["last_message_body"] = payload.get("snippet", "")
+            if "payload" in payload and "body" in payload["payload"]:
+                 # More complex body extraction
+                 pass
+            
             # Apply relevance filtering to accumulated messages
             all_msgs = context.get("gmail_messages", [])
             if len(all_msgs) > 1:
                 context["gmail_messages"] = filter_gmail_messages(all_msgs, user_keywords)
+        
         if task.service == "sheets" and task.action == "create_spreadsheet" and payload:
             context["last_spreadsheet_id"] = payload.get("spreadsheetId") or ""
             context["last_spreadsheet_url"] = payload.get("spreadsheetUrl") or ""
@@ -168,14 +226,38 @@ class PlanExecutor:
             if not context.get("last_spreadsheet_tab"):
                 title = (payload.get("properties") or {}).get("title") or ""
                 context["last_spreadsheet_tab"] = title
+
         if task.service == "drive" and task.action == "list_files" and payload:
             # Apply relevance filtering to Drive files
             files = payload.get("files") if isinstance(payload, dict) else []
             if isinstance(files, list):
                 filtered = filter_drive_files(files, user_keywords)
                 payload["files"] = filtered
+                if filtered:
+                    # Track last folder found if any
+                    folders = [f for f in filtered if f.get("mimeType") == "application/vnd.google-apps.folder"]
+                    if folders:
+                        context["last_folder_id"] = folders[0].get("id")
             context["drive_query"] = task.parameters.get("q") or ""
             context["drive_payload"] = payload
+        
+        if task.service == "drive" and task.action == "create_folder" and payload:
+            context["last_folder_id"] = payload.get("id") or ""
+
+        if task.service == "docs" and task.action == "create_document" and payload:
+             context["last_document_id"] = payload.get("documentId") or ""
+             doc_id = payload.get("documentId") or ""
+             if doc_id:
+                context["last_document_url"] = f"https://docs.google.com/document/d/{doc_id}/edit"
+
+        if task.service == "docs" and task.action == "get_document" and payload:
+             context["last_document_id"] = payload.get("documentId") or ""
+             context["last_document_title"] = payload.get("title") or ""
+             context["last_document_body"] = payload.get("body") or ""
+
+        if task.service == "search" and task.action == "web_search" and result.success:
+             context["web_search_summary"] = result.stdout
+
         if task.service == "sheets" and task.action == "get_values" and payload:
             context["sheet_values_payload"] = payload
 
