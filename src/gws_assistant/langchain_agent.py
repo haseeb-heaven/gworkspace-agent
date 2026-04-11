@@ -3,13 +3,12 @@
 import logging
 from typing import Any
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
+from langchain_openai import ChatOpenAI
 
 from gws_assistant.models import AppConfigModel, RequestPlan, PlannedTask
 from gws_assistant.service_catalog import SERVICES, normalize_service
-from gws_assistant.tools import web_search_tool, code_execution_tool, summarize_results
 
 
 def _catalog_for_prompt() -> str:

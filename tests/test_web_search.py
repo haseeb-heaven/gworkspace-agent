@@ -48,5 +48,4 @@ def test_web_search_tool_falls_back_to_tavily(mocker):
 
 def test_summarize_results():
     result = summarize_results.invoke({"text": "long text here"})
-    assert "Please summarize" in result
-    assert "long text here" in result
+    assert result == "long text here"

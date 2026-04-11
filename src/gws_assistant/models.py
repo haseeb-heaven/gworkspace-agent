@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict, Optional, List
+from typing import Any, List, TypedDict
+
 from pydantic import BaseModel, Field
 
 

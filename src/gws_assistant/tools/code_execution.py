@@ -181,6 +181,9 @@ def _run_docker_sandbox(code: str, settings: SandboxSettings) -> dict[str, Any]:
 
 
 def _run_e2b_sandbox(code: str, settings: SandboxSettings) -> dict[str, Any]:
+    if not (os.getenv("E2B_API_KEY") or "").strip():
+        return _result(code, error="E2BImportError: E2B_API_KEY is required when CODE_EXECUTION_BACKEND=e2b.")
+
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
     result_chunks: list[str] = []

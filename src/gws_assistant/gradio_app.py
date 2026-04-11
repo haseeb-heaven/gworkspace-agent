@@ -41,11 +41,11 @@ def create_interface() -> gr.Blocks:
     logger = setup_logging(config)
     if not config.setup_complete:
         raise RuntimeError(
-            "Setup is missing. Run python cli.py --setup first so .env and GWS_BINARY_PATH are configured."
+            "Setup is missing. Run python gws_cli.py --setup first so .env and GWS_BINARY_PATH are configured."
         )
     runner = GWSRunner(config.gws_binary_path, logger=logger)
     if not runner.validate_binary():
-        raise RuntimeError(f"gws binary not found at {config.gws_binary_path}. Run python cli.py --setup.")
+        raise RuntimeError(f"gws binary not found at {config.gws_binary_path}. Run python gws_cli.py --setup.")
     planner = CommandPlanner()
 
     assistant = GradioAssistant(
@@ -80,6 +80,5 @@ def create_interface() -> gr.Blocks:
 def main(host: str = "127.0.0.1", port: int = 7860, share: bool = False) -> None:
     interface = create_interface()
     interface.launch(server_name=host, server_port=port, share=share)
-
 
 

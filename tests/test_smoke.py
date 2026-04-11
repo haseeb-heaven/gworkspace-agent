@@ -48,6 +48,15 @@ def test_cli_launcher_help_smoke():
     assert "--save-output" in output
 
 
+@pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
+def test_gws_cli_launcher_help_smoke():
+    result = _run_command([sys.executable, "gws_cli.py", "--help"])
+    output = f"{result.stdout}\n{result.stderr}"
+    assert result.returncode == 0
+    assert "Google Workspace Assistant CLI" in output
+    assert "--task" in output
+
+
 @pytest.mark.skipif(not (ROOT / "gws.exe").exists(), reason="Bundled gws.exe is not present")
 def test_gws_binary_help_smoke():
     result = _run_command([str(ROOT / "gws.exe"), "--help"])

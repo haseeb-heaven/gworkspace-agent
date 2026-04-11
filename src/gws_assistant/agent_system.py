@@ -21,7 +21,7 @@ class WorkspaceAgentSystem:
     def __init__(self, config: AppConfigModel, logger: logging.Logger) -> None:
         self.config = config
         self.logger = logger
-        self._use_langchain = bool(self.config.api_key)
+        self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
 
     def plan(self, user_text: str) -> RequestPlan:
         text = (user_text or "").strip()
@@ -85,7 +85,7 @@ class WorkspaceAgentSystem:
     def _plan_with_heuristics(self, text: str) -> RequestPlan:
         lowered = text.lower()
         services = _detect_services_in_order(lowered)
-        if "search" in services and any(service in services for service in ("gmail", "drive")):
+        if "search" in services and any(service in services for service in ("gmail", "drive")) and not _is_external_research_request(lowered, services):
             services = [service for service in services if service != "search"]
         if not services:
             return RequestPlan(
@@ -231,7 +231,7 @@ class WorkspaceAgentSystem:
     def _web_research_to_docs_and_sheets_tasks(self, text: str) -> list[PlannedTask]:
         query = _web_search_query_from_text(text)
         title = _title_from_query(query, fallback="Research Summary")
-        return [
+        tasks = [
             PlannedTask(
                 id="task-1",
                 service="search",
@@ -272,6 +272,22 @@ class WorkspaceAgentSystem:
                 reason="Store the web research in a tabular format.",
             ),
         ]
+        recipient = _recipient_from_text(text)
+        if recipient:
+            tasks.append(
+                PlannedTask(
+                    id=f"task-{len(tasks) + 1}",
+                    service="gmail",
+                    action="send_message",
+                    parameters={
+                        "to_email": recipient,
+                        "subject": f"{title} summary",
+                        "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
+                    },
+                    reason="Email the generated document and spreadsheet links to the recipient.",
+                )
+            )
+        return tasks
 
     def _drive_docs_to_sheet_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         search_term = _document_search_term(text)
@@ -590,10 +606,21 @@ def _wants_email_link(text: str) -> bool:
 
 
 def _is_external_research_request(text: str, services: list[str]) -> bool:
+    mentions_gmail_service = re.search(r"\bgmail\b(?!\.)", text) is not None
+    gmail_is_delivery = not mentions_gmail_service and any(
+        phrase in text
+        for phrase in (
+            "send an email",
+            "send email",
+            "email to",
+            "send to",
+            "mail to",
+        )
+    )
     return (
         ("search" in services or "drive" in services)
         and ("docs" in services or "sheets" in services)
-        and "gmail" not in services
+        and ("gmail" not in services or gmail_is_delivery)
         and ("top " in text or "framework" in text or "frameworks" in text or text.startswith("find "))
         and "search google documents" not in text
         and "search google docs" not in text

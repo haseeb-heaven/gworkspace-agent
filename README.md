@@ -1,92 +1,130 @@
-# Google Workspace Agent (v2.0)
+# Google Workspace Agent - `langchain-ai`
 
-A powerful, high-performance AI agent system for Google Workspace automation. Powered by a hybrid **LangChain** + **LangGraph** architecture, it transforms natural language requests into complex, multi-step workflows across Gmail, Drive, Sheets, and more.
+This branch packages the assistant around a LangChain planner, a LangGraph workflow, and the `gws` Google Workspace CLI. It turns natural-language requests into multi-step workflows across Gmail, Drive, Docs, Sheets, Calendar, Chat, and Meet, with built-in web search and sandboxed Python execution.
+
+## What This Branch Includes
+
+- LangChain-based plan generation with a heuristic fallback when no model key is configured
+- LangGraph workflow execution with retries and readable final reports
+- Internal web search via DuckDuckGo with Tavily fallback
+- Sandboxed Python code execution with `restricted_subprocess`, Docker, or E2B backends
+- Google Workspace automations through the bundled `gws.exe`
+- CLI and Gradio entrypoints
 
 ## Architecture
 
 ![System Architecture](assets/architecture_diagram.png)
 
-### The LangGraph State Machine
+Core modules:
 
-The agent utilizes a directed acyclic graph (DAG) to orchestrate tasks. This approach enables conditional branching, sophisticated error recovery, and precise state management.
-
-```mermaid
-graph TD
-    START --> Plan[🧠 Generate Plan]
-    Plan --> Validate[🧪 Validate Tasks]
-    Validate --> Route{Type of Task?}
-    
-    Route -->|Research| Search[🔍 Web Search]
-    Route -->|Logic/Math| Code[💻 Code Execution]
-    Route -->|Workspace API| Exec[⚡ Execute Task]
-    
-    Search --> Summary[📝 Summarize]
-    Summary --> Update[💾 Update Context]
-    
-    Code --> Update
-    
-    Exec --> Success{Success?}
-    Success -->|Yes| Update
-    Success -->|No| Retry[🔄 Handle/Retry]
-    
-    Retry -->|Retry Limit OK| Exec
-    Retry -->|Failed| Resp[✅ Final Response]
-    
-    Update --> MoreTasks{More Tasks?}
-    MoreTasks -->|Yes| Exec
-    MoreTasks -->|No| Resp
-```
-
-## Key Features
-
-- **Hybrid Orchestration**: Uses LangChain for reasoning and LangGraph for reliable workflow state management.
-- **Enhanced Workspace Support**: Seamlessly integrate with Gmail, Drive, Sheets, Calendar, Docs, Slides, and now **Google Meet** and **Google Chat**.
-- **Sandboxed Python Runtime**: Safely execute complex logic, calculations, and data processing within a `RestrictedPython` environment.
-- **Intelligent Research**: Built-in web search (DuckDuckGo/Tavily) with automatic LLM-powered summarization for external data enrichment.
-- **Robust Reliability**: Exponential backoff and retry logic for high success rates against API rate limits and transient failures.
-- **Dual Planning Modes**: High-precision LangChain reasoning with a zero-API-key heuristic fallback.
+- `src/gws_assistant/agent_system.py`: converts requests into ordered task plans
+- `src/gws_assistant/langchain_agent.py`: structured LangChain planning
+- `src/gws_assistant/langgraph_workflow.py`: workflow orchestration and retries
+- `src/gws_assistant/execution.py`: task execution and context passing between steps
+- `src/gws_assistant/tools/web_search.py`: web search and lightweight result summarization
+- `src/gws_assistant/tools/code_execution.py`: sandboxed code interpreter support
 
 ## Setup
 
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. Activate your environment:
 
-2. **Configure Environment**:
-   Run the interactive setup wizard to configure your LLM provider and API keys:
-   ```bash
-   python cli.py --setup
-   ```
+```powershell
+& D:\Code\MuslimGuideAI\pyenv\Scripts\Activate.ps1
+```
 
-3. **Check .env**:
-   Ensure your `.env` file contains the necessary configuration for OpenAI, OpenRouter, and optional search providers.
+2. Install dependencies:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+3. Create your env file if needed:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+4. Run the interactive setup wizard:
+
+```powershell
+python .\gws_cli.py --setup
+```
+
+The preferred launcher on this branch is `gws_cli.py`. `cli.py` is kept as a compatibility shim.
+
+## Environment Variables
+
+Required or commonly used keys:
+
+- `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`
+- `GWS_BINARY_PATH`
+- `LANGCHAIN_ENABLED`
+- `TAVILY_API_KEY` for higher-quality search fallback
+- `CODE_EXECUTION_ENABLED`
+- `CODE_EXECUTION_BACKEND` with `restricted_subprocess`, `docker`, or `e2b`
+- `E2B_API_KEY` when `CODE_EXECUTION_BACKEND=e2b`
+- `DEFAULT_RECIPIENT_EMAIL` for email workflows when the prompt omits a recipient
+
+See `.env.example` for the full template.
 
 ## Usage
 
-### CLI Interace
-```bash
-python cli.py --task "List my Gmail messages about 'Invoice' and save to a new Sheet"
+Run a single task:
+
+```powershell
+python .\gws_cli.py --task "List my unread Gmail messages about invoices and save them to a new Google Sheet"
 ```
 
-### Gradio Web UI
-```bash
-python gws_gradio.py
+Force heuristic mode:
+
+```powershell
+python .\gws_cli.py --no-langchain --task "Search Drive for quarterly planning docs"
 ```
 
-### Legacy Fallback (Zero LLM)
-```bash
-python cli.py --no-langchain --task "Search Drive for projects"
+Launch Gradio:
+
+```powershell
+python .\gws_gradio.py
 ```
 
-## Project Structure
+## Example Workflows
 
-- `src/gws_assistant/langchain_agent.py`: LangChain-powered planning engine.
-- `src/gws_assistant/langgraph_workflow.py`: The StateGraph orchestration logic.
-- `src/gws_assistant/tools/`: Extension tools for code execution and web search.
-- `src/gws_assistant/execution.py`: Workspace task execution and context management.
-- `src/gws_assistant/gws_runner.py`: Reliable subprocess wrapper for core binary execution.
+Research + Docs + Sheets + Gmail:
+
+```text
+Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to haseebmir.hm@gmail.com
+```
+
+Direct code execution:
+
+```text
+Run code: print(sum(i * i for i in range(10)))
+```
+
+If you need to use the interpreter in a stronger sandbox, switch `CODE_EXECUTION_BACKEND` to `docker` or `e2b`.
+
+## Testing
+
+Run the full suite:
+
+```powershell
+python -m pytest
+```
+
+Helpful smoke checks:
+
+```powershell
+python .\gws_cli.py --help
+python .\gws_gradio.py --help
+```
+
+## Notes
+
+- Web search is used for external research tasks before writing into Docs or Sheets.
+- Email workflows can automatically include generated Docs and Sheets links in the message body.
+- The branch is designed to work even without an LLM key, but LangChain planning gives better multi-step plans.
 
 ## License
 
-This project is licensed under the **MIT License**.
+MIT

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import json
 import logging
+from types import SimpleNamespace
 from pathlib import Path
 
 from gws_assistant.execution import PlanExecutor
@@ -47,6 +50,28 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=["gws.exe", *args],
                 stdout='{"range":"Sheet1!A1:B2","values":[["Name","Role"],["Alice","Engineer"]]}',
+            )
+        if args[:3] == ["docs", "documents", "create"]:
+            import json as _json
+
+            json_idx = args.index("--json") if "--json" in args else -1
+            title = "Document"
+            if json_idx >= 0:
+                try:
+                    body = _json.loads(args[json_idx + 1])
+                    title = body.get("title", "Document")
+                except Exception:
+                    pass
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout=_json.dumps({"documentId": "doc-1", "title": title}),
+            )
+        if args[:3] == ["docs", "documents", "batchUpdate"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"documentId":"doc-1","replies":[]}',
             )
         if args[:4] == ["gmail", "users", "messages", "get"]:
             return ExecutionResult(
@@ -202,3 +227,68 @@ def test_execute_single_task(tmp_path):
     assert result.success is True
     assert len(runner.commands) == 1
     assert runner.commands[-1][:4] == ["gmail", "users", "messages", "list"]
+
+
+def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    mocker.patch(
+        "gws_assistant.execution.web_search_tool",
+        SimpleNamespace(
+            invoke=lambda payload: {
+                "query": "top 3 agentic ai frameworks",
+                "results": [
+                    {"title": "LangGraph", "content": "Graph-based agent orchestration", "link": "https://example.com/langgraph"},
+                    {"title": "CrewAI", "content": "Multi-agent workflow framework", "link": "https://example.com/crewai"},
+                    {"title": "AutoGen", "content": "Conversational multi-agent framework", "link": "https://example.com/autogen"},
+                ],
+                "error": None,
+            }
+        ),
+    )
+
+    plan = RequestPlan(
+        raw_text="Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to haseebmir.hm@gmail.com",
+        tasks=[
+            PlannedTask(id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}),
+            PlannedTask(id="task-2", service="docs", action="create_document", parameters={"title": "Agentic Ai Frameworks"}),
+            PlannedTask(id="task-3", service="docs", action="batch_update", parameters={"document_id": "$last_document_id", "text": "$web_search_markdown"}),
+            PlannedTask(id="task-4", service="sheets", action="create_spreadsheet", parameters={"title": "Agentic Ai Frameworks"}),
+            PlannedTask(
+                id="task-5",
+                service="sheets",
+                action="append_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$web_search_table_values"},
+            ),
+            PlannedTask(
+                id="task-6",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": "haseebmir.hm@gmail.com",
+                    "subject": "Agentic Ai Frameworks summary",
+                    "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
+                },
+            ),
+        ],
+    )
+
+    report = executor.execute(plan)
+    assert report.success is True
+
+    docs_update_cmd = runner.commands[1]
+    docs_payload = json.loads(docs_update_cmd[docs_update_cmd.index("--json") + 1])
+    inserted_text = docs_payload["requests"][0]["insertText"]["text"]
+    assert "LangGraph" in inserted_text
+    assert "CrewAI" in inserted_text
+
+    append_cmd = runner.commands[3]
+    sheet_payload = json.loads(append_cmd[append_cmd.index("--json") + 1])
+    assert sheet_payload["values"][1][0] == "LangGraph"
+    assert sheet_payload["values"][2][0] == "CrewAI"
+
+    send_cmd = runner.commands[4]
+    raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
+    decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
+    assert "https://docs.google.com/document/d/doc-1/edit" in decoded
+    assert "https://example.test/sheet" in decoded

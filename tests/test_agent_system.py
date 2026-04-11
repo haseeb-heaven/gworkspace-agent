@@ -76,3 +76,28 @@ def test_agent_lists_email_with_detail_fetch(tmp_path):
         ("gmail", "list_messages"),
         ("gmail", "get_message"),
     ]
+
+
+def test_agent_plans_research_docs_sheets_and_email(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan(
+        "Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to haseebmir.hm@gmail.com"
+    )
+    assert [(task.service, task.action) for task in plan.tasks] == [
+        ("search", "web_search"),
+        ("docs", "create_document"),
+        ("docs", "batch_update"),
+        ("sheets", "create_spreadsheet"),
+        ("sheets", "append_values"),
+        ("gmail", "send_message"),
+    ]
+    assert plan.tasks[0].parameters["query"].lower().startswith("top 3")
+    assert plan.tasks[-1].parameters["to_email"] == "haseebmir.hm@gmail.com"
+
+
+def test_agent_respects_langchain_enabled_flag(tmp_path):
+    config = _config(tmp_path)
+    config.api_key = "sk-test"
+    config.langchain_enabled = False
+    agent = WorkspaceAgentSystem(config=config, logger=logging.getLogger("test"))
+    assert agent._use_langchain is False

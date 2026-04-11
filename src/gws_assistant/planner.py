@@ -54,11 +54,6 @@ class CommandPlanner:
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
-        
-        # LOG PARAMS FOR DEBUGGING
-        import logging
-        logger = logging.getLogger("gws_assistant")
-        logger.info("Building command for %s.%s with params: %s", service_key, action_key, params)
 
         if service_key == "drive":
             return self._build_drive_command(action_key, params)

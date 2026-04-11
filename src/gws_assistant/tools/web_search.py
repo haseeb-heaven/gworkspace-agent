@@ -68,10 +68,12 @@ def summarize_results(text: str) -> str:
     Returns:
         A concise summary string.
     """
-    # Simply echo the instructions back to the LLM. In an advanced version, this would invoke a separate chain. 
-    # Since this is a tool FOR the LLM, the LLM itself will read this text and process it if needed within its context.
-    # To truly have the tool summarize, we would need to pass an LLM instance here. 
-    return f"Please summarize the following content:\n{text}"
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned:
+        return "No search results to summarize."
+    if len(cleaned) <= 600:
+        return cleaned
+    return cleaned[:600].rstrip() + "... [truncated]"
 
 
 def _search_with_duckduckgo(query: str, max_results: int) -> WebSearchResult | None:
