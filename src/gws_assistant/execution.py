@@ -6,13 +6,14 @@ import base64
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 from .gws_runner import GWSRunner
 from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPlan, TaskExecution
 from .planner import CommandPlanner
 from .relevance import extract_keywords, filter_drive_files, filter_gmail_messages
-from .tools import web_search_tool
+from .tools import code_execution_tool, web_search_tool
 
 
 class PlanExecutor:
@@ -60,8 +61,13 @@ class PlanExecutor:
         )
 
         # Handle INTERNAL pseudo-commands
+        if task.service == "drive" and task.action == "export_file":
+            output_path = str(task.parameters.get("output_path") or "").strip()
+            if output_path:
+                Path(output_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
         if cmd and cmd[0] == "INTERNAL":
-            result = self._handle_internal_command(cmd, task)
+            result = self._handle_internal_command(cmd, task, context)
         else:
             if hasattr(self.runner, "run_with_retry"):
                 result = self.runner.run_with_retry(cmd)
@@ -79,29 +85,31 @@ class PlanExecutor:
         task_id = task.id
         
         if service == "search":
-             query = params.get("query")
-             # LangChain tools must be called with .invoke()
-             search_res = web_search_tool.invoke({"query": query})
-             
-             # Store results in context for subsequent tasks
-             context["web_search_summary"] = str(search_res.get("results") or "")
-             return ExecutionResult(
-                 id=task_id,
-                 success=True,
-                 command=["INTERNAL", "search", query],
-                 stdout=json.dumps(search_res),
-             )
-             
+            query = str(params.get("query") or "").strip()
+            try:
+                search_res = web_search_tool.invoke({"query": query})
+            except Exception as exc:
+                return ExecutionResult(success=False, command=cmd, error=f"Web search failed: {exc}")
+            if search_res.get("error"):
+                return ExecutionResult(success=False, command=cmd, stdout=json.dumps(search_res), error=str(search_res["error"]))
+
+            context["web_search_payload"] = search_res
+            context["web_search_summary"] = _render_web_search_text(search_res)
+            return ExecutionResult(
+                success=True,
+                command=["INTERNAL", "search", query],
+                stdout=json.dumps(search_res),
+            )
+
         if service == "code":
-             code = params.get("code")
-             # LangChain tools must be called with .invoke()
-             code_res = code_execution_tool.invoke({"code": code})
-             return ExecutionResult(
-                 id=task_id,
-                 success=True,
-                 command=["INTERNAL", "code", code[:50] + "..."],
-                 stdout=json.dumps(code_res)
-             )
+            code = str(params.get("code") or "")
+            code_res = code_execution_tool.invoke({"code": code})
+            return ExecutionResult(
+                success=bool(code_res.get("success")),
+                command=["INTERNAL", "code", code[:50] + "..."],
+                stdout=json.dumps(code_res),
+                error=code_res.get("error"),
+            )
             
         return ExecutionResult(success=False, command=cmd, error=f"Unknown internal command: {cmd[1]}")
 
@@ -138,6 +146,8 @@ class PlanExecutor:
                 parameters[key] = context.get("last_spreadsheet_id") or ""
             elif value == "$last_document_id":
                 parameters[key] = context.get("last_document_id") or ""
+            elif value == "$last_drive_file_id":
+                parameters[key] = context.get("last_drive_file_id") or ""
             elif value == "$last_folder_id":
                 parameters[key] = context.get("last_folder_id") or ""
             elif value == "$gmail_summary_values":
@@ -146,10 +156,20 @@ class PlanExecutor:
                 parameters[key] = self._sheet_email_body(context)
             elif value == "$drive_summary_values":
                 parameters[key] = self._drive_summary_values(context)
+            elif value == "$document_table_values":
+                parameters[key] = self._document_table_values(context)
+            elif value == "$document_table_text":
+                parameters[key] = self._document_table_text(context)
             elif value == "$web_search_results":
                 parameters[key] = context.get("web_search_summary") or "No search results found."
+            elif value == "$web_search_table_values":
+                parameters[key] = self._web_search_table_values(context)
+            elif value == "$web_search_markdown":
+                parameters[key] = self._web_search_markdown(context)
             elif value == "$gmail_message_body":
                 parameters[key] = context.get("last_message_body") or ""
+            elif value == "$exported_file_paths":
+                parameters[key] = [item["path"] for item in context.get("exported_files", []) if item.get("path")]
             elif isinstance(value, str) and _is_gmail_values_placeholder(value) and key in ("body", "values"):
                 parameters[key] = self._gmail_summary_values(context)
             elif isinstance(value, str) and _is_sheet_body_placeholder(value) and key in ("body", "values"):
@@ -159,9 +179,16 @@ class PlanExecutor:
             
             # Additional context injection: if body wants a link and we have one
             if key == "body" and isinstance(parameters[key], str):
-                link = context.get("last_spreadsheet_url") or context.get("last_document_url")
-                if link and link not in parameters[key] and any(term in parameters[key].lower() for term in ("link", "sheet", "doc", "file")):
-                    parameters[key] = f"{parameters[key]}\n\nLink: {link}"
+                links = [
+                    context.get("last_spreadsheet_url"),
+                    context.get("last_document_url"),
+                    context.get("last_drive_file_url"),
+                ]
+                links = [str(link) for link in links if link]
+                if links and any(term in parameters[key].lower() for term in ("link", "sheet", "doc", "file", "attach")):
+                    missing = [link for link in links if link not in parameters[key]]
+                    if missing:
+                        parameters[key] = f"{parameters[key]}\n\nLinks:\n" + "\n".join(missing)
                     
         # Fix range to use correct tab name when using a just-created spreadsheet
         if (task.service == "sheets" and task.action == "append_values" 
@@ -234,13 +261,36 @@ class PlanExecutor:
                 filtered = filter_drive_files(files, user_keywords)
                 payload["files"] = filtered
                 if filtered:
+                    preferred = next(
+                        (
+                            item
+                            for item in filtered
+                            if item.get("mimeType") == "application/vnd.google-apps.document"
+                        ),
+                        filtered[0],
+                    )
+                    context["last_drive_file_id"] = preferred.get("id") or ""
+                    context["last_drive_file_url"] = preferred.get("webViewLink") or ""
+                    context["last_drive_file_name"] = preferred.get("name") or ""
                     # Track last folder found if any
                     folders = [f for f in filtered if f.get("mimeType") == "application/vnd.google-apps.folder"]
                     if folders:
                         context["last_folder_id"] = folders[0].get("id")
             context["drive_query"] = task.parameters.get("q") or ""
             context["drive_payload"] = payload
-        
+
+        if task.service == "drive" and task.action == "export_file" and result.success:
+            output_path = str(task.parameters.get("output_path") or "").strip()
+            if output_path:
+                context.setdefault("exported_files", []).append(
+                    {
+                        "file_id": str(task.parameters.get("file_id") or ""),
+                        "mime_type": str(task.parameters.get("mime_type") or ""),
+                        "path": output_path,
+                    }
+                )
+                context["last_export_path"] = output_path
+
         if task.service == "drive" and task.action == "create_folder" and payload:
             context["last_folder_id"] = payload.get("id") or ""
 
@@ -254,9 +304,15 @@ class PlanExecutor:
              context["last_document_id"] = payload.get("documentId") or ""
              context["last_document_title"] = payload.get("title") or ""
              context["last_document_body"] = payload.get("body") or ""
+             context["document_payload"] = payload
 
         if task.service == "search" and task.action == "web_search" and result.success:
-             context["web_search_summary"] = result.stdout
+             parsed = _parse_json(result.stdout)
+             if parsed:
+                 context["web_search_payload"] = parsed
+                 context["web_search_summary"] = _render_web_search_text(parsed)
+             else:
+                 context["web_search_summary"] = result.stdout
 
         if task.service == "sheets" and task.action == "get_values" and payload:
             context["sheet_values_payload"] = payload
@@ -358,6 +414,59 @@ class PlanExecutor:
             if isinstance(row, list):
                 rendered = " | ".join(str(cell) for cell in row)
                 lines.append(rendered)
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _document_table_values(context: dict[str, Any]) -> list[list[str]]:
+        payload = context.get("document_payload") or {}
+        title = str(payload.get("title") or context.get("last_drive_file_name") or "Document")
+        text_blocks = _docs_text_blocks(payload)
+        rows: list[list[str]] = [["Line", "Text"]]
+        if not text_blocks:
+            rows.append(["1", f"No document text found for {title}."])
+            return rows
+        for index, block in enumerate(text_blocks[:100], start=1):
+            rows.append([str(index), block])
+        return rows
+
+    @staticmethod
+    def _document_table_text(context: dict[str, Any]) -> str:
+        rows = PlanExecutor._document_table_values(context)
+        if not rows:
+            return "No document content was found."
+        header = " | ".join(rows[0])
+        divider = " | ".join("---" for _ in rows[0])
+        body = [" | ".join(row) for row in rows[1:]]
+        return "\n".join([header, divider, *body]).strip()
+
+    @staticmethod
+    def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
+        payload = context.get("web_search_payload") or {}
+        results = payload.get("results") if isinstance(payload, dict) else []
+        rows: list[list[str]] = [["Title", "Snippet", "Link"]]
+        if not isinstance(results, list) or not results:
+            rows.append(["No results", str(payload.get("query") or ""), ""])
+            return rows
+        for item in results[:20]:
+            if isinstance(item, dict):
+                rows.append([
+                    str(item.get("title") or "Result"),
+                    str(item.get("content") or item.get("snippet") or ""),
+                    str(item.get("link") or ""),
+                ])
+        return rows
+
+    @staticmethod
+    def _web_search_markdown(context: dict[str, Any]) -> str:
+        rows = PlanExecutor._web_search_table_values(context)
+        if len(rows) <= 1:
+            return "No web search results were found."
+        lines = ["Top results:", ""]
+        for row in rows[1:]:
+            title, snippet, link = row
+            lines.append(f"- {title}: {snippet}")
+            if link:
+                lines.append(f"  {link}")
         return "\n".join(lines).strip()
 
 
@@ -500,3 +609,44 @@ def _find_unresolved_placeholder(value: Any) -> str | None:
             if placeholder:
                 return placeholder
     return None
+
+
+def _render_web_search_text(payload: dict[str, Any]) -> str:
+    results = payload.get("results") if isinstance(payload, dict) else []
+    if not isinstance(results, list) or not results:
+        return "No web search results found."
+    lines: list[str] = []
+    for item in results[:10]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "Result")
+        content = str(item.get("content") or item.get("snippet") or "").strip()
+        link = str(item.get("link") or "").strip()
+        line = f"{title}: {content}".strip(": ")
+        if link:
+            line = f"{line} ({link})"
+        lines.append(line)
+    return "\n".join(lines).strip() or "No web search results found."
+
+
+def _docs_text_blocks(payload: dict[str, Any]) -> list[str]:
+    body = payload.get("body") if isinstance(payload.get("body"), dict) else {}
+    content = body.get("content") if isinstance(body.get("content"), list) else []
+    blocks: list[str] = []
+    current: list[str] = []
+
+    for section in content:
+        if not isinstance(section, dict):
+            continue
+        paragraph = section.get("paragraph") if isinstance(section.get("paragraph"), dict) else {}
+        elements = paragraph.get("elements") if isinstance(paragraph.get("elements"), list) else []
+        current.clear()
+        for element in elements:
+            text_run = element.get("textRun") if isinstance(element, dict) and isinstance(element.get("textRun"), dict) else {}
+            text = str(text_run.get("content") or "").replace("\n", " ").strip()
+            if text:
+                current.append(text)
+        merged = " ".join(current).strip()
+        if merged:
+            blocks.append(merged)
+    return blocks

@@ -11,3 +11,4 @@ rich>=13.7.1
 questionary>=2.0.1
 customtkinter>=5.2.2
 gradio>=5.0.0
+e2b-code-interpreter>=1.0.0

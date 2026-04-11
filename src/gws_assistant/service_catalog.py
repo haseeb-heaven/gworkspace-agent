@@ -36,6 +36,16 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
                 ),
             ),
+            "export_file": ActionSpec(
+                key="export_file",
+                label="Export file",
+                keywords=("export", "download", "attach", "attachment", "pdf", "xlsx", "sheet", "doc"),
+                parameters=(
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
+                    ParameterSpec("mime_type", "Target export MIME type", "application/pdf"),
+                    ParameterSpec("output_path", "Local output path", "scratch/exports/report.pdf"),
+                ),
+            ),
             "delete_file": ActionSpec(
                 key="delete_file",
                 label="Delete file",
@@ -49,7 +59,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "sheets": ServiceSpec(
         key="sheets",
         label="Google Sheets",
-        aliases=("sheets", "spreadsheet", "excel"),
+        aliases=("sheets", "sheet", "spreadsheet", "excel"),
         actions={
             "create_spreadsheet": ActionSpec(
                 key="create_spreadsheet",
@@ -118,6 +128,7 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("to_email", "Recipient email address", "person@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body", "Hello,\nPlease find the data below."),
+                    ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
                 ),
             ),
         },

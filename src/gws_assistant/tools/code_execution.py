@@ -1,154 +1,279 @@
 """Code execution tool for the LangChain agent."""
 
-import io
-import contextlib
+from __future__ import annotations
+
+import base64
+import json
+import os
 import subprocess
 import sys
-import json
-import base64
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
-from RestrictedPython import compile_restricted, safe_globals, safe_builtins, utility_builtins
-from RestrictedPython.PrintCollector import PrintCollector
 
 from langchain_core.tools import tool
-from gws_assistant.models import CodeExecutionResult
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxSettings:
+    enabled: bool
+    backend: str
+    timeout_seconds: int
+    memory_mb: int
+    max_output: int
+    docker_image: str
+    docker_binary: str
+
+
+def _to_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_backend(value: str | None) -> str:
+    candidate = (value or "restricted_subprocess").strip().lower().replace("-", "_")
+    if candidate in {"subprocess", "restricted", "restrictedpython"}:
+        return "restricted_subprocess"
+    if candidate in {"restricted_subprocess", "docker", "e2b"}:
+        return candidate
+    return "restricted_subprocess"
+
+
+def _load_settings() -> SandboxSettings:
+    return SandboxSettings(
+        enabled=_to_bool(os.getenv("CODE_EXECUTION_ENABLED"), default=True),
+        backend=_normalize_backend(os.getenv("CODE_EXECUTION_BACKEND")),
+        timeout_seconds=max(int(os.getenv("CODE_EXECUTION_TIMEOUT_SECONDS", "10")), 1),
+        memory_mb=max(int(os.getenv("CODE_EXECUTION_MEMORY_MB", "64")), 16),
+        max_output=max(int(os.getenv("CODE_EXECUTION_MAX_OUTPUT", "8192")), 256),
+        docker_image=(os.getenv("CODE_EXECUTION_DOCKER_IMAGE") or "gws-sandbox:latest").strip(),
+        docker_binary=(os.getenv("CODE_EXECUTION_DOCKER_BINARY") or "docker").strip(),
+    )
+
+
+def _result(code: str, *, stdout: str = "", stderr: str = "", success: bool = False, error: str | None = None) -> dict[str, Any]:
+    return {
+        "code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "success": success,
+        "error": error,
+    }
+
+
+def _trim_output(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...(TRUNCATED)"
+
+
+def _parse_payload(stdout: str) -> dict[str, Any] | None:
+    lines = [line for line in (stdout or "").splitlines() if line.strip()]
+    if not lines:
+        return None
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _run_restricted_subprocess(code: str, settings: SandboxSettings) -> dict[str, Any]:
+    code_b64 = base64.b64encode(code.encode("utf-8")).decode("ascii")
+    env = os.environ.copy()
+    env["CODE_EXECUTION_TIMEOUT_SECONDS"] = str(settings.timeout_seconds)
+    env["CODE_EXECUTION_MEMORY_MB"] = str(settings.memory_mb)
+    env["CODE_EXECUTION_MAX_OUTPUT"] = str(settings.max_output)
+    inner_script = Path(__file__).with_name("code_execution_inner.py")
+
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(inner_script)],
+            input=code_b64,
+            text=True,
+            capture_output=True,
+            timeout=settings.timeout_seconds + 1,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return _result(code, error=f"TimeoutError: Execution exceeded {settings.timeout_seconds} seconds.")
+    except Exception as exc:
+        return _result(code, error=f"InternalError: {exc}")
+
+    payload = _parse_payload(proc.stdout)
+    if payload is None:
+        if proc.returncode != 0:
+            return _result(
+                code,
+                stdout=_trim_output(proc.stdout or "", settings.max_output),
+                stderr=_trim_output(proc.stderr or "", settings.max_output),
+                error=f"Process exited with code {proc.returncode}",
+            )
+        return _result(
+            code,
+            stdout=_trim_output(proc.stdout or "", settings.max_output),
+            stderr=_trim_output(proc.stderr or "", settings.max_output),
+            error="Failed to parse sandbox output as JSON",
+        )
+
+    return _result(
+        code,
+        stdout=_trim_output(str(payload.get("stdout") or ""), settings.max_output),
+        stderr=_trim_output((proc.stderr or "") + str(payload.get("stderr") or ""), settings.max_output),
+        success=bool(payload.get("success")),
+        error=payload.get("error"),
+    )
+
+
+def _run_docker_sandbox(code: str, settings: SandboxSettings) -> dict[str, Any]:
+    code_b64 = base64.b64encode(code.encode("utf-8")).decode("ascii")
+    timeout = settings.timeout_seconds + 2
+    try:
+        proc = subprocess.run(
+            [
+                settings.docker_binary,
+                "run",
+                "--rm",
+                "--memory",
+                f"{settings.memory_mb}m",
+                "--pids-limit",
+                "64",
+                "--network",
+                "none",
+                "--user",
+                "sandbox",
+                "-e",
+                f"CODE_EXECUTION_TIMEOUT_SECONDS={settings.timeout_seconds}",
+                "-e",
+                f"CODE_EXECUTION_MEMORY_MB={settings.memory_mb}",
+                "-e",
+                f"CODE_EXECUTION_MAX_OUTPUT={settings.max_output}",
+                "-i",
+                settings.docker_image,
+            ],
+            input=code_b64,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return _result(code, error=f"TimeoutError: container execution exceeded {timeout} seconds.")
+    except Exception as exc:
+        return _result(code, error=f"ContainerError: {exc}")
+
+    payload = _parse_payload(proc.stdout)
+    if payload is None:
+        return _result(
+            code,
+            stdout=_trim_output(proc.stdout or "", settings.max_output),
+            stderr=_trim_output(proc.stderr or "", settings.max_output),
+            error="Failed to parse container JSON output",
+        )
+
+    return _result(
+        code,
+        stdout=_trim_output(str(payload.get("stdout") or ""), settings.max_output),
+        stderr=_trim_output((proc.stderr or "") + str(payload.get("stderr") or ""), settings.max_output),
+        success=bool(payload.get("success")),
+        error=payload.get("error"),
+    )
+
+
+def _run_e2b_sandbox(code: str, settings: SandboxSettings) -> dict[str, Any]:
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+    result_chunks: list[str] = []
+    error_chunks: list[str] = []
+    sandbox: Any = None
+
+    def on_stdout(message: Any) -> None:
+        line = getattr(message, "line", None)
+        if line is not None:
+            stdout_lines.append(str(line))
+
+    def on_stderr(message: Any) -> None:
+        line = getattr(message, "line", None)
+        if line is not None:
+            stderr_lines.append(str(line))
+
+    def on_result(item: Any) -> None:
+        rendered = str(item).strip()
+        if rendered:
+            result_chunks.append(rendered)
+
+    def on_error(item: Any) -> None:
+        name = getattr(item, "name", "ExecutionError")
+        value = getattr(item, "value", str(item))
+        error_chunks.append(f"{name}: {value}")
+
+    try:
+        try:
+            from e2b_code_interpreter import CodeInterpreter
+
+            sandbox = CodeInterpreter()
+        except ImportError:
+            from e2b_code_interpreter import Sandbox
+
+            sandbox = Sandbox.create() if hasattr(Sandbox, "create") else Sandbox()
+    except Exception as exc:
+        return _result(code, error=f"E2BImportError: {exc}")
+
+    try:
+        execution = sandbox.run_code(
+            code,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+            on_result=on_result,
+            on_error=on_error,
+            timeout=float(settings.timeout_seconds),
+            request_timeout=float(settings.timeout_seconds + 5),
+        )
+    except Exception as exc:
+        return _result(code, error=f"E2BExecutionError: {exc}")
+    finally:
+        close = getattr(sandbox, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    if getattr(execution, "text", None):
+        result_chunks.append(str(execution.text))
+    if getattr(execution, "stdout", None):
+        stdout_lines.append(str(execution.stdout))
+    if getattr(execution, "stderr", None):
+        stderr_lines.append(str(execution.stderr))
+
+    stdout = "\n".join(part for part in ["\n".join(stdout_lines).strip(), "\n".join(result_chunks).strip()] if part).strip()
+    stderr = "\n".join(stderr_lines).strip()
+    error = "\n".join(error_chunks).strip() or None
+    return _result(
+        code,
+        stdout=_trim_output(stdout, settings.max_output),
+        stderr=_trim_output(stderr, settings.max_output),
+        success=error is None,
+        error=error,
+    )
+
 
 @tool
 def code_execution_tool(code: str) -> dict[str, Any]:
     """
-    Executes Python 3 code in a restricted, sandboxed environment.
-    Use this to perform complex mathematical processing, formatting text, or logical steps that require actual code execution.
-    Features:
-    - Supported builtins: basic math, string manipulation, dicts, lists.
-    - Unsupported: File I/O, networking, imports.
-    - Max execution time: 10 seconds.
-    - Captures STDOUT and returns it.
-    
-    Args:
-        code: The Python 3 code to execute.
-        
-    Returns:
-        JSON compatible dict with STDOUT, success status and error messages.
+    Execute Python code using the configured sandbox backend.
+
+    Backends:
+    - `restricted_subprocess`: RestrictedPython in a local subprocess.
+    - `docker`: RestrictedPython inside a Docker container.
+    - `e2b`: remote sandbox via the E2B code interpreter SDK.
     """
-    # Encapsulated script to run in a separate process for maximum isolation and reliability on Windows
-    # We use base64 encoding for the user code to avoid shell escaping issues
-    code_b64 = base64.b64encode(code.encode('utf-8')).decode('utf-8')
-    
-    bootstrap_script = f"""
-import sys
-import io
-import contextlib
-import json
-import base64
-from RestrictedPython import compile_restricted, safe_globals, safe_builtins, utility_builtins
-from RestrictedPython.PrintCollector import PrintCollector
+    settings = _load_settings()
+    if not settings.enabled:
+        return _result(code, error="Code execution is disabled. Set CODE_EXECUTION_ENABLED=true to enable it.")
 
-def get_safe_globals():
-    safe_g = safe_globals.copy()
-    safe_g["__builtins__"] = safe_builtins.copy()
-    safe_g["__builtins__"].update(utility_builtins)
-    safe_g["_print_"] = PrintCollector
-    safe_g["_getattr_"] = getattr
-    safe_g["_setattr_"] = setattr
-    safe_g["_getiter_"] = iter
-    safe_g["_getitem_"] = lambda obj, key: obj[key]
-    safe_g["_write_"] = lambda obj: obj
-    return safe_g
-
-def run():
-    code_base64 = "{code_b64}"
-    code = base64.b64decode(code_base64).decode('utf-8')
-    
-    result = {{"stdout": "", "stderr": "", "success": False, "error": None}}
-    try:
-        byte_code = compile_restricted(code, filename="<string>", mode="exec")
-        sandbox_globals = get_safe_globals()
-        
-        output_buffer = io.StringIO()
-        with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-            exec(byte_code, sandbox_globals)
-
-        if "_print" in sandbox_globals:
-             result["stdout"] = str(sandbox_globals["_print"]())
-             
-        buffer_val = output_buffer.getvalue()
-        if buffer_val:
-             if result["stdout"]:
-                  result["stdout"] += "\\n" + buffer_val
-             else:
-                  result["stdout"] = buffer_val
-             
-        result["success"] = True
-    except Exception as e:
-        result["success"] = False
-        result["error"] = f"{{type(e).__name__}}: {{str(e)}}"
-    
-    sys.stdout = sys.__stdout__ # Reset stdout to print the JSON result
-    print(json.dumps(result))
-
-if __name__ == "__main__":
-    run()
-"""
-    
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-c", bootstrap_script],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        if proc.returncode != 0:
-             return {
-                 "code": code,
-                 "stdout": proc.stdout,
-                 "stderr": proc.stderr,
-                 "success": False,
-                 "error": f"Process exited with code {proc.returncode}"
-             }
-             
-        # Extract the JSON payload from the last line of output
-        lines = proc.stdout.strip().splitlines()
-        if not lines:
-             return {
-                 "code": code,
-                 "stdout": "",
-                 "stderr": proc.stderr,
-                 "success": False,
-                 "error": "No output from sandbox process"
-             }
-             
-        try:
-             payload = json.loads(lines[-1])
-             return {
-                 "code": code,
-                 "stdout": payload.get("stdout", ""),
-                 "stderr": proc.stderr,
-                 "success": payload.get("success", False),
-                 "error": payload.get("error")
-             }
-        except json.JSONDecodeError:
-             return {
-                 "code": code,
-                 "stdout": proc.stdout,
-                 "stderr": proc.stderr,
-                 "success": False,
-                 "error": "Failed to parse sandbox output as JSON"
-             }
-
-    except subprocess.TimeoutExpired:
-        return {
-            "code": code,
-            "stdout": "",
-            "stderr": "",
-            "success": False,
-            "error": "TimeoutError: Execution exceeded 10 seconds limit."
-        }
-    except Exception as e:
-        return {
-            "code": code,
-            "stdout": "",
-            "stderr": "",
-            "success": False,
-            "error": f"InternalError: {str(e)}"
-        }
+    if settings.backend == "docker":
+        return _run_docker_sandbox(code, settings)
+    if settings.backend == "e2b":
+        return _run_e2b_sandbox(code, settings)
+    return _run_restricted_subprocess(code, settings)

@@ -40,7 +40,7 @@ def test_agent_plans_gmail_to_sheets(tmp_path):
 def test_agent_trims_save_instruction_from_gmail_query(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
     plan = agent.plan("Search my email about Jobs offers from last week and save company names into Google sheets")
-    assert plan.tasks[0].parameters["q"] == "jobs offers from last week"
+    assert plan.tasks[0].parameters["q"] == "jobs offers from last week newer_than:7d"
 
 
 def test_agent_adds_get_message_for_company_extraction(tmp_path):
