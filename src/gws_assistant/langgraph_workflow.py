@@ -246,6 +246,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "execute_task"
         return "format_output"
 
+    def route_after_search(state: AgentState) -> Literal["execute_task", "format_output"]:
+        plan = state.get("plan")
+        if plan and plan.tasks:
+             return "execute_task"
+        return "format_output"
+
     workflow = StateGraph(AgentState)
     workflow.add_node("generate_plan", plan_node)
     workflow.add_node("validate", validate_node)
@@ -263,7 +269,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     workflow.add_conditional_edges("execute_task", route_after_task)
     workflow.add_conditional_edges("reflect_node", route_after_reflection)
     workflow.add_conditional_edges("update_context", route_after_context)
-    workflow.add_edge("web_search", "format_output")
+    workflow.add_conditional_edges("web_search", route_after_search)
     workflow.add_edge("generate_code", "code_execution")
     workflow.add_edge("code_execution", "reflect_node")
     workflow.add_edge("format_output", END)

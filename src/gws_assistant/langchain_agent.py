@@ -70,9 +70,11 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         "2. EMAIL DETAILS: For Gmail, ALWAYS follow gmail.list_messages with gmail.get_message if details are needed. "
         "Pass 'q' to list_messages, then omit 'id' on get_message (the executor will automatically resolve it).\n"
         "3. EXPORTS: For Drive exports (Docs/Sheets), ALWAYS call drive.export_file. Do NOT use Docs/Sheets APIs for exporting.\n"
-        "4. DO NOT invent services or actions that are not in the catalog. Use ONLY what is provided.\n"
+        "4. WEB SEARCH: If the user asks for information not in their Workspace (e.g. 'Top 3 AI frameworks'), use search.web_search first.\n"
         "5. PARAMETER BINDING: The system automatically links 'id', 'spreadsheet_id', and 'document_id' between sequential tasks.\n"
-        "6. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones, and ignore the unsupported ones. Do NOT set no_service_detected=true if AT LEAST ONE supported service can be used."
+        "6. DO NOT invent services or actions that are not in the catalog. Use ONLY what is provided.\n"
+        "7. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones, and ignore the unsupported ones. Do NOT set no_service_detected=true if AT LEAST ONE supported service can be used.\n"
+        "8. PIPELINE ENFORCEMENT: For complex workflows, prefer the sequence: web_search -> summarize_results -> docs.create_document -> sheets.append_values -> gmail.send_message."
     )
 
     prompt = ChatPromptTemplate.from_messages([
