@@ -12,3 +12,5 @@ questionary>=2.1.1
 customtkinter>=5.2.2
 gradio>=5.27.0
 e2b-code-interpreter>=1.0.0
+pytest>=9.0.3
+pytest-cov>=7.1.0
