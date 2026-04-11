@@ -1,46 +1,24 @@
-# Google Workspace Assistant (CLI + GUI)
+# Google Workspace Assistant
 
-Professional Python wrapper around `gws.exe` with:
-- Natural-language request parsing using OpenAI SDK.
-- OpenRouter or OpenAI provider selection via environment variables.
-- Automatic service validation and clarification prompts.
-- Two interfaces: Terminal UI (CLI) and desktop GUI.
-- Structured logging to console and rotating log file.
-- Unit-tested core planner, parser fallback, config, and command runner.
+Smart CLI and GUI wrapper around `gws.exe` for Google Workspace automation.
 
-## Features
+The CLI uses CrewAI when an API key is configured, with a deterministic local fallback for simple requests. It can detect multiple Google Workspace services in one prompt, plan the execution order, run the matching `gws` commands, and format results for humans instead of dumping raw JSON.
 
-- Supported services: `drive`, `sheets`, `gmail`, `calendar`.
-- If a user request does not include a supported service, the app asks again.
-- If service is valid but action is missing, the app asks follow-up questions.
-- Every command is validated, error-handled, and logged.
-- Clean, modular architecture for easy extension.
+## Supported Services
 
-## Project Structure
+- Gmail
+- Google Sheets
+- Google Drive
+- Google Calendar
+- Google Docs
+- Google Slides
+- Google Contacts, via the Google People API surface exposed by `gws`
 
-```text
-.
-├── gws_crud.py              # Backward-compatible CLI launcher
-├── gws_cli.py               # CLI launcher
-├── gws_gui.py               # GUI launcher
-├── requirements.txt
-├── .env.example
-├── src/
-│   └── gws_assistant/
-│       ├── cli_app.py
-│       ├── gui_app.py
-│       ├── config.py
-│       ├── conversation.py
-│       ├── intent_parser.py
-│       ├── planner.py
-│       ├── gws_runner.py
-│       └── logging_utils.py
-└── tests/
-```
+CrewAI's Google Workspace enterprise integration docs cover OAuth setup for Calendar, Gmail, Drive, Sheets, Slides, Docs, and Contacts: https://enterprise-docs.crewai.com/features/google-integrations
 
 ## Setup
 
-1. Create virtual environment and install dependencies:
+Install dependencies:
 
 ```bash
 python -m venv .venv
@@ -48,26 +26,31 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2. Copy env template and set your keys:
+Run setup explicitly:
 
 ```bash
-copy .env.example .env
+python cli.py --setup
 ```
 
-3. Configure one provider:
+Setup mode:
 
-- OpenAI:
-  - `LLM_PROVIDER=openai`
-  - `OPENAI_API_KEY=...`
-- OpenRouter:
-  - `LLM_PROVIDER=openrouter`
-  - `OPENROUTER_API_KEY=...`
+- Detects a local, npm/global, or PATH-provided `gws` binary.
+- Saves the resolved `GWS_BINARY_PATH`.
+- Saves OpenAI or OpenRouter model settings.
+- Saves API keys if provided.
+- Writes `.env`.
 
-4. Ensure `gws.exe` exists, or set `GWS_BINARY_PATH` in `.env`.
+Setup is never triggered automatically. Normal app startup expects setup to already be complete.
 
 ## Run
 
-CLI:
+Default CLI:
+
+```bash
+python cli.py
+```
+
+Backward-compatible launcher:
 
 ```bash
 python gws_cli.py
@@ -79,24 +62,59 @@ GUI:
 python gws_gui.py
 ```
 
-Backward-compatible script:
+Optional output capture:
 
 ```bash
-python gws_crud.py
+python cli.py --save-output outputs/session.txt
+```
+
+## Example Request
+
+```text
+Find my tickets in Gmail and save to Sheets
+```
+
+The assistant plans this as:
+
+1. Search Gmail for ticket-related messages.
+2. Create a Google Sheet if no spreadsheet ID is supplied.
+3. Append a readable summary of the Gmail results to the sheet.
+
+If no Workspace service is detected, it returns:
+
+```text
+No Google Workspace service detected in your request.
+```
+
+## Project Structure
+
+```text
+.
+|-- cli.py
+|-- gws_cli.py
+|-- gws_gui.py
+|-- requirements.txt
+|-- src/
+|   `-- gws_assistant/
+|       |-- agent_system.py
+|       |-- cli_app.py
+|       |-- config.py
+|       |-- conversation.py
+|       |-- execution.py
+|       |-- gws_runner.py
+|       |-- output_formatter.py
+|       |-- planner.py
+|       |-- service_catalog.py
+|       `-- setup_wizard.py
+`-- tests/
 ```
 
 ## Logs
 
-- Console: rich formatted logs.
-- File: `logs/gws_assistant.log` with rotation.
+Logs go to both console and `logs/gws_assistant.log` with rotation. The app logs setup state, agent planning decisions, actions, command execution, and errors.
 
 ## Tests
 
 ```bash
-pytest
+python -m pytest
 ```
-
-## GitHub CI
-
-GitHub Actions workflow runs tests automatically on push and pull request.
-

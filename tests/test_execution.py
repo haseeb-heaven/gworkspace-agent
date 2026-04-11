@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from gws_assistant.execution import PlanExecutor
+from gws_assistant.gws_runner import GWSRunner
+from gws_assistant.models import ExecutionResult, PlannedTask, RequestPlan
+from gws_assistant.planner import CommandPlanner
+
+
+class FakeRunner(GWSRunner):
+    def __init__(self) -> None:
+        super().__init__(Path("gws.exe"), logging.getLogger("test"))
+        self.commands: list[list[str]] = []
+
+    def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
+        self.commands.append(args)
+        if args[:4] == ["gmail", "users", "messages", "list"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"messages":[{"id":"m1","threadId":"t1"}],"resultSizeEstimate":1}',
+            )
+        if args[:3] == ["sheets", "spreadsheets", "create"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"spreadsheetId":"sheet-1","spreadsheetUrl":"https://example.test/sheet"}',
+            )
+        if args[:4] == ["sheets", "spreadsheets", "values", "get"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"range":"Sheet1!A1:B2","values":[["Name","Role"],["Alice","Engineer"]]}',
+            )
+        if args[:4] == ["gmail", "users", "messages", "get"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout=(
+                    '{"id":"m1","payload":{"headers":['
+                    '{"name":"From","value":"DecoverAI <jobs@decoverai.example>"},'
+                    '{"name":"Subject","value":"Job offer"}]}}'
+                ),
+            )
+        if args[:4] == ["gmail", "users", "messages", "send"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"id":"sent-1","labelIds":["SENT"]}',
+            )
+        return ExecutionResult(success=True, command=["gws.exe", *args], stdout='{"updates":{"updatedRows":2}}')
+
+
+def test_executor_resolves_gmail_to_sheet_placeholders():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    plan = RequestPlan(
+        raw_text="tickets",
+        tasks=[
+            PlannedTask("task-1", "gmail", "list_messages", {"q": "ticket", "max_results": 10}),
+            PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "Tickets"}),
+            PlannedTask(
+                "task-3",
+                "sheets",
+                "append_values",
+                {"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+            ),
+        ],
+    )
+    report = executor.execute(plan)
+    assert report.success is True
+    assert "sheet-1" in runner.commands[2][runner.commands[2].index("--params") + 1]
+    assert "m1" in runner.commands[2][runner.commands[2].index("--json") + 1]
+
+
+def test_executor_expands_gmail_message_placeholder_before_get_message():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    plan = RequestPlan(
+        raw_text="jobs",
+        tasks=[
+            PlannedTask("task-1", "gmail", "list_messages", {"q": "jobs", "max_results": 10}),
+            PlannedTask("task-2", "gmail", "get_message", {"message_id": "{{message_id_from_task_1}}"}),
+            PlannedTask("task-3", "sheets", "create_spreadsheet", {"title": "Jobs"}),
+            PlannedTask(
+                "task-4",
+                "sheets",
+                "append_values",
+                {
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": "{{company_names_from_task_2}}",
+                },
+            ),
+        ],
+    )
+    report = executor.execute(plan)
+    assert report.success is True
+    assert runner.commands[1][:4] == ["gmail", "users", "messages", "get"]
+    assert '"id": "m1"' in runner.commands[1][runner.commands[1].index("--params") + 1]
+    assert "DecoverAI" in runner.commands[3][runner.commands[3].index("--json") + 1]
+
+
+def test_executor_builds_email_body_from_sheet_values():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    plan = RequestPlan(
+        raw_text="send sheet by email",
+        tasks=[
+            PlannedTask(
+                "task-1",
+                "sheets",
+                "get_values",
+                {"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
+            ),
+            PlannedTask(
+                "task-2",
+                "gmail",
+                "send_message",
+                {"to_email": "user@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
+            ),
+        ],
+    )
+    report = executor.execute(plan)
+    assert report.success is True
+    assert runner.commands[1][:4] == ["gmail", "users", "messages", "send"]
+    raw_json = runner.commands[1][runner.commands[1].index("--json") + 1]
+    assert "raw" in raw_json

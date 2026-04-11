@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import questionary
@@ -10,15 +11,20 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
+from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
 from .config import AppConfig
 from .conversation import ConversationEngine
+from .execution import PlanExecutor
 from .exceptions import ValidationError
 from .gws_runner import GWSRunner
 from .intent_parser import IntentParser
 from .logging_utils import setup_logging
+from .models import PlannedTask
+from .output_formatter import HumanReadableFormatter
 from .planner import CommandPlanner
+from .setup_wizard import run_setup_wizard
 
-app = typer.Typer(no_args_is_help=False, help="Google Workspace Assistant CLI")
+app = typer.Typer(invoke_without_command=True, no_args_is_help=False, help="Google Workspace Assistant CLI")
 console = Console()
 
 
@@ -72,27 +78,76 @@ def _collect_parameters(
     return collected
 
 
-@app.command()
-def run() -> None:
+def _collect_task_parameters(
+    engine: ConversationEngine,
+    task: PlannedTask,
+) -> PlannedTask:
+    collected = dict(task.parameters)
+    for spec in engine.parameter_specs(task.service, task.action):
+        value = collected.get(spec.name)
+        if value is not None and str(value).strip():
+            continue
+        if not spec.required:
+            continue
+        collected[spec.name] = _ask_non_empty(spec.prompt, default=spec.example)
+    return PlannedTask(
+        id=task.id,
+        service=task.service,
+        action=task.action,
+        parameters=collected,
+        reason=task.reason,
+    )
+
+
+def _save_output(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(text.rstrip() + "\n\n")
+
+
+def _run_application(save_output: Path | None = None) -> None:
     """Runs the interactive terminal assistant."""
     config = AppConfig.from_env()
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
 
+    if not config.setup_complete:
+        console.print(
+            Panel.fit(
+                f"[red]Setup is missing or incomplete.[/red]\n"
+                f"Expected config file: {config.env_file_path}\n"
+                f"Expected gws binary: {config.gws_binary_path}\n\n"
+                "Run setup explicitly with:\npython cli.py --setup",
+                title="Setup Required",
+            )
+        )
+        raise typer.Exit(code=1)
+
     parser = IntentParser(config=config, logger=logger)
     planner = CommandPlanner()
     engine = ConversationEngine(parser=parser, planner=planner, logger=logger)
+    agent_system = WorkspaceAgentSystem(config=config, logger=logger)
     runner = GWSRunner(config.gws_binary_path, logger=logger)
+    executor = PlanExecutor(planner=planner, runner=runner, logger=logger)
+    formatter = HumanReadableFormatter()
 
     if not runner.validate_binary():
         console.print(
             Panel.fit(
                 f"[red]gws binary not found at:[/red]\n{config.gws_binary_path}\n"
-                "Set GWS_BINARY_PATH in your .env file.",
+                "Run python cli.py --setup to configure it.",
                 title="Setup Error",
             )
         )
         raise typer.Exit(code=1)
+    if not config.api_key:
+        console.print(
+            Panel.fit(
+                "No LLM API key is configured. CrewAI planning will fall back to local heuristics.",
+                title="Model Warning",
+                border_style="yellow",
+            )
+        )
 
     console.print(Panel.fit("Google Workspace Assistant CLI is ready.", title="Welcome"))
 
@@ -103,31 +158,23 @@ def run() -> None:
                 console.print("[green]Goodbye.[/green]")
                 break
 
-            intent = engine.parse_user_request(user_text)
-            service = intent.service
-            if engine.needs_service_clarification(intent):
-                console.print(f"[yellow]{engine.service_clarification_message()}[/yellow]")
-                service = _pick_service(engine)
+            plan = agent_system.plan(user_text)
+            logger.info(
+                "Agent plan source=%s tasks=%s summary=%s",
+                plan.source,
+                [f"{task.service}.{task.action}" for task in plan.tasks],
+                plan.summary,
+            )
+            if plan.no_service_detected or not plan.tasks:
+                console.print(f"[yellow]{NO_SERVICE_MESSAGE}[/yellow]")
+                continue
 
-            action = intent.action
-            try:
-                if not service:
-                    raise ValidationError("Service could not be determined.")
-                engine.validate_selection(service, action)
-            except ValidationError:
-                action = _pick_action(engine, service)
-
-            if not service or not action:
-                raise ValidationError("Both service and action are required.")
-
-            params = _collect_parameters(engine, service, action, intent.parameters)
-            args = engine.build_command(service, action, params)
-            result = runner.run(args)
-
-            if result.success:
-                console.print(Panel(engine.format_result(result), title="Success", border_style="green"))
-            else:
-                console.print(Panel(engine.format_result(result), title="Error", border_style="red"))
+            plan.tasks = [_collect_task_parameters(engine, task) for task in plan.tasks]
+            report = executor.execute(plan)
+            output = formatter.format_report(report)
+            if save_output:
+                _save_output(save_output, output)
+            console.print(Panel(output, title="Success" if report.success else "Error", border_style="green" if report.success else "red"))
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted by user. Exiting.[/yellow]")
@@ -140,7 +187,22 @@ def run() -> None:
             console.print(f"[red]Unexpected error: {exc}[/red]")
 
 
+@app.callback(invoke_without_command=True)
+def run(
+    setup: bool = typer.Option(False, "--setup", help="Run setup mode and save configuration."),
+    save_output: Path | None = typer.Option(None, "--save-output", help="Append readable output to a file."),
+) -> None:
+    """Default command: run app. Use --setup to configure it."""
+    if setup:
+        run_setup_wizard()
+        return
+    _run_application(save_output=save_output)
+
+
 def main() -> None:
     """Entry point for console scripts."""
     app()
 
+
+if __name__ == "__main__":
+    main()

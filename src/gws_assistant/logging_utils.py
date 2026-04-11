@@ -15,6 +15,7 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
     logger = logging.getLogger("gws_assistant")
     logger.setLevel(getattr(logging, config.log_level, logging.INFO))
     logger.handlers.clear()
+    logger.propagate = False
 
     formatter = logging.Formatter(
         fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -41,4 +42,3 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
 
     logger.debug("Logging configured with level=%s", config.log_level)
     return logger
-

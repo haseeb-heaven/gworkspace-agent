@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,7 +27,8 @@ class AppConfig:
 
     @staticmethod
     def from_env() -> AppConfigModel:
-        load_dotenv(override=False)
+        env_file_path = Path(".env").expanduser().resolve()
+        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
 
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
@@ -46,12 +48,14 @@ class AppConfig:
             base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
-        gws_binary_path = Path(os.getenv("GWS_BINARY_PATH", "gws.exe")).expanduser().resolve()
+        gws_binary_value = os.getenv("GWS_BINARY_PATH", "gws.exe")
+        gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / "gws_assistant.log"
         log_level = (os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
         verbose = _to_bool(os.getenv("APP_VERBOSE"), default=True)
+        setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
 
         return AppConfigModel(
             provider=provider,
@@ -63,5 +67,15 @@ class AppConfig:
             log_file_path=log_file_path,
             log_level=log_level,
             verbose=verbose,
+            env_file_path=env_file_path,
+            setup_complete=setup_complete,
         )
 
+
+def _resolve_gws_binary_path(value: str) -> Path:
+    candidate = Path(value).expanduser()
+    if not candidate.exists() and candidate.name == value:
+        discovered = shutil.which(value)
+        if discovered:
+            return Path(discovered).resolve()
+    return candidate.resolve()

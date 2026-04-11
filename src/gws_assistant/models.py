@@ -18,6 +18,8 @@ class AppConfigModel:
     log_file_path: Path
     log_level: str
     verbose: bool
+    env_file_path: Path
+    setup_complete: bool
 
 
 @dataclass(slots=True)
@@ -29,6 +31,25 @@ class Intent:
     confidence: float = 0.0
     needs_clarification: bool = False
     clarification_reason: str | None = None
+
+
+@dataclass(slots=True)
+class PlannedTask:
+    id: str
+    service: str
+    action: str
+    parameters: dict[str, Any] = field(default_factory=dict)
+    reason: str = ""
+
+
+@dataclass(slots=True)
+class RequestPlan:
+    raw_text: str
+    tasks: list[PlannedTask] = field(default_factory=list)
+    summary: str = ""
+    confidence: float = 0.0
+    no_service_detected: bool = False
+    source: str = "heuristic"
 
 
 @dataclass(slots=True)
@@ -64,3 +85,18 @@ class ExecutionResult:
     return_code: int = -1
     error: str | None = None
 
+
+@dataclass(slots=True)
+class TaskExecution:
+    task: PlannedTask
+    result: ExecutionResult
+
+
+@dataclass(slots=True)
+class PlanExecutionReport:
+    plan: RequestPlan
+    executions: list[TaskExecution]
+
+    @property
+    def success(self) -> bool:
+        return bool(self.executions) and all(item.result.success for item in self.executions)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -57,6 +58,12 @@ class CommandPlanner:
             return self._build_gmail_command(action_key, params)
         if service_key == "calendar":
             return self._build_calendar_command(action_key, params)
+        if service_key == "docs":
+            return self._build_docs_command(action_key, params)
+        if service_key == "slides":
+            return self._build_slides_command(action_key, params)
+        if service_key == "contacts":
+            return self._build_contacts_command(action_key, params)
         raise ValidationError(f"No command builder for service: {service_key}")
 
     def _build_drive_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -110,20 +117,59 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"spreadsheetId": spreadsheet_id}),
             ]
+        if action == "get_values":
+            spreadsheet_id = self._required_text(params, "spreadsheet_id")
+            range_name = str(params.get("range") or "Sheet1!A1:Z500").strip()
+            return [
+                "sheets",
+                "spreadsheets",
+                "values",
+                "get",
+                "--params",
+                json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name}),
+            ]
+        if action == "append_values":
+            spreadsheet_id = self._required_text(params, "spreadsheet_id")
+            range_name = str(params.get("range") or "Sheet1!A1").strip()
+            values = params.get("values")
+            if isinstance(values, str):
+                values = [[values]]
+            if not isinstance(values, list) or not values:
+                values = [["No values supplied"]]
+            return [
+                "sheets",
+                "spreadsheets",
+                "values",
+                "append",
+                "--params",
+                json.dumps(
+                    {
+                        "spreadsheetId": spreadsheet_id,
+                        "range": range_name,
+                        "valueInputOption": "RAW",
+                        "insertDataOption": "INSERT_ROWS",
+                    },
+                    ensure_ascii=True,
+                ),
+                "--json",
+                json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}, ensure_ascii=True),
+            ]
         raise ValidationError(f"Unsupported sheets action: {action}")
 
     def _build_gmail_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_messages":
             max_results = self._safe_positive_int(params.get("max_results"), default=10)
+            query = str(params.get("q") or "").strip()
+            request_params: dict[str, Any] = {"userId": "me", "maxResults": max_results}
+            if query:
+                request_params["q"] = query
             return [
                 "gmail",
                 "users",
                 "messages",
                 "list",
                 "--params",
-                json.dumps({"userId": "me", "maxResults": max_results}),
-                "--format",
-                "table",
+                json.dumps(request_params),
             ]
         if action == "get_message":
             message_id = self._required_text(params, "message_id")
@@ -134,6 +180,21 @@ class CommandPlanner:
                 "get",
                 "--params",
                 json.dumps({"userId": "me", "id": message_id}),
+            ]
+        if action == "send_message":
+            to_email = self._required_text(params, "to_email")
+            subject = self._required_text(params, "subject")
+            body = self._required_text(params, "body")
+            raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
+            return [
+                "gmail",
+                "users",
+                "messages",
+                "send",
+                "--params",
+                json.dumps({"userId": "me"}),
+                "--json",
+                json.dumps({"raw": raw_email}, ensure_ascii=True),
             ]
         raise ValidationError(f"Unsupported gmail action: {action}")
 
@@ -163,6 +224,37 @@ class CommandPlanner:
             ]
         raise ValidationError(f"Unsupported calendar action: {action}")
 
+    def _build_docs_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "get_document":
+            document_id = self._required_text(params, "document_id")
+            return ["docs", "documents", "get", "--params", json.dumps({"documentId": document_id})]
+        raise ValidationError(f"Unsupported docs action: {action}")
+
+    def _build_slides_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "get_presentation":
+            presentation_id = self._required_text(params, "presentation_id")
+            return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": presentation_id})]
+        raise ValidationError(f"Unsupported slides action: {action}")
+
+    def _build_contacts_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_contacts":
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            return [
+                "people",
+                "people",
+                "connections",
+                "list",
+                "--params",
+                json.dumps(
+                    {
+                        "resourceName": "people/me",
+                        "pageSize": page_size,
+                        "personFields": "names,emailAddresses,phoneNumbers",
+                    }
+                ),
+            ]
+        raise ValidationError(f"Unsupported contacts action: {action}")
+
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
         value = str(params.get(key) or "").strip()
@@ -178,3 +270,14 @@ class CommandPlanner:
         except Exception:
             return default
 
+    @staticmethod
+    def _build_raw_email(to_email: str, subject: str, body: str) -> str:
+        message = (
+            f"To: {to_email}\r\n"
+            f"Subject: {subject}\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "MIME-Version: 1.0\r\n"
+            "\r\n"
+            f"{body}"
+        )
+        return base64.urlsafe_b64encode(message.encode("utf-8")).decode("ascii")

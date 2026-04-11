@@ -66,6 +66,25 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
                 ),
             ),
+            "get_values": ActionSpec(
+                key="get_values",
+                label="Read spreadsheet values",
+                keywords=("read", "fetch", "get", "search", "values", "data", "sheet"),
+                parameters=(
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                    ParameterSpec("range", "Enter values range", "Sheet1!A1:Z500", required=False),
+                ),
+            ),
+            "append_values": ActionSpec(
+                key="append_values",
+                label="Append rows",
+                keywords=("append", "add", "save", "write", "insert", "rows"),
+                parameters=(
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                    ParameterSpec("range", "Enter the target range", "Sheet1!A1", required=False),
+                    ParameterSpec("values", "Enter rows to append", "value", required=False),
+                ),
+            ),
         },
     ),
     "gmail": ServiceSpec(
@@ -76,9 +95,10 @@ SERVICES: dict[str, ServiceSpec] = {
             "list_messages": ActionSpec(
                 key="list_messages",
                 label="List messages",
-                keywords=("list", "show", "messages", "emails", "inbox"),
+                keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
                     ParameterSpec("max_results", "How many emails should I show?", "10", required=False),
+                    ParameterSpec("q", "What Gmail search query should I use?", "ticket", required=False),
                 ),
             ),
             "get_message": ActionSpec(
@@ -87,6 +107,16 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("get", "open", "message", "email"),
                 parameters=(
                     ParameterSpec("message_id", "Enter message ID", "18c5a4fbe123"),
+                ),
+            ),
+            "send_message": ActionSpec(
+                key="send_message",
+                label="Send email",
+                keywords=("send", "compose", "mail", "email", "share"),
+                parameters=(
+                    ParameterSpec("to_email", "Recipient email address", "person@example.com"),
+                    ParameterSpec("subject", "Email subject", "Requested data"),
+                    ParameterSpec("body", "Email body", "Hello,\nPlease find the data below."),
                 ),
             ),
         },
@@ -115,6 +145,51 @@ SERVICES: dict[str, ServiceSpec] = {
             ),
         },
     ),
+    "docs": ServiceSpec(
+        key="docs",
+        label="Google Docs",
+        aliases=("docs", "doc", "document", "documents"),
+        actions={
+            "get_document": ActionSpec(
+                key="get_document",
+                label="Get document",
+                keywords=("get", "open", "show", "read", "document", "doc"),
+                parameters=(
+                    ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),
+                ),
+            ),
+        },
+    ),
+    "slides": ServiceSpec(
+        key="slides",
+        label="Google Slides",
+        aliases=("slides", "presentation", "presentations", "deck"),
+        actions={
+            "get_presentation": ActionSpec(
+                key="get_presentation",
+                label="Get presentation",
+                keywords=("get", "open", "show", "read", "presentation", "slides", "deck"),
+                parameters=(
+                    ParameterSpec("presentation_id", "Enter the Google Slides presentation ID", "1AbCdEFg123"),
+                ),
+            ),
+        },
+    ),
+    "contacts": ServiceSpec(
+        key="contacts",
+        label="Google Contacts",
+        aliases=("contacts", "people", "profile", "profiles"),
+        actions={
+            "list_contacts": ActionSpec(
+                key="list_contacts",
+                label="List contacts",
+                keywords=("list", "show", "find", "search", "contacts", "people"),
+                parameters=(
+                    ParameterSpec("page_size", "How many contacts should I show?", "10", required=False),
+                ),
+            ),
+        },
+    ),
 }
 
 
@@ -132,4 +207,3 @@ def normalize_service(value: str | None) -> str | None:
         if candidate in spec.aliases:
             return service
     return None
-

@@ -33,3 +33,20 @@ def test_build_command_rejects_unknown_service():
     with pytest.raises(ValidationError):
         planner.build_command("unknown", "list", {})
 
+
+def test_build_sheets_get_values_command():
+    planner = CommandPlanner()
+    args = planner.build_command("sheets", "get_values", {"spreadsheet_id": "sheet-1", "range": "Sheet1!A1:B2"})
+    assert args[:4] == ["sheets", "spreadsheets", "values", "get"]
+    assert '"spreadsheetId": "sheet-1"' in args[args.index("--params") + 1]
+
+
+def test_build_gmail_send_message_command():
+    planner = CommandPlanner()
+    args = planner.build_command(
+        "gmail",
+        "send_message",
+        {"to_email": "user@example.com", "subject": "Hello", "body": "Test message"},
+    )
+    assert args[:4] == ["gmail", "users", "messages", "send"]
+    assert "--json" in args

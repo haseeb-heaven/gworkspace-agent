@@ -1,3 +1,4 @@
+crewai>=1.0.0
 openai>=1.40.0
 python-dotenv>=1.0.1
 typer>=0.12.3
@@ -6,4 +7,3 @@ questionary>=2.0.1
 customtkinter>=5.2.2
 pytest>=8.2.0
 pytest-mock>=3.14.0
-

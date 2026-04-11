@@ -8,6 +8,7 @@ from typing import Any
 from .exceptions import ValidationError
 from .intent_parser import IntentParser
 from .models import ExecutionResult, Intent, ParameterSpec
+from .output_formatter import HumanReadableFormatter
 from .planner import CommandPlanner
 from .service_catalog import SERVICES
 
@@ -67,9 +68,4 @@ class ConversationEngine:
 
     @staticmethod
     def format_result(result: ExecutionResult) -> str:
-        if result.success:
-            return result.stdout or "Command succeeded with no output."
-        if result.stderr:
-            return result.stderr
-        return result.error or "Command failed with unknown error."
-
+        return HumanReadableFormatter().format_execution_result(result)
