@@ -31,21 +31,64 @@ class PlanExecutor:
     def execute(self, plan: RequestPlan) -> PlanExecutionReport:
         context: dict[str, Any] = {"request_text": plan.raw_text}
         executions: list[TaskExecution] = []
-        for task in plan.tasks:
+        thought_trace: list[dict] = []
+        task_list = list(plan.tasks)
+        current_index = 0
+
+        while current_index < len(task_list):
+            task = task_list[current_index]
             for expanded_task in self._expand_task(task, context):
-                self.logger.info(
-                    "Executing planned task id=%s service=%s action=%s reason=%s",
-                    expanded_task.id,
-                    expanded_task.service,
-                    expanded_task.action,
-                    expanded_task.reason,
+                # THOUGHT
+                thought = self._think(
+                    goal=plan.raw_text,
+                    context=context,
+                    next_task=expanded_task
                 )
+                self.logger.info("Thought [step %d]: %s", current_index + 1, thought)
+
+                # ACTION
                 resolved_task = self._resolve_task(expanded_task, context)
                 result = self.execute_single_task(resolved_task, context)
                 executions.append(TaskExecution(task=resolved_task, result=result))
+
+                # OBSERVATION
+                context["last_observation"] = result.stdout
+                thought_trace.append({
+                    "step": current_index + 1,
+                    "thought": thought,
+                    "action": f"{resolved_task.service}.{resolved_task.action}",
+                    "observation": (result.stdout or "")[:300],
+                    "success": result.success,
+                })
+
+                # REFLECTION on failure
                 if not result.success:
-                    self.logger.warning("Task failed id=%s; continuing to capture full execution trace.", resolved_task.id)
-        return PlanExecutionReport(plan=plan, executions=executions)
+                    reflection = self._reflect_on_failure(resolved_task, result, context)
+                    self.logger.warning("Reflection: %s", reflection)
+                    context["last_reflection"] = reflection
+
+                # RE-PLAN if LLM signals it
+                if self._should_replan(thought, result, context):
+                    new_tasks = self._replan(plan.raw_text, context)
+                    if new_tasks:
+                        task_list[current_index + 1:] = new_tasks
+                        self.logger.info("Re-planned: %d new tasks injected.", len(new_tasks))
+
+            current_index += 1
+
+        report = PlanExecutionReport(plan=plan, executions=executions)
+        report.thought_trace = thought_trace
+
+        # Save to memory
+        from .memory import save_episode
+        task_summaries = [
+            {"service": e.task.service, "action": e.task.action, "success": e.result.success}
+            for e in executions
+        ]
+        outcome = "success" if all(e.result.success for e in executions) else "partial_failure"
+        save_episode(goal=plan.raw_text, tasks=task_summaries, outcome=outcome)
+
+        return report
 
     def execute_single_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
         """Executes a single fully-resolved task and updates the context."""
@@ -80,6 +123,61 @@ class PlanExecutor:
         }
         self._update_context(task, result.stdout, context)
         return result
+
+    def _think(self, goal: str, context: dict, next_task: PlannedTask) -> str:
+        """ReACT: LLM reasons about whether next planned step is correct."""
+        try:
+            from .langchain_agent import create_agent
+            from .config import AppConfig
+            config = AppConfig.from_env()
+            agent = create_agent(config, self.logger)
+            if not agent:
+                return "No LLM configured — proceeding with planned task."
+            prompt = (
+                f"Goal: {goal}\n"
+                f"Completed steps: {len(context.get('task_results', {}))}\n"
+                f"Last observation: {str(context.get('last_observation', 'None'))[:300]}\n"
+                f"Last reflection: {str(context.get('last_reflection', 'None'))[:200]}\n"
+                f"Next planned action: {next_task.service}.{next_task.action}\n"
+                f"Parameters: {list(next_task.parameters.keys())}\n\n"
+                "In one sentence: Is this the right next step? "
+                "If not, state what should change. Be concise."
+            )
+            response = agent.invoke(prompt)
+            return getattr(response, "content", str(response)).strip()
+        except Exception as exc:
+            self.logger.warning("_think() failed: %s", exc)
+            return "Thought step skipped due to LLM error."
+
+    def _should_replan(self, thought: str, result: ExecutionResult, context: dict) -> bool:
+        """Decide if the remaining plan should be regenerated."""
+        if not result.success:
+            return False  # Let failure reflection handle it, don't replan on every error
+        lower_thought = thought.lower()
+        replan_signals = ("should change", "instead", "wrong step", "incorrect", "skip", "replan")
+        return any(signal in lower_thought for signal in replan_signals)
+
+    def _replan(self, goal: str, context: dict) -> list[PlannedTask]:
+        """Ask LLM to generate replacement tasks given current context."""
+        try:
+            from .langchain_agent import plan_with_langchain
+            from .config import AppConfig
+            config = AppConfig.from_env()
+            new_plan = plan_with_langchain(goal, config, self.logger)
+            if new_plan and new_plan.tasks:
+                completed_count = len(context.get("task_results", {}))
+                return new_plan.tasks[completed_count:]  # skip already-done tasks
+        except Exception as exc:
+            self.logger.warning("_replan() failed: %s", exc)
+        return []
+
+    def _reflect_on_failure(self, task: PlannedTask, result: ExecutionResult, context: dict) -> str:
+        return (
+            f"Task {task.id} ({task.service}.{task.action}) failed. "
+            f"Error: {result.error or 'unknown'}. "
+            f"Parameters used: {list(task.parameters.keys())}. "
+            f"Suggestion: Check if required IDs are resolved in context."
+        )
 
     def _execute_web_search(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
         """Execute a web search task using the web_search_tool and store results in context."""

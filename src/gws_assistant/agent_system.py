@@ -26,6 +26,12 @@ class WorkspaceAgentSystem:
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
 
     def plan(self, user_text: str) -> RequestPlan:
+        from .memory import recall_similar
+        past = recall_similar(user_text)
+        if past:
+            self.logger.info("Memory: found %d similar past episodes", len(past))
+            # Inject past context into LLM prompt if available
+
         text = (user_text or "").strip()
         if not text:
             return RequestPlan(

@@ -111,6 +111,7 @@ class TaskExecution:
 class PlanExecutionReport:
     plan: RequestPlan
     executions: list[TaskExecution]
+    thought_trace: list[dict] = field(default_factory=list)
 
     @property
     def success(self) -> bool:
