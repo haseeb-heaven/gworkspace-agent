@@ -11,6 +11,9 @@ from langchain_core.runnables import RunnableConfig
 from .models import RequestPlan, PlannedTask, AppConfigModel
 from .service_catalog import SERVICES
 
+_DEFAULT_CONFIDENCE = 0.9
+
+
 def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
     try:
         return ChatOpenAI(
@@ -22,6 +25,7 @@ def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI |
     except Exception as e:
         logger.error(f"Failed to create ChatOpenAI agent: {e}")
         return None
+
 
 def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger) -> RequestPlan | None:
     """Uses a Chat model with structured output to plan Workspace tasks."""
@@ -62,7 +66,7 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         try:
             chain = prompt | model.with_structured_output(RequestPlan)
             plan_data = chain.invoke(
-                 {"request": text}, 
+                 {"request": text},
                  config=RunnableConfig(metadata={"timeout": config.timeout_seconds})
             )
             break
@@ -97,9 +101,15 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
             raw_text=text,
             tasks=tasks,
             summary=str(plan_data.get("summary", "Generated Workspace Plan")),
-            confidence=float(plan_data.get("confidence", 0.9)),
+            confidence=float(plan_data.get("confidence", _DEFAULT_CONFIDENCE)),
             no_service_detected=bool(plan_data.get("no_service_detected", False)),
             source="langchain"
         )
+
+    # Post-invoke confidence normalization hook:
+    # If the model returned a valid plan but confidence was not set (0.0),
+    # apply the default confidence so downstream consumers get a meaningful score.
+    if hasattr(plan_data, "confidence") and plan_data.confidence == 0.0:
+        plan_data.confidence = _DEFAULT_CONFIDENCE
 
     return plan_data

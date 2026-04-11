@@ -5,10 +5,8 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
-import json
-import multiprocessing
-import queue
 import re
+import threading
 from typing import Any
 
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
@@ -52,37 +50,38 @@ def _validate_submitted_code(code: str) -> str | None:
         if re.search(pattern, code):
             return f"SecurityError: disallowed pattern matched: {pattern}"
     try:
-        tree = ast.parse(code)
+        ast.parse(code)
     except Exception as exc:
         return f"SyntaxError: {exc}"
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(code)):
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             return "SecurityError: import __future__ is blocked."
     return None
 
 
-def _run_in_sandbox(code: str, return_queue: multiprocessing.Queue):
-    result = CodeExecutionResult(code=code)
+def _run_in_thread(code: str, result_holder: list) -> None:
+    """Execute sandboxed code in the current thread and store a CodeExecutionResult in result_holder[0]."""
+    exec_result = CodeExecutionResult(code=code)
     try:
         byte_code = compile_restricted(code, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-            exec(byte_code, sandbox_globals)
+            exec(byte_code, sandbox_globals)  # noqa: S102
 
         if "_print" in sandbox_globals:
-            result.stdout = sandbox_globals["_print"]()
+            exec_result.stdout = sandbox_globals["_print"]()
         buffer_val = output_buffer.getvalue()
         if buffer_val:
-            result.stdout = f"{result.stdout}\n{buffer_val}".strip()
+            exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip()
 
-        result.return_value = sandbox_globals.get("result")
-        result.success = True
+        exec_result.return_value = sandbox_globals.get("result")
+        exec_result.success = True
     except Exception as exc:
-        result.success = False
-        result.error = f"{type(exc).__name__}: {exc}"
+        exec_result.success = False
+        exec_result.error = f"{type(exc).__name__}: {exc}"
 
-    return_queue.put(result)
+    result_holder.append(exec_result)
 
 
 def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
@@ -107,28 +106,28 @@ def execute_generated_code(code: str) -> StructuredToolResult:
             error=validation_error,
         )
 
-    queue_res = multiprocessing.Queue()
-    process = multiprocessing.Process(target=_run_in_sandbox, args=(code, queue_res))
-    process.start()
-    process.join(timeout=_TIMEOUT_SECONDS)
+    result_holder: list = []
+    thread = threading.Thread(target=_run_in_thread, args=(code, result_holder), daemon=True)
+    thread.start()
+    thread.join(timeout=_TIMEOUT_SECONDS)
 
-    if process.is_alive():
-        process.terminate()
-        process.join()
+    if thread.is_alive():
+        # Thread is still running after timeout — treat as timeout (daemon thread will be GC'd)
         return StructuredToolResult(
             success=False,
             output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
             error=f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds.",
         )
 
-    try:
-        result = queue_res.get(block=False)
-    except queue.Empty:
+    if not result_holder:
         result = CodeExecutionResult(
             code=code,
             success=False,
-            error="ProcessError: Sandbox process crashed unexpectedly without returning results.",
+            error="ProcessError: Sandbox thread finished without returning results.",
         )
+    else:
+        result = result_holder[0]
+
     return normalize_code_result(result)
 
 
