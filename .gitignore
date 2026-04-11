@@ -32,3 +32,9 @@ logs/
 Thumbs.db
 
 *.exe
+*.txt
+*.pdf
+*.docx
+*.xlsx
+*.pptx
+*.eml
