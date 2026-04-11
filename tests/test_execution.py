@@ -23,10 +23,24 @@ class FakeRunner(GWSRunner):
                 stdout='{"messages":[{"id":"m1","threadId":"t1"}],"resultSizeEstimate":1}',
             )
         if args[:3] == ["sheets", "spreadsheets", "create"]:
+            import json as _json
+            json_idx = args.index("--json") if "--json" in args else -1
+            title = "Sheet"
+            if json_idx >= 0:
+                try:
+                    body = _json.loads(args[json_idx + 1])
+                    title = body.get("properties", {}).get("title", "Sheet")
+                except Exception:
+                    pass
             return ExecutionResult(
                 success=True,
                 command=["gws.exe", *args],
-                stdout='{"spreadsheetId":"sheet-1","spreadsheetUrl":"https://example.test/sheet"}',
+                stdout=_json.dumps({
+                    "spreadsheetId": "sheet-1",
+                    "spreadsheetUrl": "https://example.test/sheet",
+                    "properties": {"title": title},
+                    "sheets": [{"properties": {"title": title}}],
+                }),
             )
         if args[:4] == ["sheets", "spreadsheets", "values", "get"]:
             return ExecutionResult(
@@ -49,6 +63,30 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=["gws.exe", *args],
                 stdout='{"id":"sent-1","labelIds":["SENT"]}',
+            )
+        if args[:3] == ["drive", "files", "list"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"files":[{"id":"d1","name":"Agentic AI - Builders","mimeType":"application/vnd.google-apps.document","webViewLink":"https://docs.google.com/document/d/test123/edit"},{"id":"d2","name":"weapon_244.qvm","mimeType":"application/octet-stream","webViewLink":"https://drive.google.com/file/d/xxx"}]}',
+            )
+        if args[:3] == ["drive", "files", "create"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"id":"folder-1","name":"Test Folder","mimeType":"application/vnd.google-apps.folder","kind":"drive#file"}',
+            )
+        if args[:3] == ["calendar", "events", "insert"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"id":"evt-1","created":"2026-04-11","summary":"Test Event","htmlLink":"https://calendar.google.com/event?id=evt-1"}',
+            )
+        if args[:3] == ["calendar", "events", "list"]:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"items":[{"id":"evt-1","summary":"Review Data","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
             )
         return ExecutionResult(success=True, command=["gws.exe", *args], stdout='{"updates":{"updatedRows":2}}')
 

@@ -27,7 +27,7 @@ def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.skipif(importlib.util.find_spec("questionary") is None, reason="CLI runtime dependencies are not installed")
+@pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
 def test_cli_module_help_smoke():
     result = _run_command([sys.executable, "-m", "src.gws_assistant.cli_app", "--help"])
     output = f"{result.stdout}\n{result.stderr}"
@@ -36,7 +36,7 @@ def test_cli_module_help_smoke():
     assert "--setup" in output
 
 
-@pytest.mark.skipif(importlib.util.find_spec("questionary") is None, reason="CLI runtime dependencies are not installed")
+@pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
 def test_cli_launcher_help_smoke():
     result = _run_command([sys.executable, "cli.py", "--help"])
     output = f"{result.stdout}\n{result.stderr}"

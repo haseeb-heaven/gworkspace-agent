@@ -106,6 +106,25 @@ class PlanExecutor:
                 if link and link not in parameters[key] and ("link" in parameters[key].lower() or "sheet" in parameters[key].lower()):
                     parameters[key] = f"{parameters[key]}\n\nLink to spreadsheet: {link}"
                     
+        # Fix range to use correct tab name when using a just-created spreadsheet
+        if (task.service == "sheets" and task.action == "append_values" 
+                and "range" in parameters and context.get("last_spreadsheet_tab")):
+            rng = str(parameters.get("range") or "")
+            tab = context["last_spreadsheet_tab"]
+            # Replace default "Sheet1" with the actual tab name
+            if rng.startswith("Sheet1!"):
+                cell_part = rng.split("!", 1)[1]
+                if " " in tab:
+                    parameters["range"] = f"'{tab}'!{cell_part}"
+                else:
+                    parameters["range"] = f"{tab}!{cell_part}"
+            elif "!" not in rng:
+                # Just a cell ref like "A1" — prefix with tab name
+                if " " in tab:
+                    parameters["range"] = f"'{tab}'!{rng}"
+                else:
+                    parameters["range"] = f"{tab}!{rng}"
+                    
         return PlannedTask(
             id=task.id,
             service=task.service,
@@ -130,6 +149,16 @@ class PlanExecutor:
         if task.service == "sheets" and task.action == "create_spreadsheet" and payload:
             context["last_spreadsheet_id"] = payload.get("spreadsheetId") or ""
             context["last_spreadsheet_url"] = payload.get("spreadsheetUrl") or ""
+            # Track the tab name for range resolution
+            sheets_list = payload.get("sheets")
+            if isinstance(sheets_list, list) and sheets_list:
+                first_sheet = sheets_list[0]
+                if isinstance(first_sheet, dict):
+                    props = first_sheet.get("properties") or {}
+                    context["last_spreadsheet_tab"] = props.get("title") or ""
+            if not context.get("last_spreadsheet_tab"):
+                title = (payload.get("properties") or {}).get("title") or ""
+                context["last_spreadsheet_tab"] = title
         if task.service == "drive" and task.action == "list_files" and payload:
             # Apply relevance filtering to Drive files
             files = payload.get("files") if isinstance(payload, dict) else []

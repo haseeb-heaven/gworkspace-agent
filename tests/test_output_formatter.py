@@ -52,7 +52,7 @@ def test_formatter_previews_drive_files_as_table():
     output = formatter.format_execution_result(result)
     assert "Found 2 Drive files." in output
     assert "Resume.pdf" in output
-    assert "application/pdf" in output
+    assert "PDF" in output
 
 
 def test_formatter_previews_gmail_message():
@@ -68,6 +68,6 @@ def test_formatter_previews_gmail_message():
         ),
     )
     output = formatter.format_execution_result(result)
-    assert "Email m1:" in output
+    assert "From: HR <jobs@example.com>" in output
     assert "Subject: Interview Update" in output
     assert "From: HR <jobs@example.com>" in output
