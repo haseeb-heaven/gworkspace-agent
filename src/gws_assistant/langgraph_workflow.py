@@ -183,9 +183,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
     def generate_code_node(state: AgentState) -> dict[str, Any]:
         prompt = (
-            "Generate Python code only. The code must store its final answer in a variable named `result` "
-            "and may print intermediate details.\n\nUser request:\n"
-            f"{state['user_text']}"
+            "Generate Python code ONLY. The code must store its final answer in a variable named `result` "
+            "and may print intermediate details. NO markdown formatting, just raw code.\n\n"
+            "CRITICAL: Do NOT use ANY 'import' statements. All standard libraries are unavailable. "
+            "Use only built-in functions and basic logic.\n\n"
+            f"User request:\n{state['user_text']}"
         )
         model = create_agent(config, logger)
         if not model:

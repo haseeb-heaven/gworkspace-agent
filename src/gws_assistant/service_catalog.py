@@ -9,7 +9,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",
         label="Google Drive",
-        aliases=("drive", "documents", "files"),
+        aliases=("drive", "documents", "files", "google documents", "google docs", "doc"),
         actions={
             "list_files": ActionSpec(
                 key="list_files",
@@ -36,12 +36,13 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
                 ),
             ),
-            "delete_file": ActionSpec(
-                key="delete_file",
-                label="Delete file",
-                keywords=("delete", "remove", "trash"),
+            "export_file": ActionSpec(
+                key="export_file",
+                label="Export file",
+                keywords=("export", "download", "convert"),
                 parameters=(
-                    ParameterSpec("file_id", "Enter the file ID to delete", "1AbCdEFg123"),
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
+                    ParameterSpec("mime_type", "Target MIME type (e.g. text/plain, application/pdf)", "text/plain"),
                 ),
             ),
         },
@@ -49,7 +50,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "sheets": ServiceSpec(
         key="sheets",
         label="Google Sheets",
-        aliases=("sheets", "spreadsheet", "excel"),
+        aliases=("sheets", "spreadsheet", "excel", "sheet"),
         actions={
             "create_spreadsheet": ActionSpec(
                 key="create_spreadsheet",

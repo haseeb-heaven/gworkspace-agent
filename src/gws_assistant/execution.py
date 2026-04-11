@@ -303,7 +303,7 @@ class PlanExecutor:
 
 
 def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolves {{task_id.key}} placeholders in parameters."""
+    """Recursively resolves {{task_id.key}} or {{task_id.val1.val2}} placeholders in parameters."""
     if isinstance(value, dict):
         return {k: _resolve_template(v, context) for k, v in value.items()}
     if isinstance(value, list):
@@ -313,28 +313,53 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 
     def replacer(match: re.Match) -> str:
         task_id = match.group(1)
-        key = match.group(2)
+        key_path = match.group(2)
         results = context.get("task_results", {})
-        task_payload = results.get(task_id)
+        current = results.get(task_id)
 
-        if not isinstance(task_payload, dict):
+        if not isinstance(current, dict):
             return match.group(0)
 
-        # Try direct match
-        val = task_payload.get(key)
-        if val is not None:
-            return str(val)
+        parts = key_path.split(".")
+        # Strip "output" prefix if present
+        if parts[0] == "output" and len(parts) > 1:
+            parts = parts[1:]
 
-        # Handle common mappings: spreadsheet_id -> spreadsheetId
-        normalized_key = key.lower().replace("_", "")
-        for p_key, p_val in task_payload.items():
-            if p_key.lower().replace("_", "") == normalized_key:
-                return str(p_val)
+        for part in parts:
+            if isinstance(current, dict):
+                norm_part = part.lower().replace("_", "")
+                found = False
+                for k, v in current.items():
+                    if k.lower().replace("_", "") == norm_part:
+                        current = v
+                        found = True
+                        break
+                
+                if not found:
+                    # Heuristic: if looking for id/file_id and we have a 'files' list (Google Drive list_files)
+                    if norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
+                        current = current["files"][0].get("id")
+                        if current:
+                            found = True
+                    
+                if not found:
+                    return match.group(0)
+            elif isinstance(current, list):
+                try:
+                    idx = int(part)
+                    if 0 <= idx < len(current):
+                        current = current[idx]
+                    else:
+                        return match.group(0)
+                except ValueError:
+                    return match.group(0)
+            else:
+                return match.group(0)
 
-        return match.group(0)
+        return str(current)
 
-    # Resolve {{task_id.key}}
-    return re.sub(r"\{\{([\w\-]+)\.(\w+)\}\}", replacer, value)
+    # Resolve {{task_id.any_nested_key_path}}
+    return re.sub(r"\{\{([\w\-]+)\.([\w\.]+)\}\}", replacer, value)
 
 
 def _parse_json(stdout: str) -> dict[str, Any] | None:

@@ -95,6 +95,8 @@ class WorkspaceAgentSystem:
     def _plan_with_heuristics(self, text: str) -> RequestPlan:
         lowered = text.lower()
         services = _detect_services_in_order(lowered)
+        print(f"DEBUG: heuristic detected {services}")
+        self.logger.info(f"Heuristic planning: detected services {services}")
         if not services:
             return RequestPlan(
                 raw_text=text,
@@ -103,7 +105,9 @@ class WorkspaceAgentSystem:
                 no_service_detected=True,
             )
 
-        if "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
+        if "drive" in services and "sheets" in services and "gmail" in services:
+            tasks = self._drive_to_sheets_email_tasks(text, lowered)
+        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
             tasks = self._sheet_to_email_tasks(text, lowered)
         elif "gmail" in services and "sheets" in services and _has_any(lowered, ("save", "write", "export", "append")):
             tasks = self._gmail_to_sheets_tasks(text, lowered)
@@ -120,6 +124,52 @@ class WorkspaceAgentSystem:
             confidence=0.55,
             no_service_detected=False,
         )
+
+    def _drive_to_sheets_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _drive_query_from_text(lowered)
+        recipient = _extract_email(text) or "haseebmir.hm@gmail.com"
+        tasks = [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": 1},
+                reason="Search for the requested document."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="drive",
+                action="export_file",
+                parameters={"file_id": "{{task-1.output.id}}", "mime_type": "text/plain"},
+                reason="Extract text content from the document."
+            ),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": f"Data from {query}"},
+                reason="Prepare a new Sheet for the extracted data."
+            ),
+            PlannedTask(
+                id="task-4",
+                service="sheets",
+                action="append_values",
+                parameters={"spreadsheet_id": "{{task-3.output.spreadsheetId}}", "values": "{{task-2.output}}"},
+                reason="Save extracted data to the new Sheet."
+            ),
+            PlannedTask(
+                id="task-5",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Processed Document Data",
+                    "body": "Hi,\n\nPlease find the spreadsheet here: {{task-3.output.spreadsheetUrl}}"
+                },
+                reason="Send the results link to the user."
+            )
+        ]
+        return tasks
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(lowered)

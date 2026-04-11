@@ -102,9 +102,10 @@ class CommandPlanner:
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id})]
-        if action == "delete_file":
+        if action == "export_file":
             file_id = self._required_text(params, "file_id")
-            return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
+            mime_type = params.get("mime_type", "text/plain")
+            return ["drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type})]
         raise ValidationError(f"Unsupported drive action: {action}")
 
     def _build_sheets_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -347,14 +348,17 @@ class CommandPlanner:
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
         value = params.get(key)
-        if not value:
-            # Fallback to variations (e.g. spreadsheet_id -> spreadsheetId)
-            variations = [key.lower().replace("_", ""), key.replace("_", "")]
-            for k, v in params.items():
-                if k.lower().replace("_", "") in variations:
-                    return str(v)
-            raise ValidationError(f"Missing required parameter: {key}")
-        return str(value)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+        # Fallback to variations (e.g. spreadsheet_id -> spreadsheetId)
+        variations = [key.lower().replace("_", ""), key.replace("_", "")]
+        for k, v in params.items():
+            if k.lower().replace("_", "") in variations:
+                if v is not None and str(v).strip():
+                    return str(v).strip()
+
+        raise ValidationError(f"Missing required parameter: {key}")
 
     @staticmethod
     def _safe_positive_int(value: Any, default: int) -> int:
