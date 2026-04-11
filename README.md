@@ -324,7 +324,7 @@ python -m pytest
 
 | Branch | Framework | Extra Capabilities | Link |
 |--------|-----------|-------------------|------|
-| `main` | CrewAI (base) | Core ReAct Workspace automation | [main](https://github.com/haseeb-heaven/gworkspace-agent) |
+| `master` | CrewAI (base) | Core ReAct Workspace automation | [master](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) |
 | `crew-ai` | CrewAI | Full ReAct loop, multi-service | [crew-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) |
 | `langchain-ai` | LangChain + LangGraph | Web Search + Code Sandbox| [langchain-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
 
