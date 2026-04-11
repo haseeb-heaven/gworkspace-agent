@@ -26,25 +26,19 @@ Core modules:
 
 ## Setup
 
-1. Activate your environment:
-
-```powershell
-& D:\Code\MuslimGuideAI\pyenv\Scripts\Activate.ps1
-```
-
-2. Install dependencies:
+1. Install dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-3. Create your env file if needed:
+2. Create your env file if needed:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-4. Run the interactive setup wizard:
+3. Run the interactive setup wizard:
 
 ```powershell
 python .\gws_cli.py --setup
