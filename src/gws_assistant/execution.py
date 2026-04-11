@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any
 
+from .exceptions import ValidationError
 from .gws_runner import GWSRunner
 from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPlan, TaskExecution
 from .planner import CommandPlanner
@@ -61,11 +62,18 @@ class PlanExecutor:
                 error=f"Plan contained an unresolved placeholder: {placeholder}",
             )
 
-        args = self.planner.build_command(
-            task.service,
-            task.action,
-            task.parameters,
-        )
+        # Wrap build_command so that missing-parameter errors are returned
+        # as failed ExecutionResults instead of raising and crashing the workflow.
+        try:
+            args = self.planner.build_command(
+                task.service,
+                task.action,
+                task.parameters,
+            )
+        except ValidationError as exc:
+            self.logger.warning("Task id=%s build_command failed: %s", task.id, exc)
+            return ExecutionResult(success=False, command=[], error=str(exc))
+
         if hasattr(self.runner, "run_with_retry"):
             result = self.runner.run_with_retry(args)
         else:
@@ -182,6 +190,18 @@ class PlanExecutor:
             parameters["folder_id"] = context["last_folder_id"]
         if "message_id" not in parameters and context.get("last_message_id"):
             parameters["message_id"] = context["last_message_id"]
+
+        # Auto-resolve to_email for gmail.send_message when it is still missing
+        # or contains an unresolved placeholder (e.g. {2.from}, {2.snippet}).
+        if task.service == "gmail" and task.action == "send_message":
+            to_email_val = str(parameters.get("to_email") or "").strip()
+            if not to_email_val or _is_placeholder(to_email_val):
+                resolved_addr = _resolve_to_email_from_context(context)
+                if resolved_addr:
+                    self.logger.info(
+                        "Auto-resolved to_email from context gmail_messages: %s", resolved_addr
+                    )
+                    parameters["to_email"] = resolved_addr
 
         # Fix range to use correct tab name when using a just-created spreadsheet
         if (task.service == "sheets" and task.action == "append_values"
@@ -347,7 +367,6 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
         return [_resolve_nested_dollar(item, context, executor) for item in value]
     if not isinstance(value, str):
         return value
-    # Only resolve known $ tokens — leave unknown ones to be caught by _find_unresolved_placeholder
     known_resolvers: dict[str, Any] = {
         "$last_spreadsheet_id": context.get("last_spreadsheet_id") or "",
         "$last_document_id": context.get("last_document_id") or "",
@@ -402,13 +421,7 @@ def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
 
 
 def _gmail_messages_body_text(context: dict[str, Any]) -> str:
-    """Return body text of fetched full messages, or fall back to listing message IDs.
-
-    Fallback path: when no gmail.get_message tasks were executed (only list_messages),
-    the raw stub objects {id, threadId} carry no body. We return the message IDs so
-    callers (and tests) can still verify the data made it into the output.
-    """
-    # --- Priority 1: fully-fetched message objects (from get_message tasks) ---
+    """Return body text of fetched full messages, or fall back to listing message IDs."""
     full_messages = context.get("gmail_messages")
     if isinstance(full_messages, list) and full_messages:
         parts: list[str] = []
@@ -420,7 +433,6 @@ def _gmail_messages_body_text(context: dict[str, Any]) -> str:
         if parts:
             return "\n\n".join(parts)
 
-    # --- Priority 2: raw list stubs from list_messages (id + threadId only) ---
     stub_messages = _gmail_messages(context)
     if stub_messages:
         id_lines = [str(m.get("id") or m.get("threadId") or "") for m in stub_messages if m]
@@ -436,7 +448,13 @@ def _gmail_messages_body_text(context: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolves {{task_id.key}} placeholders in parameters."""
+    """Recursively resolves placeholder references in task parameters.
+
+    Supported syntaxes:
+    - ``{{task_id.key.subkey}}``  – original double-brace format.
+    - ``{task_id.key.subkey}``    – single-brace format produced by some LLM
+                                    planners (e.g. ``{2.internalDate}``).
+    """
     if isinstance(value, dict):
         return {k: _resolve_template(v, context) for k, v in value.items()}
     if isinstance(value, list):
@@ -446,25 +464,72 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 
     def replacer(match: re.Match) -> str:
         task_id = match.group(1)
-        key = match.group(2)
+        key_path = match.group(2)
         results = context.get("task_results", {})
         task_payload = results.get(task_id)
 
         if not isinstance(task_payload, dict):
             return match.group(0)
 
-        val = task_payload.get(key)
-        if val is not None:
-            return str(val)
+        parts = key_path.split(".")
+        if parts[0] == "output" and len(parts) > 1:
+            parts = parts[1:]
 
-        normalized_key = key.lower().replace("_", "")
-        for p_key, p_val in task_payload.items():
-            if p_key.lower().replace("_", "") == normalized_key:
-                return str(p_val)
+        current: Any = task_payload
+        for part in parts:
+            if isinstance(current, dict):
+                if part in current:
+                    current = current[part]
+                else:
+                    norm_part = part.lower().replace("_", "")
+                    found = False
+                    for k, v in current.items():
+                        if k.lower().replace("_", "") == norm_part:
+                            current = v
+                            found = True
+                            break
+                    if not found:
+                        return match.group(0)
+            elif isinstance(current, list):
+                try:
+                    idx = int(part)
+                    if 0 <= idx < len(current):
+                        current = current[idx]
+                    else:
+                        return match.group(0)
+                except ValueError:
+                    return match.group(0)
+            else:
+                return match.group(0)
 
-        return match.group(0)
+        return str(current)
 
-    return re.sub(r"\{\{([\w\-]+)\.(\w+)\}\}", replacer, value)
+    # Double-brace: {{task_id.key_path}}
+    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.]+)\}\}", replacer, value)
+    # Single-brace: {task_id.key_path}  (LLM-generated variant)
+    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\}", replacer, resolved)
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Helper utilities
+# ---------------------------------------------------------------------------
+
+def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
+    """Extract a sender e-mail address from fetched gmail_messages context."""
+    fetched = context.get("gmail_messages") or []
+    for message in fetched:
+        if not isinstance(message, dict):
+            continue
+        headers = _gmail_headers(message)
+        from_value = headers.get("from", "")
+        addr_match = re.search(r"<([^>]+@[^>]+)>", from_value)
+        if addr_match:
+            return addr_match.group(1).strip()
+        bare = from_value.strip()
+        if "@" in bare:
+            return bare
+    return ""
 
 
 def _parse_json(stdout: str) -> dict[str, Any] | None:
@@ -578,6 +643,8 @@ def _is_placeholder(value: str) -> bool:
         or "}}" in stripped
         or "_from_task_" in stripped
         or "from_task_" in stripped
+        # Single-brace LLM-generated references: {2.key}, {task-3.key}
+        or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.]+\}", stripped))
     )
 
 
