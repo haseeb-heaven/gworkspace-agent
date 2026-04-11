@@ -123,25 +123,27 @@ class PlanExecutor:
                 if link and link not in parameters[key] and ("link" in parameters[key].lower() or "sheet" in parameters[key].lower()):
                     parameters[key] = f"{parameters[key]}\n\nLink to spreadsheet: {link}"
                     
+        # Automatic injection for missing but required IDs
+        if "spreadsheet_id" not in parameters and context.get("last_spreadsheet_id"):
+            parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
+        if "document_id" not in parameters and context.get("last_document_id"):
+            parameters["document_id"] = context["last_document_id"]
+        if "folder_id" not in parameters and context.get("last_folder_id"):
+            parameters["folder_id"] = context["last_folder_id"]
+        if "message_id" not in parameters and context.get("last_message_id"):
+            parameters["message_id"] = context["last_message_id"]
+
         # Fix range to use correct tab name when using a just-created spreadsheet
         if (task.service == "sheets" and task.action == "append_values" 
                 and "range" in parameters and context.get("last_spreadsheet_tab")):
             rng = str(parameters.get("range") or "")
             tab = context["last_spreadsheet_tab"]
-            # Replace default "Sheet1" with the actual tab name
             if rng.startswith("Sheet1!"):
                 cell_part = rng.split("!", 1)[1]
-                if " " in tab:
-                    parameters["range"] = f"'{tab}'!{cell_part}"
-                else:
-                    parameters["range"] = f"{tab}!{cell_part}"
+                parameters["range"] = f"'{tab}'!{cell_part}" if " " in tab else f"{tab}!{cell_part}"
             elif "!" not in rng:
-                # Just a cell ref like "A1" — prefix with tab name
-                if " " in tab:
-                    parameters["range"] = f"'{tab}'!{rng}"
-                else:
-                    parameters["range"] = f"{tab}!{rng}"
-                    
+                parameters["range"] = f"'{tab}'!{rng}" if " " in tab else f"{tab}!{rng}"
+
         return PlannedTask(
             id=task.id,
             service=task.service,

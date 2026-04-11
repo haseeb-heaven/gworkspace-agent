@@ -346,10 +346,15 @@ class CommandPlanner:
 
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
-        value = str(params.get(key) or "").strip()
+        value = params.get(key)
         if not value:
+            # Fallback to variations (e.g. spreadsheet_id -> spreadsheetId)
+            variations = [key.lower().replace("_", ""), key.replace("_", "")]
+            for k, v in params.items():
+                if k.lower().replace("_", "") in variations:
+                    return str(v)
             raise ValidationError(f"Missing required parameter: {key}")
-        return value
+        return str(value)
 
     @staticmethod
     def _safe_positive_int(value: Any, default: int) -> int:
