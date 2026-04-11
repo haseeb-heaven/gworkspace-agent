@@ -97,7 +97,39 @@ def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
     )
 
 
-def execute_generated_code(code: str) -> StructuredToolResult:
+def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
+    """Execute code in an E2B cloud sandbox using the latest Sandbox API."""
+    try:
+        from e2b_code_interpreter import Sandbox
+        # Sandbox.create() uses E2B_API_KEY env var if api_key is not passed or if configured globally.
+        # We pass it explicitly to be sure.
+        with Sandbox.create(api_key=api_key) as sandbox:
+            execution = sandbox.run_code(code)
+            
+            stdout = "\n".join(str(log.text) if hasattr(log, "text") else str(log) for log in execution.logs.stdout)
+            stderr = "\n".join(str(log.text) if hasattr(log, "text") else str(log) for log in execution.logs.stderr)
+            
+            if execution.error:
+                return StructuredToolResult(
+                    success=False,
+                    output={"code": code, "stdout": stdout, "stderr": stderr, "parsed_value": None},
+                    error=f"E2BError: {execution.error.name}: {execution.error.value}",
+                )
+            
+            return StructuredToolResult(
+                success=True,
+                output={"code": code, "stdout": stdout, "stderr": stderr, "parsed_value": execution.text},
+                error=None,
+            )
+    except Exception as exc:
+        return StructuredToolResult(
+            success=False,
+            output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
+            error=f"E2BExecutionError: {exc}",
+        )
+
+
+def execute_generated_code(code: str, config: AppConfigModel | None = None) -> StructuredToolResult:
     validation_error = _validate_submitted_code(code)
     if validation_error:
         return StructuredToolResult(
@@ -106,6 +138,11 @@ def execute_generated_code(code: str) -> StructuredToolResult:
             error=validation_error,
         )
 
+    # Dispatch to E2B if configured and key is present
+    if config and config.code_execution_backend == "e2b" and config.e2b_api_key:
+        return _execute_e2b(code, config.e2b_api_key)
+
+    # Default to local RestrictedPython
     result_holder: list = []
     thread = threading.Thread(target=_run_in_thread, args=(code, result_holder), daemon=True)
     thread.start()
@@ -131,9 +168,28 @@ def execute_generated_code(code: str) -> StructuredToolResult:
     return normalize_code_result(result)
 
 
+def code_execution_tool_with_config(config: AppConfigModel, logger: Any):
+    """Factory to create a config-aware code execution tool for LangChain."""
+    @tool
+    def code_execution_tool(code: str) -> dict[str, Any]:
+        """Execute Python in a restricted sandbox or cloud (E2B) with normalized results."""
+        structured = execute_generated_code(code, config=config)
+        output = structured["output"] if isinstance(structured["output"], dict) else {}
+        return {
+            "success": structured["success"],
+            "output": output,
+            "error": structured["error"],
+            "code": output.get("code", code),
+            "stdout": output.get("stdout", ""),
+            "stderr": output.get("stderr", ""),
+            "parsed_value": output.get("parsed_value"),
+        }
+    return code_execution_tool
+
+
 @tool
 def code_execution_tool(code: str) -> dict[str, Any]:
-    """Execute Python in a restricted sandbox with normalized structured results."""
+    """Execute Python in a restricted local sandbox (Backward compatibility)."""
     structured = execute_generated_code(code)
     output = structured["output"] if isinstance(structured["output"], dict) else {}
     return {

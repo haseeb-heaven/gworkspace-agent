@@ -61,6 +61,9 @@ class AppConfig:
         max_replans = int((os.getenv("MAX_REPLANS") or "1").strip())
         langchain_enabled = _to_bool(os.getenv("LANGCHAIN_ENABLED"), default=True)
 
+        code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
+        e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
+
         return AppConfigModel(
             provider=provider,
             model=model,
@@ -76,6 +79,8 @@ class AppConfig:
             max_retries=max_retries,
             max_replans=max_replans,
             langchain_enabled=langchain_enabled,
+            code_execution_backend=code_execution_backend,
+            e2b_api_key=e2b_api_key,
         )
 
 

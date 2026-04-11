@@ -25,6 +25,8 @@ class AppConfigModel:
     max_replans: int = 1
     use_heuristic_fallback: bool = False
     code_execution_enabled: bool = True
+    code_execution_backend: str = "local"
+    e2b_api_key: str | None = None
 
 
 @dataclass(slots=True)
@@ -55,6 +57,8 @@ class RequestPlan:
     confidence: float = 0.0
     no_service_detected: bool = False
     source: str = "heuristic"
+    needs_web_search: bool = False
+    needs_code_execution: bool = False
 
 
 @dataclass(slots=True)

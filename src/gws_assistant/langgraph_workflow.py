@@ -194,7 +194,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "last_result": StructuredToolResult(success=False, output={}, error="Missing generated_code"),
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
-        result = execute_generated_code(str(code))
+        result = execute_generated_code(str(code), config=config)
         _log_step("sandbox_execute", {"code": code}, result)
         return {
             "last_result": result,
@@ -254,9 +254,9 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         if not plan_has_tasks:
             # No plan or empty plan — determine best fallback
-            if has_search_intent:
+            if has_search_intent or needs_web_search:
                 return "web_search"
-            if any(keyword in text for keyword in ("calculate", "compute", "sum", "average")):
+            if getattr(plan, "needs_code_execution", False) or any(keyword in text for keyword in ("calculate", "compute", "sum", "average")):
                 return "generate_code"
             return "format_output"
 
@@ -280,13 +280,16 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     def route_after_task(state: AgentState) -> Literal["reflect_node"]:
         return "reflect_node"
 
-    def route_after_reflection(state: AgentState) -> Literal["update_context", "execute_task", "generate_plan", "format_output"]:
+    def route_after_reflection(state: AgentState) -> Literal["update_context", "execute_task", "generate_plan", "format_output", "generate_code"]:
         decision = state.get("reflection")
         if not decision:
             return "format_output"
         if decision.action == "continue":
             return "update_context" if not state.get("error") else "format_output"
         if decision.action == "retry":
+            # If we failed during code execution, retry from generate_code/code_execution
+            if state.get("context", {}).get("generated_code"):
+                return "generate_code"
             return "execute_task"
         if decision.action == "replan":
             return "generate_plan"

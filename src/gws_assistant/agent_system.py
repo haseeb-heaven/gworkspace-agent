@@ -126,6 +126,14 @@ class WorkspaceAgentSystem:
                     no_service_detected=True,
                     needs_web_search=True,
                 )
+            if any(kw in lowered for kw in ("calculate", "sum", "average", "compute")):
+                return RequestPlan(
+                    raw_text=text,
+                    summary="Computation intent detected — routing to code execution.",
+                    confidence=0.4,
+                    no_service_detected=True,
+                    needs_code_execution=True,
+                )
             return RequestPlan(
                 raw_text=text,
                 summary=NO_SERVICE_MESSAGE,

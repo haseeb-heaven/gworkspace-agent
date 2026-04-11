@@ -98,7 +98,58 @@ class PlanExecutor:
             "parsed_payload": parsed_payload,
         }
         self._update_context(task, result.stdout, context)
+
+        # Artifact Verification Step
+        verification_error = self._verify_artifact_content(task, result, context)
+        if verification_error:
+            self.logger.warning("Verification failed for task %s: %s", task.id, verification_error)
+            result.success = False
+            result.error = f"Verification Failure: {verification_error}"
+
         return result
+
+    def _verify_artifact_content(self, task: PlannedTask, result: ExecutionResult, context: dict[str, Any]) -> str | None:
+        """Fetch the created/updated artifact and ensure it is not empty or filled with placeholders."""
+        if not result.success:
+            return None
+
+        # 1. Verify Google Docs content
+        if task.service == "docs" and task.action == "create_document":
+            doc_id = (result.output.get("parsed_payload") or {}).get("documentId")
+            if not doc_id: return "No document ID found in output after creation."
+            fetch_res = self.runner.run(["docs", "documents", "get", "--params", json.dumps({"documentId": doc_id})])
+            if fetch_res.return_code != 0: return f"Failed to fetch document for verification: {fetch_res.stderr}"
+            # Extract content text from doc JSON
+            content = fetch_res.stdout # Simplified: checking raw JSON presence
+            if len(content.strip()) < 100: return "Newly created document is nearly empty."
+            if "{{" in content or "placeholder" in content.lower(): return "Document contains unresolved placeholders."
+
+        # 2. Verify Google Sheets content (after append)
+        if task.service == "sheets" and (task.action == "append_values" or task.action == "create_spreadsheet"):
+            sheet_id = context.get("last_spreadsheet_id") or (result.output.get("parsed_payload") or {}).get("spreadsheetId")
+            if not sheet_id: return None
+            # Check if data was actually written on append
+            if task.action == "append_values":
+                range_val = task.parameters.get("range", "A1:C5")
+                check_res = self.runner.run(["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": sheet_id, "range": range_val})])
+                if "{{" in check_res.stdout or "No data" in check_res.stdout:
+                    return "Spreadsheet data contains placeholders or is missing."
+
+        # 3. Verify Sent Email
+        if task.service == "gmail" and task.action == "send_message":
+            # Search for the message we just sent in label:SENT
+            search_res = self.runner.run(["gmail", "users", "messages", "list", "--params", json.dumps({"userId": "me", "maxResults": 1, "q": "label:SENT"})])
+            if search_res.return_code == 0:
+                payload = _parse_json(search_res.stdout)
+                msgs = payload.get("messages") if isinstance(payload, dict) else []
+                if msgs:
+                    msg_id = msgs[0]["id"]
+                    get_res = self.runner.run(["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": msg_id})])
+                    content = get_res.stdout
+                    if "{{" in content or "{task" in content:
+                        return "Sent email contains unresolved placeholders."
+
+        return None
 
     def _reflect_on_failure(self, task: PlannedTask, result: ExecutionResult, context: dict) -> str:
         return (
