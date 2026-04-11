@@ -14,9 +14,10 @@ SERVICES: dict[str, ServiceSpec] = {
             "list_files": ActionSpec(
                 key="list_files",
                 label="List files",
-                keywords=("list", "show", "view", "files", "documents"),
+                keywords=("list", "show", "view", "files", "documents", "search", "find"),
                 parameters=(
                     ParameterSpec("page_size", "How many files should I show?", "10", required=False),
+                    ParameterSpec("q", "Drive search query (e.g. name contains 'report')", "", required=False),
                 ),
             ),
             "create_folder": ActionSpec(

@@ -6,10 +6,10 @@ import os
 import shutil
 from pathlib import Path
 
-import questionary
 from dotenv import dotenv_values
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Prompt
 
 from .config import OPENAI_DEFAULT_MODEL, OPENROUTER_DEFAULT_BASE_URL, OPENROUTER_DEFAULT_MODEL
 
@@ -47,15 +47,15 @@ def run_setup_wizard(env_file_path: Path | None = None) -> Path:
         console.print("[yellow]No gws CLI binary was detected automatically.[/yellow]")
 
     default_binary = existing.get("GWS_BINARY_PATH") or str(detected_binary or Path.cwd() / "gws.exe")
-    gws_binary_path = questionary.path("Path to gws CLI binary", default=default_binary).ask()
+    gws_binary_path = Prompt.ask("Path to gws CLI binary", default=default_binary)
     if not gws_binary_path:
         raise RuntimeError("Setup cancelled before gws binary path was saved.")
 
-    provider = questionary.select(
+    provider = Prompt.ask(
         "Which LLM provider should CrewAI use?",
         choices=["openrouter", "openai"],
         default=existing.get("LLM_PROVIDER") or "openrouter",
-    ).ask()
+    )
     if not provider:
         raise RuntimeError("Setup cancelled before provider was saved.")
 
@@ -98,7 +98,7 @@ def run_setup_wizard(env_file_path: Path | None = None) -> Path:
 
 def _ask_text(prompt: str, default: str, required: bool = True) -> str:
     while True:
-        value = questionary.text(prompt, default=default).ask()
+        value = Prompt.ask(prompt, default=default)
         if value is None:
             raise RuntimeError(f"Setup cancelled while asking: {prompt}")
         cleaned = value.strip()
@@ -108,10 +108,12 @@ def _ask_text(prompt: str, default: str, required: bool = True) -> str:
 
 
 def _ask_secret(prompt: str, existing: str) -> str:
-    value = questionary.password(prompt).ask()
+    value = Prompt.ask(prompt, password=True)
+    if not value and existing:
+        return existing.strip()
     if value is None:
         raise RuntimeError(f"Setup cancelled while asking: {prompt}")
-    return value.strip() or existing.strip()
+    return value.strip()
 
 
 def _render_env(values: dict[str, str]) -> str:

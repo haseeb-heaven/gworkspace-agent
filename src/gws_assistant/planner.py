@@ -69,17 +69,19 @@ class CommandPlanner:
     def _build_drive_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_files":
             page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            query = str(params.get("q") or "").strip()
+            request_params: dict[str, Any] = {
+                "pageSize": page_size,
+                "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
+            }
+            if query:
+                request_params["q"] = query
             return [
                 "drive",
                 "files",
                 "list",
                 "--params",
-                json.dumps(
-                    {
-                        "pageSize": page_size,
-                        "fields": "files(id,name,mimeType,modifiedTime,owners(displayName,emailAddress)),nextPageToken",
-                    }
-                ),
+                json.dumps(request_params),
             ]
         if action == "create_folder":
             folder_name = self._required_text(params, "folder_name")
@@ -109,7 +111,10 @@ class CommandPlanner:
                 "spreadsheets",
                 "create",
                 "--json",
-                json.dumps({"properties": {"title": title}}, ensure_ascii=True),
+                json.dumps({
+                    "properties": {"title": title},
+                    "sheets": [{"properties": {"title": title}}]
+                }, ensure_ascii=True),
             ]
         if action == "get_spreadsheet":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
@@ -122,7 +127,7 @@ class CommandPlanner:
             ]
         if action == "get_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = str(params.get("range") or "Sheet1!A1:Z500").strip()
+            range_name = self._format_range(str(params.get("range") or "Sheet1!A1:Z500"))
             return [
                 "sheets",
                 "spreadsheets",
@@ -133,7 +138,7 @@ class CommandPlanner:
             ]
         if action == "append_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = str(params.get("range") or "Sheet1!A1").strip()
+            range_name = self._format_range(str(params.get("range") or "Sheet1!A1"))
             values = params.get("values")
             if isinstance(values, str):
                 values = [[values]]
@@ -224,7 +229,11 @@ class CommandPlanner:
             ]
         if action == "create_event":
             summary = self._required_text(params, "summary")
-            start_date = self._required_text(params, "start_date")
+            start_date_raw = self._required_text(params, "start_date")
+            start_date = start_date_raw.split("T")[0]
+            if len(start_date) > 10:
+                start_date = start_date[:10]
+            
             return [
                 "calendar",
                 "events",
@@ -232,7 +241,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"calendarId": "primary"}),
                 "--json",
-                json.dumps({"summary": summary, "start": {"date": start_date}}, ensure_ascii=True),
+                json.dumps({"summary": summary, "start": {"date": start_date}, "end": {"date": start_date}}, ensure_ascii=True),
             ]
         raise ValidationError(f"Unsupported calendar action: {action}")
 
@@ -266,6 +275,18 @@ class CommandPlanner:
                 ),
             ]
         raise ValidationError(f"Unsupported contacts action: {action}")
+
+    def _format_range(self, range_str: str) -> str:
+        """Ensure sheet names with spaces are quoted correctly."""
+        range_str = range_str.strip()
+        if "!" not in range_str:
+            return range_str
+        
+        sheet_part, cell_part = range_str.split("!", 1)
+        # If it has spaces and is not already quoted, quote it.
+        if " " in sheet_part and not (sheet_part.startswith("'") and sheet_part.endswith("'")):
+            return f"'{sheet_part}'!{cell_part}"
+        return range_str
 
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:

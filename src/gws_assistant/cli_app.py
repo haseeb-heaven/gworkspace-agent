@@ -6,10 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import questionary
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Prompt
 
 from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
 from .config import AppConfig
@@ -30,7 +30,10 @@ console = Console()
 
 def _ask_non_empty(prompt: str, default: str | None = None) -> str:
     while True:
-        answer = questionary.text(prompt, default=default or "").ask()
+        if default:
+            answer = Prompt.ask(prompt, default=default)
+        else:
+            answer = Prompt.ask(prompt)
         if answer is None:
             continue
         cleaned = answer.strip()
@@ -41,7 +44,7 @@ def _ask_non_empty(prompt: str, default: str | None = None) -> str:
 
 def _pick_service(engine: ConversationEngine) -> str:
     services = engine.planner.list_services()
-    choice = questionary.select("Which Google service do you want to use?", choices=services).ask()
+    choice = Prompt.ask("Which Google service do you want to use?", choices=services)
     if not choice:
         raise ValidationError("Service selection was cancelled.")
     return choice
@@ -49,7 +52,7 @@ def _pick_service(engine: ConversationEngine) -> str:
 
 def _pick_action(engine: ConversationEngine, service: str) -> str:
     actions = engine.action_choices(service)
-    choice = questionary.select("Which action should I run?", choices=actions).ask()
+    choice = Prompt.ask("Which action should I run?", choices=actions)
     if not choice:
         raise ValidationError("Action selection was cancelled.")
     return choice
@@ -65,7 +68,7 @@ def _collect_parameters(
     specs = engine.parameter_specs(service, action)
     for spec in specs:
         default = str(existing.get(spec.name) or "").strip() or spec.example
-        value = questionary.text(spec.prompt, default=default).ask()
+        value = Prompt.ask(spec.prompt, default=default)
         if value is None:
             if spec.required:
                 raise ValidationError(f"Required parameter missing: {spec.name}")
@@ -105,8 +108,8 @@ def _save_output(path: Path, text: str) -> None:
         handle.write(text.rstrip() + "\n\n")
 
 
-def _run_application(save_output: Path | None = None) -> None:
-    """Runs the interactive terminal assistant."""
+def _run_application(save_output: Path | None = None, task: str | None = None) -> None:
+    """Runs the terminal assistant (interactive or single-task)."""
     config = AppConfig.from_env()
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
@@ -149,11 +152,15 @@ def _run_application(save_output: Path | None = None) -> None:
             )
         )
 
-    console.print(Panel.fit("Google Workspace Assistant CLI is ready.", title="Welcome"))
+    console.print(Panel.fit("Google Workspace Agent.", title="Welcome"))
 
     while True:
         try:
-            user_text = _ask_non_empty("What do you want to do?")
+            if task:
+                user_text = task
+            else:
+                user_text = _ask_non_empty(">: ")
+
             if user_text.lower() in {"exit", "quit", "q"}:
                 console.print("[green]Goodbye.[/green]")
                 break
@@ -167,6 +174,8 @@ def _run_application(save_output: Path | None = None) -> None:
             )
             if plan.no_service_detected or not plan.tasks:
                 console.print(f"[yellow]{NO_SERVICE_MESSAGE}[/yellow]")
+                if task:
+                    break
                 continue
 
             plan.tasks = [_collect_task_parameters(engine, task) for task in plan.tasks]
@@ -175,6 +184,9 @@ def _run_application(save_output: Path | None = None) -> None:
             if save_output:
                 _save_output(save_output, output)
             console.print(Panel(output, title="Success" if report.success else "Error", border_style="green" if report.success else "red"))
+
+            if task:
+                break
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted by user. Exiting.[/yellow]")
@@ -191,12 +203,13 @@ def _run_application(save_output: Path | None = None) -> None:
 def run(
     setup: bool = typer.Option(False, "--setup", help="Run setup mode and save configuration."),
     save_output: Path | None = typer.Option(None, "--save-output", help="Append readable output to a file."),
+    task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     if setup:
         run_setup_wizard()
         return
-    _run_application(save_output=save_output)
+    _run_application(save_output=save_output, task=task)
 
 
 def main() -> None:

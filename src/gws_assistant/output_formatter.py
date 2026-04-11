@@ -122,11 +122,7 @@ def _format_gmail_list(payload: dict[str, Any]) -> str:
         prefix = f"Found an estimated {estimate} Gmail message{'s' if estimated_count != 1 else ''}."
     else:
         prefix = f"Found {count} Gmail message{'s' if count != 1 else ''}."
-    if not count:
-        return prefix
-    ids = [str(item.get("id")) for item in messages[:10] if isinstance(item, dict) and item.get("id")]
-    preview = "\n".join(f"- {message_id}" for message_id in ids)
-    return f"{prefix}\nTop message IDs:\n{preview}"
+    return prefix
 
 
 def _format_gmail_message(payload: dict[str, Any]) -> str:
@@ -136,7 +132,6 @@ def _format_gmail_message(payload: dict[str, Any]) -> str:
     sender = headers.get("from", "(unknown sender)")
     date = headers.get("date", "")
     pieces = [
-        f"Email {payload.get('id')}:",
         f"From: {sender}",
         f"Subject: {subject}",
     ]
@@ -152,15 +147,14 @@ def _format_drive_files(payload: dict[str, Any]) -> str:
     header = f"Found {len(files)} Drive file{'s' if len(files) != 1 else ''}."
     if not files:
         return header
-    rows = [["Name", "Type", "Modified", "ID"]]
+    rows = [["Name", "Type", "Link"]]
     for item in files[:20]:
         if isinstance(item, dict):
             rows.append(
                 [
                     str(item.get("name") or ""),
-                    str(item.get("mimeType") or ""),
-                    str(item.get("modifiedTime") or ""),
-                    str(item.get("id") or ""),
+                    _short_mime_type(str(item.get("mimeType") or "")),
+                    str(item.get("webViewLink") or ""),
                 ]
             )
     preview = _tabular_preview(rows)
@@ -253,6 +247,23 @@ def _first_nested_value(items: Any, key: str) -> str:
             if isinstance(item, dict) and item.get(key):
                 return str(item.get(key))
     return ""
+
+
+def _short_mime_type(mime: str) -> str:
+    mapping = {
+        "application/vnd.google-apps.folder": "Folder",
+        "application/vnd.google-apps.spreadsheet": "Sheet",
+        "application/vnd.google-apps.document": "Doc",
+        "application/vnd.google-apps.presentation": "Slide",
+        "application/vnd.google-apps.form": "Form",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+        "application/pdf": "PDF",
+        "image/jpeg": "Image",
+        "image/png": "Image",
+        "text/plain": "Text",
+    }
+    return mapping.get(mime, mime.split("/")[-1].split(".")[-1].title())
 
 
 def _docs_snippet(payload: dict[str, Any]) -> str:

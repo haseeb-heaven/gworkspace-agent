@@ -11,6 +11,7 @@ from typing import Any
 from .gws_runner import GWSRunner
 from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPlan, TaskExecution
 from .planner import CommandPlanner
+from .relevance import extract_keywords, filter_drive_files, filter_gmail_messages
 
 
 class PlanExecutor:
@@ -67,6 +68,9 @@ class PlanExecutor:
         if not message_ids:
             self.logger.info("Skipping gmail.get_message task id=%s because no message IDs were returned.", task.id)
             return []
+        
+        # Limit details to the first 5 messages to keep output readable and execution fast.
+        limit = 5
         return [
             PlannedTask(
                 id=f"{task.id}-{index}",
@@ -75,7 +79,7 @@ class PlanExecutor:
                 parameters={**task.parameters, "message_id": message_id},
                 reason=task.reason,
             )
-            for index, message_id in enumerate(message_ids, start=1)
+            for index, message_id in enumerate(message_ids[:limit], start=1)
         ]
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
@@ -87,10 +91,21 @@ class PlanExecutor:
                 parameters[key] = self._gmail_summary_values(context)
             elif value == "$sheet_email_body":
                 parameters[key] = self._sheet_email_body(context)
-            elif isinstance(value, str) and _is_gmail_values_placeholder(value):
+            elif value == "$drive_summary_values":
+                parameters[key] = self._drive_summary_values(context)
+            elif isinstance(value, str) and _is_gmail_values_placeholder(value) and key in ("body", "values"):
                 parameters[key] = self._gmail_summary_values(context)
-            elif isinstance(value, str) and _is_sheet_body_placeholder(value):
+            elif isinstance(value, str) and _is_sheet_body_placeholder(value) and key in ("body", "values"):
                 parameters[key] = self._sheet_email_body(context)
+            elif isinstance(value, str) and "$drive_summary" in value.lower() and key in ("body", "values"):
+                parameters[key] = self._drive_summary_values(context)
+            
+            # Additional context injection: if body wants a link and we have one
+            if key == "body" and isinstance(parameters[key], str):
+                link = context.get("last_spreadsheet_url")
+                if link and link not in parameters[key] and ("link" in parameters[key].lower() or "sheet" in parameters[key].lower()):
+                    parameters[key] = f"{parameters[key]}\n\nLink to spreadsheet: {link}"
+                    
         return PlannedTask(
             id=task.id,
             service=task.service,
@@ -101,17 +116,49 @@ class PlanExecutor:
 
     def _update_context(self, task: PlannedTask, stdout: str, context: dict[str, Any]) -> None:
         payload = _parse_json(stdout)
+        user_keywords = extract_keywords(str(context.get("request_text") or ""))
         if task.service == "gmail" and task.action == "list_messages":
             context["gmail_query"] = task.parameters.get("q") or ""
             context["gmail_payload"] = payload or {}
             context["gmail_message_ids"] = _gmail_message_ids(context)
         if task.service == "gmail" and task.action == "get_message" and payload:
             context.setdefault("gmail_messages", []).append(payload)
+            # Apply relevance filtering to accumulated messages
+            all_msgs = context.get("gmail_messages", [])
+            if len(all_msgs) > 1:
+                context["gmail_messages"] = filter_gmail_messages(all_msgs, user_keywords)
         if task.service == "sheets" and task.action == "create_spreadsheet" and payload:
             context["last_spreadsheet_id"] = payload.get("spreadsheetId") or ""
             context["last_spreadsheet_url"] = payload.get("spreadsheetUrl") or ""
+        if task.service == "drive" and task.action == "list_files" and payload:
+            # Apply relevance filtering to Drive files
+            files = payload.get("files") if isinstance(payload, dict) else []
+            if isinstance(files, list):
+                filtered = filter_drive_files(files, user_keywords)
+                payload["files"] = filtered
+            context["drive_query"] = task.parameters.get("q") or ""
+            context["drive_payload"] = payload
         if task.service == "sheets" and task.action == "get_values" and payload:
             context["sheet_values_payload"] = payload
+
+    @staticmethod
+    def _drive_summary_values(context: dict[str, Any]) -> list[list[str]]:
+        query = str(context.get("drive_query") or "Drive search")
+        payload = context.get("drive_payload") or {}
+        files = payload.get("files") if isinstance(payload, dict) else []
+        if not isinstance(files, list) or not files:
+            return [["Search", "File Name", "File Type", "Link"], [query, "No files found", "", ""]]
+        
+        rows = [["Search", "File Name", "File Type", "Link"]]
+        for item in files[:50]:
+            if isinstance(item, dict):
+                rows.append([
+                    query,
+                    str(item.get("name") or ""),
+                    str(item.get("mimeType") or "").split("/")[-1],
+                    str(item.get("webViewLink") or "")
+                ])
+        return rows
 
     @staticmethod
     def _gmail_summary_values(context: dict[str, Any]) -> list[list[str]]:

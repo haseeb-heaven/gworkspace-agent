@@ -89,17 +89,26 @@ class WorkspaceAgentSystem:
                     "\"no_service_detected\": false, "
                     "\"tasks\": [{\"id\": \"task-1\", \"service\": \"gmail\", "
                     "\"action\": \"list_messages\", \"parameters\": {}, \"reason\": \"why\"}]}\n"
-                    f"If no supported service is present, return no_service_detected=true, "
+                    f"If no supported service is present at all, return no_service_detected=true, "
                     f"summary=\"{NO_SERVICE_MESSAGE}\", and tasks=[]. "
-                    "For a request like finding Gmail items and saving to Sheets, plan Gmail first, "
-                    "then Sheets create_spreadsheet if no spreadsheet ID is supplied, then Sheets append_values. "
-                    "Do not invent placeholders like message_id_from_task_1 enclosed in braces. "
-                    "If Gmail messages must be fetched after list_messages, set get_message.parameters.message_id "
-                    "to \"$gmail_message_ids\" and the executor will expand it. "
-                    "For Sheets append_values, only use supported placeholders: "
-                    "$last_spreadsheet_id for spreadsheet_id and $gmail_summary_values for values. "
-                    "For sending spreadsheet data via Gmail, use sheets.get_values first, then gmail.send_message "
-                    "with body set to $sheet_email_body."
+                    "If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones, and ignore the unsupported ones. Do NOT set no_service_detected=true if AT LEAST ONE supported service can be used."
+                    "\n\n"
+                    "CRITICAL RULES:\n"
+                    "1. DRIVE SEARCH: For drive.list_files, you MUST extract the user's search term and pass it as the 'q' parameter "
+                    "using Google Drive query syntax. Examples: \"name contains 'Budget'\" or \"fullText contains 'Agentic AI'\". "
+                    "NEVER call drive.list_files without a q parameter when the user provides a search term.\n"
+                    "2. EMAIL DETAILS: For Gmail, ALWAYS follow gmail.list_messages with gmail.get_message if details are needed. "
+                    "Set get_message.parameters.message_id to \"$gmail_message_ids\".\n"
+                    "3. SHEETS DATA POPULATION: When creating a spreadsheet to hold search results, you MUST chain three tasks: "
+                    "(a) the search task (drive.list_files or gmail.list_messages), "
+                    "(b) sheets.create_spreadsheet, "
+                    "(c) sheets.append_values with spreadsheet_id=$last_spreadsheet_id and values=$drive_summary_values (for Drive data) or values=$gmail_summary_values (for Gmail data). "
+                    "NEVER create a spreadsheet without also appending data to it.\n"
+                    "4. PLACEHOLDERS: Only use these supported placeholders — "
+                    "$last_spreadsheet_id, $gmail_message_ids, $gmail_summary_values, $drive_summary_values, $sheet_email_body. "
+                    "Do not invent placeholders like message_id_from_task_1 enclosed in braces.\n"
+                    "5. EMAIL WITH LINK: For sending spreadsheet data via Gmail, use sheets.get_values first, then gmail.send_message "
+                    "with body set to $sheet_email_body. The spreadsheet link is injected automatically."
                 ),
                 expected_output="A valid JSON request plan using only the allowed service/action catalog.",
                 agent=planner,
@@ -283,6 +292,9 @@ class WorkspaceAgentSystem:
             parameters["max_results"] = _first_int(lowered) or 10
         elif service == "drive" and action == "list_files":
             parameters["page_size"] = _first_int(lowered) or 10
+            drive_query = _drive_query_from_text(lowered)
+            if drive_query:
+                parameters["q"] = drive_query
         elif service == "contacts" and action == "list_contacts":
             parameters["page_size"] = _first_int(lowered) or 10
         return PlannedTask(
@@ -345,6 +357,27 @@ def _gmail_query_from_text(text: str) -> str:
         return _trim_follow_on_instruction(match.group(1))
     return ""
 
+
+def _drive_query_from_text(text: str) -> str:
+    """Extract a Drive API query filter from user text.
+    
+    Looks for quoted terms first, then falls back to keyword extraction.
+    Returns Google Drive query syntax like: fullText contains 'term'
+    """
+    # Look for quoted strings first (single or double quotes)
+    quoted = re.findall(r"""['"]([^'"]{2,80})['"]""", text)
+    if quoted:
+        # Use the first meaningful quoted term
+        parts = [f"fullText contains '{q.strip()}'" for q in quoted[:2]]
+        return " or ".join(parts)
+    
+    # Fall back to extracting search terms after "for" / "about" / "search"
+    match = re.search(r"(?:search|find|for|about)\s+([a-z0-9 _.-]{3,60})", text)
+    if match:
+        term = _trim_follow_on_instruction(match.group(1)).strip()
+        if term and len(term) > 2:
+            return f"fullText contains '{term}'"
+    return ""
 
 def _spreadsheet_title_from_query(query: str) -> str:
     suffix = query.replace(" OR ", " ").strip() or "Gmail"
