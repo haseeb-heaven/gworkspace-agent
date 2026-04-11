@@ -17,7 +17,6 @@ from .conversation import ConversationEngine
 from .execution import PlanExecutor
 from .exceptions import ValidationError
 from .gws_runner import GWSRunner
-from .intent_parser import IntentParser
 from .logging_utils import setup_logging
 from .models import PlannedTask
 from .output_formatter import HumanReadableFormatter
@@ -58,49 +57,6 @@ def _pick_action(engine: ConversationEngine, service: str) -> str:
     return choice
 
 
-def _collect_parameters(
-    engine: ConversationEngine,
-    service: str,
-    action: str,
-    existing: dict[str, Any],
-) -> dict[str, Any]:
-    collected = dict(existing)
-    specs = engine.parameter_specs(service, action)
-    for spec in specs:
-        default = str(existing.get(spec.name) or "").strip() or spec.example
-        value = Prompt.ask(spec.prompt, default=default)
-        if value is None:
-            if spec.required:
-                raise ValidationError(f"Required parameter missing: {spec.name}")
-            continue
-        if spec.required and not value.strip():
-            raise ValidationError(f"Required parameter missing: {spec.name}")
-        cleaned = value.strip()
-        if cleaned:
-            collected[spec.name] = cleaned
-    return collected
-
-
-def _collect_task_parameters(
-    engine: ConversationEngine,
-    task: PlannedTask,
-) -> PlannedTask:
-    collected = dict(task.parameters)
-    for spec in engine.parameter_specs(task.service, task.action):
-        value = collected.get(spec.name)
-        if value is not None and str(value).strip():
-            continue
-        if not spec.required:
-            continue
-        collected[spec.name] = _ask_non_empty(spec.prompt, default=spec.example)
-    return PlannedTask(
-        id=task.id,
-        service=task.service,
-        action=task.action,
-        parameters=collected,
-        reason=task.reason,
-    )
-
 
 def _save_output(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,9 +64,15 @@ def _save_output(path: Path, text: str) -> None:
         handle.write(text.rstrip() + "\n\n")
 
 
-def _run_application(save_output: Path | None = None, task: str | None = None) -> None:
+from .langgraph_workflow import run_workflow
+
+def _run_application(save_output: Path | None = None, task: str | None = None, no_langchain: bool = False) -> None:
     """Runs the terminal assistant (interactive or single-task)."""
     config = AppConfig.from_env()
+    if no_langchain:
+         config.api_key = None
+         config.langchain_enabled = False
+         
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
 
@@ -126,13 +88,11 @@ def _run_application(save_output: Path | None = None, task: str | None = None) -
         )
         raise typer.Exit(code=1)
 
-    parser = IntentParser(config=config, logger=logger)
     planner = CommandPlanner()
-    engine = ConversationEngine(parser=parser, planner=planner, logger=logger)
+    engine = ConversationEngine(planner=planner, logger=logger)
     agent_system = WorkspaceAgentSystem(config=config, logger=logger)
     runner = GWSRunner(config.gws_binary_path, logger=logger)
     executor = PlanExecutor(planner=planner, runner=runner, logger=logger)
-    formatter = HumanReadableFormatter()
 
     if not runner.validate_binary():
         console.print(
@@ -143,10 +103,10 @@ def _run_application(save_output: Path | None = None, task: str | None = None) -
             )
         )
         raise typer.Exit(code=1)
-    if not config.api_key:
+    if not config.api_key and config.langchain_enabled:
         console.print(
             Panel.fit(
-                "No LLM API key is configured. CrewAI planning will fall back to local heuristics.",
+                "No LLM API key is configured. Planning will fall back to local heuristics.",
                 title="Model Warning",
                 border_style="yellow",
             )
@@ -165,25 +125,11 @@ def _run_application(save_output: Path | None = None, task: str | None = None) -
                 console.print("[green]Goodbye.[/green]")
                 break
 
-            plan = agent_system.plan(user_text)
-            logger.info(
-                "Agent plan source=%s tasks=%s summary=%s",
-                plan.source,
-                [f"{task.service}.{task.action}" for task in plan.tasks],
-                plan.summary,
-            )
-            if plan.no_service_detected or not plan.tasks:
-                console.print(f"[yellow]{NO_SERVICE_MESSAGE}[/yellow]")
-                if task:
-                    break
-                continue
-
-            plan.tasks = [_collect_task_parameters(engine, task) for task in plan.tasks]
-            report = executor.execute(plan)
-            output = formatter.format_report(report)
+            output = run_workflow(user_text, config, agent_system, executor, logger)
+            
             if save_output:
                 _save_output(save_output, output)
-            console.print(Panel(output, title="Success" if report.success else "Error", border_style="green" if report.success else "red"))
+            console.print(Panel(output, title="Result", border_style="green"))
 
             if task:
                 break
@@ -204,12 +150,13 @@ def run(
     setup: bool = typer.Option(False, "--setup", help="Run setup mode and save configuration."),
     save_output: Path | None = typer.Option(None, "--save-output", help="Append readable output to a file."),
     task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
+    no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     if setup:
         run_setup_wizard()
         return
-    _run_application(save_output=save_output, task=task)
+    _run_application(save_output=save_output, task=task, no_langchain=no_langchain)
 
 
 def main() -> None:

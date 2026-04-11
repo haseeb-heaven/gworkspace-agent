@@ -43,6 +43,8 @@ def _config(tmp_path: Path) -> AppConfigModel:
         verbose=True,
         env_file_path=tmp_path / ".env",
         setup_complete=True,
+        max_retries=3,
+        langchain_enabled=True,
     )
 
 
@@ -547,3 +549,22 @@ class TestOutputFormatter:
         )
         output = self.formatter.format_execution_result(result)
         assert "Unable to parse range" in output
+
+    def test_chat_send_message(self):
+        planner = CommandPlanner()
+        args = planner.build_command("chat", "send_message", {"space": "SPACE_ID", "text": "hello"})
+        assert args == [
+            "chat",
+            "spaces",
+            "messages",
+            "create",
+            "--params",
+            '{"parent": "SPACE_ID"}',
+            "--json",
+            '{"text": "hello"}'
+        ]
+
+    def test_meet_create_meeting(self):
+        planner = CommandPlanner()
+        args = planner.build_command("meet", "create_meeting", {})
+        assert args == ["meet", "spaces", "create"]

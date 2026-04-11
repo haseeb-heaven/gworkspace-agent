@@ -1,4 +1,28 @@
 # @googleworkspace/cli
+ 
+## 2.0.0
+ 
+### Major Changes (Architectural Migration)
+ 
+- **Hybrid LangChain + LangGraph Architecture**: Replaced CrewAI with a more robust LangChain (reasoning) and LangGraph (orchestration) system.
+  - **State Machine Workflow**: Implemented a directed acyclic graph (DAG) for step-by-step task processing, validation, and error recovery.
+  - **Structured Planning**: Uses LangChain `with_structured_output` for precision JSON task extraction.
+- **Enhanced Reliability**: Integrated exponential backoff and retry logic for the GWS binary and API calls.
+- **Sandboxed Code Execution**: Added a safe environment for executing Python code using `RestrictedPython`.
+- **Web Search & Research**: Added a built-in search tool (DuckDuckGo/Tavily) with LLM-powered summarization.
+ 
+### New Features
+ 
+- **Google Meet & Chat**: Added support for basic Chat actions (list spaces, send/list messages) and Meet actions (listing and creating meetings).
+- **CLI Flags**: Added `--no-langchain` to force the legacy heuristic fallback path.
+- **Gradio Update**: Refactored the web interface to use the new unified workflow entry point.
+ 
+### Project Changes
+ 
+- **License Change**: Migrated from Apache 2.0 to MIT.
+- **Dependency Update**: Bumped minimum versions and added LangChain, LangGraph, and RestrictedPython.
+ 
+---
 
 ## 0.22.5
 

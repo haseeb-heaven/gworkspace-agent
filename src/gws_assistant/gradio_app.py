@@ -30,39 +30,10 @@ class GradioAssistant:
         text = (user_text or "").strip()
         if not text:
             return "Enter a request to continue.", ""
-
-        plan = self.agent_system.plan(text)
-        self.logger.info(
-            "Gradio request planned source=%s tasks=%s",
-            plan.source,
-            [f"{task.service}.{task.action}" for task in plan.tasks],
-        )
-        if plan.no_service_detected or not plan.tasks:
-            return NO_SERVICE_MESSAGE, ""
-
-        missing = self._missing_required_parameters(plan.tasks)
-        if missing:
-            return (
-                "I need more details before running this request:\n" + "\n".join(f"- {item}" for item in missing),
-                _render_plan(plan),
-            )
-
-        report = self.executor.execute(plan)
-        output = self.formatter.format_report(report)
-        return output, _render_plan(plan)
-
-    def _missing_required_parameters(self, tasks: list[Any]) -> list[str]:
-        missing: list[str] = []
-        for task in tasks:
-            service_spec = SERVICES.get(task.service)
-            action_spec = service_spec.actions.get(task.action) if service_spec else None
-            if not action_spec:
-                continue
-            for parameter in action_spec.parameters:
-                value = task.parameters.get(parameter.name)
-                if parameter.required and not _is_value_supplied(value):
-                    missing.append(f"{task.service}.{task.action}: {parameter.name}")
-        return missing
+            
+        from .langgraph_workflow import run_workflow
+        output = run_workflow(text, config=AppConfig.from_env(), system=self.agent_system, executor=self.executor, logger=self.logger)
+        return output, "Plan tracking handled by LangGraph workflow."
 
 
 def create_interface() -> gr.Blocks:
@@ -111,24 +82,4 @@ def main(host: str = "127.0.0.1", port: int = 7860, share: bool = False) -> None
     interface.launch(server_name=host, server_port=port, share=share)
 
 
-def _is_value_supplied(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        if not value.strip():
-            return False
-        if value.strip().startswith("$"):
-            return True
-        return True
-    return True
 
-
-def _render_plan(plan: Any) -> str:
-    rows = [f"Source: {plan.source}", f"Summary: {plan.summary or 'n/a'}", ""]
-    for index, task in enumerate(plan.tasks, start=1):
-        rows.append(f"{index}. {task.service}.{task.action}")
-        if task.parameters:
-            rows.append(f"   params: {task.parameters}")
-        if task.reason:
-            rows.append(f"   reason: {task.reason}")
-    return "\n".join(rows).strip()

@@ -191,6 +191,68 @@ SERVICES: dict[str, ServiceSpec] = {
             ),
         },
     ),
+    "chat": ServiceSpec(
+        key="chat",
+        label="Google Chat",
+        aliases=("chat", "spaces", "messages"),
+        actions={
+            "list_spaces": ActionSpec(
+                key="list_spaces",
+                label="List spaces",
+                keywords=("list", "show", "find", "spaces", "rooms", "chat"),
+                parameters=(
+                    ParameterSpec("page_size", "How many spaces should I show?", "10", required=False),
+                ),
+            ),
+            "send_message": ActionSpec(
+                key="send_message",
+                label="Send message",
+                keywords=("send", "message", "post", "chat"),
+                parameters=(
+                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
+                    ParameterSpec("text", "Message text", "Hello team!"),
+                ),
+            ),
+            "list_messages": ActionSpec(
+                key="list_messages",
+                label="List messages",
+                keywords=("list", "show", "messages", "chat", "history"),
+                parameters=(
+                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
+                    ParameterSpec("page_size", "How many messages should I show?", "10", required=False),
+                ),
+            ),
+        },
+    ),
+    "meet": ServiceSpec(
+        key="meet",
+        label="Google Meet",
+        aliases=("meet", "meeting", "conference", "video"),
+        actions={
+            "list_conferences": ActionSpec(
+                key="list_conferences",
+                label="List conferences",
+                keywords=("list", "show", "find", "conferences", "meetings", "video"),
+                parameters=(
+                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234", required=False),
+                ),
+            ),
+            "get_conference": ActionSpec(
+                key="get_conference",
+                label="Get conference",
+                keywords=("get", "show", "details", "conference", "meeting", "video"),
+                parameters=(
+                    ParameterSpec("name", "Conference name", "spaces/AAAA1234"),
+                ),
+            ),
+            "create_meeting": ActionSpec(
+                key="create_meeting",
+                label="Create meeting",
+                keywords=("create", "new", "start", "meeting", "meet", "video"),
+                parameters=(),
+            ),
+        },
+    ),
 }
 
 

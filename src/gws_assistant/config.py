@@ -56,6 +56,9 @@ class AppConfig:
         log_level = (os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
         verbose = _to_bool(os.getenv("APP_VERBOSE"), default=True)
         setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
+        
+        max_retries = int((os.getenv("MAX_RETRIES") or "3").strip())
+        langchain_enabled = _to_bool(os.getenv("LANGCHAIN_ENABLED"), default=True)
 
         return AppConfigModel(
             provider=provider,
@@ -69,6 +72,8 @@ class AppConfig:
             verbose=verbose,
             env_file_path=env_file_path,
             setup_complete=setup_complete,
+            max_retries=max_retries,
+            langchain_enabled=langchain_enabled,
         )
 
 

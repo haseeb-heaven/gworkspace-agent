@@ -11,17 +11,7 @@ from typing import Any
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES, normalize_service
 
-os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
-os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
-
-try:  # pragma: no cover - exercised only when crewai is installed and configured
-    from crewai import Agent, Crew, LLM, Process, Task as CrewTask
-except Exception:  # pragma: no cover
-    Agent = None  # type: ignore[assignment]
-    Crew = None  # type: ignore[assignment]
-    CrewTask = None  # type: ignore[assignment]
-    LLM = None  # type: ignore[assignment]
-    Process = None  # type: ignore[assignment]
+from .langchain_agent import plan_with_langchain
 
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
@@ -33,7 +23,7 @@ class WorkspaceAgentSystem:
     def __init__(self, config: AppConfigModel, logger: logging.Logger) -> None:
         self.config = config
         self.logger = logger
-        self._crew = self._build_crew()
+        self._use_langchain = bool(self.config.api_key)
 
     def plan(self, user_text: str) -> RequestPlan:
         text = (user_text or "").strip()
@@ -44,8 +34,8 @@ class WorkspaceAgentSystem:
                 no_service_detected=True,
             )
 
-        if self._crew is not None:
-            plan = self._plan_with_crewai(text)
+        if self._use_langchain:
+            plan = plan_with_langchain(text, self.config, self.logger)
             if plan and plan.tasks:
                 return plan
             if plan and plan.no_service_detected:
@@ -53,80 +43,7 @@ class WorkspaceAgentSystem:
 
         return self._plan_with_heuristics(text)
 
-    def _build_crew(self) -> Any | None:
-        if not self.config.api_key:
-            self.logger.warning("CrewAI planning disabled because no API key is configured.")
-            return None
-        if not all((Agent, Crew, CrewTask, LLM, Process)):
-            self.logger.warning("CrewAI is not installed, using heuristic planning.")
-            return None
-        try:
-            llm_kwargs: dict[str, Any] = {
-                "model": self._crewai_model_name(),
-                "api_key": self.config.api_key,
-                "temperature": 0,
-                "timeout": self.config.timeout_seconds,
-            }
-            if self.config.base_url:
-                llm_kwargs["base_url"] = self.config.base_url
-            llm = LLM(**llm_kwargs)
-            planner = Agent(
-                role="Google Workspace command planner",
-                goal="Turn user requests into ordered, executable Google Workspace CLI task plans.",
-                backstory=(
-                    "You understand Gmail, Drive, Sheets, Calendar, Docs, Slides, and Contacts. "
-                    "You produce conservative plans that only use actions from the provided catalog."
-                ),
-                llm=llm,
-                verbose=False,
-            )
-            planning_task = CrewTask(
-                description=(
-                    "Plan the Google Workspace CLI work for this user request: {request}\n\n"
-                    f"Available action catalog:\n{self._catalog_for_prompt()}\n\n"
-                    "Return JSON only. Use this schema:\n"
-                    "{\"summary\": \"short human summary\", \"confidence\": 0.0, "
-                    "\"no_service_detected\": false, "
-                    "\"tasks\": [{\"id\": \"task-1\", \"service\": \"gmail\", "
-                    "\"action\": \"list_messages\", \"parameters\": {}, \"reason\": \"why\"}]}\n"
-                    f"If no supported service is present at all, return no_service_detected=true, "
-                    f"summary=\"{NO_SERVICE_MESSAGE}\", and tasks=[]. "
-                    "If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones, and ignore the unsupported ones. Do NOT set no_service_detected=true if AT LEAST ONE supported service can be used."
-                    "\n\n"
-                    "CRITICAL RULES:\n"
-                    "1. DRIVE SEARCH: For drive.list_files, you MUST extract the user's search term and pass it as the 'q' parameter "
-                    "using Google Drive query syntax. Examples: \"name contains 'Budget'\" or \"fullText contains 'Agentic AI'\". "
-                    "NEVER call drive.list_files without a q parameter when the user provides a search term.\n"
-                    "2. EMAIL DETAILS: For Gmail, ALWAYS follow gmail.list_messages with gmail.get_message if details are needed. "
-                    "Set get_message.parameters.message_id to \"$gmail_message_ids\".\n"
-                    "3. SHEETS DATA POPULATION: When creating a spreadsheet to hold search results, you MUST chain three tasks: "
-                    "(a) the search task (drive.list_files or gmail.list_messages), "
-                    "(b) sheets.create_spreadsheet, "
-                    "(c) sheets.append_values with spreadsheet_id=$last_spreadsheet_id and values=$drive_summary_values (for Drive data) or values=$gmail_summary_values (for Gmail data). "
-                    "NEVER create a spreadsheet without also appending data to it.\n"
-                    "4. PLACEHOLDERS: Only use these supported placeholders — "
-                    "$last_spreadsheet_id, $gmail_message_ids, $gmail_summary_values, $drive_summary_values, $sheet_email_body. "
-                    "Do not invent placeholders like message_id_from_task_1 enclosed in braces.\n"
-                    "5. EMAIL WITH LINK: For sending spreadsheet data via Gmail, use sheets.get_values first, then gmail.send_message "
-                    "with body set to $sheet_email_body. The spreadsheet link is injected automatically."
-                ),
-                expected_output="A valid JSON request plan using only the allowed service/action catalog.",
-                agent=planner,
-            )
-            return Crew(agents=[planner], tasks=[planning_task], process=Process.sequential, verbose=False, tracing=False)
-        except Exception as exc:
-            self.logger.warning("CrewAI initialization failed, using heuristic planning: %s", exc)
-            return None
 
-    def _plan_with_crewai(self, text: str) -> RequestPlan | None:
-        try:
-            result = self._crew.kickoff(inputs={"request": text})
-            payload = _json_from_text(str(result))
-            return self._plan_from_payload(text, payload, source="crewai")
-        except Exception as exc:
-            self.logger.warning("CrewAI planning failed, using heuristic planning: %s", exc)
-            self._crew = None
-            return None
 
     def _plan_from_payload(self, text: str, payload: dict[str, Any], source: str) -> RequestPlan:
         tasks: list[PlannedTask] = []
@@ -305,25 +222,7 @@ class WorkspaceAgentSystem:
             reason=f"Detected {SERVICES[service].label} in the request.",
         )
 
-    def _crewai_model_name(self) -> str:
-        if self.config.provider == "openrouter" and not self.config.model.startswith("openrouter/"):
-            return f"openrouter/{self.config.model}"
-        if self.config.provider == "openai" and "/" not in self.config.model:
-            return f"openai/{self.config.model}"
-        return self.config.model
 
-    @staticmethod
-    def _catalog_for_prompt() -> str:
-        catalog = {}
-        for service, spec in SERVICES.items():
-            catalog[service] = {
-                "aliases": spec.aliases,
-                "actions": {
-                    action: [parameter.name for parameter in action_spec.parameters]
-                    for action, action_spec in spec.actions.items()
-                },
-            }
-        return json.dumps(catalog, ensure_ascii=True, indent=2)
 
 
 def _detect_services_in_order(text: str) -> list[str]:
@@ -459,16 +358,4 @@ def _wants_email_details(text: str) -> bool:
     return any(term in text for term in terms)
 
 
-def _json_from_text(text: str) -> dict[str, Any]:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
-        cleaned = re.sub(r"```$", "", cleaned).strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start >= 0 and end >= start:
-        cleaned = cleaned[start : end + 1]
-    payload = json.loads(cleaned)
-    if not isinstance(payload, dict):
-        raise ValueError("CrewAI returned JSON that was not an object.")
-    return payload
+

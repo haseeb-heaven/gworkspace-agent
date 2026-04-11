@@ -166,3 +166,14 @@ def test_executor_builds_email_body_from_sheet_values():
     assert runner.commands[1][:4] == ["gmail", "users", "messages", "send"]
     raw_json = runner.commands[1][runner.commands[1].index("--json") + 1]
     assert "raw" in raw_json
+
+def test_execute_single_task(tmp_path):
+    runner = FakeRunner()
+    runner.commands = []
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger())
+    
+    task = PlannedTask(id="1", service="gmail", action="list_messages", parameters={"q": "foo"}, reason="Test")
+    result = executor.execute_single_task(task, {})
+    assert result.success is True
+    assert len(runner.commands) == 1
+    assert runner.commands[-1][:4] == ["gmail", "users", "messages", "list"]

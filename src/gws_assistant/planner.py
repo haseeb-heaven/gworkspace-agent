@@ -64,6 +64,10 @@ class CommandPlanner:
             return self._build_slides_command(action_key, params)
         if service_key == "contacts":
             return self._build_contacts_command(action_key, params)
+        if service_key == "chat":
+            return self._build_chat_command(action_key, params)
+        if service_key == "meet":
+            return self._build_meet_command(action_key, params)
         raise ValidationError(f"No command builder for service: {service_key}")
 
     def _build_drive_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -275,6 +279,58 @@ class CommandPlanner:
                 ),
             ]
         raise ValidationError(f"Unsupported contacts action: {action}")
+
+    def _build_chat_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_spaces":
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            return [
+                "chat",
+                "spaces",
+                "list",
+                "--params",
+                json.dumps({"pageSize": page_size}),
+            ]
+        if action == "send_message":
+            space = self._required_text(params, "space")
+            text = self._required_text(params, "text")
+            return [
+                "chat",
+                "spaces",
+                "messages",
+                "create",
+                "--params",
+                json.dumps({"parent": space}),
+                "--json",
+                json.dumps({"text": text}, ensure_ascii=True),
+            ]
+        if action == "list_messages":
+            space = self._required_text(params, "space")
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            return [
+                "chat",
+                "spaces",
+                "messages",
+                "list",
+                "--params",
+                json.dumps({"parent": space, "pageSize": page_size}),
+            ]
+        raise ValidationError(f"Unsupported chat action: {action}")
+
+    def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_conferences":
+            return ["meet", "spaces", "list"]
+        if action == "get_conference":
+            name = self._required_text(params, "name")
+            return [
+                "meet",
+                "spaces",
+                "get",
+                "--params",
+                json.dumps({"name": name}),
+            ]
+        if action == "create_meeting":
+            return ["meet", "spaces", "create"]
+        raise ValidationError(f"Unsupported meet action: {action}")
 
     def _format_range(self, range_str: str) -> str:
         """Ensure sheet names with spaces are quoted correctly."""

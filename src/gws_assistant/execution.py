@@ -35,26 +35,35 @@ class PlanExecutor:
                     expanded_task.reason,
                 )
                 resolved_task = self._resolve_task(expanded_task, context)
-                placeholder = _find_unresolved_placeholder(resolved_task.parameters)
-                if placeholder:
-                    result = ExecutionResult(
-                        success=False,
-                        command=[],
-                        error=f"Plan contained an unresolved placeholder: {placeholder}",
-                    )
-                else:
-                    args = self.planner.build_command(
-                        resolved_task.service,
-                        resolved_task.action,
-                        resolved_task.parameters,
-                    )
-                    result = self.runner.run(args)
+                result = self.execute_single_task(resolved_task, context)
                 executions.append(TaskExecution(task=resolved_task, result=result))
-                self._update_context(resolved_task, result.stdout, context)
                 if not result.success:
                     self.logger.warning("Stopping plan after failed task id=%s", resolved_task.id)
                     return PlanExecutionReport(plan=plan, executions=executions)
         return PlanExecutionReport(plan=plan, executions=executions)
+
+    def execute_single_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
+        """Executes a single fully-resolved task and updates the context."""
+        placeholder = _find_unresolved_placeholder(task.parameters)
+        if placeholder:
+            return ExecutionResult(
+                success=False,
+                command=[],
+                error=f"Plan contained an unresolved placeholder: {placeholder}",
+            )
+            
+        args = self.planner.build_command(
+            task.service,
+            task.action,
+            task.parameters,
+        )
+        if hasattr(self.runner, "run_with_retry"):
+            result = self.runner.run_with_retry(args)
+        else:
+            result = self.runner.run(args)
+            
+        self._update_context(task, result.stdout, context)
+        return result
 
     def _expand_task(self, task: PlannedTask, context: dict[str, Any]) -> list[PlannedTask]:
         if task.service != "gmail" or task.action != "get_message":

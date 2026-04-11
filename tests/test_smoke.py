@@ -16,7 +16,7 @@ from dotenv import dotenv_values
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_command(args: list[str], env: dict | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         args,
         cwd=ROOT,
@@ -24,12 +24,15 @@ def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=20,
         check=False,
+        env=env,
     )
 
 
 @pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
 def test_cli_module_help_smoke():
-    result = _run_command([sys.executable, "-m", "src.gws_assistant.cli_app", "--help"])
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path("src").resolve())
+    result = _run_command([sys.executable, "-m", "gws_assistant.cli_app", "--help"], env=env)
     output = f"{result.stdout}\n{result.stderr}"
     assert result.returncode == 0
     assert "Google Workspace Assistant CLI" in output

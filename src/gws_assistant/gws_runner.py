@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import time
 from pathlib import Path
 
 from .models import ExecutionResult
@@ -65,4 +66,29 @@ class GWSRunner:
                 command=command,
                 error=str(exc),
             )
+
+    def run_with_retry(self, args: list[str], timeout_seconds: int = 90, max_retries: int = 3) -> ExecutionResult:
+        """Runs the command with exponential backoff for transient errors."""
+        for attempt in range(1, max_retries + 1):
+            result = self.run(args, timeout_seconds)
+            if result.success:
+                return result
+                
+            error_msg = str(result.error).lower() + str(result.stderr).lower()
+            is_transient = result.return_code in (429, 500, 502, 503, 504) or any(
+                term in error_msg
+                for term in ["timeout", "429", "500", "502", "503", "504", "quota", "connection reset", "network", "transient"]
+            )
+            
+            if is_transient and attempt < max_retries:
+                sleep_time = 2 ** attempt
+                self.logger.warning(
+                    f"Transient error on attempt {attempt}. Retrying in {sleep_time}s... Error: {result.error} | {result.stderr}"
+                )
+                time.sleep(sleep_time)
+            else:
+                if attempt == max_retries and not result.success:
+                     self.logger.error(f"Command execution failed permanently after {attempt} attempts: {result.error} | {result.stderr}")
+                return result
+        return result
 

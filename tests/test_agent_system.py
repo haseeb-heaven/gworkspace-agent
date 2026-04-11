@@ -20,6 +20,8 @@ def _config(tmp_path: Path) -> AppConfigModel:
         verbose=True,
         env_file_path=tmp_path / ".env",
         setup_complete=True,
+        max_retries=3,
+        langchain_enabled=True,
     )
 
 

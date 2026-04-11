@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 
 @dataclass(slots=True)
@@ -20,6 +20,8 @@ class AppConfigModel:
     verbose: bool
     env_file_path: Path
     setup_complete: bool
+    max_retries: int
+    langchain_enabled: bool
 
 
 @dataclass(slots=True)
@@ -100,3 +102,40 @@ class PlanExecutionReport:
     @property
     def success(self) -> bool:
         return bool(self.executions) and all(item.result.success for item in self.executions)
+
+
+class AgentState(TypedDict, total=False):
+    """LangGraph state for the workspace workflow."""
+
+    messages: list[Any]
+    user_text: str
+    plan: RequestPlan | None
+    context: dict[str, Any]
+    current_task_index: int
+    executions: list[TaskExecution]
+    error: str | None
+    retry_count: int
+    final_output: str
+
+
+@dataclass(slots=True)
+class WebSearchResult:
+    """Result from a web search tool invocation."""
+
+    query: str
+    results: list[dict[str, str]] = field(default_factory=list)
+    summary: str = ""
+    error: str | None = None
+
+
+@dataclass(slots=True)
+class CodeExecutionResult:
+    """Result from sandboxed code execution."""
+
+    code: str
+    stdout: str = ""
+    stderr: str = ""
+    return_value: Any = None
+    success: bool = False
+    error: str | None = None
+

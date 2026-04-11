@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from .exceptions import ValidationError
-from .intent_parser import IntentParser
 from .models import ExecutionResult, Intent, ParameterSpec
 from .output_formatter import HumanReadableFormatter
 from .planner import CommandPlanner
@@ -18,18 +17,11 @@ class ConversationEngine:
 
     def __init__(
         self,
-        parser: IntentParser,
         planner: CommandPlanner,
         logger: logging.Logger,
     ) -> None:
-        self.parser = parser
         self.planner = planner
         self.logger = logger
-
-    def parse_user_request(self, user_text: str) -> Intent:
-        intent = self.parser.parse(user_text)
-        self.logger.debug("Parsed intent: service=%s action=%s", intent.service, intent.action)
-        return intent
 
     def needs_service_clarification(self, intent: Intent) -> bool:
         if not intent.service:
