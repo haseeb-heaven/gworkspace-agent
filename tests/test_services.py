@@ -45,6 +45,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
+        use_heuristic_fallback=True,
     )
 
 

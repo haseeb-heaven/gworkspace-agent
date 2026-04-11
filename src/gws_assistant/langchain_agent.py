@@ -83,10 +83,40 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
     # Enforce structured output predicting our RequestPlan model
     try:
         chain = prompt | model.with_structured_output(RequestPlan)
-        plan: RequestPlan = chain.invoke(
+        plan: Any = chain.invoke(
              {"request": text}, 
              config=RunnableConfig(metadata={"timeout": config.timeout_seconds})
         )
+
+        # Some models/providers (like OpenRouter) might return a dict instead of the dataclass object
+        if isinstance(plan, dict):
+            tasks_data = plan.get("tasks") or []
+            tasks = []
+            for t_data in tasks_data:
+                if isinstance(t_data, dict):
+                    # Ensure parameters is a dict
+                    params = t_data.get("parameters")
+                    if not isinstance(params, dict):
+                        params = {}
+                    tasks.append(PlannedTask(
+                        id=str(t_data.get("id", "")),
+                        service=str(t_data.get("service", "")),
+                        action=str(t_data.get("action", "")),
+                        parameters=params,
+                        reason=str(t_data.get("reason", ""))
+                    ))
+                else:
+                    tasks.append(t_data)
+            
+            plan = RequestPlan(
+                raw_text=str(plan.get("raw_text", text)),
+                tasks=tasks,
+                summary=str(plan.get("summary", "")),
+                confidence=float(plan.get("confidence", 0.0)),
+                no_service_detected=bool(plan.get("no_service_detected", False)),
+                source="langchain"
+            )
+
         # Apply standard defaults that CrewAI was doing
         if not plan.summary:
              plan.summary = "Generated Google Workspace Plan"

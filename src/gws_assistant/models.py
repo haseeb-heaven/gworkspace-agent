@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 
 @dataclass(slots=True)
@@ -22,6 +22,8 @@ class AppConfigModel:
     setup_complete: bool
     max_retries: int
     langchain_enabled: bool
+    use_heuristic_fallback: bool = False
+    code_execution_enabled: bool = True
 
 
 @dataclass(slots=True)
@@ -86,6 +88,16 @@ class ExecutionResult:
     stderr: str = ""
     return_code: int = -1
     error: str | None = None
+    output: Any = None
+
+    def to_structured_result(self) -> StructuredToolResult:
+        payload = self.output if self.output is not None else {
+            "command": self.command,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "return_code": self.return_code,
+        }
+        return StructuredToolResult(success=self.success, output=payload, error=self.error)
 
 
 @dataclass(slots=True)
@@ -108,6 +120,7 @@ class AgentState(TypedDict, total=False):
     """LangGraph state for the workspace workflow."""
 
     messages: list[Any]
+    conversation_history: list[Any]
     user_text: str
     plan: RequestPlan | None
     context: dict[str, Any]
@@ -116,7 +129,24 @@ class AgentState(TypedDict, total=False):
     error: str | None
     retry_count: int
     final_output: str
+    last_result: StructuredToolResult | None
+    reflection: ReflectionDecision | None
+    current_attempt: int
 
+
+
+
+class StructuredToolResult(TypedDict):
+    success: bool
+    output: Any
+    error: str | None
+
+
+@dataclass(slots=True)
+class ReflectionDecision:
+    action: Literal["continue", "retry", "replan"]
+    reason: str = ""
+    replacement_plan: RequestPlan | None = None
 
 @dataclass(slots=True)
 class WebSearchResult:
@@ -138,4 +168,3 @@ class CodeExecutionResult:
     return_value: Any = None
     success: bool = False
     error: str | None = None
-

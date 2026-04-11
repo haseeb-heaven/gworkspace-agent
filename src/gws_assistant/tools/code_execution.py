@@ -1,21 +1,39 @@
 """Code execution tool for the LangChain agent."""
 
-import io
-import contextlib
-from typing import Any
-from RestrictedPython import compile_restricted, safe_globals, safe_builtins, utility_builtins
-from RestrictedPython.PrintCollector import PrintCollector
+from __future__ import annotations
 
-from langchain_core.tools import tool
-from gws_assistant.models import CodeExecutionResult
+import ast
+import contextlib
+import io
+import json
 import multiprocessing
 import queue
+import re
+from typing import Any
 
-# Restricted Python safe environmnt
+from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+from RestrictedPython.PrintCollector import PrintCollector
+from langchain_core.tools import tool
+
+from gws_assistant.models import CodeExecutionResult, StructuredToolResult
+
+_TIMEOUT_SECONDS = 5
+_BANNED_PATTERNS = [
+    r"\bimport\s+__future__\b",
+    r"\bos\.remove\b",
+    r"\bos\.system\b",
+    r"\bsubprocess\b",
+    r"\bsocket\b",
+    r"\bopen\(",
+    r"__import__",
+]
+
+
 def get_safe_globals() -> dict[str, Any]:
     safe_g = safe_globals.copy()
     safe_g["__builtins__"] = safe_builtins.copy()
     safe_g["__builtins__"].update(utility_builtins)
+    safe_g["__builtins__"]["__import__"] = _restricted_import
     safe_g["_print_"] = PrintCollector
     safe_g["_getattr_"] = getattr
     safe_g["_setattr_"] = setattr
@@ -24,92 +42,107 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_write_"] = lambda obj: obj
     return safe_g
 
+
+def _restricted_import(*_: Any, **__: Any) -> None:
+    raise ImportError("Imports are disabled inside the code sandbox.")
+
+
+def _validate_submitted_code(code: str) -> str | None:
+    for pattern in _BANNED_PATTERNS:
+        if re.search(pattern, code):
+            return f"SecurityError: disallowed pattern matched: {pattern}"
+    try:
+        tree = ast.parse(code)
+    except Exception as exc:
+        return f"SyntaxError: {exc}"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            return "SecurityError: import __future__ is blocked."
+    return None
+
+
 def _run_in_sandbox(code: str, return_queue: multiprocessing.Queue):
-    """Executes the code securely and posts results to a queue."""
     result = CodeExecutionResult(code=code)
     try:
-        # Compile source code with RestrictedPython
-        byte_code = compile_restricted(
-            code,
-            filename="<string>",
-            mode="exec"
-        )
+        byte_code = compile_restricted(code, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
-        
-        # Capture standard output correctly via restricted python mechanism
-        # Using contextlib redirect_stdout helps catch any print calls not caught by RestrictedPython 
-        # (Though with _print_ mechanism it is typically caught in printed).
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)
 
-        # Get `_print()` output from PrintCollector 
         if "_print" in sandbox_globals:
-             result.stdout = sandbox_globals["_print"]()
-             
-        # Add normal stdout buffer to it
+            result.stdout = sandbox_globals["_print"]()
         buffer_val = output_buffer.getvalue()
         if buffer_val:
-             if result.stdout:
-                  result.stdout += "\n" + buffer_val
-             else:
-                  result.stdout = buffer_val
-             
-             
+            result.stdout = f"{result.stdout}\n{buffer_val}".strip()
+
+        result.return_value = sandbox_globals.get("result")
         result.success = True
-        
-    except Exception as e:
+    except Exception as exc:
         result.success = False
-        result.error = f"{type(e).__name__}: {str(e)}"
-        
+        result.error = f"{type(exc).__name__}: {exc}"
+
     return_queue.put(result)
+
+
+def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
+    return StructuredToolResult(
+        success=result.success,
+        output={
+            "code": result.code,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "parsed_value": result.return_value,
+        },
+        error=result.error,
+    )
+
+
+def execute_generated_code(code: str) -> StructuredToolResult:
+    validation_error = _validate_submitted_code(code)
+    if validation_error:
+        return StructuredToolResult(
+            success=False,
+            output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
+            error=validation_error,
+        )
+
+    queue_res = multiprocessing.Queue()
+    process = multiprocessing.Process(target=_run_in_sandbox, args=(code, queue_res))
+    process.start()
+    process.join(timeout=_TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        return StructuredToolResult(
+            success=False,
+            output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
+            error=f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds.",
+        )
+
+    try:
+        result = queue_res.get(block=False)
+    except queue.Empty:
+        result = CodeExecutionResult(
+            code=code,
+            success=False,
+            error="ProcessError: Sandbox process crashed unexpectedly without returning results.",
+        )
+    return normalize_code_result(result)
 
 
 @tool
 def code_execution_tool(code: str) -> dict[str, Any]:
-    """
-    Executes Python 3 code in a restricted, sandboxed environment.
-    Use this to perform complex mathematical processing, formatting text, or logical steps that require actual code execution.
-    Features:
-    - Supported builtins: basic math, string manipulation, dicts, lists.
-    - Unsupported: File I/O, networking, imports (`os`, `sys`, `socket` etc. are heavily restricted).
-    - Max execution time: 5 seconds.
-    - Captures STDOUT and returns it.
-    
-    Args:
-        code: The Python 3 code to execute.
-        
-    Returns:
-        JSON compatible dict with STDOUT, success status and error messages.
-    """
-    queue_res = multiprocessing.Queue()
-    process = multiprocessing.Process(target=_run_in_sandbox, args=(code, queue_res))
-    process.start()
-    
-    # Wait for completion or timeout
-    process.join(timeout=5)
-    
-    result = CodeExecutionResult(code=code)
-    
-    if process.is_alive():
-        # Timeout occurred -> terminate the process forcefully
-        process.terminate()
-        process.join()  # wait for it to actually terminate
-        result.success = False
-        result.error = "TimeoutError: Execution exceeded 5 seconds limit."
-    else:
-        try:
-            # Process ended gracefully, retrieve the result
-            result = queue_res.get(block=False)
-        except queue.Empty:
-            result.success = False
-            result.error = "ProcessError: Sandbox process crashed unexpectedly without returning results."
-            
-    # Serialize to dictionary for LangChain agent compatibility
+    """Execute Python in a restricted sandbox with normalized structured results."""
+    structured = execute_generated_code(code)
+    output = structured["output"] if isinstance(structured["output"], dict) else {}
     return {
-        "code": result.code,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "success": result.success,
-        "error": result.error
+        "success": structured["success"],
+        "output": output,
+        "error": structured["error"],
+        "code": output.get("code", code),
+        "stdout": output.get("stdout", ""),
+        "stderr": output.get("stderr", ""),
+        "parsed_value": output.get("parsed_value"),
     }

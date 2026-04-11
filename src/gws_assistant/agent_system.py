@@ -23,7 +23,7 @@ class WorkspaceAgentSystem:
     def __init__(self, config: AppConfigModel, logger: logging.Logger) -> None:
         self.config = config
         self.logger = logger
-        self._use_langchain = bool(self.config.api_key)
+        self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
 
     def plan(self, user_text: str) -> RequestPlan:
         text = (user_text or "").strip()
@@ -40,6 +40,20 @@ class WorkspaceAgentSystem:
                 return plan
             if plan and plan.no_service_detected:
                 return plan
+            if not self.config.use_heuristic_fallback:
+                return RequestPlan(
+                    raw_text=text,
+                    summary="LLM planning failed and USE_HEURISTIC_FALLBACK is disabled.",
+                    confidence=0.0,
+                    no_service_detected=True,
+                )
+        elif not self.config.use_heuristic_fallback:
+            return RequestPlan(
+                raw_text=text,
+                summary="No LLM configured and USE_HEURISTIC_FALLBACK is disabled.",
+                confidence=0.0,
+                no_service_detected=True,
+            )
 
         return self._plan_with_heuristics(text)
 
@@ -356,6 +370,5 @@ def _wants_email_details(text: str) -> bool:
         "show emails",
     )
     return any(term in text for term in terms)
-
 
 
