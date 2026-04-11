@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -14,6 +15,7 @@ from dotenv import dotenv_values
 
 
 ROOT = Path(__file__).resolve().parents[1]
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 def _run_command(args: list[str], env: dict | None = None) -> subprocess.CompletedProcess[str]:
@@ -28,12 +30,16 @@ def _run_command(args: list[str], env: dict | None = None) -> subprocess.Complet
     )
 
 
+def _clean_output(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
 @pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
 def test_cli_module_help_smoke():
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path("src").resolve())
     result = _run_command([sys.executable, "-m", "gws_assistant.cli_app", "--help"], env=env)
-    output = f"{result.stdout}\n{result.stderr}"
+    output = _clean_output(f"{result.stdout}\n{result.stderr}")
     assert result.returncode == 0
     assert "Google Workspace Assistant CLI" in output
     assert "--setup" in output
@@ -42,19 +48,10 @@ def test_cli_module_help_smoke():
 @pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
 def test_cli_launcher_help_smoke():
     result = _run_command([sys.executable, "cli.py", "--help"])
-    output = f"{result.stdout}\n{result.stderr}"
+    output = _clean_output(f"{result.stdout}\n{result.stderr}")
     assert result.returncode == 0
     assert "Google Workspace Assistant CLI" in output
     assert "--save-output" in output
-
-
-@pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
-def test_gws_cli_launcher_help_smoke():
-    result = _run_command([sys.executable, "gws_cli.py", "--help"])
-    output = f"{result.stdout}\n{result.stderr}"
-    assert result.returncode == 0
-    assert "Google Workspace Assistant CLI" in output
-    assert "--task" in output
 
 
 @pytest.mark.skipif(not (ROOT / "gws.exe").exists(), reason="Bundled gws.exe is not present")

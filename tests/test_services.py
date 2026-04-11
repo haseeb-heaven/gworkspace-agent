@@ -45,6 +45,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
+        use_heuristic_fallback=True,
     )
 
 
@@ -331,9 +332,9 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text="Find emails about job offers and save to sheets",
             tasks=[
-                PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "job offer", "max_results": 10}),
-                PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Job Offers"}),
-                PlannedTask(id="task-3", service="sheets", action="append_values", parameters={
+                PlannedTask("task-1", "gmail", "list_messages", {"q": "job offer", "max_results": 10}),
+                PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "Job Offers"}),
+                PlannedTask("task-3", "sheets", "append_values", {
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": "$gmail_summary_values",
@@ -354,9 +355,9 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text='Search Google Documents for "Agentic AI - Builders" and create a Sheet',
             tasks=[
-                PlannedTask(id="task-1", service="drive", action="list_files", parameters={"q": "fullText contains 'Agentic AI'", "page_size": 100}),
-                PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "AI Builders Data"}),
-                PlannedTask(id="task-3", service="sheets", action="append_values", parameters={
+                PlannedTask("task-1", "drive", "list_files", {"q": "fullText contains 'Agentic AI'", "page_size": 100}),
+                PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "AI Builders Data"}),
+                PlannedTask("task-3", "sheets", "append_values", {
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": "$drive_summary_values",
@@ -377,8 +378,8 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text="Send sheet data via email",
             tasks=[
-                PlannedTask(id="task-1", service="sheets", action="get_values", parameters={"spreadsheet_id": "s1", "range": "Sheet1!A1:B2"}),
-                PlannedTask(id="task-2", service="gmail", action="send_message", parameters={
+                PlannedTask("task-1", "sheets", "get_values", {"spreadsheet_id": "s1", "range": "Sheet1!A1:B2"}),
+                PlannedTask("task-2", "gmail", "send_message", {
                     "to_email": "user@example.com",
                     "subject": "Data Export",
                     "body": "$sheet_email_body",
@@ -399,15 +400,15 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text='Search "Agentic AI - Builders" create sheet, email, and calendar event',
             tasks=[
-                PlannedTask(id="task-1", service="drive", action="list_files", parameters={"q": "fullText contains 'Agentic AI'"}),
-                PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "AI Data"}),
-                PlannedTask(id="task-3", service="sheets", action="append_values", parameters={
+                PlannedTask("task-1", "drive", "list_files", {"q": "fullText contains 'Agentic AI'"}),
+                PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "AI Data"}),
+                PlannedTask("task-3", "sheets", "append_values", {
                     "spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$drive_summary_values",
                 }),
-                PlannedTask(id="task-4", service="gmail", action="send_message", parameters={
+                PlannedTask("task-4", "gmail", "send_message", {
                     "to_email": "haseebmir.hm@gmail.com", "subject": "AI Data Sheet", "body": "Sheet is ready",
                 }),
-                PlannedTask(id="task-5", service="calendar", action="create_event", parameters={
+                PlannedTask("task-5", "calendar", "create_event", {
                     "summary": "Review AI Data", "start_date": "2026-04-20",
                 }),
             ],
@@ -428,7 +429,7 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text="test",
             tasks=[
-                PlannedTask(id="task-1", service="sheets", action="append_values", parameters={
+                PlannedTask("task-1", "sheets", "append_values", {
                     "spreadsheet_id": "{{invalid_id}}",
                     "range": "A1",
                     "values": [["data"]],
@@ -446,8 +447,8 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text="save to RockstarIndia Emails sheet",
             tasks=[
-                PlannedTask(id="task-1", service="sheets", action="create_spreadsheet", parameters={"title": "RockstarIndia Emails"}),
-                PlannedTask(id="task-2", service="sheets", action="append_values", parameters={
+                PlannedTask("task-1", "sheets", "create_spreadsheet", {"title": "RockstarIndia Emails"}),
+                PlannedTask("task-2", "sheets", "append_values", {
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": [["Name", "Email"]],

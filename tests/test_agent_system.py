@@ -22,6 +22,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
+        use_heuristic_fallback=True,
     )
 
 
@@ -40,7 +41,7 @@ def test_agent_plans_gmail_to_sheets(tmp_path):
 def test_agent_trims_save_instruction_from_gmail_query(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
     plan = agent.plan("Search my email about Jobs offers from last week and save company names into Google sheets")
-    assert plan.tasks[0].parameters["q"] == "jobs offers from last week newer_than:7d"
+    assert plan.tasks[0].parameters["q"] == "jobs offers from last week"
 
 
 def test_agent_adds_get_message_for_company_extraction(tmp_path):
@@ -78,26 +79,11 @@ def test_agent_lists_email_with_detail_fetch(tmp_path):
     ]
 
 
-def test_agent_plans_research_docs_sheets_and_email(tmp_path):
-    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
-    plan = agent.plan(
-        "Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to haseebmir.hm@gmail.com"
-    )
-    assert [(task.service, task.action) for task in plan.tasks] == [
-        ("search", "web_search"),
-        ("docs", "create_document"),
-        ("docs", "batch_update"),
-        ("sheets", "create_spreadsheet"),
-        ("sheets", "append_values"),
-        ("gmail", "send_message"),
-    ]
-    assert plan.tasks[0].parameters["query"].lower().startswith("top 3")
-    assert plan.tasks[-1].parameters["to_email"] == "haseebmir.hm@gmail.com"
-
-
-def test_agent_respects_langchain_enabled_flag(tmp_path):
+def test_agent_disables_heuristics_when_flag_false(tmp_path):
     config = _config(tmp_path)
-    config.api_key = "sk-test"
-    config.langchain_enabled = False
+    config.use_heuristic_fallback = False
+    config.api_key = None
     agent = WorkspaceAgentSystem(config=config, logger=logging.getLogger("test"))
-    assert agent._use_langchain is False
+    plan = agent.plan("Find tickets in Gmail and save to Sheets")
+    assert plan.no_service_detected is True
+    assert "disabled" in plan.summary.lower()

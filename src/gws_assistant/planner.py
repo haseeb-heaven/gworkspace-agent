@@ -4,11 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-import mimetypes
-import os
-import tempfile
-from email.message import EmailMessage
-from pathlib import Path
 from typing import Any
 
 from .exceptions import ValidationError
@@ -73,12 +68,6 @@ class CommandPlanner:
             return self._build_chat_command(action_key, params)
         if service_key == "meet":
             return self._build_meet_command(action_key, params)
-        if service_key == "search":
-            return self._build_search_command(action_key, params)
-        if service_key == "admin":
-            return self._build_admin_command(action_key, params)
-        if service_key == "forms":
-            return self._build_forms_command(action_key, params)
         raise ValidationError(f"No command builder for service: {service_key}")
 
     def _build_drive_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -113,19 +102,6 @@ class CommandPlanner:
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id})]
-        if action == "export_file":
-            file_id = self._required_text(params, "file_id")
-            mime_type = self._required_text(params, "mime_type")
-            output_path = self._required_text(params, "output_path")
-            return [
-                "drive",
-                "files",
-                "export",
-                "--params",
-                json.dumps({"fileId": file_id, "mimeType": mime_type}),
-                "-o",
-                output_path,
-            ]
         if action == "delete_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
@@ -225,28 +201,7 @@ class CommandPlanner:
             to_email = self._required_text(params, "to_email")
             subject = self._required_text(params, "subject")
             body = self._required_text(params, "body")
-            attachments = self._attachment_paths(params.get("attachments"))
-            email_message = self._build_email_message(
-                to_email=to_email,
-                subject=subject,
-                body=body,
-                attachments=attachments,
-            )
-            raw_email = base64.urlsafe_b64encode(email_message.as_bytes()).decode("ascii")
-            if attachments or (os.name == "nt" and len(raw_email) > 6000):
-                upload_path = self._write_email_upload(email_message, subject)
-                return [
-                    "gmail",
-                    "users",
-                    "messages",
-                    "send",
-                    "--params",
-                    json.dumps({"userId": "me"}),
-                    "--upload",
-                    str(upload_path),
-                    "--upload-content-type",
-                    "message/rfc822",
-                ]
+            raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
             return [
                 "gmail",
                 "users",
@@ -298,32 +253,12 @@ class CommandPlanner:
         if action == "get_document":
             document_id = self._required_text(params, "document_id")
             return ["docs", "documents", "get", "--params", json.dumps({"documentId": document_id})]
-        if action == "create_document":
-            title = self._required_text(params, "title")
-            return ["docs", "documents", "create", "--json", json.dumps({"title": title})]
-        if action == "batch_update":
-            document_id = self._required_text(params, "document_id")
-            text = self._required_text(params, "text")
-            # Simple append (insert at index 1)
-            requests = [{"insertText": {"location": {"index": 1}, "text": text}}]
-            return [
-                "docs",
-                "documents",
-                "batchUpdate",
-                "--params",
-                json.dumps({"documentId": document_id}),
-                "--json",
-                json.dumps({"requests": requests}),
-            ]
         raise ValidationError(f"Unsupported docs action: {action}")
 
     def _build_slides_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "get_presentation":
             presentation_id = self._required_text(params, "presentation_id")
             return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": presentation_id})]
-        if action == "create_presentation":
-            title = self._required_text(params, "title")
-            return ["slides", "presentations", "create", "--json", json.dumps({"title": title})]
         raise ValidationError(f"Unsupported slides action: {action}")
 
     def _build_contacts_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -397,20 +332,6 @@ class CommandPlanner:
             return ["meet", "spaces", "create"]
         raise ValidationError(f"Unsupported meet action: {action}")
 
-    def _build_search_command(self, action: str, params: dict[str, Any]) -> list[str]:
-        if action == "web_search":
-            query = self._required_text(params, "query")
-            return ["INTERNAL", "search", query]
-        raise ValidationError(f"Unsupported search action: {action}")
-
-    def _build_admin_command(self, action: str, params: dict[str, Any]) -> list[str]:
-        # Implementation placeholder
-        return ["INTERNAL", "placeholder", "admin_activity_logged"]
-
-    def _build_forms_command(self, action: str, params: dict[str, Any]) -> list[str]:
-        # Implementation placeholder
-        return ["INTERNAL", "placeholder", "forms_sync_logged"]
-
     def _format_range(self, range_str: str) -> str:
         """Ensure sheet names with spaces are quoted correctly."""
         range_str = range_str.strip()
@@ -439,47 +360,13 @@ class CommandPlanner:
             return default
 
     @staticmethod
-    def _attachment_paths(value: Any) -> list[Path]:
-        if not value:
-            return []
-        values = value if isinstance(value, list) else [value]
-        paths: list[Path] = []
-        for item in values:
-                candidate = str(item or "").strip()
-                if candidate:
-                    paths.append(Path(candidate).expanduser())
-        return paths
-
-    @staticmethod
-    def _build_email_message(to_email: str, subject: str, body: str, attachments: list[Path] | None = None) -> EmailMessage:
-        message = EmailMessage()
-        message["To"] = to_email
-        message["Subject"] = subject
-        message.set_content(body)
-
-        for path in attachments or []:
-            mime_type, _ = mimetypes.guess_type(path.name)
-            main_type, sub_type = (mime_type or "application/octet-stream").split("/", 1)
-            with path.open("rb") as handle:
-                message.add_attachment(
-                    handle.read(),
-                    maintype=main_type,
-                    subtype=sub_type,
-                    filename=path.name,
-                )
-        return message
-
-    @staticmethod
-    def _write_email_upload(message: EmailMessage, subject: str) -> Path:
-        upload_dir = Path("scratch/email_uploads").resolve()
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        subject_slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in subject).strip("-") or "message"
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            suffix=f"-{subject_slug}.eml",
-            prefix="gws-",
-            dir=upload_dir,
-            delete=False,
-        ) as handle:
-            handle.write(message.as_bytes())
-            return Path(handle.name)
+    def _build_raw_email(to_email: str, subject: str, body: str) -> str:
+        message = (
+            f"To: {to_email}\r\n"
+            f"Subject: {subject}\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "MIME-Version: 1.0\r\n"
+            "\r\n"
+            f"{body}"
+        )
+        return base64.urlsafe_b64encode(message.encode("utf-8")).decode("ascii")
