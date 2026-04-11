@@ -41,6 +41,12 @@ class WorkspaceAgentSystem:
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
 
     def plan(self, user_text: str) -> RequestPlan:
+        from .memory import recall_similar
+        past = recall_similar(user_text)
+        if past:
+            self.logger.info("Memory: found %d similar past episodes", len(past))
+            # Inject past context into LLM prompt if available
+
         text = (user_text or "").strip()
         if not text:
             return RequestPlan(
@@ -498,7 +504,7 @@ def _is_web_search_and_save(text: str) -> bool:
     """Return True if the query is a 'find/search X and save to Workspace' intent."""
     has_search = any(trigger in text for trigger in _WEB_SEARCH_TRIGGERS)
     has_save = _has_any(text, ("save", "write", "store", "export", "document", "doc", "sheet", "spreadsheet"))
-    return has_search or has_save
+    return has_search and has_save
 
 
 def _spreadsheet_title_from_query(query: str) -> str:

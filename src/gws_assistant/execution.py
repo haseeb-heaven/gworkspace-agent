@@ -39,8 +39,23 @@ class PlanExecutor:
                 result = self.execute_single_task(resolved_task, context)
                 executions.append(TaskExecution(task=resolved_task, result=result))
                 if not result.success:
+                    reflection = self._reflect_on_failure(resolved_task, result, context)
+                    self.logger.warning("Reflection: %s", reflection)
+                    context["last_reflection"] = reflection
                     self.logger.warning("Task failed id=%s; continuing to capture full execution trace.", resolved_task.id)
-        return PlanExecutionReport(plan=plan, executions=executions)
+
+        report = PlanExecutionReport(plan=plan, executions=executions)
+
+        # Save episode to memory
+        from .memory import save_episode
+        task_summaries = [
+            {"service": e.task.service, "action": e.task.action, "success": e.result.success}
+            for e in report.executions
+        ]
+        outcome = "success" if all(e.result.success for e in report.executions) else "partial_failure"
+        save_episode(goal=plan.raw_text, tasks=task_summaries, outcome=outcome)
+
+        return report
 
     def execute_single_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
         """Executes a single fully-resolved task and updates the context."""
@@ -84,6 +99,14 @@ class PlanExecutor:
         }
         self._update_context(task, result.stdout, context)
         return result
+
+    def _reflect_on_failure(self, task: PlannedTask, result: ExecutionResult, context: dict) -> str:
+        return (
+            f"Task {task.id} ({task.service}.{task.action}) failed. "
+            f"Error: {result.error or 'unknown'}. "
+            f"Parameters used: {list(task.parameters.keys())}. "
+            f"Suggestion: Check if required IDs are resolved in context."
+        )
 
     def _expand_task(self, task: PlannedTask, context: dict[str, Any]) -> list[PlannedTask]:
         if task.service != "gmail" or task.action != "get_message":
