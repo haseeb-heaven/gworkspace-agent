@@ -16,7 +16,6 @@ from .langchain_agent import plan_with_langchain
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
 
-# Keywords that signal the user wants to search/find external information first.
 _WEB_SEARCH_TRIGGERS = (
     "find top",
     "search for",
@@ -122,7 +121,6 @@ class WorkspaceAgentSystem:
         self.logger.info(f"Heuristic planning: detected services {services}")
 
         if not services:
-            # If query looks like a web search + save intent, mark for web_search routing.
             if _is_web_search_and_save(lowered):
                 return RequestPlan(
                     raw_text=text,
@@ -148,7 +146,6 @@ class WorkspaceAgentSystem:
 
         has_save_intent = _has_any(lowered, ("save", "write", "store", "export", "append", "document", "doc"))
 
-        # Pattern: find/search + save to docs + sheets (e.g. "Find top 3 AI frameworks and save to Docs and Sheets")
         if _is_web_search_and_save(lowered) and "docs" in services and "sheets" in services:
             tasks = self._web_search_to_docs_and_sheets_tasks(text, lowered)
             return RequestPlan(
@@ -160,7 +157,6 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern: find/search + save to sheets only
         if _is_web_search_and_save(lowered) and "sheets" in services and "docs" not in services:
             tasks = self._web_search_to_sheets_tasks(text, lowered)
             return RequestPlan(
@@ -172,7 +168,6 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern: find/search + save to docs only
         if _is_web_search_and_save(lowered) and "docs" in services and "sheets" not in services:
             tasks = self._web_search_to_docs_tasks(text, lowered)
             return RequestPlan(
@@ -205,7 +200,6 @@ class WorkspaceAgentSystem:
         )
 
     def _web_search_to_docs_and_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        """Plan tasks: web_search result → create Docs document + create Sheets + append data."""
         topic = _extract_search_topic(lowered) or "Research Results"
         title = topic.title()
         return [
@@ -464,10 +458,22 @@ def _detect_action(service: str, text: str) -> str | None:
 
 
 def _gmail_query_from_text(text: str) -> str:
+    """Build a Gmail search query from the user request text.
+
+    Bug fix: previously returned an empty string for requests like
+    'search email about \"Your receipt from X\"' because the generic
+    keyword-after-preposition regex did not handle quoted subjects.
+    Now we first check for a quoted phrase and wrap it in subject:"...".
+    """
     if "ticket" in text:
         return "ticket OR tickets"
     if "unread" in text:
         return "is:unread"
+    # Try quoted phrase first — wrap in subject:"..." for precision.
+    quoted = re.search(r'[\"\']([^\"\']{3,80})[\"\'\']', text)
+    if quoted:
+        phrase = quoted.group(1).strip()
+        return f'subject:"{phrase}"'
     match = re.search(r"(?:about|for|matching|with)\s+([a-z0-9 _.-]{3,60})", text)
     if match:
         return _trim_follow_on_instruction(match.group(1))
@@ -475,7 +481,6 @@ def _gmail_query_from_text(text: str) -> str:
 
 
 def _drive_query_from_text(text: str) -> str:
-    """Extract a Drive API query filter from user text."""
     quoted = re.findall(r"""['"]([^'"]{2,80})['"]""", text)
     if quoted:
         parts = [f"fullText contains '{q.strip()}'" for q in quoted[:2]]
@@ -490,7 +495,6 @@ def _drive_query_from_text(text: str) -> str:
 
 
 def _extract_search_topic(text: str) -> str | None:
-    """Extract the main search topic from a 'find X and save' style query."""
     patterns = [
         r"find\s+(?:top\s+\d+\s+)?(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|\s+and\s+export|$)",
         r"search\s+(?:for\s+)?(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
@@ -501,7 +505,6 @@ def _extract_search_topic(text: str) -> str | None:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             topic = match.group(1).strip(" .")
-            # Strip trailing workspace service keywords
             topic = re.sub(
                 r"\s+(to\s+(google\s+)?(docs|sheets|documents|document|spreadsheet).*|and\s+(save|write|store).*)$",
                 "",
@@ -514,7 +517,6 @@ def _extract_search_topic(text: str) -> str | None:
 
 
 def _is_web_search_and_save(text: str) -> bool:
-    """Return True if the query is a 'find/search X and save to Workspace' intent."""
     has_search = any(trigger in text for trigger in _WEB_SEARCH_TRIGGERS)
     has_save = _has_any(text, ("save", "write", "store", "export", "document", "doc", "sheet", "spreadsheet"))
     return has_search and has_save

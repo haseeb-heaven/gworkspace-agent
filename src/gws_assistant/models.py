@@ -23,7 +23,7 @@ class AppConfigModel:
     max_retries: int
     langchain_enabled: bool
     max_replans: int = 1
-    use_heuristic_fallback: bool = False
+    use_heuristic_fallback: bool = True
     code_execution_enabled: bool = True
     code_execution_backend: str = "local"
     e2b_api_key: str | None = None
@@ -47,6 +47,47 @@ class PlannedTask:
     action: str
     parameters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Fix #1 — PlannedTask schema validation
+# ---------------------------------------------------------------------------
+
+from .exceptions import ValidationError  # noqa: E402  (after class defs to avoid circular import)
+
+
+def validate_planned_task(task: "PlannedTask") -> None:
+    """Validate that a PlannedTask is structurally sound before execution.
+
+    Raises ValidationError with a clear message if anything is wrong.
+    This is the planner→executor contract enforcement point.
+    """
+    if not task.id or not str(task.id).strip():
+        raise ValidationError("PlannedTask.id is empty or missing.")
+    if not task.service or not str(task.service).strip():
+        raise ValidationError(f"PlannedTask id={task.id!r} has empty service.")
+    if not task.action or not str(task.action).strip():
+        raise ValidationError(f"PlannedTask id={task.id!r} service={task.service!r} has empty action.")
+    if task.parameters is None:
+        raise ValidationError(
+            f"PlannedTask id={task.id!r} {task.service}.{task.action}: parameters is None — must be dict."
+        )
+    if not isinstance(task.parameters, dict):
+        raise ValidationError(
+            f"PlannedTask id={task.id!r} {task.service}.{task.action}: "
+            f"parameters must be dict, got {type(task.parameters).__name__}."
+        )
+    # Detect obviously unresolved placeholder values that should have been
+    # caught by _resolve_task but slipped through.
+    _STUB_PATTERNS = ("{{task", "{task-", "$gmail_message_ids", "PLACEHOLDER_")
+    for key, val in task.parameters.items():
+        if isinstance(val, str):
+            for pat in _STUB_PATTERNS:
+                if pat in val:
+                    raise ValidationError(
+                        f"PlannedTask id={task.id!r} {task.service}.{task.action}: "
+                        f"parameter {key!r} contains unresolved stub {val!r}."
+                    )
 
 
 @dataclass(slots=True)
@@ -75,6 +116,7 @@ class ActionSpec:
     label: str
     keywords: tuple[str, ...]
     parameters: tuple[ParameterSpec, ...] = ()
+    description: str = ""
 
 
 @dataclass(slots=True)
@@ -83,6 +125,7 @@ class ServiceSpec:
     label: str
     aliases: tuple[str, ...]
     actions: dict[str, ActionSpec]
+    description: str = ""
 
 
 @dataclass(slots=True)
@@ -141,8 +184,6 @@ class AgentState(TypedDict, total=False):
     thought_trace: list[dict]
 
 
-
-
 class StructuredToolResult(TypedDict):
     success: bool
     output: Any
@@ -154,6 +195,7 @@ class ReflectionDecision:
     action: Literal["continue", "retry", "replan"]
     reason: str = ""
     replacement_plan: RequestPlan | None = None
+
 
 @dataclass(slots=True)
 class WebSearchResult:

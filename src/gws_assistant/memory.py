@@ -1,35 +1,60 @@
 """Episodic memory store for the agent — persists task executions to disk."""
+from __future__ import annotations
+
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 MEMORY_FILE = Path.home() / ".gws_agent" / "memory.jsonl"
 
+# Maximum number of episodes kept on disk. Oldest are pruned when exceeded.
+_MAX_EPISODES = 500
+
+# Common English stop-words that carry no semantic weight for recall matching.
+_STOP_WORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "is", "it", "its", "in", "on", "at", "to", "for",
+    "of", "and", "or", "but", "my", "me", "i", "you", "we", "they",
+    "this", "that", "with", "from", "by", "as", "be", "do", "get",
+    "all", "some", "any", "can", "into", "up", "out", "use", "have",
+    "has", "not", "no", "so", "if", "then", "about", "also",
+})
+
+
+def _tokenize(text: str) -> set[str]:
+    """Lowercase-split and strip stop-words for meaningful keyword overlap."""
+    return {w for w in text.lower().split() if w not in _STOP_WORDS and len(w) > 1}
+
 
 def save_episode(goal: str, tasks: list[dict], outcome: str) -> None:
-    """Save a completed task episode to the memory file."""
+    """Append a completed task episode to the memory file and prune if needed."""
     MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     episode = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "goal": goal,
         "tasks": tasks,
         "outcome": outcome,
     }
     with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(episode) + "\n")
+    _prune_if_needed()
 
 
 def recall_similar(goal: str, max_results: int = 3) -> list[dict]:
-    """Keyword-based recall from past episodes (no vector DB needed for beginners)."""
+    """Keyword-based recall from past episodes with stop-word filtering."""
     if not MEMORY_FILE.exists():
         return []
-    goal_words = set(goal.lower().split())
+    goal_words = _tokenize(goal)
+    if not goal_words:
+        return []
     scored: list[tuple[int, dict]] = []
     with open(MEMORY_FILE, encoding="utf-8") as f:
         for line in f:
+            line = line.strip()
+            if not line:
+                continue
             try:
                 ep = json.loads(line)
-                past_words = set(ep.get("goal", "").lower().split())
+                past_words = _tokenize(ep.get("goal", ""))
                 score = len(goal_words & past_words)
                 if score > 0:
                     scored.append((score, ep))
@@ -37,3 +62,15 @@ def recall_similar(goal: str, max_results: int = 3) -> list[dict]:
                 continue
     scored.sort(key=lambda x: x[0], reverse=True)
     return [ep for _, ep in scored[:max_results]]
+
+
+def _prune_if_needed() -> None:
+    """Keep only the most recent _MAX_EPISODES lines in the memory file."""
+    if not MEMORY_FILE.exists():
+        return
+    try:
+        lines = MEMORY_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
+        if len(lines) > _MAX_EPISODES:
+            MEMORY_FILE.write_text("".join(lines[-_MAX_EPISODES:]), encoding="utf-8")
+    except Exception:
+        pass  # Never crash the agent due to memory housekeeping
