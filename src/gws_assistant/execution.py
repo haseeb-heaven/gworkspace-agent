@@ -672,7 +672,9 @@ def _resolve_array_wildcard_from_key(
         return value
 
     # For values/rows params that contain a single wildcard token produce a 2-D list.
-    if key in ("values", "rows") and value.strip() == _ARRAY_WILDCARD_RE.search(value).group(0):
+    stripped_value = value.strip()
+    match = _ARRAY_WILDCARD_RE.search(value)
+    if key in ("values", "rows") and match is not None and stripped_value == match.group(0):
         step_id, collection, field_name = matches[0]
         rows = _extract_wildcard_rows(step_id, collection, field_name, context, logger)
         if rows is not None:
