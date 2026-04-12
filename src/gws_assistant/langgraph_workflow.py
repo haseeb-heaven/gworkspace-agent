@@ -158,6 +158,7 @@ def create_workflow(
             # for the thought_trace (useful for debugging / UI display).
             final_state: dict[str, Any] = {}
             step_count = 0
+            processed_count = 0
 
             for chunk in _react_graph.stream(
                 {"messages": [HM(content=user_text)]},
@@ -168,7 +169,9 @@ def create_workflow(
                 step_count += 1
 
                 # Capture each non-human message as a thought/observation
-                for msg in chunk.get("messages", []):
+                # Only process new messages by skipping already-seen entries
+                all_messages = chunk.get("messages", [])
+                for msg in all_messages[processed_count:]:
                     role    = type(msg).__name__
                     content = getattr(msg, "content", "") or ""
                     tcs     = getattr(msg, "tool_calls", []) or []
@@ -191,6 +194,7 @@ def create_workflow(
                             "success":     True,
                             "reason":      "Tool observation",
                         })
+                processed_count = len(all_messages)
 
             # Extract the final answer — last AIMessage with no tool calls
             final_answer = ""
@@ -285,7 +289,17 @@ def create_workflow(
         if state.get("error") and "failed" not in str(output).lower():
             output = f"Execution finished with failures.\n\n{output}"
 
-        history.append(AIMessage(content=str(output)))
+        # Only append if history is empty or last entry is not an AIMessage with the same content
+        should_append = True
+        if history:
+            last_msg = history[-1]
+            if (type(last_msg).__name__ == "AIMessage" and
+                getattr(last_msg, "content", None) == str(output)):
+                should_append = False
+
+        if should_append:
+            history.append(AIMessage(content=str(output)))
+
         return {
             "final_output":         str(output),
             "conversation_history": _trim_history(history),

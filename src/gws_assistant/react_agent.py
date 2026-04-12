@@ -166,22 +166,21 @@ def run_react_agent(
     Returns:
         Final assistant response as a plain string.
     """
-    from langgraph.core.runnables import RunnableConfig
-
     messages = [HumanMessage(content=user_text)]
     logger.info("ReAct agent: starting run for query='%s'", user_text[:120])
 
     try:
+        from langgraph.core.runnables import RunnableConfig
         final_state = agent_graph.invoke(
             {"messages": messages},
             config=RunnableConfig(recursion_limit=recursion_limit),
         )
     except ImportError:
         # RunnableConfig path differs across LangGraph versions — try fallback
-        from langchain_core.runnables import RunnableConfig as CoreConfig
+        from langchain_core.runnables import RunnableConfig
         final_state = agent_graph.invoke(
             {"messages": messages},
-            config=CoreConfig(recursion_limit=recursion_limit),
+            config=RunnableConfig(recursion_limit=recursion_limit),
         )
     except Exception as exc:
         logger.exception("ReAct agent run failed.")

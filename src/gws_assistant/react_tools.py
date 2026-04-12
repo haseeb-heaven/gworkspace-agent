@@ -48,6 +48,7 @@ def _run_gws_action(service: str, action: str, parameters: dict[str, Any]) -> di
             "stderr":     result.stderr or "",
             "error":      result.error or None,
             "parsed":     result.output.get("parsed_payload") if isinstance(result.output, dict) else None,
+            "output":     result.output or None,
         }
     except Exception as exc:
         logger.error("_run_gws_action %s.%s failed: %s", service, action, exc)
@@ -119,7 +120,45 @@ def gmail_search_emails(q: str, max_results: int = 10) -> dict:
         q: Gmail search query.
         max_results: How many messages to fetch (default 10, max 50).
     """
-    return _run_gws_action("gmail", "list_messages", {"q": q, "max_results": max_results})
+    # Enforce max_results cap
+    max_results = min(max_results, 50)
+
+    # First, list message IDs
+    list_result = _run_gws_action("gmail", "list_messages", {"q": q, "max_results": max_results})
+    if not list_result.get("success"):
+        return list_result
+
+    # Extract message IDs from the result
+    message_ids = []
+    output = list_result.get("output") or {}
+    parsed = list_result.get("parsed") or output.get("parsed_payload")
+
+    if isinstance(parsed, dict):
+        messages = parsed.get("messages", [])
+        if isinstance(messages, list):
+            message_ids = [msg.get("id") for msg in messages if isinstance(msg, dict) and msg.get("id")]
+
+    # If no messages found, return the list result
+    if not message_ids:
+        return list_result
+
+    # Fetch full content for each message
+    full_messages = []
+    for msg_id in message_ids:
+        msg_result = _run_gws_action("gmail", "get_message", {"message_id": msg_id})
+        if msg_result.get("success"):
+            full_messages.append(msg_result.get("output") or msg_result.get("parsed"))
+        else:
+            # Include error info for failed fetches
+            full_messages.append({"id": msg_id, "error": msg_result.get("error")})
+
+    # Return combined result
+    return {
+        "success": True,
+        "messages": full_messages,
+        "count": len(full_messages),
+        "query": q,
+    }
 
 
 # ===========================================================================
@@ -258,12 +297,84 @@ def drive_export_file(file_id: str, mime_type: str = "text/plain") -> dict:
 def drive_upload_file(name: str, local_path: str, folder_id: str = "") -> dict:
     """Upload a local file to Google Drive.
 
+    IMPORTANT: Only files within the designated workspace directory can be uploaded.
+    Absolute paths, paths containing '..', and symlinks are rejected for security.
+
     Args:
-        name:      The name for the file in Google Drive.
-        local_path: The local filesystem path of the file to upload.
-        folder_id: Optional parent folder ID in Drive.
+        name:       The name for the file in Google Drive.
+        local_path: The workspace-relative path of the file to upload (e.g., 'output/report.csv').
+        folder_id:  Optional parent folder ID in Drive.
     """
-    params: dict[str, Any] = {"name": name, "local_path": local_path}
+    import os
+    import pathlib
+
+    # Define workspace root (can be configured via environment or config)
+    workspace_root = os.getenv("GWS_WORKSPACE_ROOT", "/tmp/gws_workspace")
+
+    # Validate and canonicalize the path
+    try:
+        # Reject absolute paths
+        if os.path.isabs(local_path):
+            return {
+                "success": False,
+                "error": f"Absolute paths are not allowed. Use workspace-relative paths only. Got: {local_path}"
+            }
+
+        # Reject paths containing '..'
+        if ".." in local_path:
+            return {
+                "success": False,
+                "error": f"Path traversal (..) is not allowed. Got: {local_path}"
+            }
+
+        # Build the full path and resolve it
+        full_path = pathlib.Path(workspace_root) / local_path
+        canonical_path = full_path.resolve()
+
+        # Ensure the canonical path is within the workspace root
+        workspace_canonical = pathlib.Path(workspace_root).resolve()
+        if not str(canonical_path).startswith(str(workspace_canonical)):
+            return {
+                "success": False,
+                "error": f"Path escapes workspace boundary. Workspace: {workspace_canonical}, Requested: {canonical_path}"
+            }
+
+        # Reject symlinks
+        if canonical_path.is_symlink():
+            return {
+                "success": False,
+                "error": f"Symlinks are not allowed. Got: {local_path}"
+            }
+
+        # Verify file exists
+        if not canonical_path.exists():
+            return {
+                "success": False,
+                "error": f"File does not exist in workspace: {local_path}"
+            }
+
+        if not canonical_path.is_file():
+            return {
+                "success": False,
+                "error": f"Path is not a file: {local_path}"
+            }
+
+        # Use the validated canonical path
+        verified_path = str(canonical_path)
+
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Path validation failed: {exc}"
+        }
+
+    # Build params with validated path
+    params: dict[str, Any] = {
+        "name": name,
+        "local_path": verified_path,
+        "workspace_root": workspace_root,
+        "original_path": local_path,
+    }
     if folder_id:
         params["folder_id"] = folder_id
     return _run_gws_action("drive", "upload_file", params)
@@ -395,21 +506,215 @@ ALL_TOOLS = [
 
 
 def build_gws_tools(executor: Any, config: Any) -> list:
-    """Inject the PlanExecutor and AppConfigModel into the tool module globals.
+    """Build agent-specific bound tools without mutating global state.
 
-    Must be called once before the ReAct agent is created so every @tool
-    function has access to the executor and config.
+    Creates wrapped versions of all tools that capture the provided executor
+    and config in closures, preventing cross-request leakage.
 
     Args:
         executor: PlanExecutor instance.
         config:   AppConfigModel instance.
 
     Returns:
-        ALL_TOOLS list (convenience return so callers can do
-        `tools = build_gws_tools(executor, config)`).
+        List of bound tool callables with original metadata preserved.
     """
-    global _executor, _config
-    _executor = executor
-    _config   = config
-    logger.info("react_tools: injected executor=%s config=%s", type(executor).__name__, type(config).__name__)
-    return ALL_TOOLS
+    import functools
+    from langchain_core.tools import StructuredTool
+
+    logger.info("react_tools: building bound tools for executor=%s config=%s",
+                type(executor).__name__, type(config).__name__)
+
+    # Create a closure that binds executor and config to the helper functions
+    def make_run_gws_action(executor_instance: Any):
+        """Create a bound version of _run_gws_action."""
+        def bound_run_gws_action(service: str, action: str, parameters: dict[str, Any]) -> dict[str, Any]:
+            from .models import PlannedTask
+            task = PlannedTask(id=f"{service}-{action}", service=service, action=action,
+                               parameters=parameters, reason="ReAct agent invocation")
+            context: dict[str, Any] = {}
+            try:
+                result = executor_instance.execute_single_task(task, context)
+                return {
+                    "success":    result.success,
+                    "stdout":     result.stdout or "",
+                    "stderr":     result.stderr or "",
+                    "error":      result.error or None,
+                    "parsed":     result.output.get("parsed_payload") if isinstance(result.output, dict) else None,
+                    "output":     result.output or None,
+                }
+            except Exception as exc:
+                logger.error("bound_run_gws_action %s.%s failed: %s", service, action, exc)
+                return {"success": False, "error": str(exc), "traceback": traceback.format_exc()}
+        return bound_run_gws_action
+
+    # Create bound helpers
+    bound_run_gws = make_run_gws_action(executor)
+
+    # Helper to wrap a tool function with bound executor/config
+    def bind_tool_func(original_tool, executor_instance: Any, config_instance: Any):
+        """Wrap a tool function to use bound executor and config."""
+        tool_name = original_tool.name
+        tool_description = original_tool.description
+        tool_args_schema = original_tool.args_schema
+
+        # Map tool names to their bound implementations
+        if tool_name == "gmail_list_messages":
+            def bound_func(q: str = "", max_results: int = 10) -> dict:
+                return bound_run_gws("gmail", "list_messages", {"q": q, "max_results": max_results})
+        elif tool_name == "gmail_get_message":
+            def bound_func(message_id: str) -> dict:
+                return bound_run_gws("gmail", "get_message", {"message_id": message_id})
+        elif tool_name == "gmail_send_message":
+            def bound_func(to_email: str, subject: str, body: str,
+                           cc: str = "", bcc: str = "", attachments: str = "") -> dict:
+                params: dict[str, Any] = {"to_email": to_email, "subject": subject, "body": body}
+                if cc:          params["cc"] = cc
+                if bcc:         params["bcc"] = bcc
+                if attachments: params["attachments"] = attachments
+                return bound_run_gws("gmail", "send_message", params)
+        elif tool_name == "gmail_search_emails":
+            def bound_func(q: str, max_results: int = 10) -> dict:
+                max_results = min(max_results, 50)
+                list_result = bound_run_gws("gmail", "list_messages", {"q": q, "max_results": max_results})
+                if not list_result.get("success"):
+                    return list_result
+                message_ids = []
+                output = list_result.get("output") or {}
+                parsed = list_result.get("parsed") or output.get("parsed_payload")
+                if isinstance(parsed, dict):
+                    messages = parsed.get("messages", [])
+                    if isinstance(messages, list):
+                        message_ids = [msg.get("id") for msg in messages if isinstance(msg, dict) and msg.get("id")]
+                if not message_ids:
+                    return list_result
+                full_messages = []
+                for msg_id in message_ids:
+                    msg_result = bound_run_gws("gmail", "get_message", {"message_id": msg_id})
+                    if msg_result.get("success"):
+                        full_messages.append(msg_result.get("output") or msg_result.get("parsed"))
+                    else:
+                        full_messages.append({"id": msg_id, "error": msg_result.get("error")})
+                return {
+                    "success": True,
+                    "messages": full_messages,
+                    "count": len(full_messages),
+                    "query": q,
+                }
+        elif tool_name == "sheets_create_spreadsheet":
+            def bound_func(title: str) -> dict:
+                return bound_run_gws("sheets", "create_spreadsheet", {"title": title})
+        elif tool_name == "sheets_append_values":
+            def bound_func(spreadsheet_id: str, range: str, values: list) -> dict:
+                return bound_run_gws("sheets", "append_values",
+                                     {"spreadsheet_id": spreadsheet_id, "range": range, "values": values})
+        elif tool_name == "sheets_get_values":
+            def bound_func(spreadsheet_id: str, range: str) -> dict:
+                return bound_run_gws("sheets", "get_values",
+                                     {"spreadsheet_id": spreadsheet_id, "range": range})
+        elif tool_name == "sheets_update_values":
+            def bound_func(spreadsheet_id: str, range: str, values: list) -> dict:
+                return bound_run_gws("sheets", "update_values",
+                                     {"spreadsheet_id": spreadsheet_id, "range": range, "values": values})
+        elif tool_name == "docs_create_document":
+            def bound_func(title: str) -> dict:
+                return bound_run_gws("docs", "create_document", {"title": title})
+        elif tool_name == "docs_get_document":
+            def bound_func(document_id: str) -> dict:
+                return bound_run_gws("docs", "get_document", {"document_id": document_id})
+        elif tool_name == "docs_batch_update":
+            def bound_func(document_id: str, text: str) -> dict:
+                return bound_run_gws("docs", "batch_update", {"document_id": document_id, "text": text})
+        elif tool_name == "drive_list_files":
+            def bound_func(q: str = "", max_results: int = 10) -> dict:
+                return bound_run_gws("drive", "list_files", {"q": q, "max_results": max_results})
+        elif tool_name == "drive_export_file":
+            def bound_func(file_id: str, mime_type: str = "text/plain") -> dict:
+                return bound_run_gws("drive", "export_file", {"file_id": file_id, "mime_type": mime_type})
+        elif tool_name == "drive_upload_file":
+            def bound_func(name: str, local_path: str, folder_id: str = "") -> dict:
+                import os
+                import pathlib
+                workspace_root = os.getenv("GWS_WORKSPACE_ROOT", "/tmp/gws_workspace")
+                try:
+                    if os.path.isabs(local_path):
+                        return {"success": False, "error": f"Absolute paths are not allowed. Use workspace-relative paths only. Got: {local_path}"}
+                    if ".." in local_path:
+                        return {"success": False, "error": f"Path traversal (..) is not allowed. Got: {local_path}"}
+                    full_path = pathlib.Path(workspace_root) / local_path
+                    canonical_path = full_path.resolve()
+                    workspace_canonical = pathlib.Path(workspace_root).resolve()
+                    if not str(canonical_path).startswith(str(workspace_canonical)):
+                        return {"success": False, "error": f"Path escapes workspace boundary. Workspace: {workspace_canonical}, Requested: {canonical_path}"}
+                    if canonical_path.is_symlink():
+                        return {"success": False, "error": f"Symlinks are not allowed. Got: {local_path}"}
+                    if not canonical_path.exists():
+                        return {"success": False, "error": f"File does not exist in workspace: {local_path}"}
+                    if not canonical_path.is_file():
+                        return {"success": False, "error": f"Path is not a file: {local_path}"}
+                    verified_path = str(canonical_path)
+                except Exception as exc:
+                    return {"success": False, "error": f"Path validation failed: {exc}"}
+                params: dict[str, Any] = {
+                    "name": name,
+                    "local_path": verified_path,
+                    "workspace_root": workspace_root,
+                    "original_path": local_path,
+                }
+                if folder_id:
+                    params["folder_id"] = folder_id
+                return bound_run_gws("drive", "upload_file", params)
+        elif tool_name == "calendar_list_events":
+            def bound_func(time_min: str = "", time_max: str = "", max_results: int = 10) -> dict:
+                params: dict[str, Any] = {"max_results": max_results}
+                if time_min: params["time_min"] = time_min
+                if time_max: params["time_max"] = time_max
+                return bound_run_gws("calendar", "list_events", params)
+        elif tool_name == "calendar_create_event":
+            def bound_func(summary: str, start: str, end: str,
+                           description: str = "", attendees: str = "") -> dict:
+                params: dict[str, Any] = {"summary": summary, "start": start, "end": end}
+                if description: params["description"] = description
+                if attendees:   params["attendees"] = attendees
+                return bound_run_gws("calendar", "create_event", params)
+        elif tool_name == "web_search":
+            def bound_func(query: str, max_results: int = 5) -> dict:
+                try:
+                    from .tools.web_search import web_search_tool
+                    return web_search_tool.invoke({"query": query, "max_results": max_results})
+                except Exception as exc:
+                    logger.error("web_search tool failed: %s", exc)
+                    return {"success": False, "error": str(exc), "results": []}
+        elif tool_name == "execute_python_code":
+            def bound_func(code: str) -> dict:
+                try:
+                    from .tools.code_execution import execute_generated_code
+                    structured = execute_generated_code(code, config=config_instance)
+                    output = structured.get("output") or {}
+                    return {
+                        "success": structured.get("success", False),
+                        "stdout":  output.get("stdout") or "",
+                        "stderr":  output.get("stderr") or "",
+                        "error":   structured.get("error") or None,
+                    }
+                except Exception as exc:
+                    logger.error("execute_python_code failed: %s", exc)
+                    return {"success": False, "error": str(exc)}
+        else:
+            # Fallback: return original tool if not matched
+            return original_tool
+
+        # Create a StructuredTool with the bound function
+        return StructuredTool(
+            name=tool_name,
+            description=tool_description,
+            func=bound_func,
+            args_schema=tool_args_schema,
+        )
+
+    # Build bound tools list
+    bound_tools = []
+    for original_tool in ALL_TOOLS:
+        bound_tool = bind_tool_func(original_tool, executor, config)
+        bound_tools.append(bound_tool)
+
+    return bound_tools
