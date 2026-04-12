@@ -40,6 +40,14 @@ _ARRAY_WILDCARD_RE = re.compile(
     r"\{(\d+|task-\d+)\.(\w+)\[\*\]\.(\w+)\}"
 )
 
+# NEW — plain dot-ref pattern that references a single message field:
+# covers {2.senderName}, {2.sender.name}, {2.senderEmail}, {2.subject}, etc.
+_DOT_SENDER_REF_RE = re.compile(
+    r"\{(\d+|task-\d+)\.(sender\.name|sender\.email|senderName|senderEmail"
+    r"|sender_name|sender_email|fromName|from_name|fromEmail|from_email"
+    r"|subject|date|snippet|body)\}"
+)
+
 # Bug 2 — all LLM variants that mean "put gmail message bodies here"
 _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
     "$gmail_message_body",
@@ -51,6 +59,30 @@ _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
     "$messages_body",
     "$message_body",
 )
+
+# ---------------------------------------------------------------------------
+# Alias table: normalised LLM field name → (header_key, extract_mode)
+# extract_mode: 'name' = display name from From header
+#               'email' = address from From header
+#               'raw'   = header value verbatim
+#               'body'  = full decoded body text
+# ---------------------------------------------------------------------------
+_SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
+    "sendername":   ("from", "name"),
+    "sender.name":  ("from", "name"),
+    "sender_name":  ("from", "name"),
+    "fromname":     ("from", "name"),
+    "from_name":    ("from", "name"),
+    "senderemail":  ("from", "email"),
+    "sender.email": ("from", "email"),
+    "sender_email": ("from", "email"),
+    "fromemail":    ("from", "email"),
+    "from_email":   ("from", "email"),
+    "subject":      ("subject", "raw"),
+    "date":         ("date", "raw"),
+    "snippet":      ("snippet", "raw"),
+    "body":         ("body", "body"),
+}
 
 
 class PlanExecutor:
@@ -376,8 +408,12 @@ class PlanExecutor:
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         """Resolve all placeholder tokens in a task's parameters before execution."""
 
-        # Pass 0 (Bug 3): expand array-wildcard refs like {N.messages[*].senderName}
-        parameters = _resolve_array_wildcard_refs(task.parameters, context, self.logger)
+        # Pass 0a (NEW): resolve {N.senderName}, {N.sender.name}, {N.senderEmail}, etc.
+        # These are plain single-message field refs that the LLM emits without [*].
+        parameters = _resolve_dot_sender_refs(task.parameters, context, self.logger)
+
+        # Pass 0b (Bug 3): expand array-wildcard refs like {N.messages[*].senderName}
+        parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
 
         # Pass 1: {{task_id.key}} and {N.key} template references
         parameters = _resolve_template(parameters, context)
@@ -630,7 +666,105 @@ class PlanExecutor:
 
 
 # ---------------------------------------------------------------------------
-# Bug 3 — array-wildcard reference resolver
+# Pass 0a (NEW) — plain dot-ref sender field resolver
+#
+# Handles tokens like:
+#   {2.senderName}       {2.sender.name}      {2.senderEmail}
+#   {2.sender.email}     {2.subject}          {2.date}
+#   {3.senderName}       {3.sender.name}  ...
+#
+# Strategy: the step-id N refers to the Nth gmail.get_message call.
+# We index into context['gmail_messages'] using (N - first_get_message_step).
+# If that mapping is ambiguous we try all fetched messages and return a
+# comma-joined string so the row is still useful.
+# ---------------------------------------------------------------------------
+
+def _resolve_dot_sender_refs(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    """Resolve plain {N.senderName} / {N.sender.name} tokens from gmail_messages."""
+    if isinstance(params, dict):
+        return {k: _resolve_dot_sender_refs(v, context, logger) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_dot_sender_refs(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+
+    def _sub(m: re.Match) -> str:
+        step_id_raw = m.group(1)
+        field_raw = m.group(2).lower()  # e.g. "sendername", "sender.name"
+
+        alias = _SENDER_FIELD_ALIASES.get(field_raw)
+        if alias is None:
+            return m.group(0)
+
+        header_key, extract_mode = alias
+        messages: list[dict] = context.get("gmail_messages") or []
+
+        if not messages:
+            logger.warning("Pass0a: no gmail_messages for ref %s", m.group(0))
+            return m.group(0)
+
+        # Try to map step_id to a specific message index.
+        # step_id '2' typically means the 2nd task overall; get_message tasks
+        # start after list_messages (step 1).  So message index = int(step_id) - 2.
+        # We clamp to valid range and fall back to all messages joined.
+        try:
+            step_num = int(step_id_raw.removeprefix("task-"))
+            # first get_message is step 2 (0-indexed message index 0)
+            msg_idx = max(0, step_num - 2)
+        except (ValueError, AttributeError):
+            msg_idx = 0
+
+        def _extract(msg: dict) -> str:
+            if extract_mode == "body":
+                return _gmail_body_text(msg) or str(msg.get("snippet") or "")
+            if extract_mode in ("name", "email"):
+                headers = _gmail_headers(msg)
+                raw = headers.get(header_key, "")
+                if not raw:
+                    return ""
+                if extract_mode == "email":
+                    addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
+                    return addr_m.group(1).strip() if addr_m else raw.strip()
+                # name — strip address part
+                return raw.split("<", 1)[0].strip().strip('"')
+            # raw
+            if header_key == "snippet":
+                return str(msg.get("snippet") or "")
+            headers = _gmail_headers(msg)
+            return headers.get(header_key, "")
+
+        # If the specific index exists use it; otherwise join all unique values.
+        if msg_idx < len(messages):
+            value = _extract(messages[msg_idx])
+            if value:
+                logger.info("Pass0a: resolved %s → '%s' from message[%d]", m.group(0), value, msg_idx)
+                return value
+
+        # Fallback: join all unique non-empty values
+        seen_vals: list[str] = []
+        seen_set: set[str] = set()
+        for msg in messages:
+            val = _extract(msg)
+            if val and val not in seen_set:
+                seen_set.add(val)
+                seen_vals.append(val)
+        if seen_vals:
+            joined = ", ".join(seen_vals)
+            logger.info("Pass0a: resolved %s → joined '%s'", m.group(0), joined[:80])
+            return joined
+
+        logger.warning("Pass0a: could not resolve %s", m.group(0))
+        return m.group(0)
+
+    return _DOT_SENDER_REF_RE.sub(_sub, params)
+
+
+# ---------------------------------------------------------------------------
+# Pass 0b (Bug 3) — array-wildcard reference resolver
 # {N.messages[*].senderName}  →  joined string  (scalar context)
 # when param key is "values" / "rows"  →  2-D list  [[name, email], ...]
 # ---------------------------------------------------------------------------
@@ -716,16 +850,16 @@ def _extract_wildcard_rows(
 
     # Map common LLM field names to header keys or message-level keys
     _HEADER_ALIASES: dict[str, str] = {
-        "sendername": "from",
-        "sender_name": "from",
-        "name": "from",
-        "senderemail": "from",
+        "sendername":   "from",
+        "sender_name":  "from",
+        "name":         "from",
+        "senderemail":  "from",
         "sender_email": "from",
-        "email": "from",
-        "subject": "subject",
-        "date": "date",
-        "to": "to",
-        "cc": "cc",
+        "email":        "from",
+        "subject":      "subject",
+        "date":         "date",
+        "to":           "to",
+        "cc":           "cc",
     }
     header_key = _HEADER_ALIASES.get(field_lower, field_lower)
 
