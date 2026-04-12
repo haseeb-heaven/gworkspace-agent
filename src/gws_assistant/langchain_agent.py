@@ -7,7 +7,6 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableConfig
 
 from .models import RequestPlan, PlannedTask, AppConfigModel
 from .service_catalog import SERVICES
@@ -57,6 +56,33 @@ _EMAIL_BODY_PLACEHOLDERS = (
     "$web_search_markdown",
 )
 
+# ---------------------------------------------------------------------------
+# Model fallback chain
+# When the primary model is rate-limited (HTTP 429 quota exhausted) the
+# planner tries each model in this list in order until one succeeds.
+# All models are OpenRouter-compatible free/cheap endpoints.
+# ---------------------------------------------------------------------------
+_MODEL_FALLBACK_CHAIN: list[str] = [
+    "google/gemini-flash-1.5",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+    "microsoft/phi-3-mini-128k-instruct:free",
+]
+
+# Backoff schedule for 429 retries (seconds).  Index = attempt number (0-based).
+_BACKOFF_SCHEDULE: list[float] = [2.0, 4.0, 8.0, 16.0, 30.0]
+
+
+def _backoff_delay(attempt: int) -> float:
+    """Return the back-off delay for the given zero-based attempt index."""
+    return _BACKOFF_SCHEDULE[min(attempt, len(_BACKOFF_SCHEDULE) - 1)]
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Return True when exc represents an HTTP 429 / quota-exceeded response."""
+    msg = str(exc)
+    return "429" in msg or "rate limit" in msg.lower() or "quota" in msg.lower()
+
 
 def _request_requires_send_email(text: str) -> bool:
     """Return True if the request text contains an email-send intent keyword."""
@@ -81,12 +107,7 @@ def _extract_explicit_email(text: str) -> str:
 
 
 def _derive_next_task_id(tasks_data: list[dict]) -> str:
-    """Derive a new task ID that matches the naming convention used by the LLM.
-
-    If the LLM used plain numeric IDs the new ID will also be numeric.
-    If it used 'task-N' prefixes, the new ID matches that form.
-    Falls back to 'task-N' when the list is empty or format is unexpected.
-    """
+    """Derive a new task ID that matches the naming convention used by the LLM."""
     n = len(tasks_data) + 1
     if tasks_data and isinstance(tasks_data[0].get("id"), str):
         first_id = tasks_data[0]["id"]
@@ -96,12 +117,7 @@ def _derive_next_task_id(tasks_data: list[dict]) -> str:
 
 
 def _derive_email_subject(request_text: str) -> str:
-    """Infer a concise, generic email subject from the user's request text.
-
-    Strips leading verb phrases and trailing email addresses,
-    capitalises what remains, truncated to 60 characters.
-    Falls back to 'Your Requested Summary' when nothing meaningful can be extracted.
-    """
+    """Infer a concise, generic email subject from the user's request text."""
     cleaned = re.sub(
         r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give\s+me)\s+(an?\s+)?",
         "",
@@ -118,11 +134,7 @@ def _derive_email_subject(request_text: str) -> str:
 
 
 def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
-    """Choose the most appropriate $-placeholder for the fallback email body.
-
-    Inspects the planned tasks to pick the placeholder that will be populated
-    at runtime based on which services are in the plan.
-    """
+    """Choose the most appropriate $-placeholder for the fallback email body."""
     services_used = {t.get("service", "") for t in tasks_data if isinstance(t, dict)}
     if "code" in services_used or "computation" in services_used:
         return "$last_code_stdout"
@@ -135,13 +147,16 @@ def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
     return "Here are the results of your Google Workspace request."
 
 
-def _safe_invoke_structured_output(chain: Any, request: str, logger: logging.Logger) -> Any:
-    """Invoke a structured-output chain and return None instead of raising on parse failures.
+def _safe_invoke_structured_output(
+    chain: Any,
+    request: dict,
+    logger: logging.Logger,
+) -> Any:
+    """Invoke a structured-output chain, returning None on parse failures.
 
-    LangChain's with_structured_output() can raise TypeError / ValueError when the
-    LLM returns a response it cannot coerce into the target schema (e.g. when a
-    complex, heavily-quoted request confuses the model).  This wrapper turns those
-    hard crashes into a clean None so callers can fall back to the heuristic planner.
+    IMPORTANT: HTTP 429 rate-limit errors are RE-RAISED so the caller's
+    retry/fallback loop can handle them with proper back-off.  All other
+    unexpected errors are swallowed and None is returned.
     """
     try:
         return chain.invoke(request)
@@ -152,33 +167,98 @@ def _safe_invoke_structured_output(chain: Any, request: str, logger: logging.Log
         logger.warning("Structured output parse error (ValueError): %s", exc)
         return None
     except Exception as exc:
-        # Catch everything else (including 'NoneType is not iterable') so it
-        # never propagates as an unhandled crash.
+        if _is_rate_limit_error(exc):
+            # Re-raise so the outer retry loop can back off and/or switch models.
+            raise
         logger.warning("Structured output unexpected error: %s", exc)
         return None
 
 
-def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
-    """Create and return a ChatOpenAI agent, or None on failure."""
+def create_agent(config: AppConfigModel, logger: logging.Logger, model_override: str | None = None) -> ChatOpenAI | None:
+    """Create and return a ChatOpenAI agent for the given config, or None on failure.
+
+    Args:
+        config: Application config (contains api_key, base_url, default model).
+        logger: Logger instance.
+        model_override: If provided, use this model name instead of config.model.
+    """
     try:
         return ChatOpenAI(
-            model=config.model,
+            model=model_override or config.model,
             api_key=config.api_key,
             base_url=config.base_url,
             temperature=0,
         )
     except Exception as e:
-        logger.error(f"Failed to create ChatOpenAI agent: {e}")
+        logger.error("Failed to create ChatOpenAI agent: %s", e)
         return None
 
 
-def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger,
-                        memory_hint: str = "") -> RequestPlan | None:
-    """Generate a RequestPlan from the user's natural-language request via LangChain."""
-    model = create_agent(config, logger)
+def _invoke_with_backoff(
+    model_name: str,
+    config: AppConfigModel,
+    prompt: Any,
+    request_text: str,
+    logger: logging.Logger,
+    max_retries: int = 3,
+) -> Any:
+    """Try to invoke the planner chain on a specific model with exponential back-off.
+
+    Returns the raw plan_data dict on success, or None if all retries fail due
+    to parse errors.  Raises the last exception if all retries hit 429.
+    """
+    last_exc: Exception | None = None
+    model = create_agent(config, logger, model_override=model_name)
     if not model:
         return None
 
+    for attempt in range(max_retries):
+        try:
+            chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
+            result = _safe_invoke_structured_output(chain, {"request": request_text}, logger)
+            if result is not None:
+                return result
+            # Parse returned None (not a 429) — retry up to max_retries
+            if attempt < max_retries - 1:
+                logger.warning(
+                    "Model '%s': structured output None on attempt %d/%d — retrying.",
+                    model_name, attempt + 1, max_retries,
+                )
+                time.sleep(1)
+        except Exception as exc:
+            last_exc = exc
+            if _is_rate_limit_error(exc):
+                delay = _backoff_delay(attempt)
+                logger.warning(
+                    "Model '%s' rate-limited (attempt %d/%d, HTTP 429). "
+                    "Backing off %.0fs before retry.",
+                    model_name, attempt + 1, max_retries, delay,
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(delay)
+                    continue
+                # All retries exhausted on this model — propagate so caller switches.
+                raise
+            logger.error("Model '%s' planning failed: %s", model_name, exc)
+            return None
+
+    return None
+
+
+def plan_with_langchain(
+    text: str,
+    config: AppConfigModel,
+    logger: logging.Logger,
+    memory_hint: str = "",
+) -> RequestPlan | None:
+    """Generate a RequestPlan via LangChain with automatic model fallback on 429.
+
+    Execution order:
+    1. Try primary model (config.model) with up to 3 retries + exponential back-off.
+    2. On exhaustion, iterate through _MODEL_FALLBACK_CHAIN, trying each with the
+       same retry/back-off policy.
+    3. If every model is exhausted, return None so the heuristic planner takes over.
+    """
     catalog_lines = []
     for s_key, s_spec in SERVICES.items():
         actions_str = ", ".join(s_spec.actions.keys())
@@ -229,41 +309,55 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         ("user", "{request}")
     ])
 
-    max_retries = 3
-    plan_data: Any = None
-    for attempt in range(max_retries):
-        try:
-            chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
-            plan_data = _safe_invoke_structured_output(
-                chain,
-                {"request": text},
-                logger,
-            )
-            if plan_data is not None:
-                break
-            # LLM returned unparseable output — retry up to max_retries
-            if attempt < max_retries - 1:
-                logger.warning(
-                    "Structured output returned None on attempt %d/%d — retrying.",
-                    attempt + 1, max_retries,
-                )
-                time.sleep(1)
-        except Exception as e:
-            if "429" in str(e) and attempt < max_retries - 1:
-                logger.warning(f"LLM rate limited (attempt {attempt+1}/{max_retries}). Retrying in 2s...")
-                time.sleep(2)
-                continue
-            logger.error("LangChain planning failed: %s", e)
-            return None
+    # Build the ordered list of models to try: primary first, then fallbacks.
+    primary_model = config.model or ""
+    models_to_try: list[str] = [primary_model] + [
+        m for m in _MODEL_FALLBACK_CHAIN if m != primary_model
+    ]
 
-    # Hard guard — if all retries returned None, fall through to heuristic planner
+    plan_data: Any = None
+    for model_idx, model_name in enumerate(models_to_try):
+        is_fallback = model_idx > 0
+        if is_fallback:
+            logger.warning(
+                "Primary model '%s' exhausted. Trying fallback model %d/%d: '%s'.",
+                primary_model, model_idx, len(models_to_try) - 1, model_name,
+            )
+        try:
+            plan_data = _invoke_with_backoff(
+                model_name=model_name,
+                config=config,
+                prompt=prompt,
+                request_text=text,
+                logger=logger,
+            )
+        except Exception as exc:
+            if _is_rate_limit_error(exc):
+                logger.warning(
+                    "Model '%s' rate-limited and all retries exhausted. "
+                    "Moving to next fallback.", model_name,
+                )
+                continue
+            logger.error("Model '%s' raised unexpected error: %s", model_name, exc)
+            continue
+
+        if plan_data is not None:
+            if is_fallback:
+                logger.warning(
+                    "Plan generated successfully using fallback model '%s'.", model_name
+                )
+            break
+
     if plan_data is None:
-        logger.warning("LLM planning returned None after %d attempts.", max_retries)
+        logger.warning(
+            "LLM planning returned None after trying %d model(s): %s",
+            len(models_to_try),
+            ", ".join(models_to_try),
+        )
         return None
 
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
-        # Defensive: treat any non-list (including None) as empty
         if not isinstance(tasks_data, list):
             tasks_data = []
 
