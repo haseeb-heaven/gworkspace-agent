@@ -49,6 +49,15 @@ _EMAIL_SEND_KEYWORDS = (
     "send me", "invoice email", "send a mail", "send an email", "email to",
 )
 
+# Priority-ordered $-placeholders for the fallback email body.
+# The first one that produces a non-empty value at runtime wins.
+_EMAIL_BODY_PLACEHOLDERS = (
+    "$last_code_stdout",
+    "$sheet_email_body",
+    "$gmail_summary_values",
+    "$web_search_markdown",
+)
+
 
 def _request_requires_send_email(text: str) -> bool:
     """Return True if the request text contains an email-send intent keyword."""
@@ -84,9 +93,56 @@ def _derive_next_task_id(tasks_data: list[dict]) -> str:
     if tasks_data and isinstance(tasks_data[0].get("id"), str):
         first_id = tasks_data[0]["id"]
         if not first_id.startswith("task-"):
-            # LLM used plain numeric IDs — match that convention
             return str(n)
     return f"task-{n}"
+
+
+def _derive_email_subject(request_text: str) -> str:
+    """Infer a concise, generic email subject from the user's request text.
+
+    Strips leading verb phrases (send, email, mail, get, fetch, …) and
+    capitalises what remains, truncated to 60 characters.  Falls back to
+    ``'Your Requested Summary'`` when nothing meaningful can be extracted.
+    """
+    # Remove the send-intent verb so the subject describes the *content*
+    cleaned = re.sub(
+        r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give\s+me)\s+(an?\s+)?",
+        "",
+        request_text.strip(),
+    )
+    # Drop any trailing email-address so it doesn't end up in the subject
+    cleaned = re.sub(r"\s+to\s+[\w.+-]+@[\w-]+\.[\w.]+.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip(" .,;:")
+    if not cleaned:
+        return "Your Requested Summary"
+    # Capitalise and truncate
+    subject = cleaned[0].upper() + cleaned[1:]
+    if len(subject) > 60:
+        subject = subject[:57].rstrip() + "..."
+    return subject
+
+
+def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
+    """Choose the most appropriate $-placeholder for the fallback email body.
+
+    Inspects the planned tasks to pick the placeholder that will actually be
+    populated at runtime:
+    - If a code task exists → $last_code_stdout (computed output)
+    - If a sheets task exists → $sheet_email_body (formatted sheet data)
+    - If a gmail fetch task exists → $gmail_summary_values (email summaries)
+    - If a web-search task exists → $web_search_markdown (search results)
+    - Otherwise → generic human-readable fallback message
+    """
+    services_used = {t.get("service", "") for t in tasks_data if isinstance(t, dict)}
+    if "code" in services_used or "computation" in services_used:
+        return "$last_code_stdout"
+    if "sheets" in services_used:
+        return "$sheet_email_body"
+    if "gmail" in services_used:
+        return "$gmail_summary_values"
+    if "search" in services_used:
+        return "$web_search_markdown"
+    return "Here are the results of your Google Workspace request."
 
 
 def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
@@ -135,16 +191,17 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         "6. DO NOT invent services or actions that are not in the catalog.\n"
         "7. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones.\n"
         "8. PIPELINE ENFORCEMENT: For complex workflows, prefer the sequence: web_search -> code -> sheets.append_values -> gmail.send_message.\n"
-        "9. CODE EXECUTOR OUTPUT: When a 'code' task computes values (e.g. USD/INR totals), the next sheets.append_values\n"
+        "9. CODE EXECUTOR OUTPUT: When a 'code' task computes values (e.g. totals, conversions), the next sheets.append_values\n"
         "   task MUST use the token $last_code_result (for a single scalar) or PLACEHOLDER_AMOUNT as the cell value.\n"
         "   Do NOT write literal strings like 'PLACEHOLDER_AMOUNT' — the executor resolves them automatically.\n"
         "   For the email body referencing code output, use $last_code_stdout.\n"
-        "10. MULTIPLE SHEET TABS: If writing USD results to one tab and INR results to another, name the ranges\n"
-        "   explicitly: 'USD!A1:C10' and 'INR!A1:C10'. Do NOT reuse 'Sheet1!A1' for both writes.\n"
+        "10. MULTIPLE SHEET TABS: If writing results to multiple tabs, name the ranges explicitly (e.g. 'Tab1!A1:C10',\n"
+        "   'Tab2!A1:C10'). Do NOT reuse 'Sheet1!A1' for multiple writes targeting different tabs.\n"
         "11. SEND EMAIL REQUIREMENT: If the user request mentions sending an email, you MUST include a\n"
         "   gmail.send_message task as the LAST step. Set 'to_email' to the EXACT address the user stated\n"
-        "   (e.g. 'haseebmir.hm@gmail.com'). Do NOT use a receipt/invoice sender address. Use $last_code_stdout\n"
-        "   as the body. This step is MANDATORY and must not be omitted."
+        "   (e.g. <recipient@example.com>). Do NOT use a receipt/invoice sender address. Choose the most\n"
+        "   appropriate body placeholder ($last_code_stdout, $sheet_email_body, $gmail_summary_values, or\n"
+        "   $web_search_markdown) based on the preceding tasks. This step is MANDATORY and must not be omitted."
     )
 
     if memory_hint:
@@ -202,15 +259,17 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
                     t["parameters"] = params
                     logger.info("BugFixC: corrected to_email in planned task to '%s'", explicit_email)
 
-        # CR-2 / CR-3: Only inject the fallback send task when we have a valid address.
-        # Skipping injection entirely is safer than passing an unresolvable '$user_email'.
+        # Only inject the fallback send task when we have a valid explicit address.
+        # Skipping injection is safer than passing an unresolvable placeholder.
         if _request_requires_send_email(text) and not _plan_has_send_task(tasks_data):
             if explicit_email:
+                subject = _derive_email_subject(text)
+                body_placeholder = _derive_email_body_placeholder(tasks_data)
                 logger.warning(
-                    "BugFix3: gmail.send_message missing from plan. Injecting fallback task to '%s'.",
-                    explicit_email,
+                    "BugFix3: gmail.send_message missing from plan. "
+                    "Injecting fallback task to '%s' (subject='%s', body='%s').",
+                    explicit_email, subject, body_placeholder,
                 )
-                # CR-3: match the ID convention of the existing tasks
                 next_id = _derive_next_task_id(tasks_data)
                 tasks_data.append({
                     "id": next_id,
@@ -218,15 +277,15 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
                     "action": "send_message",
                     "parameters": {
                         "to_email": explicit_email,
-                        "subject": "Your Twitter/X Subscription Invoice Summary",
-                        "body": "$last_code_stdout",
+                        "subject": subject,
+                        "body": body_placeholder,
                     },
                     "reason": "User explicitly requested sending an email — auto-injected by BugFix3.",
                 })
             else:
                 logger.warning(
                     "BugFix3: send email intent detected but no explicit address found in request; "
-                    "skipping gmail.send_message injection to avoid unresolvable $user_email."
+                    "skipping gmail.send_message injection to avoid unresolvable placeholder."
                 )
 
         tasks = []
