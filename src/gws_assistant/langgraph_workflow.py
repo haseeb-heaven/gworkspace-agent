@@ -1,4 +1,47 @@
-"""LangGraph workflow for the assistant."""
+"""LangGraph workflow for the GWS assistant — powered by a native ReAct agent.
+
+This module replaces the old plan→validate→execute pipeline with a
+full ReAct (Reasoning + Acting) loop.
+
+Workflow architecture
+─────────────────────
+
+  START
+    │
+    ▼
+  route_input ──────────────────────────────┐
+    │  (pure GWS or multi-step)             │  (simple web search only)
+    ▼                                       ▼
+  react_agent_node                    web_search_node
+    │  (Thought → Action → Obs loop)        │
+    │  Calls GWS tools, web search,         │
+    │  code execution natively.             │
+    ▼                                       │
+  format_output_node  ◄───────────────────── ┘
+    │
+    ▼
+  END
+
+Key differences vs the old workflow
+────────────────────────────────────
+  OLD: LLM plans a static task list → executor runs it blindly.
+  NEW: LLM reasons at EVERY step — it sees every tool observation before
+       deciding the next action.  This is true ReAct.
+
+  OLD: reflect_node is a simple retry counter.
+  NEW: Reflection is native — the LLM's own Thought step IS the reflection.
+       If a tool fails, the LLM reads the error in its Observation and
+       tries a corrected approach on the next iteration.
+
+  OLD: route_after_plan has complex keyword-matching heuristics.
+  NEW: Routing is minimal — just decide whether to use the ReAct agent
+       or the lightweight web_search_node for pure search queries.
+
+Backward compatibility
+───────────────────────
+  The public API (create_workflow + run_workflow) is preserved so
+  agent_system.py and all callers continue working without changes.
+"""
 
 from __future__ import annotations
 
@@ -13,62 +56,34 @@ from gws_assistant.models import (
     AgentState,
     AppConfigModel,
     PlanExecutionReport,
-    ReflectionDecision,
     StructuredToolResult,
-    TaskExecution,
 )
 from gws_assistant.output_formatter import HumanReadableFormatter
-from gws_assistant.tools.code_execution import execute_generated_code
 from gws_assistant.tools.web_search import summarize_results, web_search_tool
-from gws_assistant.langchain_agent import create_agent
+
 
 _MAX_HISTORY = 10
 
-# Keywords that signal intent to search external data.
-_SEARCH_INTENT_KEYWORDS = (
-    "find top",
-    "search for",
-    "look up",
-    "find best",
-    "find latest",
-    "what are the top",
-    "top 3",
-    "top 5",
-    "top 10",
-    "best ",
+# ---------------------------------------------------------------------------
+# Keywords for lightweight routing decision
+# ---------------------------------------------------------------------------
+
+# Queries that are ONLY about web search — no GWS write action needed
+_PURE_SEARCH_KEYWORDS = (
+    "what is ",
+    "who is ",
+    "define ",
+    "explain ",
+    "how does ",
+    "tell me about ",
 )
 
-# GWS service keywords — queries containing these should route to execute_task
-# even when heuristic planning returns 0 tasks, NOT to generate_code.
-_GWS_INTENT_KEYWORDS = (
-    "email",
-    "gmail",
-    "sheet",
-    "spreadsheet",
-    "google doc",
-    "drive",
-    "calendar",
-    "slides",
-    "send",
-    "create",
-    "extract data",
-    "search emails",
-    "job offer",
-    "inbox",
-)
-
-# Phrases that indicate an LLM refusal or non-code response.
-_REFUSAL_PHRASES = (
-    "i'm sorry",
-    "i am sorry",
-    "i can't help",
-    "i cannot help",
-    "i'm not able",
-    "i am not able",
-    "as an ai",
-    "as a language model",
-    "cannot assist",
-    "unable to assist",
+# Any GWS-touching keyword → must go to full ReAct agent
+_GWS_ACTION_KEYWORDS = (
+    "email", "gmail", "send", "sheet", "spreadsheet", "google doc",
+    "drive", "calendar", "create", "upload", "append", "write",
+    "read", "fetch", "get messages", "search emails", "list files",
+    "schedule", "event", "meeting",
 )
 
 
@@ -76,347 +91,278 @@ def _trim_history(messages: list[Any]) -> list[Any]:
     return messages[-_MAX_HISTORY:]
 
 
-def _is_llm_refusal(code: str) -> bool:
-    """Return True if the string looks like an LLM refusal rather than Python code."""
-    lowered = code.lower().strip()
-    return any(phrase in lowered for phrase in _REFUSAL_PHRASES)
+# ---------------------------------------------------------------------------
+# Workflow factory
+# ---------------------------------------------------------------------------
 
+def create_workflow(
+    config: AppConfigModel,
+    system: Any,
+    executor: Any,
+    logger: logging.Logger,
+) -> Any:
+    """Create and return the compiled LangGraph workflow.
 
-def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
-    """Creates the compiled LangGraph workflow."""
+    The workflow uses a native ReAct agent as its primary execution engine.
+    The old plan→validate→execute nodes have been removed; the ReAct agent
+    handles planning, tool execution, and reflection in a single unified loop.
 
+    Args:
+        config:   AppConfigModel with model/api_key settings.
+        system:   GWSAssistantSystem (kept for interface compatibility — unused).
+        executor: PlanExecutor instance (injected into react_tools).
+        logger:   Standard Python logger.
+
+    Returns:
+        Compiled LangGraph StateGraph.
+    """
     formatter = HumanReadableFormatter()
 
-    def _append_history(state: AgentState, msg: Any) -> list[Any]:
-        history = list(state.get("conversation_history", []))
-        history.append(msg)
-        return _trim_history(history)
+    # ------------------------------------------------------------------
+    # Lazy import of ReAct components — avoids circular imports at module
+    # load time and makes the old pipeline still importable independently.
+    # ------------------------------------------------------------------
+    from gws_assistant.react_agent import (
+        create_react_agent_graph,
+        run_react_agent,
+    )
 
-    def _normalize_workspace_result(result: Any) -> StructuredToolResult:
-        if hasattr(result, "to_structured_result"):
-            return result.to_structured_result()
-        return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
+    # Build the ReAct agent graph once — it will be reused across calls.
+    # We build it here (inside create_workflow) so config + executor are
+    # captured in the closure correctly.
+    _react_graph = create_react_agent_graph(
+        config=config,
+        executor=executor,
+        logger=logger,
+    )
 
-    def _log_step(tool_name: str, normalized_input: Any, normalized_output: StructuredToolResult | ReflectionDecision | dict[str, Any]) -> None:
-        logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
+    # ------------------------------------------------------------------
+    # Node: react_agent_node
+    # The single node that runs the full ReAct loop.  It receives the
+    # user_text from state, runs the compiled ReAct graph, and stores
+    # the final answer in state['final_output'].
+    # ------------------------------------------------------------------
 
-    def plan_node(state: AgentState) -> dict[str, Any]:
+    def react_agent_node(state: AgentState) -> dict[str, Any]:
+        user_text = state.get("user_text", "")
+        logger.info("[react_agent_node] Running ReAct loop for: '%s'", user_text[:120])
+
+        thought_trace: list[dict] = list(state.get("thought_trace", []))
+        history:       list[Any]  = list(state.get("conversation_history", []))
+
         try:
-            plan = system.plan(state["user_text"])
-            history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
-            _log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
-            return {"plan": plan, "error": None, "conversation_history": history}
-        except Exception as exc:
-            history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
-            _log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
-            return {"error": str(exc), "conversation_history": history}
+            from langchain_core.messages import HumanMessage as HM
+            messages_in = [{"messages": [HM(content=user_text)]}]
 
-    def validate_node(state: AgentState) -> dict[str, Any]:
-        plan = state.get("plan")
-        if not plan:
-            return {"error": "No plan to validate."}
-        for task in plan.tasks:
-            if not task.action:
-                return {"error": f"Task {task.id} has no action."}
-        return {"error": None}
+            # Stream the ReAct agent so we can capture intermediate steps
+            # for the thought_trace (useful for debugging / UI display).
+            final_state: dict[str, Any] = {}
+            step_count = 0
 
-    def execute_task_node(state: AgentState) -> dict[str, Any]:
-        plan = state.get("plan")
-        idx = state.get("current_task_index", 0)
-        context = state.get("context", {})
-        executions = list(state.get("executions", []))
-        thought_trace = list(state.get("thought_trace", []))
+            for chunk in _react_graph.stream(
+                {"messages": [HM(content=user_text)]},
+                config=RunnableConfig(recursion_limit=50),
+                stream_mode="values",
+            ):
+                final_state = chunk
+                step_count += 1
 
-        if not plan or idx >= len(plan.tasks):
-            return {"error": "No tasks to execute."}
+                # Capture each non-human message as a thought/observation
+                for msg in chunk.get("messages", []):
+                    role    = type(msg).__name__
+                    content = getattr(msg, "content", "") or ""
+                    tcs     = getattr(msg, "tool_calls", []) or []
+                    if tcs:
+                        for tc in tcs:
+                            thought_trace.append({
+                                "step":        step_count,
+                                "role":        "tool_call",
+                                "action":      tc.get("name", ""),
+                                "observation": str(tc.get("args", {}))[:200],
+                                "success":     True,
+                                "reason":      "ReAct agent action",
+                            })
+                    elif role == "ToolMessage":
+                        thought_trace.append({
+                            "step":        step_count,
+                            "role":        "observation",
+                            "action":      getattr(msg, "name", "tool_result"),
+                            "observation": str(content)[:300],
+                            "success":     True,
+                            "reason":      "Tool observation",
+                        })
 
-        task = plan.tasks[idx]
-        expanded = executor._expand_task(task, context)
-        if not expanded:
+            # Extract the final answer — last AIMessage with no tool calls
+            final_answer = ""
+            for msg in reversed(final_state.get("messages", [])):
+                content   = getattr(msg, "content", None)
+                tool_calls = getattr(msg, "tool_calls", [])
+                if content and not tool_calls and type(msg).__name__ == "AIMessage":
+                    final_answer = str(content).strip()
+                    break
+
+            if not final_answer:
+                final_answer = "ReAct agent completed but produced no final text output."
+
+            history.append(AIMessage(content=final_answer))
+
+            logger.info(
+                "[react_agent_node] Completed in %d steps. Answer: '%s'",
+                step_count, final_answer[:120],
+            )
+
             return {
-                "error": f"Task {task.id} expanded to no executable tasks.",
-                "last_result": StructuredToolResult(success=False, output={}, error="Empty expansion"),
-                "executions": executions,
+                "final_output":         final_answer,
+                "thought_trace":        thought_trace,
+                "conversation_history": _trim_history(history),
+                "error":                None,
             }
 
-        latest: StructuredToolResult | None = None
-        task_error: str | None = None
-        for exp_task in expanded:
-            resolved = executor._resolve_task(exp_task, context)
-            result = executor.execute_single_task(resolved, context)
-            executions.append(TaskExecution(task=resolved, result=result))
-            latest = _normalize_workspace_result(result)
-            thought_trace.append({
-                "step": idx + 1,
-                "action": f"{resolved.service}.{resolved.action}",
-                "observation": str(latest.get("output", {})
-                                .get("stdout", ""))[:300],
-                "success": result.success,
-                "reason": resolved.reason,
-            })
-            _log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
-            if not result.success:
-                task_error = result.error or result.stderr or "Task execution failed"
-                break
+        except Exception as exc:
+            logger.exception("[react_agent_node] ReAct agent raised an exception.")
+            error_msg = f"ReAct Agent Error: {exc}"
+            history.append(AIMessage(content=error_msg))
+            return {
+                "final_output":         error_msg,
+                "error":                str(exc),
+                "thought_trace":        thought_trace,
+                "conversation_history": _trim_history(history),
+            }
 
-        return {
-            "executions": executions,
-            "context": context,
-            "error": task_error,
-            "last_result": latest,
-            "current_attempt": state.get("current_attempt", 0) + 1,
-            "conversation_history": _trim_history(state.get("conversation_history", [])),
-            "thought_trace": thought_trace,
-        }
-
-    def reflect_node(state: AgentState) -> dict[str, Any]:
-        error = state.get("error")
-        attempts = state.get("current_attempt", 0)
-        context = dict(state.get("context", {}))
-        updates: dict[str, Any] = {}
-        if not error:
-            decision = ReflectionDecision(action="continue", reason="Task completed successfully.")
-        elif "CODE_EXECUTION_ENABLED=false" in str(error):
-            decision = ReflectionDecision(action="continue", reason="Code execution is disabled by configuration.")
-        elif attempts < config.max_retries:
-            decision = ReflectionDecision(action="retry", reason="Retrying failed task.")
-        elif state.get("plan") and context.get("replan_count", 0) < config.max_replans:
-            context["replan_count"] = int(context.get("replan_count", 0)) + 1
-            updates["context"] = context
-            updates["current_attempt"] = 0
-            updates["current_task_index"] = 0
-            updates["error"] = None
-            decision = ReflectionDecision(action="replan", reason="Retries exhausted, requesting new plan.")
-        else:
-            decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
-        _log_step("reflection", {"error": error, "attempt": attempts}, decision)
-        updates["reflection"] = decision
-        updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))
-        return updates
-
-    def update_context_node(state: AgentState) -> dict[str, Any]:
-        return {
-            "current_task_index": state.get("current_task_index", 0) + 1,
-            "error": None,
-            "current_attempt": 0,
-            "conversation_history": _trim_history(state.get("conversation_history", [])),
-        }
-
-    def format_output_node(state: AgentState) -> dict[str, Any]:
-        plan = state.get("plan")
-        executions = state.get("executions", [])
-        if plan and executions:
-            report = formatter.format_report(
-                PlanExecutionReport(
-                    plan=plan,
-                    executions=executions,
-                    thought_trace=state.get("thought_trace", []),
-                )
-            )
-        else:
-            report = state.get("final_output") or state.get("error") or "No result produced."
-        if any(not item.result.success for item in executions) and "failed" not in report.lower():
-            report = f"Execution finished with failures.\n\n{report}"
-        return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
+    # ------------------------------------------------------------------
+    # Node: web_search_node
+    # Lightweight node for pure informational queries that don't involve
+    # any GWS write operations.  Avoids spinning up the full ReAct loop.
+    # ------------------------------------------------------------------
 
     def web_search_node(state: AgentState) -> dict[str, Any]:
-        result = web_search_tool.invoke({"query": state["user_text"]})
-        if result.get("error"):
-            structured = StructuredToolResult(success=False, output=result, error=result["error"])
-            return {"last_result": structured, "error": result["error"]}
-        # Isolate summarize so its failure never kills the search result.
-        summary = ""
+        query   = state.get("user_text", "")
+        history = list(state.get("conversation_history", []))
+        logger.info("[web_search_node] Query: '%s'", query[:120])
+
         try:
-            summary = summarize_results.invoke({"text": str(result.get("results"))})
-        except Exception as _sum_exc:
-            logger.warning("summarize_results failed in web_search_node (ignored): %s", _sum_exc)
-        structured = StructuredToolResult(
-            success=True,
-            output={"query": state["user_text"], "summary": summary, "results": result.get("results", [])},
-            error=None,
-        )
-        context = dict(state.get("context", {}))
-        context["web_search_summary"] = summary
-        context["web_search_rows"] = [
-            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
-            for r in result.get("results", [])
-        ]
+            result  = web_search_tool.invoke({"query": query})
+            summary = ""
+            if not result.get("error"):
+                try:
+                    summary = summarize_results.invoke({"text": str(result.get("results", ""))})
+                except Exception as _e:
+                    logger.warning("[web_search_node] summarize_results failed (ignored): %s", _e)
+                    summary = str(result.get("results", ""))[:2000]
+
+            output = f"Web Search Results for: {query}\n\n{summary}" if summary else (
+                result.get("error") or "No results found."
+            )
+            structured = StructuredToolResult(
+                success=not bool(result.get("error")),
+                output={"query": query, "summary": summary, "results": result.get("results", [])},
+                error=result.get("error"),
+            )
+        except Exception as exc:
+            logger.error("[web_search_node] failed: %s", exc)
+            output     = f"Web search failed: {exc}"
+            structured = StructuredToolResult(success=False, output={}, error=str(exc))
+
+        history.append(AIMessage(content=output))
         return {
-            "final_output": f"Web Search Result:\n\n{summary}",
-            "last_result": structured,
-            "context": context,
+            "final_output":         output,
+            "last_result":          structured,
+            "conversation_history": _trim_history(history),
+            "error":                structured.get("error"),
         }
 
-    def code_execution_node(state: AgentState) -> dict[str, Any]:
-        if not config.code_execution_enabled:
-            return {
-                "error": "Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false).",
-                "last_result": StructuredToolResult(success=False, output={}, error="code_execution_disabled"),
-                "current_attempt": state.get("current_attempt", 0) + 1,
-            }
-        code = (state.get("context", {}) or {}).get("generated_code")
-        if not code:
-            return {
-                "error": "Code execution requires generated_code in context.",
-                "last_result": StructuredToolResult(success=False, output={}, error="Missing generated_code"),
-                "current_attempt": state.get("current_attempt", 0) + 1,
-            }
-        result = execute_generated_code(str(code), config=config)
-        _log_step("sandbox_execute", {"code": code}, result)
+    # ------------------------------------------------------------------
+    # Node: format_output_node
+    # Cleans up the final_output string — keeps it as-is since the ReAct
+    # agent already produces human-readable text.  Adds a failure prefix
+    # if the error flag is set.
+    # ------------------------------------------------------------------
 
-        context = dict(state.get("context", {}))
-        results_map = context.setdefault("task_results", {})
-        results_map["code"] = result.get("output", {})
-        results_map["computation"] = result.get("output", {})
+    def format_output_node(state: AgentState) -> dict[str, Any]:
+        output  = state.get("final_output") or state.get("error") or "No result produced."
+        history = list(state.get("conversation_history", []))
 
+        if state.get("error") and "failed" not in str(output).lower():
+            output = f"Execution finished with failures.\n\n{output}"
+
+        history.append(AIMessage(content=str(output)))
         return {
-            "last_result": result,
-            "error": result.get("error"),
-            "final_output": result["output"].get("stdout", ""),
-            "current_attempt": state.get("current_attempt", 0) + 1,
-            "context": context,
+            "final_output":         str(output),
+            "conversation_history": _trim_history(history),
         }
 
-    def generate_code_node(state: AgentState) -> dict[str, Any]:
-        prompt = (
-            "Generate Python code ONLY. The code must store its final answer in a variable named `result` "
-            "and may print intermediate details. NO markdown formatting, just raw code.\n\n"
-            "CRITICAL: Do NOT use ANY 'import' statements. All standard libraries are unavailable. "
-            "Use only built-in functions and basic logic.\n\n"
-            f"User request:\n{state['user_text']}"
+    # ------------------------------------------------------------------
+    # Routing function: route_input
+    # Decides whether to use the lightweight web_search_node or the full
+    # ReAct agent.  Defaults to the ReAct agent for safety.
+    # ------------------------------------------------------------------
+
+    def route_input(
+        state: AgentState,
+    ) -> Literal["react_agent", "web_search"]:
+        text = (state.get("user_text") or "").lower().strip()
+
+        has_gws_action  = any(kw in text for kw in _GWS_ACTION_KEYWORDS)
+        is_pure_search  = (
+            any(text.startswith(kw) for kw in _PURE_SEARCH_KEYWORDS)
+            and not has_gws_action
         )
-        model = create_agent(config, logger)
-        if not model:
-            if not config.use_heuristic_fallback:
-                return {
-                    "error": "Unable to generate code because no LLM is configured and heuristic fallback is disabled.",
-                    "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error="code_generation_unavailable"),
-                }
-            extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
-            generated = f"result = {extracted or '0'}\nprint(result)"
-            context = dict(state.get("context", {}))
-            context["generated_code"] = generated
-            _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback"})
-            return {"context": context, "error": None}
 
-        llm_response = model.invoke(prompt)
-        content = getattr(llm_response, "content", str(llm_response))
-        if not isinstance(content, str):
-            content = str(content)
-        generated_code = content.strip().removeprefix("```python").removeprefix("```").removesuffix("```").strip()
-
-        # Guard: if the LLM refused or returned non-code, don't pass it to the sandbox.
-        if _is_llm_refusal(generated_code):
-            logger.warning("generate_code_node: LLM returned a refusal, not executable code.")
-            return {
-                "error": "LLM declined to generate code for this request. Try rephrasing as a computation task.",
-                "last_result": StructuredToolResult(
-                    success=False,
-                    output={"prompt": prompt, "response": generated_code},
-                    error="llm_refusal",
-                ),
-            }
-
-        context = dict(state.get("context", {}))
-        context["generated_code"] = generated_code
-        _log_step("generate_code", {"prompt": state["user_text"]}, {"generated_code": generated_code})
-        return {"context": context, "error": None}
-
-    def route_after_plan(state: AgentState) -> Literal["validate", "format_output", "web_search", "generate_code"]:
-        if state.get("error"):
-            return "format_output"
-        plan = state.get("plan")
-        text = state["user_text"].lower()
-
-        has_search_intent = any(kw in text for kw in _SEARCH_INTENT_KEYWORDS)
-        has_gws_intent = any(kw in text for kw in _GWS_INTENT_KEYWORDS)
-        plan_has_tasks = bool(plan and plan.tasks)
-        needs_web_search = getattr(plan, "needs_web_search", False) if plan else False
-
-        if needs_web_search:
+        if is_pure_search:
+            logger.info("[route_input] → web_search_node (pure informational query)")
             return "web_search"
 
-        if plan_has_tasks:
-            # Plan has tasks — check if it's a web-search-then-save workflow
-            for task in plan.tasks:
-                params = task.parameters or {}
-                if any("$web_search" in str(v) for v in params.values()):
-                    return "web_search"
-            return "validate"
+        logger.info("[route_input] → react_agent_node")
+        return "react_agent"
 
-        # No tasks in plan — determine best fallback.
-        # GWS-intent queries (email, sheets, drive...) should NOT fall to generate_code;
-        # return format_output with a helpful message instead.
-        if has_gws_intent:
-            return "format_output"
-
-        if has_search_intent:
-            return "web_search"
-
-        if getattr(plan, "needs_code_execution", False) or any(
-            kw in text for kw in ("calculate", "compute", "sum", "average")
-        ):
-            return "generate_code"
-
-        return "format_output"
-
-    def route_after_web_search(state: AgentState) -> Literal["validate", "format_output"]:
-        """After web search, if the plan has workspace tasks to execute, go to validate."""
-        plan = state.get("plan")
-        if plan and plan.tasks and not state.get("error"):
-            return "validate"
-        return "format_output"
-
-    def route_after_task(state: AgentState) -> Literal["reflect_node"]:
-        return "reflect_node"
-
-    def route_after_reflection(state: AgentState) -> Literal["update_context", "execute_task", "generate_plan", "format_output", "generate_code"]:
-        decision = state.get("reflection")
-        if not decision:
-            return "format_output"
-        if decision.action == "continue":
-            return "update_context" if not state.get("error") else "format_output"
-        if decision.action == "retry":
-            if state.get("context", {}).get("generated_code"):
-                return "generate_code"
-            return "execute_task"
-        if decision.action == "replan":
-            return "generate_plan"
-        return "format_output"
-
-    def route_after_context(state: AgentState) -> Literal["execute_task", "format_output"]:
-        plan = state.get("plan")
-        idx = state.get("current_task_index", 0)
-        if plan and idx < len(plan.tasks):
-            return "execute_task"
-        return "format_output"
-
-
+    # ------------------------------------------------------------------
+    # Graph assembly
+    # ------------------------------------------------------------------
     workflow = StateGraph(AgentState)
-    workflow.add_node("generate_plan", plan_node)
-    workflow.add_node("validate", validate_node)
-    workflow.add_node("execute_task", execute_task_node)
-    workflow.add_node("reflect_node", reflect_node)
-    workflow.add_node("update_context", update_context_node)
-    workflow.add_node("format_output", format_output_node)
-    workflow.add_node("web_search", web_search_node)
-    workflow.add_node("generate_code", generate_code_node)
-    workflow.add_node("code_execution", code_execution_node)
 
-    workflow.add_edge(START, "generate_plan")
-    workflow.add_conditional_edges("generate_plan", route_after_plan)
-    workflow.add_edge("validate", "execute_task")
-    workflow.add_conditional_edges("execute_task", route_after_task)
-    workflow.add_conditional_edges("reflect_node", route_after_reflection)
-    workflow.add_conditional_edges("update_context", route_after_context)
-    workflow.add_conditional_edges("web_search", route_after_web_search)
-    workflow.add_edge("generate_code", "code_execution")
-    workflow.add_edge("code_execution", "reflect_node")
+    workflow.add_node("react_agent",   react_agent_node)
+    workflow.add_node("web_search",    web_search_node)
+    workflow.add_node("format_output", format_output_node)
+
+    # Edges
+    workflow.add_conditional_edges(
+        START,
+        route_input,
+        {
+            "react_agent": "react_agent",
+            "web_search":  "web_search",
+        },
+    )
+    workflow.add_edge("react_agent",   "format_output")
+    workflow.add_edge("web_search",    "format_output")
     workflow.add_edge("format_output", END)
+
     return workflow.compile()
 
 
-def run_workflow(user_text: str, config: AppConfigModel, system, executor, logger: logging.Logger) -> str:
+# ---------------------------------------------------------------------------
+# Public run helper — preserves the original interface
+# ---------------------------------------------------------------------------
+
+def run_workflow(
+    user_text: str,
+    config: AppConfigModel,
+    system: Any,
+    executor: Any,
+    logger: logging.Logger,
+) -> str:
+    """Run the ReAct workflow and return the final plain-text answer.
+
+    Args:
+        user_text: The user's natural-language request.
+        config:    AppConfigModel.
+        system:    GWSAssistantSystem (kept for interface compat — unused).
+        executor:  PlanExecutor instance.
+        logger:    Standard Python logger.
+
+    Returns:
+        Final assistant answer as a plain string.
+    """
     initial_state = AgentState(
         user_text=user_text,
         context={"request_text": user_text},
@@ -425,11 +371,17 @@ def run_workflow(user_text: str, config: AppConfigModel, system, executor, logge
         retry_count=0,
         current_attempt=0,
         conversation_history=[HumanMessage(content=user_text)],
+        thought_trace=[],
     )
+
     app = create_workflow(config, system, executor, logger)
+
     try:
-        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=100))
+        final_state = app.invoke(
+            initial_state,
+            config=RunnableConfig(recursion_limit=100),
+        )
         return final_state.get("final_output", "Workflow returned no output.")
     except Exception as exc:
-        logger.exception("Workflow failed.")
+        logger.exception("ReAct workflow failed.")
         return f"Workflow Error: {exc}"
