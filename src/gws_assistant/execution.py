@@ -40,7 +40,6 @@ _ARRAY_WILDCARD_RE = re.compile(
 )
 
 # Plain dot-ref pattern for single-message sender/header fields.
-# Covers: {N.sender.name}, {N.from.name}, {N.from.email}, {N.subject}, {N.body}, etc.
 _DOT_SENDER_REF_RE = re.compile(
     r"\{(\d+|task-\d+)\.(sender\.name|sender\.email|senderName|senderEmail"
     r"|sender_name|sender_email|fromName|from_name|fromEmail|from_email"
@@ -48,16 +47,7 @@ _DOT_SENDER_REF_RE = re.compile(
     r"|subject|date|snippet|body)\}"
 )
 
-# Bug 4 — 3-level header path: {N.headers.From.name}, {N.headers.From.email},
-# {N.headers.Subject}, {N.headers.Date}, etc.
-#
-# FIX Bug C: The old pattern did NOT require the literal "headers." segment,
-# so it matched {N.from.name} and {N.subject} — tokens already handled by
-# Pass 0a (_DOT_SENDER_REF_RE). Pass 0c would then fire on already-resolved
-# values and return an empty string, clobbering the correct result.
-#
-# The corrected pattern requires "headers." between the step ID and the field,
-# so it ONLY fires on the deeply-nested LLM form: {N.headers.<field>}.
+# Bug 4 — 3-level header path: {N.headers.From.name}, {N.headers.Subject}, etc.
 _HEADERS_DOT_REF_RE = re.compile(
     r"\{(\d+|task-\d+)\.headers\.(from\.name|from\.email|from|subject|date|snippet|to|cc|bcc)\}",
     re.IGNORECASE,
@@ -80,11 +70,6 @@ _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
 
 # ---------------------------------------------------------------------------
 # Pass 6 — Drive file field resolver
-# FIX: The LLM sometimes generates named-alias task IDs like "drive-search"
-# (e.g. {drive-search.files[0].webViewLink}) which do NOT match the numeric /
-# task-N patterns used by _TEMPLATE_REF_RE / Pass 1. This regex matches ANY
-# token of the form {<anything>.files[<index>].<field>} so it resolves against
-# context['drive_payload']['files'] regardless of the alias the LLM chose.
 # ---------------------------------------------------------------------------
 _DRIVE_FILE_REF_RE = re.compile(
     r"\{[^}]+\.files\[(\d+)\]\.(\w+)\}",
@@ -350,9 +335,6 @@ class PlanExecutor:
         if not code:
             return ExecutionResult(success=False, command=[], error="Missing required parameter: code")
 
-        # Bug B fix: self.config may be None when PlanExecutor is constructed without a
-        # config argument. Fall back to self.planner.config so execute_generated_code()
-        # always receives a valid config object and never crashes on attribute access.
         structured = execute_generated_code(code, config=self.config or self.planner.config)
         output = structured.get("output") or {}
 
@@ -446,8 +428,6 @@ class PlanExecutor:
         parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
 
         # Pass 0c: resolve 3-level header refs: {N.headers.From.name}, {N.headers.Subject}, etc.
-        # NOTE: _HEADERS_DOT_REF_RE now requires the literal ".headers." segment so it
-        # cannot overlap with the 2-level paths already handled by Pass 0a.
         parameters = _resolve_headers_dot_refs(parameters, context, self.logger)
 
         # Pass 1: {{task_id.key}}, {N.key}, and {N.key[0].sub} bracket-index refs
@@ -468,9 +448,6 @@ class PlanExecutor:
         parameters = _resolve_gmail_body_variants(parameters, context, self.logger)
 
         # Pass 6: resolve Drive file field refs like {drive-search.files[0].webViewLink}
-        # This handles named-alias task IDs (e.g. 'drive-search') that do not match the
-        # numeric / task-N pattern used by Pass 1, preventing raw placeholder leakage
-        # into email bodies.
         if context.get("drive_payload"):
             parameters = _resolve_drive_file_refs(parameters, context, self.logger)
 
@@ -487,6 +464,10 @@ class PlanExecutor:
                 parameters[key] = self._sheet_email_body(context)
             elif value == "$drive_summary_values":
                 parameters[key] = self._drive_summary_values(context)
+            elif value == "$drive_export_file":
+                # Fix: resolve exported Drive file content stored in context after export_file task
+                parameters[key] = context.get("drive_export_content") or context.get("drive_export_file") or ""
+                self.logger.info("Pass7: resolved $drive_export_file → %d chars", len(parameters[key]))
             elif value == "$web_search_markdown":
                 parameters[key] = _web_search_markdown(context)
             elif value == "$web_search_table_values":
@@ -625,7 +606,6 @@ class PlanExecutor:
                 payload["files"] = filtered
             context["drive_query"] = task.parameters.get("q") or ""
             context["drive_payload"] = payload
-            # Also register under task_results so numeric-ID Pass 1 refs resolve too.
             results = context.setdefault("task_results", {})
             results[task.id] = payload
             if task.id.startswith("task-"):
@@ -633,6 +613,20 @@ class PlanExecutor:
                     results[task.id.removeprefix("task-")] = payload
                 except Exception:
                     pass
+        if task.service == "drive" and task.action == "export_file" and payload:
+            # Fix: read exported file content from disk into context so $drive_export_file resolves.
+            saved_file = payload.get("saved_file") or "download.txt"
+            try:
+                import pathlib
+                content = pathlib.Path(saved_file).read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                content = ""
+            context["drive_export_content"] = content
+            context["drive_export_file"] = saved_file
+            self.logger.info(
+                "drive.export_file: stored %d chars from '%s' in drive_export_content",
+                len(content), saved_file,
+            )
         if task.service == "sheets" and task.action == "get_values" and payload:
             context["sheet_values_payload"] = payload
 
@@ -915,13 +909,6 @@ def _extract_wildcard_rows(
 
 # ---------------------------------------------------------------------------
 # Pass 0c — 3-level header ref resolver
-# Handles: {N.headers.From.name}, {N.headers.From.email}, {N.headers.Subject}, etc.
-# Bug 4: The LLM sometimes generates deeply-nested {N.headers.X.Y} tokens that
-# mirror the Gmail API payload shape. None of the previous passes covered this
-# form because _DOT_SENDER_REF_RE only has 2 segments after the step ID.
-#
-# Bug C fix: _HEADERS_DOT_REF_RE now requires the literal ".headers." segment,
-# preventing overlap with _DOT_SENDER_REF_RE on 2-level paths like {N.from.name}.
 # ---------------------------------------------------------------------------
 
 def _resolve_headers_dot_refs(
@@ -938,7 +925,7 @@ def _resolve_headers_dot_refs(
 
     def _sub(m: re.Match) -> str:
         step_id_raw = m.group(1)
-        field_raw = m.group(2).lower()  # e.g. 'from.name', 'subject', 'date'
+        field_raw = m.group(2).lower()
 
         alias = _HEADERS_FIELD_ALIASES.get(field_raw)
         if alias is None:
@@ -967,7 +954,6 @@ def _resolve_headers_dot_refs(
             if extract_mode == "email":
                 addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
                 return addr_m.group(1).strip() if addr_m else raw.strip()
-            # extract_mode == "raw" — return the full header value
             return raw
 
         if msg_idx < len(messages):
@@ -976,7 +962,6 @@ def _resolve_headers_dot_refs(
                 logger.info("Pass0c: resolved %s → '%s' from message[%d]", m.group(0), value, msg_idx)
                 return value
 
-        # Fallback: collect all distinct values across all fetched messages
         seen_vals: list[str] = []
         seen_set: set[str] = set()
         for msg in messages:
@@ -997,15 +982,9 @@ def _resolve_headers_dot_refs(
 
 # ---------------------------------------------------------------------------
 # Pass 1 — template resolver with bracket-index support
-# FIX Bug 1: empty brackets {N.messages[].body} are normalised to {N.messages[*].body}
 # ---------------------------------------------------------------------------
 
 def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logger | None = None) -> Any:
-    """Resolve {N.key[0].sub} bracket-index refs, {N.key} plain refs, and {{N.key}} double-brace refs.
-
-    FIX Bug 1: empty-bracket tokens like {2.messages[].body} are first normalised to
-    {2.messages[*].body} so the existing wildcard path handles them uniformly.
-    """
     if isinstance(value, dict):
         return {k: _resolve_template(v, context, logger) for k, v in value.items()}
     if isinstance(value, list):
@@ -1111,14 +1090,6 @@ def _resolve_gmail_body_variants(
 
 # ---------------------------------------------------------------------------
 # Pass 6 — Drive file field resolver
-#
-# FIX: The LLM generates named-alias task IDs such as "drive-search" that do
-# NOT match the numeric / task-N patterns consumed by Pass 1. When the planner
-# emits a body like "Here is the document: {drive-search.files[0].webViewLink}"
-# the token survives all earlier passes and lands literally in the email.
-#
-# This pass uses _DRIVE_FILE_REF_RE — which matches {<anything>.files[N].field}
-# regardless of the alias — and resolves it from context['drive_payload']['files'].
 # ---------------------------------------------------------------------------
 
 def _resolve_drive_file_refs(
@@ -1150,7 +1121,6 @@ def _resolve_drive_file_refs(
         file_obj = files[idx]
         if not isinstance(file_obj, dict):
             return m.group(0)
-        # Case-insensitive field lookup
         field_lower = field.lower().replace("_", "")
         value = None
         for k, v in file_obj.items():
@@ -1377,6 +1347,7 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
         "$web_search_markdown": _web_search_markdown(context),
         "$web_search_table_values": _web_search_table_values(context),
         "$gmail_message_body": _gmail_messages_body_text(context),
+        "$drive_export_file": context.get("drive_export_content") or context.get("drive_export_file") or "",
     }
     if value in known_resolvers:
         return known_resolvers[value]
@@ -1566,19 +1537,11 @@ def _decode_base64_urlsafe(value: str) -> str:
 
 
 def _is_likely_real_content(value: str) -> bool:
-    """Return True if a string looks like resolved real content rather than a placeholder.
-
-    Bug 5 guard: _is_placeholder() can false-positive on resolved email body text
-    because email bodies often contain patterns like '12.30pm' or '2.regards' which
-    match the bare step-ID regex r'(\d+|task-\d+)\.\w+'. Strings that are multiline
-    or very long are virtually never bare template tokens.
-    """
     return len(value) > 120 or "\n" in value
 
 
 def _is_placeholder(value: str) -> bool:
     stripped = value.strip()
-    # Bug 5: long / multiline strings are resolved content, not placeholders.
     if _is_likely_real_content(stripped):
         return False
     return (
