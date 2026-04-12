@@ -10,6 +10,8 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import json
+import math
 import re
 import threading
 from typing import Any
@@ -22,7 +24,6 @@ from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
 _TIMEOUT_SECONDS = 5
 _BANNED_PATTERNS = [
-    r"\bimport\s+__future__\b",
     r"\bos\.remove\b",
     r"\bos\.system\b",
     r"\bsubprocess\b",
@@ -30,6 +31,40 @@ _BANNED_PATTERNS = [
     r"\bopen\(",
     r"__import__",
 ]
+
+# Safe stdlib modules that the LLM commonly needs for numeric/currency work.
+# These are pre-injected into the sandbox globals so LLM-generated `import X`
+# statements can be stripped without breaking the computation.
+_SAFE_MODULES: dict[str, Any] = {
+    "math": math,
+    "re": re,
+    "json": json,
+}
+
+
+def _sanitize_llm_code(code: str) -> str:
+    """Strip top-level import statements from LLM-generated code.
+
+    RestrictedPython blocks ALL imports via _restricted_import(). The LLM
+    frequently emits `import math` / `import re` / `import json` for simple
+    numeric tasks. Rather than fail at runtime we:
+      1. Remove the import line entirely (the module is pre-injected as a
+         sandbox global, so the name is still available in the namespace).
+      2. Leave all other lines untouched.
+
+    This is intentionally conservative: only bare `import X` and
+    `from X import Y` lines at the start of a physical line are removed.
+    """
+    cleaned_lines: list[str] = []
+    for line in code.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            # Keep the line as a comment so line numbers stay stable for
+            # error messages, but neutralise the import.
+            cleaned_lines.append("# [sandbox-stripped] " + line)
+        else:
+            cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
 
 
 def get_safe_globals() -> dict[str, Any]:
@@ -50,6 +85,8 @@ def get_safe_globals() -> dict[str, Any]:
         if op == '/=': return target / expr
         return expr
     safe_g["_inplacevar_"] = _inplacevar
+    # Pre-inject safe stdlib modules so stripped imports still resolve.
+    safe_g.update(_SAFE_MODULES)
     return safe_g
 
 
@@ -75,7 +112,10 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
     """Execute *code* inside RestrictedPython, storing a CodeExecutionResult in result_holder[0]."""
     exec_result = CodeExecutionResult(code=code)
     try:
-        byte_code = compile_restricted(code, filename="<string>", mode="exec")
+        # Strip import statements before compilation — the sandbox forbids them
+        # but pre-injects the most common modules (math, re, json) as globals.
+        sanitized = _sanitize_llm_code(code)
+        byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
@@ -91,10 +131,8 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         results_vars = {
             k: v for k, v in sandbox_globals.items()
             if not k.startswith("_") and k != "__builtins__" and not callable(v)
+            and k not in _SAFE_MODULES
         }
-        # If the code assigned a top-level `result` variable, expose that directly
-        # as return_value so that parsed_value == result (not a dict containing both
-        # "result" and "_result" keys, which violates the structured contract).
         if "result" in sandbox_globals:
             exec_result.return_value = sandbox_globals["result"]
         else:
@@ -113,7 +151,6 @@ def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
         "stderr": result.stderr,
         "parsed_value": result.return_value,
     }
-    # Flatten variables into top-level for easier placeholder and verification access
     if isinstance(result.return_value, dict):
         output.update(result.return_value)
 
@@ -128,21 +165,16 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
     """Execute code in an E2B cloud sandbox using the latest Sandbox API."""
     try:
         from e2b_code_interpreter import Sandbox
-        # Sandbox.create() uses E2B_API_KEY env var if api_key is not passed or if configured globally.
-        # We pass it explicitly to be sure.
         with Sandbox.create(api_key=api_key) as sandbox:
             execution = sandbox.run_code(code)
-            
             stdout = "\n".join(str(log.text) if hasattr(log, "text") else str(log) for log in execution.logs.stdout)
             stderr = "\n".join(str(log.text) if hasattr(log, "text") else str(log) for log in execution.logs.stderr)
-            
             if execution.error:
                 return StructuredToolResult(
                     success=False,
                     output={"code": code, "stdout": stdout, "stderr": stderr, "parsed_value": None},
                     error=f"E2BError: {execution.error.name}: {execution.error.value}",
                 )
-            
             return StructuredToolResult(
                 success=True,
                 output={"code": code, "stdout": stdout, "stderr": stderr, "parsed_value": execution.text},
@@ -156,7 +188,7 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
         )
 
 
-def execute_generated_code(code: str, config: AppConfigModel | None = None) -> StructuredToolResult:
+def execute_generated_code(code: str, config=None) -> StructuredToolResult:
     validation_error = _validate_submitted_code(code)
     if validation_error:
         return StructuredToolResult(
@@ -165,18 +197,15 @@ def execute_generated_code(code: str, config: AppConfigModel | None = None) -> S
             error=validation_error,
         )
 
-    # Dispatch to E2B if configured and key is present
-    if config and config.code_execution_backend == "e2b" and config.e2b_api_key:
+    if config and getattr(config, "code_execution_backend", None) == "e2b" and getattr(config, "e2b_api_key", None):
         return _execute_e2b(code, config.e2b_api_key)
 
-    # Default to local RestrictedPython
     result_holder: list[CodeExecutionResult] = []
     thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder), daemon=True)
     thread.start()
     thread.join(timeout=_TIMEOUT_SECONDS)
 
     if thread.is_alive():
-        # Thread is stuck (infinite loop etc.) — we cannot truly kill it, but we report timeout.
         return StructuredToolResult(
             success=False,
             output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
@@ -193,7 +222,7 @@ def execute_generated_code(code: str, config: AppConfigModel | None = None) -> S
     return normalize_code_result(result_holder[0])
 
 
-def code_execution_tool_with_config(config: AppConfigModel, logger: Any):
+def code_execution_tool_with_config(config, logger: Any):
     """Factory to create a config-aware code execution tool for LangChain."""
     @tool
     def code_execution_tool(code: str) -> dict[str, Any]:
