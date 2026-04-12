@@ -319,12 +319,21 @@ def plan_with_langchain(
     """
     catalog_summary = _build_catalog_prompt()
 
+    # Bug D fix: _build_catalog_prompt() returns text that may contain '{' and '}'
+    # characters from ParameterSpec example values (e.g. JSON snippets, Python
+    # repr output like "{'key': 'val'}", or bracket-notation like 'sheets[]').
+    # LangChain's ChatPromptTemplate parses the system-prompt string for {variable}
+    # slots and raises ValueError / KeyError on any token it cannot match to an
+    # input variable.  Escaping all braces to '{{' / '}}' is the standard
+    # LangChain convention — doubled braces are emitted as literals at render time.
+    catalog_summary_escaped = catalog_summary.replace("{", "{{").replace("}", "}}")
+
     system_prompt = (
         "You are an expert Google Workspace automation planner. "
         "Break down the user's request into a sequential plan of discrete tasks using ONLY "
         "the services and actions listed in the catalog below.\n\n"
         "AVAILABLE SERVICES, ACTIONS, AND PARAMETERS:\n"
-        f"{catalog_summary}\n\n"
+        f"{catalog_summary_escaped}\n\n"
         "STRICT RULES:\n"
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
         "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
