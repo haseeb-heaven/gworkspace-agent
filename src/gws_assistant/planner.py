@@ -20,6 +20,10 @@ _DRIVE_OPS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Services that are recognised by the LLM but have no real CLI backing.
+# build_command returns a no-op result instead of raising ValidationError.
+_UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
+
 
 class CommandPlanner:
     """Validates service/action and builds gws command arguments."""
@@ -56,6 +60,13 @@ class CommandPlanner:
         return SERVICES[service_key].actions[action_key].parameters
 
     def build_command(self, service: str, action: str, parameters: dict[str, Any]) -> list[str]:
+        # Gracefully skip services that have no real CLI backing (e.g. admin, analytics).
+        if str(service).lower() in _UNSUPPORTED_STUB_SERVICES:
+            raise ValidationError(
+                f"Service '{service}' is not supported by the Google Workspace CLI. "
+                f"Action '{action}' will be skipped."
+            )
+
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
