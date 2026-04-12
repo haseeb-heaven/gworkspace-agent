@@ -303,6 +303,7 @@ class PlanExecutor:
                 pass
 
         return result
+
     def _expand_task(self, task: PlannedTask, context: dict[str, Any]) -> list[PlannedTask]:
         if task.service != "gmail" or task.action != "get_message":
             return [task]
@@ -331,6 +332,25 @@ class PlanExecutor:
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         parameters = _resolve_template(task.parameters, context)
+
+        # ------------------------------------------------------------------ #
+        # BUG FIX 1: Resolve bare 'N.field' step-output references            #
+        # The LLM planner sometimes emits a raw step-number reference such as  #
+        # spreadsheetid='4.id' instead of the double-brace form '{{4.id}}'.   #
+        # After the standard template pass above, any such strings remain      #
+        # unresolved.  We do a second targeted pass here.                      #
+        # ------------------------------------------------------------------ #
+        parameters = _resolve_bare_step_id_params(parameters, context)
+
+        # ------------------------------------------------------------------ #
+        # BUG FIX 2: Replace natural-language extraction instructions with    #
+        # actual numeric values extracted from web search results.             #
+        # The planner sometimes writes the extraction instruction itself as    #
+        # the cell value (e.g. 'extract rate from search result 6 and put as  #
+        # rate') instead of the resolved number.  Detect this and substitute. #
+        # ------------------------------------------------------------------ #
+        if context.get("web_search_results"):
+            parameters = _resolve_search_extraction_params(parameters, context, self.logger)
 
         # Resolve nested $ placeholders inside list/dict values (e.g. [["$gmail_message_body"]])
         parameters = _resolve_nested_dollar(parameters, context, self)
@@ -538,6 +558,133 @@ class PlanExecutor:
                 rendered = " | ".join(str(cell) for cell in row)
                 lines.append(rendered)
         return "\n".join(lines).strip()
+
+
+# ---------------------------------------------------------------------------
+# BUG FIX 1 helpers — bare step-ID param resolution
+# ---------------------------------------------------------------------------
+
+_BARE_STEP_REF_RE = re.compile(r"^(\d+|task-\d+)\.([\w\.]+)$")
+
+
+def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
+    """Second-pass resolver for bare 'N.field' references that the LLM emits
+    instead of the canonical '{{N.field}}' form.
+
+    After _resolve_template() runs, any parameter whose value is still a plain
+    string matching ``<step_number>.<field>`` (e.g. ``4.id`` or ``task-3.spreadsheetId``)
+    is looked up against ``context['task_results']`` and replaced with the real
+    value when found.
+    """
+    if isinstance(params, dict):
+        return {k: _resolve_bare_step_id_params(v, context) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_bare_step_id_params(item, context) for item in params]
+    if not isinstance(params, str):
+        return params
+
+    m = _BARE_STEP_REF_RE.match(params.strip())
+    if not m:
+        return params
+
+    step_id = m.group(1)
+    key_path = m.group(2)
+    results = context.get("task_results", {})
+    payload = results.get(step_id)
+    if not isinstance(payload, dict):
+        return params
+
+    current: Any = payload
+    for part in key_path.split("."):
+        if not isinstance(current, dict):
+            return params  # can't dig deeper — leave unchanged
+        norm = part.lower().replace("_", "")
+        matched = None
+        for k, v in current.items():
+            if k.lower().replace("_", "") == norm:
+                matched = v
+                break
+        if matched is None:
+            # Heuristic: spreadsheetid / id shorthand
+            if norm in ("id", "spreadsheetid") and "spreadsheetId" in current:
+                matched = current["spreadsheetId"]
+            elif norm in ("id", "documentid") and "documentId" in current:
+                matched = current["documentId"]
+            else:
+                return params  # not resolvable
+        current = matched
+
+    return str(current) if current is not None else params
+
+
+# ---------------------------------------------------------------------------
+# BUG FIX 2 helpers — web-search extraction instruction replacement
+# ---------------------------------------------------------------------------
+
+_EXTRACTION_KEYWORDS = (
+    "extract", "parse", "get rate", "put as", "from search result",
+    "from result", "currency rate", "exchange rate",
+)
+
+
+def _looks_like_extraction_instruction(value: str) -> bool:
+    """Return True when a parameter string reads like a natural-language
+    extraction instruction rather than a real value to be written to a cell."""
+    lowered = value.lower().strip()
+    return any(kw in lowered for kw in _EXTRACTION_KEYWORDS)
+
+
+def _extract_numeric_from_web_search(context: dict[str, Any]) -> str | None:
+    """Scan web_search_results for the first float that looks like a currency
+    exchange rate (> 1, < 200) and return it as a string."""
+    results = context.get("web_search_results") or []
+    # Simple regex: match floats in the content field of results.
+    float_re = re.compile(r"\b(\d{1,4}\.\d{2,6})\b")
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or item.get("snippet") or "")
+        for match in float_re.finditer(content):
+            candidate = float(match.group(1))
+            # Exchange rates USD→INR are in [80, 110]; generalise to [1, 200]
+            if 1.0 < candidate < 200.0:
+                return str(round(candidate, 4))
+    return None
+
+
+def _resolve_search_extraction_params(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    """Walk ``params`` and replace any string value that looks like a
+    natural-language extraction instruction with the numeric value extracted
+    from web_search_results."""
+    if isinstance(params, dict):
+        return {
+            k: _resolve_search_extraction_params(v, context, logger)
+            for k, v in params.items()
+        }
+    if isinstance(params, list):
+        return [_resolve_search_extraction_params(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+    if not _looks_like_extraction_instruction(params):
+        return params
+
+    extracted = _extract_numeric_from_web_search(context)
+    if extracted is not None:
+        logger.info(
+            "BugFix2: replaced extraction instruction '%s' with extracted value '%s'",
+            params[:80], extracted,
+        )
+        return extracted
+
+    logger.warning(
+        "BugFix2: could not extract numeric value for instruction '%s'; leaving unchanged.",
+        params[:80],
+    )
+    return params
 
 
 # ---------------------------------------------------------------------------
