@@ -13,6 +13,37 @@ from .service_catalog import SERVICES
 
 _DEFAULT_CONFIDENCE = 0.9
 
+# Flat JSON schema for RequestPlan that avoids Pydantic default_factory serialization
+# warnings and provider incompatibilities with with_structured_output.
+_REQUEST_PLAN_SCHEMA = {
+    "name": "RequestPlan",
+    "description": "A sequential plan of Google Workspace tasks.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "tasks": {
+                "type": "array",
+                "description": "Ordered list of tasks to execute.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "service": {"type": "string"},
+                        "action": {"type": "string"},
+                        "parameters": {"type": "object"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["id", "service", "action"],
+                },
+            },
+            "summary": {"type": "string"},
+            "confidence": {"type": "number"},
+            "no_service_detected": {"type": "boolean"},
+        },
+        "required": ["tasks"],
+    },
+}
+
 
 def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
     try:
@@ -29,7 +60,12 @@ def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI |
 
 def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger,
                         memory_hint: str = "") -> RequestPlan | None:
-    """Uses a Chat model with structured output to plan Workspace tasks."""
+    """Uses a Chat model with structured output to plan Workspace tasks.
+
+    Uses a hand-crafted JSON schema instead of Pydantic model introspection to
+    avoid 'NoneType not iterable' errors caused by default_factory fields that
+    some providers cannot serialize.
+    """
     model = create_agent(config, logger)
     if not model:
         return None
@@ -74,7 +110,9 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
     plan_data: Any = None
     for attempt in range(max_retries):
         try:
-            chain = prompt | model.with_structured_output(RequestPlan)
+            # Use the hand-crafted schema to avoid Pydantic default_factory
+            # serialization issues ('NoneType' not iterable on some providers).
+            chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
             plan_data = chain.invoke(
                  {"request": text},
                  config=RunnableConfig(metadata={"timeout": config.timeout_seconds})
@@ -92,7 +130,7 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         logger.warning("LLM planning returned None.")
         return None
 
-    # Handle cases where the model returns a dict instead of a RequestPlan object (common with some providers)
+    # The schema always returns a dict — normalise it into a RequestPlan.
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
         if not isinstance(tasks_data, list):
@@ -111,14 +149,12 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
             raw_text=text,
             tasks=tasks,
             summary=str(plan_data.get("summary", "Generated Workspace Plan")),
-            confidence=float(plan_data.get("confidence", _DEFAULT_CONFIDENCE)),
+            confidence=float(plan_data.get("confidence") or _DEFAULT_CONFIDENCE),
             no_service_detected=bool(plan_data.get("no_service_detected", False)),
             source="langchain"
         )
 
-    # Post-invoke confidence normalization hook:
-    # If the model returned a valid plan but confidence was not set (0.0),
-    # apply the default confidence so downstream consumers get a meaningful score.
+    # Pydantic object path (some providers return a typed object despite the schema).
     if hasattr(plan_data, "confidence") and plan_data.confidence == 0.0:
         plan_data.confidence = _DEFAULT_CONFIDENCE
 

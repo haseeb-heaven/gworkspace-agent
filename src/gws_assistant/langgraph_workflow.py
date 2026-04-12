@@ -24,7 +24,7 @@ from gws_assistant.langchain_agent import create_agent
 
 _MAX_HISTORY = 10
 
-# Keywords that signal the intent is to find/search external data.
+# Keywords that signal intent to search external data.
 _SEARCH_INTENT_KEYWORDS = (
     "find top",
     "search for",
@@ -38,9 +38,48 @@ _SEARCH_INTENT_KEYWORDS = (
     "best ",
 )
 
+# GWS service keywords — queries containing these should route to execute_task
+# even when heuristic planning returns 0 tasks, NOT to generate_code.
+_GWS_INTENT_KEYWORDS = (
+    "email",
+    "gmail",
+    "sheet",
+    "spreadsheet",
+    "google doc",
+    "drive",
+    "calendar",
+    "slides",
+    "send",
+    "create",
+    "extract data",
+    "search emails",
+    "job offer",
+    "inbox",
+)
+
+# Phrases that indicate an LLM refusal or non-code response.
+_REFUSAL_PHRASES = (
+    "i'm sorry",
+    "i am sorry",
+    "i can't help",
+    "i cannot help",
+    "i'm not able",
+    "i am not able",
+    "as an ai",
+    "as a language model",
+    "cannot assist",
+    "unable to assist",
+)
+
 
 def _trim_history(messages: list[Any]) -> list[Any]:
     return messages[-_MAX_HISTORY:]
+
+
+def _is_llm_refusal(code: str) -> bool:
+    """Return True if the string looks like an LLM refusal rather than Python code."""
+    lowered = code.lower().strip()
+    return any(phrase in lowered for phrase in _REFUSAL_PHRASES)
 
 
 def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
@@ -185,12 +224,23 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if result.get("error"):
             structured = StructuredToolResult(success=False, output=result, error=result["error"])
             return {"last_result": structured, "error": result["error"]}
-        summary = summarize_results.invoke({"text": str(result.get("results"))})
-        structured = StructuredToolResult(success=True, output={"query": state["user_text"], "summary": summary, "results": result.get("results", [])}, error=None)
-        # Store summary for downstream docs/sheets tasks to consume via $web_search_summary.
+        # Isolate summarize so its failure never kills the search result.
+        summary = ""
+        try:
+            summary = summarize_results.invoke({"text": str(result.get("results"))})
+        except Exception as _sum_exc:
+            logger.warning("summarize_results failed in web_search_node (ignored): %s", _sum_exc)
+        structured = StructuredToolResult(
+            success=True,
+            output={"query": state["user_text"], "summary": summary, "results": result.get("results", [])},
+            error=None,
+        )
         context = dict(state.get("context", {}))
         context["web_search_summary"] = summary
-        context["web_search_rows"] = [[r.get("title", ""), r.get("url", ""), r.get("snippet", "")] for r in result.get("results", [])]
+        context["web_search_rows"] = [
+            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
+            for r in result.get("results", [])
+        ]
         return {
             "final_output": f"Web Search Result:\n\n{summary}",
             "last_result": structured,
@@ -213,15 +263,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             }
         result = execute_generated_code(str(code), config=config)
         _log_step("sandbox_execute", {"code": code}, result)
-        
-        # Update context for placeholders
+
         context = dict(state.get("context", {}))
         results_map = context.setdefault("task_results", {})
-        # Since this is a standalone code execution node (not part of sequence),
-        # we index it under 'code' and 'computation'
         results_map["code"] = result.get("output", {})
         results_map["computation"] = result.get("output", {})
-        
+
         return {
             "last_result": result,
             "error": result.get("error"),
@@ -257,6 +304,19 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if not isinstance(content, str):
             content = str(content)
         generated_code = content.strip().removeprefix("```python").removeprefix("```").removesuffix("```").strip()
+
+        # Guard: if the LLM refused or returned non-code, don't pass it to the sandbox.
+        if _is_llm_refusal(generated_code):
+            logger.warning("generate_code_node: LLM returned a refusal, not executable code.")
+            return {
+                "error": "LLM declined to generate code for this request. Try rephrasing as a computation task.",
+                "last_result": StructuredToolResult(
+                    success=False,
+                    output={"prompt": prompt, "response": generated_code},
+                    error="llm_refusal",
+                ),
+            }
+
         context = dict(state.get("context", {}))
         context["generated_code"] = generated_code
         _log_step("generate_code", {"prompt": state["user_text"]}, {"generated_code": generated_code})
@@ -268,34 +328,37 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         plan = state.get("plan")
         text = state["user_text"].lower()
 
-        # Route to web_search if:
-        # 1. Plan has no tasks (tasks=0) regardless of no_service_detected flag, OR
-        # 2. Plan explicitly signals needs_web_search, OR
-        # 3. Query contains search intent keywords and has save-to-workspace intent
         has_search_intent = any(kw in text for kw in _SEARCH_INTENT_KEYWORDS)
+        has_gws_intent = any(kw in text for kw in _GWS_INTENT_KEYWORDS)
         plan_has_tasks = bool(plan and plan.tasks)
         needs_web_search = getattr(plan, "needs_web_search", False) if plan else False
 
         if needs_web_search:
             return "web_search"
 
-        if not plan_has_tasks:
-            # No plan or empty plan — determine best fallback
-            if has_search_intent or needs_web_search:
-                return "web_search"
-            if getattr(plan, "needs_code_execution", False) or any(keyword in text for keyword in ("calculate", "compute", "sum", "average")):
-                return "generate_code"
-            return "format_output"
-
-        # Plan has tasks — check if it's a web-search-then-save workflow
-        # (tasks reference $web_search_summary or $web_search_rows)
-        if plan:
+        if plan_has_tasks:
+            # Plan has tasks — check if it's a web-search-then-save workflow
             for task in plan.tasks:
                 params = task.parameters or {}
                 if any("$web_search" in str(v) for v in params.values()):
                     return "web_search"
+            return "validate"
 
-        return "validate"
+        # No tasks in plan — determine best fallback.
+        # GWS-intent queries (email, sheets, drive...) should NOT fall to generate_code;
+        # return format_output with a helpful message instead.
+        if has_gws_intent:
+            return "format_output"
+
+        if has_search_intent:
+            return "web_search"
+
+        if getattr(plan, "needs_code_execution", False) or any(
+            kw in text for kw in ("calculate", "compute", "sum", "average")
+        ):
+            return "generate_code"
+
+        return "format_output"
 
     def route_after_web_search(state: AgentState) -> Literal["validate", "format_output"]:
         """After web search, if the plan has workspace tasks to execute, go to validate."""
@@ -314,7 +377,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if decision.action == "continue":
             return "update_context" if not state.get("error") else "format_output"
         if decision.action == "retry":
-            # If we failed during code execution, retry from generate_code/code_execution
             if state.get("context", {}).get("generated_code"):
                 return "generate_code"
             return "execute_task"
@@ -347,7 +409,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     workflow.add_conditional_edges("execute_task", route_after_task)
     workflow.add_conditional_edges("reflect_node", route_after_reflection)
     workflow.add_conditional_edges("update_context", route_after_context)
-    # web_search now routes to validate (if plan has workspace tasks) or format_output
     workflow.add_conditional_edges("web_search", route_after_web_search)
     workflow.add_edge("generate_code", "code_execution")
     workflow.add_edge("code_execution", "reflect_node")
