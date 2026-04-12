@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from typing import Any
+from attr import dataclass
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import APIErrorType, ValidationError, classify_api_error
@@ -114,8 +115,7 @@ _HEADERS_FIELD_ALIASES: dict[str, tuple[str, str]] = {
 # Fix #2 — structured reflection advice
 # ---------------------------------------------------------------------------
 
-@dataclass_like = None  # sentinel; using plain class below for slots compat
-
+@dataclass(slots=True) # sentinel; using plain class below for slots compat
 class _ReflectionAdvice:
     """Internal result of _reflect_on_failure() — typed, not a raw string."""
     __slots__ = ("error_type", "should_retry", "suggestion", "summary")
@@ -301,7 +301,8 @@ class PlanExecutor:
 
         if task.service == "drive":
             # Force fullText fallback: strip any structured syntax and use fullText.
-            safe_q = f"fullText contains '{raw_q.strip(chr(39)+'"')}'"  # noqa
+            strip_chars = chr(39) + '"'
+            safe_q = "fullText contains '{}'".format(raw_q.strip(strip_chars))
             self.logger.info(
                 "INVALID_QUERY retry (drive): q=%r → fullText fallback q=%r", raw_q, safe_q
             )
