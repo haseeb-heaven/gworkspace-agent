@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import Any
 
 from .exceptions import ValidationError
 from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
+
+# Drive API v3 query operator keywords — if NONE appear in the submitted query
+# it is a bare name string which the API rejects with 400 Invalid Value.
+_DRIVE_OPS_RE = re.compile(
+    r"\b(contains|and|or|not|in|parents|mimeType|name|fullText"
+    r"|trashed|starred|sharedWithMe|modifiedTime|createdTime"
+    r"|viewedByMeTime|quotaBytesUsed|properties|appProperties|visibility)\b",
+    re.IGNORECASE,
+)
 
 
 class CommandPlanner:
@@ -79,6 +89,10 @@ class CommandPlanner:
                 "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
             }
             if query:
+                # Fix: bare name strings with no Drive query operators cause HTTP 400 Invalid Value.
+                # e.g. q="Agentic AI - Builders" → q="fullText contains 'Agentic AI - Builders'"
+                if "=" not in query and not _DRIVE_OPS_RE.search(query):
+                    query = f"fullText contains '{query}'"
                 request_params["q"] = query
             return [
                 "drive",
@@ -275,7 +289,6 @@ class CommandPlanner:
                 json.dumps(doc_body, ensure_ascii=True),
             ]
         if action == "get_document":
-            # Resolve parameter: LLM may emit 'document_id', 'documentId', or 'fileId'
             doc_id = (
                 params.get("document_id")
                 or params.get("documentId")
