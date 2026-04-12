@@ -3,24 +3,24 @@
 An intelligent, agentic CLI and GUI for Google Workspace automation with a shared execution contract (typed state, structured tool results, reflection-aware retries).
 
 > 🔀 **Repository branch roles:**
-> - [`master`](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) — core generic ReAct engine
-> - [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) — deterministic generic research pipeline
-> - [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) — generic multi-step computation-first tool agent
+> - [`master`](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) — core generic ReAct engine (base)
+> - [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) — CrewAI-powered multi-step Workspace automation
+> - [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) — LangChain + LangGraph research + compute + Workspace pipeline
 
 ---
 
 ## Why Three Branches?
 
 | Feature | [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) | [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
-|---------|----------|--------------|
+|---------|----------|--------------| 
 | LLM Framework | CrewAI | LangChain + LangGraph |
 | Orchestration | ReAct loop (sequential task planner) | LangGraph StateGraph (DAG-based) |
-| Internet Web Search | ❌ | ✅ DuckDuckGo / Tavily |
-| Sandboxed Code Execution | ❌ | ✅ RestrictedPython sandbox |
+| Internet Web Search | ✅ | ✅ DuckDuckGo / Tavily |
+| Sandboxed Code Execution | ✅ | ✅ RestrictedPython sandbox |
 | Workspace Automation | ✅ Full | ✅ Full + Google Meet & Chat |
 | Heuristic Fallback (no API key) | ✅ | ✅ |
 | Retry / Exponential Backoff | ❌ | ✅ |
-| Best For | Fast, reliable Workspace-only tasks | Complex research + compute + Workspace workflows |
+| Best For | Professional multi-step automation scripts | Complex research + compute + Workspace workflows |
 
 ---
 
@@ -52,7 +52,7 @@ flowchart LR
 #### ReAct Loop — Step-by-Step
 
 | Step | Component | What Happens |
-|------|-----------|--------------|
+|------|-----------|--------------| 
 | 1 | **Intent Parser** | Detects which Google services (Gmail, Drive, Sheets, etc.) are mentioned |
 | 2 | **LLM Planner** | CrewAI or LangChain agent decomposes the request into an ordered list of tasks with parameters and `$placeholder` variables |
 | 3 | **Task Expander** | Resolves `$placeholders` (e.g., `$last_spreadsheet_id` → actual ID from prior step) and expands batch operations |
@@ -131,7 +131,7 @@ graph TD
 ## Supported Services
 
 | Service | Actions | crew-ai | langchain-ai |
-|---------|---------|---------|--------------|
+|---------|---------|---------|--------------| 
 | Gmail | `list_messages`, `get_message`, `send_message` | ✅ | ✅ |
 | Google Drive | `list_files`, `create_folder`, `get_file`, `delete_file` | ✅ | ✅ |
 | Google Sheets | `create_spreadsheet`, `get_spreadsheet`, `get_values`, `append_values` | ✅ | ✅ |
@@ -190,13 +190,13 @@ Run a single task:
 python .\gws_cli.py --task "List my unread Gmail messages about invoices and save them to a new Google Sheet"
 ```
 
-Force heuristic mode:
+Force heuristic mode (no API key required):
 
 ```powershell
 python .\gws_cli.py --no-langchain --task "Search Drive for quarterly planning docs"
 ```
 
-Launch Gradio:
+Launch Gradio web UI:
 
 ```powershell
 python .\gws_gradio.py
@@ -204,10 +204,29 @@ python .\gws_gradio.py
 
 ## Example Workflows
 
-Research + Docs + Sheets + Gmail:
+**Research + Docs + Sheets + Gmail:**
 
 ```text
-No Google Workspace service detected in your request.
+User: Find the latest Python 3.13 release notes, summarise them into a Google Doc,
+      create a tracking Sheet with key changes, and email it to my team.
+
+Agent:
+  [1] web_search       → "Python 3.13 release notes"
+  [2] summarize        → LLM-powered summary of search results
+  [3] docs.create      → Google Doc created with summary
+  [4] sheets.create    → Spreadsheet created with key changes table
+  [5] gmail.send       → Email sent with Doc + Sheet links attached
+```
+
+**Heuristic fallback (no API key):**
+
+```text
+User: List my Drive files and append them to an existing spreadsheet.
+
+Agent (heuristic mode):
+  [1] drive.list_files        → Lists all Drive files
+  [2] sheets.append_values    → Appends file names + links to spreadsheet
+                                 using $drive_summary_values placeholder
 ```
 
 ---
@@ -216,11 +235,12 @@ No Google Workspace service detected in your request.
 
 ```text
 .
-├── cli.py                    # Main CLI entry point
-├── gws_cli.py                # Backward-compatible launcher
+├── cli.py                    # Compatibility shim (delegates to gws_cli.py)
+├── gws_cli.py                # Main CLI entry point
 ├── gws_gui.py                # Tkinter GUI launcher
 ├── gws_gradio.py             # Gradio web UI launcher
 ├── requirements.txt
+├── .env.example              # Environment variable template
 └── src/
     └── gws_assistant/
         ├── agent_system.py        # LLM + heuristic planning (ReAct loop core)
@@ -229,7 +249,7 @@ No Google Workspace service detected in your request.
         ├── conversation.py        # Orchestration: parsing → planning → execution
         ├── execution.py           # Task expansion, placeholder resolution, context store
         ├── gradio_app.py          # Gradio web interface
-        ├── gws_runner.py          # Subprocess runner for gws.exe
+        ├── gws_runner.py          # Subprocess runner for gws.exe (with retry/backoff)
         ├── output_formatter.py    # Human-readable output (tables, summaries)
         ├── planner.py             # Command argument construction
         ├── relevance.py           # Post-retrieval relevance scoring & filtering
@@ -243,6 +263,12 @@ No Google Workspace service detected in your request.
             ├── web_search.py      # DuckDuckGo / Tavily integration
             └── code_executor.py   # RestrictedPython sandbox
 └── tests/
+    ├── test_langchain_agent.py    # LangChain planner unit tests
+    ├── test_langgraph_workflow.py # LangGraph DAG integration tests
+    ├── test_heuristic.py          # Heuristic fallback planner tests
+    ├── test_config.py             # Environment config loading tests
+    ├── test_retry.py              # GWS runner retry/backoff tests
+    └── test_smoke.py              # CLI launcher smoke test
 ```
 
 ---
@@ -271,17 +297,17 @@ python -m pytest
 | Branch | Framework | Extra Capabilities | Link |
 |--------|-----------|-------------------|------|
 | `master` | CrewAI (base) | Core ReAct Workspace automation | [master](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) |
-| `crew-ai` | CrewAI | Full ReAct loop, multi-service | [crew-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) |
-| `langchain-ai` | LangChain + LangGraph | Web Search + Code Sandbox| [langchain-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
+| `crew-ai` | CrewAI | Full ReAct loop, web search, code execution, multi-service | [crew-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) |
+| `langchain-ai` | LangChain + LangGraph | Web Search + Code Sandbox + Retry + Meet & Chat | [langchain-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
 
 ---
 
 ## Changelogs
-For changelogs check [CHANGELOG](https://github.com/haseeb-heaven/gworkspace-agent/CHANGELOG.md)
+For changelogs check [CHANGELOG](https://github.com/haseeb-heaven/gworkspace-agent/blob/master/CHANGELOG.md)
 
 ## License
 
 This project is licensed under the **MIT License**.
 
 ## Author
-This project is created and maintained by [Haseeb-Heaven](www.github.com/haseeb-heaven).
+This project is created and maintained by [Haseeb-Heaven](https://www.github.com/haseeb-heaven).
