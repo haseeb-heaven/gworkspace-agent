@@ -508,13 +508,22 @@ class PlanExecutor:
                     self.logger.info("Auto-resolved to_email from context: %s", resolved_addr)
                     parameters["to_email"] = resolved_addr
 
-        if (task.service == "sheets" and task.action == "append_values"
-                and "range" in parameters and context.get("last_spreadsheet_tab")):
+        # Fix: extend tab-name substitution to both append_values AND get_values.
+        # Previously only append_values rewrote Sheet1!... ranges to the real tab name,
+        # causing sheets.get_values to fail with "Unable to parse range: Sheet1!C1".
+        if (task.service == "sheets"
+                and task.action in ("append_values", "get_values")
+                and "range" in parameters
+                and context.get("last_spreadsheet_tab")):
             rng = str(parameters.get("range") or "")
             tab = context["last_spreadsheet_tab"]
             if rng.startswith("Sheet1!") or rng == "Sheet1":
                 cell_part = rng.split("!", 1)[1] if "!" in rng else "A1"
                 parameters["range"] = f"'{tab}'!{cell_part}" if " " in tab else f"{tab}!{cell_part}"
+                self.logger.info(
+                    "Tab-fix: rewrote range '%s' → '%s' for %s",
+                    rng, parameters["range"], task.action,
+                )
             elif "!" not in rng:
                 parameters["range"] = f"'{tab}'!{rng}" if " " in tab else f"{tab}!{rng}"
 
