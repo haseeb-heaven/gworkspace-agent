@@ -1315,6 +1315,7 @@ def _is_placeholder(value: str) -> bool:
         or "_from_task_" in stripped
         or "from_task_" in stripped
         or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.]+\}", stripped))
+        or bool(re.search(r"(\d+|task-\d+)\.[\w\.]+", stripped))
     )
 
 
