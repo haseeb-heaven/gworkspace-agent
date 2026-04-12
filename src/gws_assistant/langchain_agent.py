@@ -1,6 +1,7 @@
 """LangChain-backed planning and reasoning agent."""
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -13,8 +14,6 @@ from .service_catalog import SERVICES
 
 _DEFAULT_CONFIDENCE = 0.9
 
-# Flat JSON schema for RequestPlan that avoids Pydantic default_factory serialization
-# warnings and provider incompatibilities with with_structured_output.
 _REQUEST_PLAN_SCHEMA = {
     "name": "RequestPlan",
     "description": "A sequential plan of Google Workspace tasks.",
@@ -44,7 +43,7 @@ _REQUEST_PLAN_SCHEMA = {
     },
 }
 
-# Keywords that signal the user wants an email to be sent.
+# Keywords that signal the user wants an outgoing email sent.
 _EMAIL_SEND_KEYWORDS = (
     "send email", "send invoice", "send mail", "email me", "mail me",
     "send me", "invoice email", "send a mail", "send an email", "email to",
@@ -52,19 +51,23 @@ _EMAIL_SEND_KEYWORDS = (
 
 
 def _request_requires_send_email(text: str) -> bool:
-    """Return True when the user request clearly asks for an outgoing email."""
     lowered = text.lower()
     return any(kw in lowered for kw in _EMAIL_SEND_KEYWORDS)
 
 
 def _plan_has_send_task(tasks: list[dict]) -> bool:
-    """Return True when at least one task in the raw task list is a gmail send."""
     for t in tasks:
         if not isinstance(t, dict):
             continue
         if t.get("service") == "gmail" and t.get("action") == "send_message":
             return True
     return False
+
+
+def _extract_explicit_email(text: str) -> str:
+    """Return the first explicit e-mail address present in the user request text."""
+    m = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text)
+    return m.group(0) if m else ""
 
 
 def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
@@ -82,17 +85,10 @@ def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI |
 
 def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger,
                         memory_hint: str = "") -> RequestPlan | None:
-    """Uses a Chat model with structured output to plan Workspace tasks.
-
-    Uses a hand-crafted JSON schema instead of Pydantic model introspection to
-    avoid 'NoneType not iterable' errors caused by default_factory fields that
-    some providers cannot serialize.
-    """
     model = create_agent(config, logger)
     if not model:
         return None
 
-    # Convert catalog to a concise summary for the prompt
     catalog_lines = []
     for s_key, s_spec in SERVICES.items():
         actions_str = ", ".join(s_spec.actions.keys())
@@ -113,17 +109,21 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         "3. EXPORTS: For Drive exports (Docs/Sheets), ALWAYS call drive.export_file. Do NOT use Docs/Sheets APIs for exporting.\n"
         "4. WEB SEARCH: If the user asks for information not in their Workspace (e.g. 'Top 3 AI frameworks'), use search.web_search first.\n"
         "   After a web search, ALWAYS use the $web_search_table_values placeholder for cell values — do NOT write\n"
-        "   natural-language extraction instructions (e.g. 'extract rate from search result 6') as cell values.\n"
-        "   Use only concrete values or the $web_search_* placeholder tokens.\n"
+        "   natural-language extraction instructions as cell values.\n"
         "5. PARAMETER BINDING: The system automatically links 'id', 'spreadsheet_id', and 'document_id' between sequential tasks.\n"
-        "6. DO NOT invent services or actions that are not in the catalog. Use ONLY what is provided.\n"
-        "7. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones, and ignore the unsupported ones. Do NOT set no_service_detected=true if AT LEAST ONE supported service can be used.\n"
-        "8. PIPELINE ENFORCEMENT: For complex workflows, prefer the sequence: web_search -> summarize_results -> docs.create_document -> sheets.append_values -> gmail.send_message.\n"
-        "9. SEND EMAIL REQUIREMENT: If the user request contains any intent to send an email (keywords: send email,\n"
-        "   send invoice, email me, mail me, send me, invoice email, email to), you MUST include a gmail.send_message\n"
-        "   task as the LAST step. Its 'to_email' should be the address mentioned by the user. Its 'body' should\n"
-        "   reference $sheet_email_body or $web_search_markdown as appropriate. This step is MANDATORY and must\n"
-        "   not be omitted."
+        "6. DO NOT invent services or actions that are not in the catalog.\n"
+        "7. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones.\n"
+        "8. PIPELINE ENFORCEMENT: For complex workflows, prefer the sequence: web_search -> code -> sheets.append_values -> gmail.send_message.\n"
+        "9. CODE EXECUTOR OUTPUT: When a 'code' task computes values (e.g. USD/INR totals), the next sheets.append_values\n"
+        "   task MUST use the token $last_code_result (for a single scalar) or PLACEHOLDER_AMOUNT as the cell value.\n"
+        "   Do NOT write literal strings like 'PLACEHOLDER_AMOUNT' — the executor resolves them automatically.\n"
+        "   For the email body referencing code output, use $last_code_stdout.\n"
+        "10. MULTIPLE SHEET TABS: If writing USD results to one tab and INR results to another, name the ranges\n"
+        "   explicitly: 'USD!A1:C10' and 'INR!A1:C10'. Do NOT reuse 'Sheet1!A1' for both writes.\n"
+        "11. SEND EMAIL REQUIREMENT: If the user request mentions sending an email, you MUST include a\n"
+        "   gmail.send_message task as the LAST step. Set 'to_email' to the EXACT address the user stated\n"
+        "   (e.g. 'haseebmir.hm@gmail.com'). Do NOT use a receipt/invoice sender address. Use $last_code_stdout\n"
+        "   as the body. This step is MANDATORY and must not be omitted."
     )
 
     if memory_hint:
@@ -142,12 +142,10 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
     plan_data: Any = None
     for attempt in range(max_retries):
         try:
-            # Use the hand-crafted schema to avoid Pydantic default_factory
-            # serialization issues ('NoneType' not iterable on some providers).
             chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
             plan_data = chain.invoke(
-                 {"request": text},
-                 config=RunnableConfig(metadata={"timeout": config.timeout_seconds})
+                {"request": text},
+                config=RunnableConfig(metadata={"timeout": config.timeout_seconds})
             )
             break
         except Exception as e:
@@ -162,36 +160,47 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         logger.warning("LLM planning returned None.")
         return None
 
-    # The schema always returns a dict — normalise it into a RequestPlan.
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
         if not isinstance(tasks_data, list):
             tasks_data = []
 
         # ------------------------------------------------------------------ #
-        # BUG FIX 3: Ensure gmail.send_message is present when the user       #
-        # explicitly requested sending an email.  The LLM sometimes drops it  #
-        # silently.  We inject a minimal fallback task when it is missing.    #
+        # BUG FIX 3 + C: Ensure gmail.send_message is present with the        #
+        # CORRECT to_email (from user request, not receipt senders).          #
         # ------------------------------------------------------------------ #
+        explicit_email = _extract_explicit_email(text)
+
+        # Fix any existing send_message tasks that have a bad to_email
+        for t in tasks_data:
+            if not isinstance(t, dict):
+                continue
+            if t.get("service") == "gmail" and t.get("action") == "send_message":
+                params = t.get("parameters") or {}
+                to_addr = str(params.get("to_email") or "").strip()
+                # If the planned address is a placeholder or looks like a receipt
+                # mailer, override it with the explicit address from the request.
+                if explicit_email and (not to_addr or "@" not in to_addr or
+                        re.search(r"(noreply|no-reply|invoice|receipt|stripe|paypal|x\.com|twitter)",
+                                  to_addr, re.IGNORECASE)):
+                    params["to_email"] = explicit_email
+                    t["parameters"] = params
+                    logger.info("BugFixC: corrected to_email in planned task to '%s'", explicit_email)
+
         if _request_requires_send_email(text) and not _plan_has_send_task(tasks_data):
             logger.warning(
-                "BugFix3: gmail.send_message missing from plan despite send-email intent. "
-                "Injecting fallback send_message task."
+                "BugFix3: gmail.send_message missing from plan. Injecting fallback task."
             )
-            # Determine next task ID
             next_id = f"task-{len(tasks_data) + 1}"
-            # Try to extract destination address from the request text
-            email_re = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
-            match = email_re.search(text)
-            to_addr = match.group(0) if match else "$user_email"
+            to_addr = explicit_email or "$user_email"
             tasks_data.append({
                 "id": next_id,
                 "service": "gmail",
                 "action": "send_message",
                 "parameters": {
                     "to_email": to_addr,
-                    "subject": "Your Workspace Summary",
-                    "body": "$sheet_email_body",
+                    "subject": "Your Twitter/X Subscription Invoice Summary",
+                    "body": "$last_code_stdout",
                 },
                 "reason": "User explicitly requested sending an email — auto-injected by BugFix3.",
             })
@@ -215,11 +224,7 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
             source="langchain"
         )
 
-    # Pydantic object path (some providers return a typed object despite the schema).
     if hasattr(plan_data, "confidence") and plan_data.confidence == 0.0:
         plan_data.confidence = _DEFAULT_CONFIDENCE
 
     return plan_data
-
-
-import re  # noqa: E402  (needed for BugFix3 email regex above)

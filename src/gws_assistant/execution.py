@@ -20,6 +20,14 @@ try:
 except Exception:  # pragma: no cover
     web_search_tool = None  # type: ignore[assignment]
 
+# Sender-address patterns that belong to automated receipt / invoice mailers.
+# We must NEVER use these as the reply-to / forward-to address.
+_RECEIPT_SENDER_PATTERNS = re.compile(
+    r"(noreply|no-reply|invoice|receipt|statements|do-not-reply|donotreply"
+    r"|notifications?|billing|payments?|stripe\.com|paypal\.com|x\.com|twitter\.com)",
+    re.IGNORECASE,
+)
+
 
 class PlanExecutor:
     """Executes planned gws tasks sequentially and carries context forward."""
@@ -32,6 +40,20 @@ class PlanExecutor:
 
     def execute(self, plan: RequestPlan) -> PlanExecutionReport:
         context: dict[str, Any] = {"request_text": plan.raw_text}
+
+        # ------------------------------------------------------------------ #
+        # Extract any explicit to_email embedded in the plan by the planner.  #
+        # langchain_agent.py BugFix3 stores it as '__explicit_to_email__' in  #
+        # the reason field of the injected send_message task, or directly in  #
+        # context via the plan metadata.
+        # ------------------------------------------------------------------ #
+        for task in plan.tasks:
+            if task.service == "gmail" and task.action == "send_message":
+                addr = str(task.parameters.get("to_email") or "").strip()
+                if addr and "@" in addr and not _RECEIPT_SENDER_PATTERNS.search(addr):
+                    context["explicit_to_email"] = addr
+                    break
+
         executions: list[TaskExecution] = []
         thought_trace: list[dict] = []
         task_list = list(plan.tasks)
@@ -114,8 +136,6 @@ class PlanExecutor:
                 error=f"Plan contained an unresolved placeholder: {placeholder}",
             )
 
-        # Wrap build_command so that missing-parameter errors are returned
-        # as failed ExecutionResults instead of raising and crashing the workflow.
         try:
             args = self.planner.build_command(
                 task.service,
@@ -154,31 +174,25 @@ class PlanExecutor:
         if not result.success:
             return None
 
-        # 1. Verify Google Docs content
         if task.service == "docs" and task.action == "create_document":
             doc_id = (result.output.get("parsed_payload") or {}).get("documentId")
             if not doc_id: return "No document ID found in output after creation."
             fetch_res = self.runner.run(["docs", "documents", "get", "--params", json.dumps({"documentId": doc_id})])
             if fetch_res.return_code != 0: return f"Failed to fetch document for verification: {fetch_res.stderr}"
-            # Extract content text from doc JSON
-            content = fetch_res.stdout # Simplified: checking raw JSON presence
+            content = fetch_res.stdout
             if len(content.strip()) < 100: return "Newly created document is nearly empty."
             if "{{" in content or "placeholder" in content.lower(): return "Document contains unresolved placeholders."
 
-        # 2. Verify Google Sheets content (after append)
         if task.service == "sheets" and (task.action == "append_values" or task.action == "create_spreadsheet"):
             sheet_id = context.get("last_spreadsheet_id") or (result.output.get("parsed_payload") or {}).get("spreadsheetId")
             if not sheet_id: return None
-            # Check if data was actually written on append
             if task.action == "append_values":
                 range_val = task.parameters.get("range", "A1:C5")
                 check_res = self.runner.run(["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": sheet_id, "range": range_val})])
                 if "{{" in check_res.stdout or "No data" in check_res.stdout:
                     return "Spreadsheet data contains placeholders or is missing."
 
-        # 3. Verify Sent Email
         if task.service == "gmail" and task.action == "send_message":
-            # Search for the message we just sent in label:SENT
             search_res = self.runner.run(["gmail", "users", "messages", "list", "--params", json.dumps({"userId": "me", "maxResults": 1, "q": "label:SENT"})])
             if search_res.return_code == 0:
                 payload = _parse_json(search_res.stdout)
@@ -216,21 +230,19 @@ class PlanExecutor:
             return "Thought step skipped due to LLM error."
 
     def _should_replan(self, thought: str, result: ExecutionResult, context: dict) -> bool:
-        """Decide if the remaining plan should be regenerated."""
         if not result.success:
-            return False  # Let failure reflection handle it, don't replan on every error
+            return False
         lower_thought = thought.lower()
         replan_signals = ("should change", "instead", "wrong step", "incorrect", "skip", "replan")
         return any(signal in lower_thought for signal in replan_signals)
 
     def _replan(self, goal: str, context: dict) -> list[PlannedTask]:
-        """Ask LLM to generate replacement tasks given current context."""
         try:
             from .langchain_agent import plan_with_langchain
             new_plan = plan_with_langchain(goal, self.config, self.logger)
             if new_plan and new_plan.tasks:
                 completed_count = len(context.get("task_results", {}))
-                return new_plan.tasks[completed_count:]  # skip already-done tasks
+                return new_plan.tasks[completed_count:]
         except Exception as exc:
             self.logger.warning("_replan() failed: %s", exc)
         return []
@@ -252,25 +264,39 @@ class PlanExecutor:
 
         structured = execute_generated_code(code, config=self.planner.config)
         output = structured.get("output") or {}
-        
-        # Store in context for placeholders
+
+        stdout = output.get("stdout") or ""
+        parsed_value = output.get("parsed_value")
+
+        # ------------------------------------------------------------------ #
+        # BUG A FIX: Expose code output via multiple context keys so that     #
+        # downstream sheet append_values tasks can resolve PLACEHOLDER_AMOUNT  #
+        # and similar tokens regardless of how the planner referenced them.   #
+        # ------------------------------------------------------------------ #
+        # 1. Store the full output dict under task_results for {{N.key}} refs
         results_map = context.setdefault("task_results", {})
         results_map[task.id] = output
         if task.id.startswith("task-"):
             results_map[task.id.removeprefix("task-")] = output
 
-        stdout = output.get("stdout") or ""
+        # 2. Flat context keys for $-style and PLACEHOLDER_ resolution
+        context["last_code_stdout"] = stdout.strip()
+        context["last_code_result"] = str(parsed_value) if parsed_value is not None else stdout.strip()
+
+        # 3. Parse structured lines like "Total USD: $8.00" / "Total INR: 665.50"
+        _ingest_code_stdout_into_context(stdout, context)
+
         result = ExecutionResult(success=structured["success"], command=["code_execution"], stdout=stdout)
         result.output = {
             "command": result.command,
             "stdout": stdout,
             "stderr": output.get("stderr") or "",
             "parsed_payload": output,
-            "parsed_value": output.get("parsed_value")
+            "parsed_value": parsed_value,
         }
         if not structured["success"]:
             result.error = structured.get("error")
-        
+
         return result
 
     def _execute_web_search(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
@@ -293,7 +319,6 @@ class PlanExecutor:
         result = ExecutionResult(success=True, command=["web_search", query], stdout=stdout)
         result.output = {"command": result.command, "stdout": stdout, "stderr": "", "parsed_payload": payload}
 
-        # Store under task_results for {{task_id.key}} resolution
         results_map = context.setdefault("task_results", {})
         results_map[task.id] = payload
         if task.id.startswith("task-"):
@@ -317,7 +342,6 @@ class PlanExecutor:
             self.logger.info("Skipping gmail.get_message task id=%s because no message IDs were returned.", task.id)
             return []
 
-        # Limit details to the first 5 messages to keep output readable and execution fast.
         limit = 5
         return [
             PlannedTask(
@@ -333,28 +357,24 @@ class PlanExecutor:
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         parameters = _resolve_template(task.parameters, context)
 
-        # ------------------------------------------------------------------ #
-        # BUG FIX 1: Resolve bare 'N.field' step-output references            #
-        # The LLM planner sometimes emits a raw step-number reference such as  #
-        # spreadsheetid='4.id' instead of the double-brace form '{{4.id}}'.   #
-        # After the standard template pass above, any such strings remain      #
-        # unresolved.  We do a second targeted pass here.                      #
-        # ------------------------------------------------------------------ #
+        # BUG FIX 1 (from previous PR): bare step-ID references like '4.id'
         parameters = _resolve_bare_step_id_params(parameters, context)
 
-        # ------------------------------------------------------------------ #
-        # BUG FIX 2: Replace natural-language extraction instructions with    #
-        # actual numeric values extracted from web search results.             #
-        # The planner sometimes writes the extraction instruction itself as    #
-        # the cell value (e.g. 'extract rate from search result 6 and put as  #
-        # rate') instead of the resolved number.  Detect this and substitute. #
-        # ------------------------------------------------------------------ #
+        # BUG FIX 2 (from previous PR): natural-language extraction instructions
         if context.get("web_search_results"):
             parameters = _resolve_search_extraction_params(parameters, context, self.logger)
 
-        # Resolve nested $ placeholders inside list/dict values (e.g. [["$gmail_message_body"]])
+        # ------------------------------------------------------------------ #
+        # BUG A FIX: Replace PLACEHOLDER_* tokens and common planner          #
+        # placeholder strings with actual values from the code executor.      #
+        # ------------------------------------------------------------------ #
+        if context.get("last_code_stdout") or context.get("last_code_result"):
+            parameters = _resolve_code_output_params(parameters, context, self.logger)
+
+        # Resolve nested $ placeholders inside list/dict values
         parameters = _resolve_nested_dollar(parameters, context, self)
-        # Legacy $ resolution for backward compatibility
+
+        # Legacy $ resolution
         for key, value in list(parameters.items()):
             if value == "$last_spreadsheet_id":
                 parameters[key] = context.get("last_spreadsheet_id") or ""
@@ -394,28 +414,44 @@ class PlanExecutor:
         if "message_id" not in parameters and context.get("last_message_id"):
             parameters["message_id"] = context["last_message_id"]
 
-        # Auto-resolve to_email for gmail.send_message when it is still missing
-        # or contains an unresolved placeholder (e.g. {2.from}, {2.snippet}).
+        # ------------------------------------------------------------------ #
+        # BUG C FIX: to_email resolution for gmail.send_message               #
+        # Priority order:                                                      #
+        #   1. explicit_to_email stored from the plan (user's stated address)  #
+        #   2. Already-valid non-receipt address in parameters                 #
+        #   3. Fallback: _resolve_to_email_from_context (skips receipt senders)#
+        # ------------------------------------------------------------------ #
         if task.service == "gmail" and task.action == "send_message":
             to_email_val = str(parameters.get("to_email") or "").strip()
-            if not to_email_val or _is_placeholder(to_email_val):
+            explicit = str(context.get("explicit_to_email") or "").strip()
+
+            # Use explicitly known destination first
+            if explicit and "@" in explicit:
+                parameters["to_email"] = explicit
+            elif not to_email_val or _is_placeholder(to_email_val) or _RECEIPT_SENDER_PATTERNS.search(to_email_val):
+                # Value is missing, a placeholder, or a receipt sender — resolve from context
                 resolved_addr = _resolve_to_email_from_context(context)
                 if resolved_addr:
-                    self.logger.info(
-                        "Auto-resolved to_email from context gmail_messages: %s", resolved_addr
-                    )
+                    self.logger.info("Auto-resolved to_email from context: %s", resolved_addr)
                     parameters["to_email"] = resolved_addr
 
-        # Fix range to use correct tab name when using a just-created spreadsheet
+        # ------------------------------------------------------------------ #
+        # BUG B FIX: Range tab-name rewrite must NOT overwrite an explicit    #
+        # tab name the planner already put in the range (e.g. 'INR!A1').      #
+        # Only rewrite when the range uses a generic 'Sheet1' prefix.         #
+        # ------------------------------------------------------------------ #
         if (task.service == "sheets" and task.action == "append_values"
                 and "range" in parameters and context.get("last_spreadsheet_tab")):
             rng = str(parameters.get("range") or "")
             tab = context["last_spreadsheet_tab"]
-            if rng.startswith("Sheet1!"):
-                cell_part = rng.split("!", 1)[1]
+            # Only auto-fix ranges that reference the generic default tab name
+            if rng.startswith("Sheet1!") or rng == "Sheet1":
+                cell_part = rng.split("!", 1)[1] if "!" in rng else "A1"
                 parameters["range"] = f"'{tab}'!{cell_part}" if " " in tab else f"{tab}!{cell_part}"
             elif "!" not in rng:
+                # Bare range like 'A1:D10' — prepend the known tab
                 parameters["range"] = f"'{tab}'!{rng}" if " " in tab else f"{tab}!{rng}"
+            # If the planner already gave us 'TabName!A1:D10', leave it alone.
 
         return PlannedTask(
             id=task.id,
@@ -429,7 +465,6 @@ class PlanExecutor:
         payload = _parse_json(stdout)
         user_keywords = extract_keywords(str(context.get("request_text") or ""))
 
-        # Store raw task results for general placeholder resolution
         if payload and task.id:
             results = context.setdefault("task_results", {})
             results[task.id] = payload
@@ -483,7 +518,6 @@ class PlanExecutor:
         files = payload.get("files") if isinstance(payload, dict) else []
         if not isinstance(files, list) or not files:
             return [["Search", "File Name", "File Type", "Link"], [query, "No files found", "", ""]]
-
         rows = [["Search", "File Name", "File Type", "Link"]]
         for item in files[:50]:
             if isinstance(item, dict):
@@ -547,6 +581,15 @@ class PlanExecutor:
 
     @staticmethod
     def _sheet_email_body(context: dict[str, Any]) -> str:
+        # Prefer code output for the email body when it contains computed results
+        code_stdout = str(context.get("last_code_stdout") or "").strip()
+        if code_stdout:
+            body_lines = ["Here are your computed results:", "", code_stdout]
+            link = context.get("last_spreadsheet_url")
+            if link:
+                body_lines += ["", f"Full breakdown in spreadsheet: {link}"]
+            return "\n".join(body_lines)
+
         payload = context.get("sheet_values_payload") or {}
         values = payload.get("values") if isinstance(payload, dict) else None
         if not isinstance(values, list) or not values:
@@ -561,6 +604,105 @@ class PlanExecutor:
 
 
 # ---------------------------------------------------------------------------
+# BUG A helpers — code output placeholder resolution
+# ---------------------------------------------------------------------------
+
+# Matches PLACEHOLDER_AMOUNT, PLACEHOLDER_USD, PLACEHOLDER_INR, etc.
+_PLACEHOLDER_TOKEN_RE = re.compile(r"^PLACEHOLDER_[A-Z_]+$")
+
+# Matches generic planner-inserted strings like '<total_usd>', '[inr_amount]'
+_ANGLE_BRACKET_RE = re.compile(r"^[<\[\{][a-z_\s]+[>\]\}]$")
+
+
+def _ingest_code_stdout_into_context(stdout: str, context: dict[str, Any]) -> None:
+    """Parse structured output lines from code execution into context.
+
+    Looks for patterns like:
+      Total USD: $8.00
+      Total INR: 665.50
+      USD Total: 8.0
+    and stores them as context['code_values']['usd'] etc.
+    """
+    code_values: dict[str, str] = context.setdefault("code_values", {})
+    # Pattern: label: value
+    line_re = re.compile(
+        r"(?P<label>[A-Za-z][\w\s/]+?)\s*[:=]\s*[$₹€£]?\s*(?P<value>[\d,]+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    for line in stdout.splitlines():
+        m = line_re.search(line)
+        if not m:
+            continue
+        label = m.group("label").strip().lower()
+        value = m.group("value").replace(",", "")
+        code_values[label] = value
+        # Normalised shortcuts
+        if "usd" in label or "dollar" in label:
+            code_values["usd"] = value
+            code_values["total_usd"] = value
+        if "inr" in label or "rupee" in label or "indian" in label:
+            code_values["inr"] = value
+            code_values["total_inr"] = value
+        if "total" in label:
+            code_values["total"] = value
+
+
+def _resolve_code_output_params(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    """Replace PLACEHOLDER_* tokens and other stub strings in params with real
+    values from code execution output stored in context."""
+    if isinstance(params, dict):
+        return {k: _resolve_code_output_params(v, context, logger) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_code_output_params(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+
+    stripped = params.strip()
+
+    # Case 1: exact PLACEHOLDER_* token
+    if _PLACEHOLDER_TOKEN_RE.match(stripped):
+        return _pick_code_value(stripped, context, logger)
+
+    # Case 2: angle/bracket placeholder like <total_usd>
+    if _ANGLE_BRACKET_RE.match(stripped):
+        return _pick_code_value(stripped, context, logger)
+
+    # Case 3: $ placeholders referencing code context keys
+    if stripped == "$last_code_stdout":
+        return context.get("last_code_stdout") or ""
+    if stripped == "$last_code_result":
+        return context.get("last_code_result") or ""
+
+    return params
+
+
+def _pick_code_value(token: str, context: dict[str, Any], logger: logging.Logger) -> str:
+    """Select the most appropriate scalar value from code_values or fallback to
+    last_code_result / last_code_stdout."""
+    code_values: dict[str, str] = context.get("code_values") or {}
+    token_lower = token.lower().replace("placeholder_", "").replace("_", " ").strip()
+
+    # Try direct match first
+    for key, val in code_values.items():
+        if key == token_lower or token_lower in key or key in token_lower:
+            logger.info("BugA: resolved '%s' -> '%s' via code_values['%s']", token, val, key)
+            return val
+
+    # Fall back to the full code stdout (useful for body text)
+    fallback = context.get("last_code_result") or context.get("last_code_stdout") or ""
+    if fallback:
+        logger.info("BugA: resolved '%s' -> last_code_result fallback", token)
+        return fallback
+
+    logger.warning("BugA: could not resolve token '%s' — no code output in context", token)
+    return token  # leave unchanged; better than crashing
+
+
+# ---------------------------------------------------------------------------
 # BUG FIX 1 helpers — bare step-ID param resolution
 # ---------------------------------------------------------------------------
 
@@ -568,14 +710,6 @@ _BARE_STEP_REF_RE = re.compile(r"^(\d+|task-\d+)\.([\w\.]+)$")
 
 
 def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
-    """Second-pass resolver for bare 'N.field' references that the LLM emits
-    instead of the canonical '{{N.field}}' form.
-
-    After _resolve_template() runs, any parameter whose value is still a plain
-    string matching ``<step_number>.<field>`` (e.g. ``4.id`` or ``task-3.spreadsheetId``)
-    is looked up against ``context['task_results']`` and replaced with the real
-    value when found.
-    """
     if isinstance(params, dict):
         return {k: _resolve_bare_step_id_params(v, context) for k, v in params.items()}
     if isinstance(params, list):
@@ -597,7 +731,7 @@ def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
     current: Any = payload
     for part in key_path.split("."):
         if not isinstance(current, dict):
-            return params  # can't dig deeper — leave unchanged
+            return params
         norm = part.lower().replace("_", "")
         matched = None
         for k, v in current.items():
@@ -605,13 +739,12 @@ def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
                 matched = v
                 break
         if matched is None:
-            # Heuristic: spreadsheetid / id shorthand
             if norm in ("id", "spreadsheetid") and "spreadsheetId" in current:
                 matched = current["spreadsheetId"]
             elif norm in ("id", "documentid") and "documentId" in current:
                 matched = current["documentId"]
             else:
-                return params  # not resolvable
+                return params
         current = matched
 
     return str(current) if current is not None else params
@@ -628,17 +761,12 @@ _EXTRACTION_KEYWORDS = (
 
 
 def _looks_like_extraction_instruction(value: str) -> bool:
-    """Return True when a parameter string reads like a natural-language
-    extraction instruction rather than a real value to be written to a cell."""
     lowered = value.lower().strip()
     return any(kw in lowered for kw in _EXTRACTION_KEYWORDS)
 
 
 def _extract_numeric_from_web_search(context: dict[str, Any]) -> str | None:
-    """Scan web_search_results for the first float that looks like a currency
-    exchange rate (> 1, < 200) and return it as a string."""
     results = context.get("web_search_results") or []
-    # Simple regex: match floats in the content field of results.
     float_re = re.compile(r"\b(\d{1,4}\.\d{2,6})\b")
     for item in results:
         if not isinstance(item, dict):
@@ -646,7 +774,6 @@ def _extract_numeric_from_web_search(context: dict[str, Any]) -> str | None:
         content = str(item.get("content") or item.get("snippet") or "")
         for match in float_re.finditer(content):
             candidate = float(match.group(1))
-            # Exchange rates USD→INR are in [80, 110]; generalise to [1, 200]
             if 1.0 < candidate < 200.0:
                 return str(round(candidate, 4))
     return None
@@ -657,14 +784,8 @@ def _resolve_search_extraction_params(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Walk ``params`` and replace any string value that looks like a
-    natural-language extraction instruction with the numeric value extracted
-    from web_search_results."""
     if isinstance(params, dict):
-        return {
-            k: _resolve_search_extraction_params(v, context, logger)
-            for k, v in params.items()
-        }
+        return {k: _resolve_search_extraction_params(v, context, logger) for k, v in params.items()}
     if isinstance(params, list):
         return [_resolve_search_extraction_params(item, context, logger) for item in params]
     if not isinstance(params, str):
@@ -674,22 +795,14 @@ def _resolve_search_extraction_params(
 
     extracted = _extract_numeric_from_web_search(context)
     if extracted is not None:
-        logger.info(
-            "BugFix2: replaced extraction instruction '%s' with extracted value '%s'",
-            params[:80], extracted,
-        )
+        logger.info("BugFix2: replaced extraction instruction '%s' with '%s'", params[:80], extracted)
         return extracted
-
-    logger.warning(
-        "BugFix2: could not extract numeric value for instruction '%s'; leaving unchanged.",
-        params[:80],
-    )
+    logger.warning("BugFix2: could not extract value for '%s'", params[:80])
     return params
 
 
 # ---------------------------------------------------------------------------
 def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanExecutor") -> Any:
-    """Recursively resolve $-style placeholders that may appear inside lists/dicts."""
     if isinstance(value, dict):
         return {k: _resolve_nested_dollar(v, context, executor) for k, v in value.items()}
     if isinstance(value, list):
@@ -699,6 +812,8 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
     known_resolvers: dict[str, Any] = {
         "$last_spreadsheet_id": context.get("last_spreadsheet_id") or "",
         "$last_document_id": context.get("last_document_id") or "",
+        "$last_code_stdout": context.get("last_code_stdout") or "",
+        "$last_code_result": context.get("last_code_result") or "",
         "$gmail_summary_values": executor._gmail_summary_values(context),
         "$sheet_email_body": executor._sheet_email_body(context),
         "$drive_summary_values": executor._drive_summary_values(context),
@@ -716,7 +831,6 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
 # ---------------------------------------------------------------------------
 
 def _web_search_markdown(context: dict[str, Any]) -> str:
-    """Format web search results as a Markdown document body."""
     results = context.get("web_search_results") or []
     if not results:
         return "No web search results available."
@@ -734,7 +848,6 @@ def _web_search_markdown(context: dict[str, Any]) -> str:
 
 
 def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
-    """Format web search results as a 2-D list suitable for Sheets append."""
     results = context.get("web_search_results") or []
     rows: list[list[str]] = [["Title", "Content", "Link"]]
     for item in results:
@@ -750,7 +863,6 @@ def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
 
 
 def _gmail_messages_body_text(context: dict[str, Any]) -> str:
-    """Return body text of fetched full messages, or fall back to listing message IDs."""
     full_messages = context.get("gmail_messages")
     if isinstance(full_messages, list) and full_messages:
         parts: list[str] = []
@@ -777,15 +889,6 @@ def _gmail_messages_body_text(context: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolves placeholder references in task parameters.
-
-    Supported syntaxes:
-    - ``{{task_id.key.subkey}}``  – original double-brace format.
-    - ``{task_id.key.subkey}``    – single-brace format produced by some LLM
-                                    planners (e.g. ``{2.internalDate}``).
-
-    Both resolve against ``context['task_results'][task_id]``.
-    """
     if isinstance(value, dict):
         return {k: _resolve_template(v, context) for k, v in value.items()}
     if isinstance(value, list):
@@ -803,7 +906,6 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
             return match.group(0)
 
         parts = key_path.split(".")
-        # Strip "output" prefix if present
         if parts[0] == "output" and len(parts) > 1:
             parts = parts[1:]
 
@@ -818,12 +920,10 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
                         break
 
                 if not found:
-                    # Heuristic: if looking for id/file_id and we have a 'files' list (Drive)
                     if norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
                         current = current["files"][0].get("id")
                         if current:
                             found = True
-                    # Heuristic: if looking for id/message_id and we have a 'messages' list (Gmail)
                     elif norm_part in ("id", "messageid") and "messages" in current and isinstance(current["messages"], list) and current["messages"]:
                         current = current["messages"][0].get("id")
                         if current:
@@ -845,11 +945,7 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 
         return str(current)
 
-    # Double-brace: {{task_id.key_path}}
     resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.]+)\}\}", replacer, value)
-    # Single-brace: {task_id.key_path}  (LLM-generated variant)
-    # Only match when task_id is a numeric string or "task-N" to avoid
-    # accidentally consuming Python format strings or other curly-brace uses.
     resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\}", replacer, resolved)
     return resolved
 
@@ -859,10 +955,10 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
-    """Extract a sender e-mail address from fetched gmail_messages context.
+    """Extract a valid reply-to address from fetched gmail_messages.
 
-    Returns the first valid e-mail address found in the ``From`` header of
-    the fetched messages, or an empty string when nothing useful is found.
+    Skips receipt / no-reply sender addresses (Stripe, X, PayPal, etc.).
+    Returns the first clean sender address found, or empty string.
     """
     fetched = context.get("gmail_messages") or []
     for message in fetched:
@@ -870,13 +966,14 @@ def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
             continue
         headers = _gmail_headers(message)
         from_value = headers.get("from", "")
-        # Extract bare address from "Display Name <addr@domain>" or "addr@domain"
         addr_match = re.search(r"<([^>]+@[^>]+)>", from_value)
-        if addr_match:
-            return addr_match.group(1).strip()
-        bare = from_value.strip()
-        if "@" in bare:
-            return bare
+        addr = addr_match.group(1).strip() if addr_match else from_value.strip()
+        if "@" not in addr:
+            continue
+        # Skip automated / receipt senders
+        if _RECEIPT_SENDER_PATTERNS.search(addr):
+            continue
+        return addr
     return ""
 
 
@@ -991,7 +1088,6 @@ def _is_placeholder(value: str) -> bool:
         or "}}" in stripped
         or "_from_task_" in stripped
         or "from_task_" in stripped
-        # Single-brace LLM-generated references: {2.key}, {task-3.key}
         or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.]+\}", stripped))
     )
 
