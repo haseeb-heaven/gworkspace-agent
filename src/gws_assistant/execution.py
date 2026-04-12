@@ -40,13 +40,21 @@ _ARRAY_WILDCARD_RE = re.compile(
 )
 
 # Plain dot-ref pattern for single-message sender/header fields.
-# FIX Bug 2: added 'from\.name' and 'from\.email' so {2.from.name} / {2.from.email}
-# are intercepted by Pass 0a before reaching _find_unresolved_placeholder.
+# Covers: {N.sender.name}, {N.from.name}, {N.from.email}, {N.subject}, {N.body}, etc.
 _DOT_SENDER_REF_RE = re.compile(
     r"\{(\d+|task-\d+)\.(sender\.name|sender\.email|senderName|senderEmail"
     r"|sender_name|sender_email|fromName|from_name|fromEmail|from_email"
     r"|from\.name|from\.email"
     r"|subject|date|snippet|body)\}"
+)
+
+# Bug 4 — 3-level header path: {N.headers.From.name}, {N.headers.From.email},
+# {N.headers.Subject}, {N.headers.Date}, etc.
+# The LLM sometimes generates this deeply-nested form when it knows the Gmail
+# API payload shape. We intercept it in Pass 0c before _find_unresolved_placeholder.
+_HEADERS_DOT_REF_RE = re.compile(
+    r"\{(\d+|task-\d+)\.headers\.(from\.name|from\.email|from|subject|date|snippet|to|cc|bcc)\}",
+    re.IGNORECASE,
 )
 
 # Extended template regex: matches {N.key.path[0].sub}
@@ -65,8 +73,7 @@ _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# Alias table: normalised LLM field name → (header_key, extract_mode)
-# FIX Bug 2: added 'from.name' and 'from.email' entries.
+# Alias table: normalised LLM field name -> (header_key, extract_mode)
 # ---------------------------------------------------------------------------
 _SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "sendername":   ("from", "name"),
@@ -74,17 +81,32 @@ _SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "sender_name":  ("from", "name"),
     "fromname":     ("from", "name"),
     "from_name":    ("from", "name"),
-    "from.name":    ("from", "name"),   # FIX: {N.from.name}
+    "from.name":    ("from", "name"),
+    "from.email":   ("from", "email"),
     "senderemail":  ("from", "email"),
     "sender.email": ("from", "email"),
     "sender_email": ("from", "email"),
     "fromemail":    ("from", "email"),
     "from_email":   ("from", "email"),
-    "from.email":   ("from", "email"),  # FIX: {N.from.email}
     "subject":      ("subject", "raw"),
     "date":         ("date", "raw"),
     "snippet":      ("snippet", "raw"),
     "body":         ("body", "body"),
+}
+
+# ---------------------------------------------------------------------------
+# Bug 4 — alias table for {N.headers.<field>} 3-level tokens
+# ---------------------------------------------------------------------------
+_HEADERS_FIELD_ALIASES: dict[str, tuple[str, str]] = {
+    "from.name":  ("from", "name"),
+    "from.email": ("from", "email"),
+    "from":       ("from", "raw"),
+    "subject":    ("subject", "raw"),
+    "date":       ("date", "raw"),
+    "snippet":    ("snippet", "raw"),
+    "to":         ("to", "raw"),
+    "cc":         ("cc", "raw"),
+    "bcc":        ("bcc", "raw"),
 }
 
 
@@ -401,6 +423,9 @@ class PlanExecutor:
         # Pass 0b: expand array-wildcard refs like {N.messages[*].senderName}
         parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
 
+        # Pass 0c: resolve 3-level header refs: {N.headers.From.name}, {N.headers.Subject}, etc.
+        parameters = _resolve_headers_dot_refs(parameters, context, self.logger)
+
         # Pass 1: {{task_id.key}}, {N.key}, and {N.key[0].sub} bracket-index refs
         parameters = _resolve_template(parameters, context, self.logger)
 
@@ -665,7 +690,6 @@ class PlanExecutor:
 
 # ---------------------------------------------------------------------------
 # Pass 0a — plain dot-ref sender field resolver
-# FIX Bug 2: _DOT_SENDER_REF_RE now also matches 'from.name' and 'from.email'
 # ---------------------------------------------------------------------------
 
 def _resolve_dot_sender_refs(
@@ -851,9 +875,87 @@ def _extract_wildcard_rows(
 
 
 # ---------------------------------------------------------------------------
+# Pass 0c — 3-level header ref resolver
+# Handles: {N.headers.From.name}, {N.headers.From.email}, {N.headers.Subject}, etc.
+# Bug 4: The LLM sometimes generates deeply-nested {N.headers.X.Y} tokens that
+# mirror the Gmail API payload shape. None of the previous passes covered this
+# form because _DOT_SENDER_REF_RE only has 2 segments after the step ID.
+# ---------------------------------------------------------------------------
+
+def _resolve_headers_dot_refs(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    if isinstance(params, dict):
+        return {k: _resolve_headers_dot_refs(v, context, logger) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_headers_dot_refs(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+
+    def _sub(m: re.Match) -> str:
+        step_id_raw = m.group(1)
+        field_raw = m.group(2).lower()  # e.g. 'from.name', 'subject', 'date'
+
+        alias = _HEADERS_FIELD_ALIASES.get(field_raw)
+        if alias is None:
+            return m.group(0)
+
+        header_key, extract_mode = alias
+        messages: list[dict] = context.get("gmail_messages") or []
+
+        if not messages:
+            logger.warning("Pass0c: no gmail_messages for ref %s", m.group(0))
+            return m.group(0)
+
+        try:
+            step_num = int(step_id_raw.removeprefix("task-"))
+            msg_idx = max(0, step_num - 2)
+        except (ValueError, AttributeError):
+            msg_idx = 0
+
+        def _extract(msg: dict) -> str:
+            hdrs = _gmail_headers(msg)
+            raw = hdrs.get(header_key, "")
+            if not raw:
+                return ""
+            if extract_mode == "name":
+                return raw.split("<", 1)[0].strip().strip('"')
+            if extract_mode == "email":
+                addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
+                return addr_m.group(1).strip() if addr_m else raw.strip()
+            # extract_mode == "raw" — return the full header value
+            return raw
+
+        if msg_idx < len(messages):
+            value = _extract(messages[msg_idx])
+            if value:
+                logger.info("Pass0c: resolved %s → '%s' from message[%d]", m.group(0), value, msg_idx)
+                return value
+
+        # Fallback: collect all distinct values across all fetched messages
+        seen_vals: list[str] = []
+        seen_set: set[str] = set()
+        for msg in messages:
+            val = _extract(msg)
+            if val and val not in seen_set:
+                seen_set.add(val)
+                seen_vals.append(val)
+        if seen_vals:
+            joined = ", ".join(seen_vals)
+            logger.info("Pass0c: resolved %s → joined '%s'", m.group(0), joined[:80])
+            return joined
+
+        logger.warning("Pass0c: could not resolve %s", m.group(0))
+        return m.group(0)
+
+    return _HEADERS_DOT_REF_RE.sub(_sub, params)
+
+
+# ---------------------------------------------------------------------------
 # Pass 1 — template resolver with bracket-index support
 # FIX Bug 1: empty brackets {N.messages[].body} are normalised to {N.messages[*].body}
-#            before tokenisation so they are resolved via gmail_messages context.
 # ---------------------------------------------------------------------------
 
 def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logger | None = None) -> Any:
@@ -869,7 +971,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
     if not isinstance(value, str):
         return value
 
-    # FIX Bug 1: normalise empty brackets [] → [*] so the tokeniser handles them.
+    # FIX Bug 1: normalise empty brackets [] → [*]
     normalised = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\[\]\.([\w]+)\}", r"{\1.\2[*].\3}", value)
     if normalised != value and logger:
         logger.info("Bug1 fix: normalised empty-bracket token in '%s'", value[:120])
@@ -877,7 +979,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
 
     def replacer(match: re.Match) -> str:
         task_id = match.group(1)
-        key_path = match.group(2)  # may contain [N] or [*]
+        key_path = match.group(2)
         results = context.get("task_results", {})
         current = results.get(task_id)
 
@@ -893,7 +995,6 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
             else:
                 segments.append((raw_part, None))
 
-        # Strip leading 'output' shim
         if segments and segments[0][0] == "output" and len(segments) > 1:
             segments = segments[1:]
 
@@ -939,9 +1040,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
             logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
         return str(current) if current is not None else match.group(0)
 
-    # Double-brace: {{N.key_path}}
     resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.\[\]\*]+)\}\}", replacer, value)
-    # Single-brace: {N.key_path}  — includes bracket notation
     resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}", replacer, resolved)
     return resolved
 
@@ -1367,8 +1466,22 @@ def _decode_base64_urlsafe(value: str) -> str:
         return ""
 
 
+def _is_likely_real_content(value: str) -> bool:
+    """Return True if a string looks like resolved real content rather than a placeholder.
+
+    Bug 5 guard: _is_placeholder() can false-positive on resolved email body text
+    because email bodies often contain patterns like '12.30pm' or '2.regards' which
+    match the bare step-ID regex r'(\d+|task-\d+)\.\w+'. Strings that are multiline
+    or very long are virtually never bare template tokens.
+    """
+    return len(value) > 120 or "\n" in value
+
+
 def _is_placeholder(value: str) -> bool:
     stripped = value.strip()
+    # Bug 5: long / multiline strings are resolved content, not placeholders.
+    if _is_likely_real_content(stripped):
+        return False
     return (
         stripped.startswith("$")
         or "{{" in stripped
