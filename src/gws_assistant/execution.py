@@ -11,7 +11,7 @@ from typing import Any
 from .exceptions import ValidationError
 from .gws_runner import GWSRunner
 from .models import ExecutionResult, PlanExecutionReport, PlannedTask, RequestPlan, TaskExecution
-from .planner import CommandPlanner
+from .planner import CommandPlanner, UnsupportedServiceError
 from .relevance import extract_keywords, filter_drive_files, filter_gmail_messages
 
 # Import web_search_tool at module level so tests can patch gws_assistant.execution.web_search_tool
@@ -214,6 +214,16 @@ class PlanExecutor:
                 task.action,
                 task.parameters,
             )
+        except UnsupportedServiceError as exc:
+            # FIX Bug-Admin: UnsupportedServiceError means the service (e.g. admin,
+            # analytics, bigquery) has no CLI backing and must be permanently skipped —
+            # NOT retried.  Return success=True so the executor continues cleanly and
+            # the reflection retry loop is never entered.
+            self.logger.warning(
+                "Task id=%s skipped (unsupported service '%s'): %s",
+                task.id, task.service, exc,
+            )
+            return ExecutionResult(success=True, command=[], stdout="", error=None)
         except ValidationError as exc:
             self.logger.warning("Task id=%s build_command failed: %s", task.id, exc)
             return ExecutionResult(success=False, command=[], error=str(exc))
@@ -454,6 +464,33 @@ class PlanExecutor:
         # Resolve nested $-placeholders inside list/dict values
         parameters = _resolve_nested_dollar(parameters, context, self)
 
+        # Pass 7 (attachment-path fix): for gmail.send_message, resolve the `attachments`
+        # key to the local file PATH (not the file content).  The generic legacy-$ loop
+        # below resolves $drive_export_file → drive_export_content (raw text), which breaks
+        # _build_raw_email_with_attachments() because os.path.isfile(raw_text) is always
+        # False and the attachment is silently dropped.
+        if task.service == "gmail" and task.action == "send_message":
+            attach_val = parameters.get("attachments")
+            if isinstance(attach_val, str) and attach_val.strip() in (
+                "$drive_export_file",
+                "$drive_export_path",
+                "$drive_file_path",
+            ):
+                resolved_path = context.get("drive_export_file") or ""
+                if resolved_path:
+                    self.logger.info(
+                        "Pass7-attach: resolved attachments '%s' → local path '%s'",
+                        attach_val, resolved_path,
+                    )
+                    parameters["attachments"] = resolved_path
+                else:
+                    self.logger.warning(
+                        "Pass7-attach: '%s' requested but no drive_export_file in context; "
+                        "email will be sent without attachment.",
+                        attach_val,
+                    )
+                    parameters.pop("attachments", None)
+
         # Legacy $ resolution
         for key, value in list(parameters.items()):
             if value == "$last_spreadsheet_id":
@@ -465,7 +502,7 @@ class PlanExecutor:
             elif value == "$drive_summary_values":
                 parameters[key] = self._drive_summary_values(context)
             elif value == "$drive_export_file":
-                # Fix: resolve exported Drive file content stored in context after export_file task
+                # Resolve to file content for non-attachment uses (e.g., email body)
                 parameters[key] = context.get("drive_export_content") or context.get("drive_export_file") or ""
                 self.logger.info("Pass7: resolved $drive_export_file → %d chars", len(parameters[key]))
             elif value == "$web_search_markdown":
@@ -787,7 +824,7 @@ def _resolve_dot_sender_refs(
         if msg_idx < len(messages):
             value = _extract(messages[msg_idx])
             if value:
-                logger.info("Pass0a: resolved %s → '%s' from message[%d]", m.group(0), value, msg_idx)
+                logger.info("Pass0a: resolved %s \u2192 '%s' from message[%d]", m.group(0), value, msg_idx)
                 return value
 
         seen_vals: list[str] = []
@@ -799,7 +836,7 @@ def _resolve_dot_sender_refs(
                 seen_vals.append(val)
         if seen_vals:
             joined = ", ".join(seen_vals)
-            logger.info("Pass0a: resolved %s → joined '%s'", m.group(0), joined[:80])
+            logger.info("Pass0a: resolved %s \u2192 joined '%s'", m.group(0), joined[:80])
             return joined
 
         logger.warning("Pass0a: could not resolve %s", m.group(0))
@@ -845,7 +882,7 @@ def _resolve_array_wildcard_from_key(
         step_id, collection, field_name = matches[0]
         rows = _extract_wildcard_rows(step_id, collection, field_name, context, logger)
         if rows is not None:
-            logger.info("Bug3: resolved param '%s' wildcard {%s.%s[*].%s} → %d rows", key, step_id, collection, field_name, len(rows))
+            logger.info("Bug3: resolved param '%s' wildcard {%s.%s[*].%s} \u2192 %d rows", key, step_id, collection, field_name, len(rows))
             return rows
 
     return _replace_wildcard_tokens(value, context, logger)
@@ -968,7 +1005,7 @@ def _resolve_headers_dot_refs(
         if msg_idx < len(messages):
             value = _extract(messages[msg_idx])
             if value:
-                logger.info("Pass0c: resolved %s → '%s' from message[%d]", m.group(0), value, msg_idx)
+                logger.info("Pass0c: resolved %s \u2192 '%s' from message[%d]", m.group(0), value, msg_idx)
                 return value
 
         seen_vals: list[str] = []
@@ -980,7 +1017,7 @@ def _resolve_headers_dot_refs(
                 seen_vals.append(val)
         if seen_vals:
             joined = ", ".join(seen_vals)
-            logger.info("Pass0c: resolved %s → joined '%s'", m.group(0), joined[:80])
+            logger.info("Pass0c: resolved %s \u2192 joined '%s'", m.group(0), joined[:80])
             return joined
 
         logger.warning("Pass0c: could not resolve %s", m.group(0))
@@ -1001,7 +1038,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
     if not isinstance(value, str):
         return value
 
-    # FIX Bug 1: normalise empty brackets [] → [*]
+    # FIX Bug 1: normalise empty brackets [] \u2192 [*]
     normalised = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\[\]\.([\w]+)\}", r"{\1.\2[*].\3}", value)
     if normalised != value and logger:
         logger.info("Bug1 fix: normalised empty-bracket token in '%s'", value[:120])
@@ -1067,7 +1104,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
                 current = found
 
         if logger and current is not None:
-            logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
+            logger.info("Pass1: resolved %s \u2192 '%s'", match.group(0), str(current)[:80])
         return str(current) if current is not None else match.group(0)
 
     resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.\[\]\*]+)\}\}", replacer, value)
@@ -1092,7 +1129,7 @@ def _resolve_gmail_body_variants(
         return params
     stripped = params.strip()
     if stripped in _GMAIL_BODY_VARIANTS and stripped != "$gmail_message_body":
-        logger.info("Bug2: normalised gmail-body variant '%s' → '$gmail_message_body'", stripped)
+        logger.info("Bug2: normalised gmail-body variant '%s' \u2192 '$gmail_message_body'", stripped)
         return "$gmail_message_body"
     return params
 
@@ -1139,7 +1176,7 @@ def _resolve_drive_file_refs(
         if value is None:
             logger.warning("Pass6: field '%s' not found in files[%d]", field, idx)
             return m.group(0)
-        logger.info("Pass6: resolved %s → '%s'", m.group(0), str(value)[:120])
+        logger.info("Pass6: resolved %s \u2192 '%s'", m.group(0), str(value)[:120])
         return str(value)
 
     return _DRIVE_FILE_REF_RE.sub(_sub, params)
@@ -1215,7 +1252,7 @@ def _pick_code_value(token: str, context: dict[str, Any], logger: logging.Logger
         logger.info("BugA: resolved '%s' -> last_code_result fallback", token)
         return fallback
 
-    logger.warning("BugA: could not resolve token '%s' — no code output in context", token)
+    logger.warning("BugA: could not resolve token '%s' \u2014 no code output in context", token)
     return token
 
 
