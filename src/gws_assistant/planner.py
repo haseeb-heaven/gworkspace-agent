@@ -17,8 +17,37 @@ from .exceptions import ValidationError
 from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
 
-# Drive API v3 query operator keywords — if NONE appear in the submitted query
-# it is a bare name string which the API rejects with 400 Invalid Value.
+# ---------------------------------------------------------------------------
+# Drive query helpers
+# ---------------------------------------------------------------------------
+
+# Services that are recognised by the LLM but have no real CLI backing.
+_UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
+
+# Fix #1 — regex that matches an ALREADY-VALID Drive API v3 operator clause.
+# If a clause already starts with a known operator we must NOT rewrite it.
+_DRIVE_VALID_CLAUSE_RE = re.compile(
+    r"""^\s*(?:
+        (?:name|fullText)\s+contains\s+'[^']*'         # name contains '...'
+      | mimeType\s*=\s*'[^']*'                          # mimeType='...'
+      | (?:trashed|starred|sharedWithMe)\s*=\s*(?:true|false)
+      | (?:parents|in)\s+in\s+'[^']*'
+      | (?:modifiedTime|createdTime|viewedByMeTime)\s*[<>=!]+\s*\S+
+    )\s*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Fix #2 — matches every malformed mimeType variant the LLM can produce:
+#   mimeType="..."  mimeType='...'  mimeType:...  mimeType = "..."
+_MIME_EQ_RE = re.compile(
+    r"""mimeType\s*[=:]\s*["']?\s*([^"'\s,)]+)\s*["']?""",
+    re.IGNORECASE,
+)
+
+# Logical conjunction tokens used as split boundaries in Fix #3.
+_CONJUNCTION_RE = re.compile(r"\b(and|or)\b", re.IGNORECASE)
+
+# Fix #5 — detects whether a raw text token contains any Drive operator word.
 _DRIVE_OPS_RE = re.compile(
     r"\b(contains|and|or|not|in|parents|mimeType|name|fullText"
     r"|trashed|starred|sharedWithMe|modifiedTime|createdTime"
@@ -26,85 +55,167 @@ _DRIVE_OPS_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Services that are recognised by the LLM but have no real CLI backing.
-# build_command returns a graceful skip instead of raising ValidationError.
-# FIX Bug-Admin: previously this raised ValidationError which triggered the
-# reflection retry loop (3 attempts). Now we raise a dedicated subclass that
-# the executor treats as a permanent skip (no retry).
-_UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
+# Matches a value wrapped only in double-quotes with no operator, e.g. "foo bar"
+_BARE_DQUOTE_RE = re.compile(r'^"([^"]+)"$')
 
-# Matches:  mimeType="application/vnd.google-apps.document"
-#           mimeType='application/vnd.google-apps.document'
-#           mimeType:application/vnd.google-apps.document   (colon form)
-_MIME_EQ_RE = re.compile(
-    r"""mimeType\s*[=:]\s*["']?([^"'\s,)]+)["']?""",
-    re.IGNORECASE,
-)
 
-# Matches a leading/trailing double-quoted token that is NOT a proper Drive
-# operator expression, e.g.  "CcaaS - AI Product"
-_BARE_DQUOTE_TOKEN_RE = re.compile(r'^"([^"]+)"$')
+def _escape(value: str) -> str:
+    """Fix #8 — escape single quotes inside a Drive query value."""
+    return value.replace("'", "\\'")
+
+
+def _is_valid_clause(clause: str) -> bool:
+    """Fix #6 — return True if clause is already a valid Drive API v3 expression."""
+    return bool(_DRIVE_VALID_CLAUSE_RE.match(clause.strip()))
+
+
+def _tokenize_raw_query(raw: str) -> tuple[list[str], list[str]]:
+    """Fix #3 — split raw query into (clauses, conjunctions) using token-based parsing.
+
+    Splits on bare 'and'/'or' words that are NOT embedded inside quoted strings.
+    Returns parallel lists; len(conjunctions) == len(clauses) - 1.
+    """
+    # First handle quoted substrings so we don't split inside them.
+    parts: list[str] = []
+    conjunctions: list[str] = []
+    # Walk through splitting on conjunction tokens that appear outside quotes.
+    buffer = ""
+    i = 0
+    in_single = False
+    in_double = False
+    while i < len(raw):
+        ch = raw[i]
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            buffer += ch
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+            buffer += ch
+        elif not in_single and not in_double:
+            # Try to match a conjunction keyword at this position
+            m = _CONJUNCTION_RE.match(raw, i)
+            if m:
+                if buffer.strip():
+                    parts.append(buffer.strip())
+                conjunctions.append(m.group(1).lower())
+                buffer = ""
+                i = m.end()
+                continue
+            else:
+                buffer += ch
+        else:
+            buffer += ch
+        i += 1
+    if buffer.strip():
+        parts.append(buffer.strip())
+    return parts, conjunctions
+
+
+def _classify_and_fix_clause(clause: str) -> list[str]:
+    """Fix #4 & #5 — classify a single clause and return one or more valid Drive clauses.
+
+    A raw LLM clause may itself contain multiple semantic components jammed
+    together without a conjunction, e.g.:
+        "CcaaS - AI Product" mimeType="application/vnd.google-apps.document"
+    These are split into separate fixed clauses and the caller injects 'and'.
+    """
+    clause = clause.strip()
+    if not clause:
+        return []
+
+    # Fix #6 — already valid, pass through untouched.
+    if _is_valid_clause(clause):
+        return [clause]
+
+    # Fix #2 — extract mimeType component first (may be embedded in a larger string).
+    mime_clauses: list[str] = []
+    def _collect_mime(m: re.Match) -> str:
+        value = m.group(1).strip().strip("\"'")
+        mime_clauses.append(f"mimeType='{_escape(value)}'")
+        return ""  # remove from remainder
+
+    remainder = _MIME_EQ_RE.sub(_collect_mime, clause).strip()
+
+    # remainder is now whatever was left after stripping out mimeType=...
+    text_clauses: list[str] = []
+    if remainder:
+        # Strip surrounding double-quotes from bare quoted tokens.
+        dq = _BARE_DQUOTE_RE.match(remainder)
+        if dq:
+            remainder = dq.group(1).strip()
+
+        # Fix #5 — if remainder still has no Drive operator it is bare text.
+        if not _DRIVE_OPS_RE.search(remainder):
+            safe = _escape(remainder.strip("\"' "))
+            if safe:
+                text_clauses.append(f"name contains '{safe}'")
+        else:
+            # Remainder already has an operator — keep as-is (e.g. "name contains 'x'")
+            if _is_valid_clause(remainder):
+                text_clauses.append(remainder)
+            else:
+                safe = _escape(remainder.strip("\"' "))
+                if safe:
+                    text_clauses.append(f"name contains '{safe}'")
+
+    return text_clauses + mime_clauses
 
 
 def _sanitize_drive_query(raw: str) -> str:
-    """
-    Normalise an LLM-generated Drive query string so it is accepted by the
-    Drive API v3.
+    """Normalise an LLM-generated Drive query string to valid Drive API v3 syntax.
 
-    Problems fixed:
-    - mimeType="..." / mimeType:... → mimeType = 'value'
-    - bare double-quoted name token    → name contains 'value'
-    - leftover stray quotes / spaces   → stripped
-    - pure bare name (no operator)     → name contains 'value'
+    Handles all observed failure modes:
+      "CcaaS - AI Product" mimeType="application/vnd.google-apps.document"
+      CcaaS - AI Product mimeType:application/vnd.google-apps.document
+      CcaaS - AI Product
+
+    All become:
+      name contains 'CcaaS - AI Product' and mimeType='application/vnd.google-apps.document'
     """
     q = raw.strip()
+    if not q:
+        return q
 
-    # Step 1 – fix mimeType=... / mimeType:... → mimeType = 'value'
-    def _fix_mime(m: re.Match) -> str:
-        return f"mimeType = '{m.group(1)}'"
+    # Fix #3 — token-based split preserving logical operators.
+    raw_clauses, conjunctions = _tokenize_raw_query(q)
 
-    q = _MIME_EQ_RE.sub(_fix_mime, q)
+    # Fix #4/#5 — classify each clause; a single raw clause may expand to multiple.
+    fixed_groups: list[list[str]] = [_classify_and_fix_clause(c) for c in raw_clauses]
 
-    # Step 2 – split on 'and'/'or' to process each clause independently
-    # We only normalise clauses that still look malformed.
-    clauses = re.split(r"\b(and|or)\b", q, flags=re.IGNORECASE)
-    fixed_clauses: list[str] = []
-    conjunctions: list[str] = []
+    # Flatten with explicit 'and' injected between sub-clauses from the same group
+    # (Fix #4) and preserve original conjunctions between groups.
+    all_clauses: list[str] = []
+    all_conjs: list[str] = []
 
-    # clauses alternates: term, conj, term, conj, term …
-    # Rebuild by iterating every other element.
-    i = 0
-    while i < len(clauses):
-        clause = clauses[i].strip()
-        if clause:
-            # Step 2a – bare double-quoted token with no operator → name contains
-            dq_match = _BARE_DQUOTE_TOKEN_RE.match(clause)
-            if dq_match:
-                safe = dq_match.group(1).replace("'", "\\'")
-                clause = f"name contains '{safe}'"
-            # Step 2b – bare unquoted phrase with no operator keyword
-            elif clause and "=" not in clause and not _DRIVE_OPS_RE.search(clause):
-                safe = clause.strip("\"' ").replace("'", "\\'")
-                clause = f"name contains '{safe}'"
-            fixed_clauses.append(clause)
-        if i + 1 < len(clauses):
-            conjunctions.append(clauses[i + 1].strip())
-        i += 2
+    for g_idx, group in enumerate(fixed_groups):
+        for c_idx, clause in enumerate(group):
+            all_clauses.append(clause)
+            if c_idx < len(group) - 1:
+                # Inject explicit 'and' between components from the same raw clause
+                all_conjs.append("and")
+        if g_idx < len(conjunctions):
+            # Preserve the original conjunction between groups
+            all_conjs.append(conjunctions[g_idx])
 
-    # Re-join with conjunctions
+    if not all_clauses:
+        # Ultimate fallback for completely empty result
+        safe = _escape(q.strip("\"' "))
+        return f"name contains '{safe}'"
+
+    # Fix #7 — final fallback only if the assembled result has NO Drive operator.
     result_parts: list[str] = []
-    for idx, fc in enumerate(fixed_clauses):
-        result_parts.append(fc)
-        if idx < len(conjunctions):
-            result_parts.append(conjunctions[idx])
-    q = " ".join(result_parts).strip()
+    for idx, clause in enumerate(all_clauses):
+        result_parts.append(clause)
+        if idx < len(all_conjs):
+            result_parts.append(all_conjs[idx])
+    result = " ".join(result_parts).strip()
 
-    # Step 3 – final fallback: if q is still bare (no Drive operator at all)
-    if q and not _DRIVE_OPS_RE.search(q):
-        safe = q.strip("\"' ").replace("'", "\\'")
-        q = f"name contains '{safe}'"
+    if result and not _DRIVE_OPS_RE.search(result):
+        # Still completely bare — wrap as name contains
+        safe = _escape(result.strip("\"' "))
+        result = f"name contains '{safe}'"
 
-    return q
+    return result
 
 
 class CommandPlanner:
@@ -142,10 +253,6 @@ class CommandPlanner:
         return SERVICES[service_key].actions[action_key].parameters
 
     def build_command(self, service: str, action: str, parameters: dict[str, Any]) -> list[str]:
-        # FIX Bug-Admin: unsupported stub services (admin, analytics, bigquery) must be
-        # silently skipped — NOT retried.  We raise UnsupportedServiceError (a subclass of
-        # ValidationError) so the executor can detect the permanent-skip case and avoid the
-        # 3-attempt reflection retry loop that was burning time and polluting the log.
         if str(service).lower() in _UNSUPPORTED_STUB_SERVICES:
             raise UnsupportedServiceError(
                 f"No command builder for service: {service}"
@@ -184,13 +291,8 @@ class CommandPlanner:
                 "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
             }
             if raw_query:
-                # FIX Bug-Drive-Query: sanitize the LLM-generated query so the Drive API
-                # does not reject it with 400 Invalid Value.  Common bad forms:
-                #   "CcaaS - AI Product" mimeType="application/vnd.google-apps.document"
-                #   CcaaS - AI Product mimeType:application/vnd.google-apps.document
-                # _sanitize_drive_query normalises all of these to valid Drive v3 syntax.
-                query = _sanitize_drive_query(raw_query)
-                request_params["q"] = query
+                # Fix #9 — always pass through _sanitize_drive_query; no legacy fallback.
+                request_params["q"] = _sanitize_drive_query(raw_query)
             return [
                 "drive",
                 "files",
@@ -317,18 +419,6 @@ class CommandPlanner:
             subject = self._required_text(params, "subject")
             body = self._required_text(params, "body")
 
-            # FIX Bug-Gmail-Attachment: the original _build_raw_email() produced a
-            # plain text/plain message and completely ignored the 'attachments' param,
-            # resulting in emails sent without any attachment even when the user said
-            # "send as attachment".
-            #
-            # New behaviour:
-            #   - If 'attachments' is a non-empty string (file path) or a list of paths,
-            #     build a multipart/mixed MIME message with the file(s) attached.
-            #   - If 'drive_file_id' is present (and no local file), export the Google Doc
-            #     as PDF first (handled in execution.py), then attach.
-            #   - Fall back to plain text/plain when there are no attachments (original
-            #     behaviour preserved).
             attachments = params.get("attachments")
             attachment_paths: list[str] = []
             if isinstance(attachments, str) and attachments.strip():
