@@ -35,6 +35,23 @@ _CURRENCY_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Bug 3 — array wildcard pattern: {N.messages[*].fieldName}
+_ARRAY_WILDCARD_RE = re.compile(
+    r"\{(\d+|task-\d+)\.(\w+)\[\*\]\.(\w+)\}"
+)
+
+# Bug 2 — all LLM variants that mean "put gmail message bodies here"
+_GMAIL_BODY_VARIANTS: tuple[str, ...] = (
+    "$gmail_message_body",
+    "$gmail_messages_body",
+    "$gmail_body",
+    "$email_bodies",
+    "$email_body",
+    "$gmail_message_bodies",
+    "$messages_body",
+    "$message_body",
+)
+
 
 class PlanExecutor:
     """Executes planned gws tasks sequentially and carries context forward."""
@@ -270,8 +287,6 @@ class PlanExecutor:
         if not code:
             return ExecutionResult(success=False, command=[], error="Missing required parameter: code")
 
-        # Bug 1 fix: config lives on PlanExecutor (self.config), NOT on
-        # self.planner (CommandPlanner has no config attribute).
         execution_config = self.config
         structured = execute_generated_code(code, config=execution_config)
         output = structured.get("output") or {}
@@ -279,17 +294,14 @@ class PlanExecutor:
         stdout = output.get("stdout") or ""
         parsed_value = output.get("parsed_value")
 
-        # Store full output dict under task_results for {{N.key}} refs
         results_map = context.setdefault("task_results", {})
         results_map[task.id] = output
         if task.id.startswith("task-"):
             results_map[task.id.removeprefix("task-")] = output
 
-        # Flat context keys for $-style and PLACEHOLDER_ resolution
         context["last_code_stdout"] = stdout.strip()
         context["last_code_result"] = str(parsed_value) if parsed_value is not None else stdout.strip()
 
-        # Parse structured lines like "Total USD: $8.00" into code_values dict
         _ingest_code_stdout_into_context(stdout, context)
 
         result = ExecutionResult(success=structured["success"], command=["code_execution"], stdout=stdout)
@@ -363,18 +375,27 @@ class PlanExecutor:
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         """Resolve all placeholder tokens in a task's parameters before execution."""
-        parameters = _resolve_template(task.parameters, context)
 
-        # Pass 1: bare step-ID references like '4.id'
+        # Pass 0 (Bug 3): expand array-wildcard refs like {N.messages[*].senderName}
+        parameters = _resolve_array_wildcard_refs(task.parameters, context, self.logger)
+
+        # Pass 1: {{task_id.key}} and {N.key} template references
+        parameters = _resolve_template(parameters, context)
+
+        # Pass 2: bare step-ID references like '4.id'
         parameters = _resolve_bare_step_id_params(parameters, context)
 
-        # Pass 2: natural-language extraction instructions from web search
+        # Pass 3: natural-language extraction instructions from web search
         if context.get("web_search_results"):
             parameters = _resolve_search_extraction_params(parameters, context, self.logger)
 
-        # Pass 3: PLACEHOLDER_* tokens and code executor output refs
+        # Pass 4: PLACEHOLDER_* tokens and code executor output refs
         if context.get("last_code_stdout") or context.get("last_code_result"):
             parameters = _resolve_code_output_params(parameters, context, self.logger)
+
+        # Pass 5 (Bug 2): normalise all gmail-body variant placeholders before
+        # the known_resolvers dict in _resolve_nested_dollar can match them.
+        parameters = _resolve_gmail_body_variants(parameters, context, self.logger)
 
         # Resolve nested $-placeholders inside list/dict values
         parameters = _resolve_nested_dollar(parameters, context, self)
@@ -441,6 +462,19 @@ class PlanExecutor:
                 parameters["range"] = f"'{tab}'!{cell_part}" if " " in tab else f"{tab}!{cell_part}"
             elif "!" not in rng:
                 parameters["range"] = f"'{tab}'!{rng}" if " " in tab else f"{tab}!{rng}"
+
+        # Bug 2 safety net: docs.batch_update must never send empty text/content
+        if task.service == "docs" and task.action == "batch_update":
+            for text_key in ("text", "content"):
+                raw = parameters.get(text_key)
+                if isinstance(raw, str) and not raw.strip():
+                    fallback = _gmail_messages_body_text(context)
+                    if fallback and fallback != "No Gmail message body available.":
+                        self.logger.warning(
+                            "Bug2 safety-net: '%s' was empty for docs.batch_update — "
+                            "filling from gmail_messages context.", text_key
+                        )
+                        parameters[text_key] = fallback
 
         return PlannedTask(
             id=task.id,
@@ -593,6 +627,157 @@ class PlanExecutor:
                 rendered = " | ".join(str(cell) for cell in row)
                 lines.append(rendered)
         return "\n".join(lines).strip()
+
+
+# ---------------------------------------------------------------------------
+# Bug 3 — array-wildcard reference resolver
+# {N.messages[*].senderName}  →  joined string  (scalar context)
+# when param key is "values" / "rows"  →  2-D list  [[name, email], ...]
+# ---------------------------------------------------------------------------
+
+def _resolve_array_wildcard_refs(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    """Resolve LLM-emitted array-wildcard placeholders like {N.messages[*].fieldName}.
+
+    For each match the resolver:
+    1. Looks up ``context['gmail_messages']`` (already fetched full messages).
+    2. Extracts the named field from each message's headers or top-level keys.
+    3. For ``values``/``rows`` params returns a 2-D list; otherwise a joined string.
+    """
+    if isinstance(params, dict):
+        return {k: _resolve_array_wildcard_from_key(k, v, context, logger) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_array_wildcard_refs(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+    # Scalar string — replace all wildcard tokens inline
+    return _replace_wildcard_tokens(params, context, logger, scalar=True)
+
+
+def _resolve_array_wildcard_from_key(
+    key: str,
+    value: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    """Handle a single dict key/value pair for wildcard resolution."""
+    if not isinstance(value, str):
+        return _resolve_array_wildcard_refs(value, context, logger)
+
+    matches = _ARRAY_WILDCARD_RE.findall(value)
+    if not matches:
+        return value
+
+    # For values/rows params that contain a single wildcard token produce a 2-D list.
+    if key in ("values", "rows") and value.strip() == _ARRAY_WILDCARD_RE.search(value).group(0):
+        step_id, collection, field_name = matches[0]
+        rows = _extract_wildcard_rows(step_id, collection, field_name, context, logger)
+        if rows is not None:
+            logger.info("Bug3: resolved param '%s' wildcard {%s.%s[*].%s} → %d rows", key, step_id, collection, field_name, len(rows))
+            return rows
+
+    # Otherwise join extracted values as a comma-separated string
+    return _replace_wildcard_tokens(value, context, logger, scalar=True)
+
+
+def _replace_wildcard_tokens(value: str, context: dict[str, Any], logger: logging.Logger, scalar: bool = True) -> str:
+    """Replace all {N.collection[*].field} tokens in a string with joined values."""
+    def _sub(m: re.Match) -> str:
+        step_id, collection, field_name = m.group(1), m.group(2), m.group(3)
+        rows = _extract_wildcard_rows(step_id, collection, field_name, context, logger)
+        if rows:
+            flat = [str(cell) for row in rows for cell in row if cell]
+            return ", ".join(flat)
+        return m.group(0)
+
+    return _ARRAY_WILDCARD_RE.sub(_sub, value)
+
+
+def _extract_wildcard_rows(
+    step_id: str,
+    collection: str,
+    field_name: str,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> list[list[str]] | None:
+    """Extract a list of single-value rows from gmail_messages for the given field."""
+    messages = context.get("gmail_messages") or []
+    if not messages:
+        logger.warning("Bug3: no gmail_messages in context for wildcard %s.%s[*].%s", step_id, collection, field_name)
+        return None
+
+    field_lower = field_name.lower()
+    rows: list[list[str]] = []
+
+    # Map common LLM field names to header keys or message-level keys
+    _HEADER_ALIASES: dict[str, str] = {
+        "sendername": "from",
+        "sender_name": "from",
+        "name": "from",
+        "senderemail": "from",
+        "sender_email": "from",
+        "email": "from",
+        "subject": "subject",
+        "date": "date",
+        "to": "to",
+        "cc": "cc",
+    }
+    header_key = _HEADER_ALIASES.get(field_lower, field_lower)
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        headers = _gmail_headers(msg)
+        raw = headers.get(header_key, "")
+
+        if not raw:
+            # Try top-level message key as fallback
+            raw = str(msg.get(field_name) or msg.get(field_lower) or "")
+
+        if not raw:
+            continue
+
+        # For email-type fields strip the display name, keep address only
+        if field_lower in ("senderemail", "sender_email", "email"):
+            addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
+            raw = addr_m.group(1).strip() if addr_m else raw.strip()
+        elif field_lower in ("sendername", "sender_name", "name"):
+            # Strip email address, keep display name
+            raw = raw.split("<", 1)[0].strip().strip('"')
+
+        if raw:
+            rows.append([raw])
+
+    return rows if rows else None
+
+
+# ---------------------------------------------------------------------------
+# Bug 2 — gmail body variant normaliser
+# ---------------------------------------------------------------------------
+
+def _resolve_gmail_body_variants(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    """Normalise all known LLM variants of the gmail-body placeholder to the
+    canonical ``$gmail_message_body`` token so ``_resolve_nested_dollar`` can
+    match it in its ``known_resolvers`` dict.
+    """
+    if isinstance(params, dict):
+        return {k: _resolve_gmail_body_variants(v, context, logger) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_gmail_body_variants(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+    stripped = params.strip()
+    if stripped in _GMAIL_BODY_VARIANTS and stripped != "$gmail_message_body":
+        logger.info("Bug2: normalised gmail-body variant '%s' → '$gmail_message_body'", stripped)
+        return "$gmail_message_body"
+    return params
 
 
 # ---------------------------------------------------------------------------
@@ -824,13 +1009,13 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
         "$last_document_id": context.get("last_document_id") or "",
         "$last_code_stdout": context.get("last_code_stdout") or "",
         "$last_code_result": context.get("last_code_result") or "",
-        # CR-2 guard: $user_email resolves to an explicit address from context if present
         "$user_email": context.get("user_email") or context.get("explicit_to_email") or "",
         "$gmail_summary_values": executor._gmail_summary_values(context),
         "$sheet_email_body": executor._sheet_email_body(context),
         "$drive_summary_values": executor._drive_summary_values(context),
         "$web_search_markdown": _web_search_markdown(context),
         "$web_search_table_values": _web_search_table_values(context),
+        # Canonical gmail-body token — all variants are normalised to this before this point
         "$gmail_message_body": _gmail_messages_body_text(context),
     }
     if value in known_resolvers:
@@ -904,7 +1089,13 @@ def _gmail_messages_body_text(context: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolve ``{{task_id.key}}`` and ``{N.key}`` placeholder references."""
+    """Recursively resolve ``{{task_id.key}}`` and ``{N.key}`` placeholder references.
+
+    Bug 1 fix: the inner replacer now normalises both the looked-up key and the
+    requested key_path segment to lowercase-no-underscores before comparison, so
+    camelCase keys like ``spreadsheetId`` / ``documentId`` are always found even
+    when the LLM emits them in mixed case inside the placeholder.
+    """
     if isinstance(value, dict):
         return {k: _resolve_template(v, context) for k, v in value.items()}
     if isinstance(value, list):
@@ -927,6 +1118,7 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 
         for part in parts:
             if isinstance(current, dict):
+                # Bug 1: normalise to lowercase-no-underscores for camelCase tolerance
                 norm_part = part.lower().replace("_", "")
                 found = False
                 for k, v in current.items():
@@ -936,7 +1128,14 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
                         break
 
                 if not found:
-                    if norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
+                    # Well-known aliases: spreadsheetId, documentId, fileId, messageId
+                    if norm_part in ("id", "spreadsheetid") and "spreadsheetId" in current:
+                        current = current["spreadsheetId"]
+                        found = True
+                    elif norm_part in ("id", "documentid") and "documentId" in current:
+                        current = current["documentId"]
+                        found = True
+                    elif norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
                         current = current["files"][0].get("id")
                         if current:
                             found = True
