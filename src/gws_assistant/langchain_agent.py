@@ -51,11 +51,13 @@ _EMAIL_SEND_KEYWORDS = (
 
 
 def _request_requires_send_email(text: str) -> bool:
+    """Return True if the request text contains an email-send intent keyword."""
     lowered = text.lower()
     return any(kw in lowered for kw in _EMAIL_SEND_KEYWORDS)
 
 
 def _plan_has_send_task(tasks: list[dict]) -> bool:
+    """Return True if any task in the plan is a gmail.send_message action."""
     for t in tasks:
         if not isinstance(t, dict):
             continue
@@ -70,7 +72,25 @@ def _extract_explicit_email(text: str) -> str:
     return m.group(0) if m else ""
 
 
+def _derive_next_task_id(tasks_data: list[dict]) -> str:
+    """Derive a new task ID that matches the naming convention used by the LLM.
+
+    If the LLM used plain numeric IDs (``'1'``, ``'2'``, ...) the new ID will
+    also be numeric.  If it used ``'task-N'`` prefixes, the new ID matches that
+    form.  Falls back to ``'task-N'`` when the list is empty or the first ID
+    is in an unexpected format.
+    """
+    n = len(tasks_data) + 1
+    if tasks_data and isinstance(tasks_data[0].get("id"), str):
+        first_id = tasks_data[0]["id"]
+        if not first_id.startswith("task-"):
+            # LLM used plain numeric IDs — match that convention
+            return str(n)
+    return f"task-{n}"
+
+
 def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
+    """Create and return a ChatOpenAI agent, or None on failure."""
     try:
         return ChatOpenAI(
             model=config.model,
@@ -85,6 +105,7 @@ def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI |
 
 def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger,
                         memory_hint: str = "") -> RequestPlan | None:
+    """Generate a RequestPlan from the user's natural-language request via LangChain."""
     model = create_agent(config, logger)
     if not model:
         return None
@@ -165,10 +186,6 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         if not isinstance(tasks_data, list):
             tasks_data = []
 
-        # ------------------------------------------------------------------ #
-        # BUG FIX 3 + C: Ensure gmail.send_message is present with the        #
-        # CORRECT to_email (from user request, not receipt senders).          #
-        # ------------------------------------------------------------------ #
         explicit_email = _extract_explicit_email(text)
 
         # Fix any existing send_message tasks that have a bad to_email
@@ -178,8 +195,6 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
             if t.get("service") == "gmail" and t.get("action") == "send_message":
                 params = t.get("parameters") or {}
                 to_addr = str(params.get("to_email") or "").strip()
-                # If the planned address is a placeholder or looks like a receipt
-                # mailer, override it with the explicit address from the request.
                 if explicit_email and (not to_addr or "@" not in to_addr or
                         re.search(r"(noreply|no-reply|invoice|receipt|stripe|paypal|x\.com|twitter)",
                                   to_addr, re.IGNORECASE)):
@@ -187,23 +202,32 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
                     t["parameters"] = params
                     logger.info("BugFixC: corrected to_email in planned task to '%s'", explicit_email)
 
+        # CR-2 / CR-3: Only inject the fallback send task when we have a valid address.
+        # Skipping injection entirely is safer than passing an unresolvable '$user_email'.
         if _request_requires_send_email(text) and not _plan_has_send_task(tasks_data):
-            logger.warning(
-                "BugFix3: gmail.send_message missing from plan. Injecting fallback task."
-            )
-            next_id = f"task-{len(tasks_data) + 1}"
-            to_addr = explicit_email or "$user_email"
-            tasks_data.append({
-                "id": next_id,
-                "service": "gmail",
-                "action": "send_message",
-                "parameters": {
-                    "to_email": to_addr,
-                    "subject": "Your Twitter/X Subscription Invoice Summary",
-                    "body": "$last_code_stdout",
-                },
-                "reason": "User explicitly requested sending an email — auto-injected by BugFix3.",
-            })
+            if explicit_email:
+                logger.warning(
+                    "BugFix3: gmail.send_message missing from plan. Injecting fallback task to '%s'.",
+                    explicit_email,
+                )
+                # CR-3: match the ID convention of the existing tasks
+                next_id = _derive_next_task_id(tasks_data)
+                tasks_data.append({
+                    "id": next_id,
+                    "service": "gmail",
+                    "action": "send_message",
+                    "parameters": {
+                        "to_email": explicit_email,
+                        "subject": "Your Twitter/X Subscription Invoice Summary",
+                        "body": "$last_code_stdout",
+                    },
+                    "reason": "User explicitly requested sending an email — auto-injected by BugFix3.",
+                })
+            else:
+                logger.warning(
+                    "BugFix3: send email intent detected but no explicit address found in request; "
+                    "skipping gmail.send_message injection to avoid unresolvable $user_email."
+                )
 
         tasks = []
         for t in tasks_data:
