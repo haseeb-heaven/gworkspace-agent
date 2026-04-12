@@ -86,6 +86,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         idx = state.get("current_task_index", 0)
         context = state.get("context", {})
         executions = list(state.get("executions", []))
+        thought_trace = list(state.get("thought_trace", []))
 
         if not plan or idx >= len(plan.tasks):
             return {"error": "No tasks to execute."}
@@ -106,6 +107,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             result = executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
+            thought_trace.append({
+                "step": idx + 1,
+                "action": f"{resolved.service}.{resolved.action}",
+                "observation": str(latest.get("output", {})
+                                .get("stdout", ""))[:300],
+                "success": result.success,
+                "reason": resolved.reason,
+            })
             _log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
             if not result.success:
                 task_error = result.error or result.stderr or "Task execution failed"
@@ -118,6 +127,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "last_result": latest,
             "current_attempt": state.get("current_attempt", 0) + 1,
             "conversation_history": _trim_history(state.get("conversation_history", [])),
+            "thought_trace": thought_trace,
         }
 
     def reflect_node(state: AgentState) -> dict[str, Any]:
@@ -157,7 +167,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         plan = state.get("plan")
         executions = state.get("executions", [])
         if plan and executions:
-            report = formatter.format_report(PlanExecutionReport(plan=plan, executions=executions))
+            report = formatter.format_report(
+                PlanExecutionReport(
+                    plan=plan,
+                    executions=executions,
+                    thought_trace=state.get("thought_trace", []),
+                )
+            )
         else:
             report = state.get("final_output") or state.get("error") or "No result produced."
         if any(not item.result.success for item in executions) and "failed" not in report.lower():
@@ -313,11 +329,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "execute_task"
         return "format_output"
 
-    def route_after_search(state: AgentState) -> Literal["execute_task", "format_output"]:
-        plan = state.get("plan")
-        if plan and plan.tasks:
-             return "execute_task"
-        return "format_output"
 
     workflow = StateGraph(AgentState)
     workflow.add_node("generate_plan", plan_node)

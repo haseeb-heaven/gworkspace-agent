@@ -27,7 +27,8 @@ def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI |
         return None
 
 
-def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger) -> RequestPlan | None:
+def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logger,
+                        memory_hint: str = "") -> RequestPlan | None:
     """Uses a Chat model with structured output to plan Workspace tasks."""
     model = create_agent(config, logger)
     if not model:
@@ -56,6 +57,13 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
         "7. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones, and ignore the unsupported ones. Do NOT set no_service_detected=true if AT LEAST ONE supported service can be used.\n"
         "8. PIPELINE ENFORCEMENT: For complex workflows, prefer the sequence: web_search -> summarize_results -> docs.create_document -> sheets.append_values -> gmail.send_message."
     )
+
+    if memory_hint:
+        system_prompt = (
+            "Relevant past task context:\n"
+            f"{memory_hint}\n\n"
+            f"{system_prompt}"
+        )
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),

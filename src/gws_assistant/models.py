@@ -138,6 +138,7 @@ class AgentState(TypedDict, total=False):
     last_result: StructuredToolResult | None
     reflection: ReflectionDecision | None
     current_attempt: int
+    thought_trace: list[dict]
 
 
 

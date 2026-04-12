@@ -43,9 +43,13 @@ class WorkspaceAgentSystem:
     def plan(self, user_text: str) -> RequestPlan:
         from .memory import recall_similar
         past = recall_similar(user_text)
+        memory_hint = ""
         if past:
-            self.logger.info(f"Memory: found {len(past)} similar past episodes")
-            # Inject past context into LLM prompt if available
+            self.logger.info("Memory: found %d similar past episodes", len(past))
+            memory_hint = "\n".join(
+                f"- Past: '{ep['goal'][:80]}' → {ep['outcome']}"
+                for ep in past[:3]
+            )
 
         text = (user_text or "").strip()
         if not text:
@@ -56,7 +60,8 @@ class WorkspaceAgentSystem:
             )
 
         if self._use_langchain:
-            plan = plan_with_langchain(text, self.config, self.logger)
+            plan = plan_with_langchain(text, self.config, self.logger,
+                                         memory_hint=memory_hint)
             if plan and plan.tasks:
                 return plan
             if plan and plan.no_service_detected:
