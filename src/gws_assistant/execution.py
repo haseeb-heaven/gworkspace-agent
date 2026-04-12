@@ -50,8 +50,14 @@ _DOT_SENDER_REF_RE = re.compile(
 
 # Bug 4 — 3-level header path: {N.headers.From.name}, {N.headers.From.email},
 # {N.headers.Subject}, {N.headers.Date}, etc.
-# The LLM sometimes generates this deeply-nested form when it knows the Gmail
-# API payload shape. We intercept it in Pass 0c before _find_unresolved_placeholder.
+#
+# FIX Bug C: The old pattern did NOT require the literal "headers." segment,
+# so it matched {N.from.name} and {N.subject} — tokens already handled by
+# Pass 0a (_DOT_SENDER_REF_RE). Pass 0c would then fire on already-resolved
+# values and return an empty string, clobbering the correct result.
+#
+# The corrected pattern requires "headers." between the step ID and the field,
+# so it ONLY fires on the deeply-nested LLM form: {N.headers.<field>}.
 _HEADERS_DOT_REF_RE = re.compile(
     r"\{(\d+|task-\d+)\.headers\.(from\.name|from\.email|from|subject|date|snippet|to|cc|bcc)\}",
     re.IGNORECASE,
@@ -331,7 +337,10 @@ class PlanExecutor:
         if not code:
             return ExecutionResult(success=False, command=[], error="Missing required parameter: code")
 
-        structured = execute_generated_code(code, config=self.config)
+        # Bug B fix: self.config may be None when PlanExecutor is constructed without a
+        # config argument. Fall back to self.planner.config so execute_generated_code()
+        # always receives a valid config object and never crashes on attribute access.
+        structured = execute_generated_code(code, config=self.config or self.planner.config)
         output = structured.get("output") or {}
 
         stdout = output.get("stdout") or ""
@@ -424,6 +433,8 @@ class PlanExecutor:
         parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
 
         # Pass 0c: resolve 3-level header refs: {N.headers.From.name}, {N.headers.Subject}, etc.
+        # NOTE: _HEADERS_DOT_REF_RE now requires the literal ".headers." segment so it
+        # cannot overlap with the 2-level paths already handled by Pass 0a.
         parameters = _resolve_headers_dot_refs(parameters, context, self.logger)
 
         # Pass 1: {{task_id.key}}, {N.key}, and {N.key[0].sub} bracket-index refs
@@ -880,6 +891,9 @@ def _extract_wildcard_rows(
 # Bug 4: The LLM sometimes generates deeply-nested {N.headers.X.Y} tokens that
 # mirror the Gmail API payload shape. None of the previous passes covered this
 # form because _DOT_SENDER_REF_RE only has 2 segments after the step ID.
+#
+# Bug C fix: _HEADERS_DOT_REF_RE now requires the literal ".headers." segment,
+# preventing overlap with _DOT_SENDER_REF_RE on 2-level paths like {N.from.name}.
 # ---------------------------------------------------------------------------
 
 def _resolve_headers_dot_refs(
