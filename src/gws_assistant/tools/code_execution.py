@@ -92,9 +92,13 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
             k: v for k, v in sandbox_globals.items()
             if not k.startswith("_") and k != "__builtins__" and not callable(v)
         }
-        exec_result.return_value = results_vars
+        # If the code assigned a top-level `result` variable, expose that directly
+        # as return_value so that parsed_value == result (not a dict containing both
+        # "result" and "_result" keys, which violates the structured contract).
         if "result" in sandbox_globals:
-            exec_result.return_value["_result"] = sandbox_globals["result"]
+            exec_result.return_value = sandbox_globals["result"]
+        else:
+            exec_result.return_value = results_vars
         exec_result.success = True
     except Exception as exc:
         exec_result.success = False
