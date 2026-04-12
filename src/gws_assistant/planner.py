@@ -104,10 +104,11 @@ class CommandPlanner:
             return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id})]
         if action == "export_file":
             file_id = self._required_text(params, "file_id")
-        if action == "export_file":
-            file_id = self._required_text(params, "file_id")
             mime_type = str(params.get("mime_type") or "text/plain").strip()
             return ["drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type})]
+        if action == "delete_file":
+            file_id = self._required_text(params, "file_id")
+            return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
         raise ValidationError(f"Unsupported drive action: {action}")
 
     def _build_sheets_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -240,7 +241,6 @@ class CommandPlanner:
             start_date = start_date_raw.split("T")[0]
             if len(start_date) > 10:
                 start_date = start_date[:10]
-
             return [
                 "calendar",
                 "events",
@@ -273,6 +273,23 @@ class CommandPlanner:
                 "create",
                 "--json",
                 json.dumps(doc_body, ensure_ascii=True),
+            ]
+        if action == "get_document":
+            # Resolve parameter: LLM may emit 'document_id', 'documentId', or 'fileId'
+            doc_id = (
+                params.get("document_id")
+                or params.get("documentId")
+                or params.get("file_id")
+                or params.get("fileId")
+            )
+            if not doc_id or not str(doc_id).strip():
+                raise ValidationError("Missing required parameter: document_id")
+            return [
+                "docs",
+                "documents",
+                "get",
+                "--params",
+                json.dumps({"documentId": str(doc_id).strip()}),
             ]
         if action == "batch_update":
             document_id = self._required_text(params, "document_id")
@@ -374,7 +391,6 @@ class CommandPlanner:
         range_str = range_str.strip()
         if "!" not in range_str:
             return range_str
-
         sheet_part, cell_part = range_str.split("!", 1)
         if " " in sheet_part and not (sheet_part.startswith("'") and sheet_part.endswith("'")):
             return f"'{sheet_part}'!{cell_part}"
@@ -383,11 +399,8 @@ class CommandPlanner:
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
         value = params.get(key)
-        # Explicit None or empty string → check variations
         if value is not None and str(value).strip():
             return str(value).strip()
-
-        # Try camelCase / no-underscore variations
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
         for k, v in params.items():
             if k.lower().replace("_", "") in variations and v is not None and str(v).strip():
