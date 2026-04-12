@@ -56,10 +56,15 @@ class AppConfig:
         log_level = (os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
         verbose = _to_bool(os.getenv("APP_VERBOSE"), default=True)
         setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
-        
+
         max_retries = int((os.getenv("MAX_RETRIES") or "3").strip())
         max_replans = int((os.getenv("MAX_REPLANS") or "1").strip())
         langchain_enabled = _to_bool(os.getenv("LANGCHAIN_ENABLED"), default=True)
+
+        # Default True — always recover via heuristic planner when LLM fails.
+        # Set USE_HEURISTIC_FALLBACK=false in .env only if you want hard failures
+        # on LLM planning errors (useful for strict CI/test environments).
+        use_heuristic_fallback = _to_bool(os.getenv("USE_HEURISTIC_FALLBACK"), default=True)
 
         code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
         e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
@@ -79,6 +84,7 @@ class AppConfig:
             max_retries=max_retries,
             max_replans=max_replans,
             langchain_enabled=langchain_enabled,
+            use_heuristic_fallback=use_heuristic_fallback,
             code_execution_backend=code_execution_backend,
             e2b_api_key=e2b_api_key,
         )

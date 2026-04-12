@@ -23,7 +23,9 @@ class AppConfigModel:
     max_retries: int
     langchain_enabled: bool
     max_replans: int = 1
-    use_heuristic_fallback: bool = False
+    # Default True: always fall back to heuristic planner when LLM fails.
+    # Previously False, which caused a hard stop on any LLM planning error.
+    use_heuristic_fallback: bool = True
     code_execution_enabled: bool = True
     code_execution_backend: str = "local"
     e2b_api_key: str | None = None
@@ -75,6 +77,8 @@ class ActionSpec:
     label: str
     keywords: tuple[str, ...]
     parameters: tuple[ParameterSpec, ...] = ()
+    # Short LLM-facing description of what this action does and what it returns.
+    description: str = ""
 
 
 @dataclass(slots=True)
@@ -83,6 +87,8 @@ class ServiceSpec:
     label: str
     aliases: tuple[str, ...]
     actions: dict[str, ActionSpec]
+    # Short LLM-facing description of the service.
+    description: str = ""
 
 
 @dataclass(slots=True)
@@ -141,8 +147,6 @@ class AgentState(TypedDict, total=False):
     thought_trace: list[dict]
 
 
-
-
 class StructuredToolResult(TypedDict):
     success: bool
     output: Any
@@ -154,6 +158,7 @@ class ReflectionDecision:
     action: Literal["continue", "retry", "replan"]
     reason: str = ""
     replacement_plan: RequestPlan | None = None
+
 
 @dataclass(slots=True)
 class WebSearchResult:

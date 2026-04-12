@@ -26,8 +26,14 @@ _REQUEST_PLAN_SCHEMA = {
                     "type": "object",
                     "properties": {
                         "id": {"type": "string"},
-                        "service": {"type": "string"},
-                        "action": {"type": "string"},
+                        "service": {
+                            "type": "string",
+                            "description": "Must be one of the exact service keys listed in the catalog (e.g. 'gmail', 'sheets', 'drive'). Never invent new service names.",
+                        },
+                        "action": {
+                            "type": "string",
+                            "description": "Must be one of the exact action keys for the given service (e.g. 'list_messages', 'send_message'). Never invent new action names.",
+                        },
                         "parameters": {"type": "object"},
                         "reason": {"type": "string"},
                     },
@@ -56,9 +62,6 @@ _EMAIL_BODY_PLACEHOLDERS = (
 
 # ---------------------------------------------------------------------------
 # Model fallback chain — updated to currently-available OpenRouter endpoints.
-# The dead :free endpoints (gemini-flash-1.5, llama-3.1-8b:free, mistral-7b:free,
-# phi-3-mini:free) were returning HTTP 404 "No endpoints found" on every call,
-# causing the entire planning pipeline to stall for ~20 seconds before giving up.
 # ---------------------------------------------------------------------------
 _MODEL_FALLBACK_CHAIN: list[str] = [
     "google/gemini-2.0-flash-001",
@@ -80,12 +83,7 @@ def _is_rate_limit_error(exc: Exception) -> bool:
 
 
 def _is_endpoint_missing_error(exc: Exception) -> bool:
-    """Return True for HTTP 404 'No endpoints found' responses from OpenRouter.
-
-    These occur when a model ID in the fallback chain has been retired or
-    renamed. We skip them immediately without retrying — retrying a 404
-    just wastes ~6 seconds per model.
-    """
+    """Return True for HTTP 404 'No endpoints found' from OpenRouter."""
     msg = str(exc)
     return "404" in msg or "no endpoints found" in msg.lower()
 
@@ -147,6 +145,35 @@ def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
     return "Here are the results of your Google Workspace request."
 
 
+def is_valid_plan(plan_data: Any) -> bool:
+    """Validate that every task in the LLM plan has a known service and action.
+
+    Returns False (invalid) if:
+    - plan_data is not a dict
+    - 'tasks' is missing, None, or not a list
+    - any task has a service/action not present in the catalog
+
+    A plan with zero tasks is considered invalid because it means the LLM
+    returned an empty response — the heuristic planner should handle it.
+    """
+    if not isinstance(plan_data, dict):
+        return False
+    tasks = plan_data.get("tasks")
+    if not isinstance(tasks, list) or len(tasks) == 0:
+        # Empty tasks list from LLM means it couldn't plan — let heuristics try.
+        return False
+    for t in tasks:
+        if not isinstance(t, dict):
+            return False
+        service = str(t.get("service") or "").strip().lower()
+        action = str(t.get("action") or "").strip()
+        if service not in SERVICES:
+            return False
+        if action not in SERVICES[service].actions:
+            return False
+    return True
+
+
 def _safe_invoke_structured_output(
     chain: Any,
     request: dict,
@@ -154,10 +181,8 @@ def _safe_invoke_structured_output(
 ) -> Any:
     """Invoke a structured-output chain, returning None on parse failures.
 
-    HTTP 429 rate-limit errors are RE-RAISED so the caller's retry/fallback
-    loop can handle them with proper back-off. HTTP 404 endpoint-missing
-    errors are also RE-RAISED so the caller can skip that model immediately.
-    All other unexpected errors are swallowed and None is returned.
+    HTTP 429 and HTTP 404 are RE-RAISED so the caller's retry/fallback loop
+    can handle them. All other unexpected errors are swallowed → None.
     """
     try:
         return chain.invoke(request)
@@ -174,7 +199,11 @@ def _safe_invoke_structured_output(
         return None
 
 
-def create_agent(config: AppConfigModel, logger: logging.Logger, model_override: str | None = None) -> ChatOpenAI | None:
+def create_agent(
+    config: AppConfigModel,
+    logger: logging.Logger,
+    model_override: str | None = None,
+) -> ChatOpenAI | None:
     try:
         return ChatOpenAI(
             model=model_override or config.model,
@@ -187,6 +216,32 @@ def create_agent(config: AppConfigModel, logger: logging.Logger, model_override:
         return None
 
 
+def _build_catalog_prompt() -> str:
+    """Build a rich, LLM-readable catalog section from service_catalog descriptions.
+
+    Format per action:
+      - service_key.action_key — short description
+        params: param1 (required), param2 (optional)
+
+    This replaces the old bare 'service_key: action1, action2' listing which
+    gave the LLM no guidance on what each action does or what parameters it needs.
+    """
+    lines: list[str] = []
+    for s_key, s_spec in SERVICES.items():
+        svc_desc = f" — {s_spec.description}" if s_spec.description else ""
+        lines.append(f"[{s_key}]{svc_desc}")
+        for a_key, a_spec in s_spec.actions.items():
+            act_desc = f" — {a_spec.description}" if a_spec.description else ""
+            param_parts = []
+            for p in a_spec.parameters:
+                flag = "required" if p.required else "optional"
+                param_parts.append(f"{p.name} ({flag}, e.g. {p.example!r})")
+            param_str = ", ".join(param_parts) if param_parts else "no parameters"
+            lines.append(f"  {s_key}.{a_key}{act_desc}")
+            lines.append(f"    params: {param_str}")
+    return "\n".join(lines)
+
+
 def _invoke_with_backoff(
     model_name: str,
     config: AppConfigModel,
@@ -197,11 +252,9 @@ def _invoke_with_backoff(
 ) -> Any:
     """Try to invoke the planner chain on a specific model with exponential back-off.
 
-    Returns the raw plan_data dict on success, None if all retries fail due to
-    parse errors, or raises if all retries hit 429.  404 endpoint-missing errors
-    are raised immediately (no retries) so the caller can skip the dead model.
+    Returns the raw plan_data dict on success, or None if all retries fail due
+    to parse errors or invalid plans. Raises on persistent 429 or immediately on 404.
     """
-    last_exc: Exception | None = None
     model = create_agent(config, logger, model_override=model_name)
     if not model:
         return None
@@ -210,17 +263,26 @@ def _invoke_with_backoff(
         try:
             chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
             result = _safe_invoke_structured_output(chain, {"request": request_text}, logger)
+
+            # Validate plan — treat invalid plan same as None (retry).
+            if result is not None and not is_valid_plan(result):
+                logger.warning(
+                    "Model '%s': plan failed validation on attempt %d/%d — "
+                    "tasks contained unknown service/action keys. Raw: %s",
+                    model_name, attempt + 1, max_retries, result,
+                )
+                result = None
+
             if result is not None:
                 return result
+
             if attempt < max_retries - 1:
                 logger.warning(
-                    "Model '%s': structured output None on attempt %d/%d — retrying.",
+                    "Model '%s': structured output None/invalid on attempt %d/%d — retrying.",
                     model_name, attempt + 1, max_retries,
                 )
                 time.sleep(1)
         except Exception as exc:
-            last_exc = exc
-            # 404 — dead endpoint: bail immediately, no retries.
             if _is_endpoint_missing_error(exc):
                 logger.warning("Model '%s': endpoint missing (404) — skipping.", model_name)
                 raise
@@ -251,45 +313,42 @@ def plan_with_langchain(
 
     Execution order:
     1. Try primary model (config.model) with up to 3 retries + exponential back-off.
-    2. On rate-limit exhaustion or 404, iterate through _MODEL_FALLBACK_CHAIN.
-    3. If every model is exhausted, return None so the heuristic planner takes over.
+    2. On exhaustion or 404, iterate through _MODEL_FALLBACK_CHAIN.
+    3. Each candidate plan is validated by is_valid_plan() before acceptance.
+    4. If every model is exhausted, return None so the heuristic planner takes over.
     """
-    catalog_lines = []
-    for s_key, s_spec in SERVICES.items():
-        actions_str = ", ".join(s_spec.actions.keys())
-        catalog_lines.append(f"- {s_key} ({s_spec.label}): {actions_str}")
-    catalog_summary = "\n".join(catalog_lines)
+    catalog_summary = _build_catalog_prompt()
 
     system_prompt = (
         "You are an expert Google Workspace automation planner. "
-        "Break down the user's request into a sequential plan of discrete tasks using the available services.\n\n"
-        "AVAILABLE SERVICES AND ACTIONS:\n"
+        "Break down the user's request into a sequential plan of discrete tasks using ONLY "
+        "the services and actions listed in the catalog below.\n\n"
+        "AVAILABLE SERVICES, ACTIONS, AND PARAMETERS:\n"
         f"{catalog_summary}\n\n"
-        "RULES:\n"
-        "1. SEQUENTIAL PLAN: Provide a list of tasks. Tasks can refer to previous outputs using {{task_id.key}}.\n"
-        "   IMPORTANT: Always use the double-brace form {{task_id.key}} (e.g. {{4.spreadsheetId}}) for cross-step\n"
-        "   references. NEVER write bare step references like '4.id' as a literal parameter value.\n"
-        "2. EMAIL DETAILS: For Gmail, ALWAYS follow gmail.list_messages with gmail.get_message if details are needed. "
-        "Pass 'q' to list_messages, then omit 'id' on get_message (the executor will automatically resolve it).\n"
-        "3. EXPORTS: For Drive exports (Docs/Sheets), ALWAYS call drive.export_file. Do NOT use Docs/Sheets APIs for exporting.\n"
-        "4. WEB SEARCH: If the user asks for information not in their Workspace (e.g. 'Top 3 AI frameworks'), use search.web_search first.\n"
-        "   After a web search, ALWAYS use the $web_search_table_values placeholder for cell values — do NOT write\n"
-        "   natural-language extraction instructions as cell values.\n"
-        "5. PARAMETER BINDING: The system automatically links 'id', 'spreadsheet_id', and 'document_id' between sequential tasks.\n"
-        "6. DO NOT invent services or actions that are not in the catalog.\n"
-        "7. If a request asks for both supported and unsupported services, create tasks ONLY for the supported ones.\n"
-        "8. PIPELINE ENFORCEMENT: For complex workflows, prefer the sequence: web_search -> code -> sheets.append_values -> gmail.send_message.\n"
-        "9. CODE EXECUTOR OUTPUT: When a 'code' task computes values (e.g. totals, conversions), the next sheets.append_values\n"
-        "   task MUST use the token $last_code_result (for a single scalar) or PLACEHOLDER_AMOUNT as the cell value.\n"
-        "   Do NOT write literal strings like 'PLACEHOLDER_AMOUNT' — the executor resolves them automatically.\n"
-        "   For the email body referencing code output, use $last_code_stdout.\n"
-        "10. MULTIPLE SHEET TABS: If writing results to multiple tabs, name the ranges explicitly (e.g. 'Tab1!A1:C10',\n"
-        "   'Tab2!A1:C10'). Do NOT reuse 'Sheet1!A1' for multiple writes targeting different tabs.\n"
-        "11. SEND EMAIL REQUIREMENT: If the user request mentions sending an email, you MUST include a\n"
-        "   gmail.send_message task as the LAST step. Set 'to_email' to the EXACT address the user stated\n"
-        "   (e.g. <recipient@example.com>). Do NOT use a receipt/invoice sender address. Choose the most\n"
-        "   appropriate body placeholder ($last_code_stdout, $sheet_email_body, $gmail_summary_values, or\n"
-        "   $web_search_markdown) based on the preceding tasks. This step is MANDATORY and must not be omitted."
+        "STRICT RULES:\n"
+        "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
+        "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
+        "2. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
+        "   {{task_id.key}} (double braces), e.g. {{task-1.spreadsheetId}}.\n"
+        "3. EMAIL DETAILS: always follow gmail.list_messages with gmail.get_message when "
+        "   full content is needed. Pass 'q' to list_messages. Omit message_id in "
+        "   get_message — the executor resolves it automatically.\n"
+        "4. EXPORTS: use drive.export_file to read Doc/Sheet content. "
+        "   Never use docs/sheets APIs for reading raw content.\n"
+        "5. WEB SEARCH: use search.web_search for external info ('top X', 'best Y'). "
+        "   Use $web_search_table_values for sheet cell values, $web_search_summary for doc content.\n"
+        "6. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
+        "   $last_code_stdout (text) in the next task's parameter. Never write 'PLACEHOLDER_AMOUNT'.\n"
+        "7. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
+        "   gmail.send_message with to_email set to the EXACT address in the request. "
+        "   Choose the most appropriate body $placeholder from: "
+        "   $last_code_stdout, $sheet_email_body, $gmail_summary_values, $web_search_markdown.\n"
+        "8. PIPELINE: for complex workflows prefer: "
+        "   search.web_search → code → sheets.append_values → gmail.send_message.\n"
+        "9. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
+        "   never reuse 'Sheet1!A1' for different write targets.\n"
+        "10. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "
+        "    between sequential tasks — you do not need to repeat them explicitly.\n"
     )
 
     if memory_hint:
@@ -353,8 +412,7 @@ def plan_with_langchain(
 
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
-        # Bug fix: some models return tasks=None instead of tasks=[]
-        # which causes TypeError: 'NoneType' object is not iterable downstream.
+        # Guard: some models return tasks=None instead of tasks=[]
         if not isinstance(tasks_data, list):
             logger.warning(
                 "Structured output returned tasks=%r — treating as empty list.",
@@ -364,19 +422,27 @@ def plan_with_langchain(
 
         explicit_email = _extract_explicit_email(text)
 
+        # Correct bad to_email values in existing send_message tasks.
         for t in tasks_data:
             if not isinstance(t, dict):
                 continue
             if t.get("service") == "gmail" and t.get("action") == "send_message":
                 params = t.get("parameters") or {}
                 to_addr = str(params.get("to_email") or "").strip()
-                if explicit_email and (not to_addr or "@" not in to_addr or
-                        re.search(r"(noreply|no-reply|invoice|receipt|stripe|paypal|x\.com|twitter)",
-                                  to_addr, re.IGNORECASE)):
+                if explicit_email and (
+                    not to_addr
+                    or "@" not in to_addr
+                    or re.search(
+                        r"(noreply|no-reply|invoice|receipt|stripe|paypal|x\.com|twitter)",
+                        to_addr,
+                        re.IGNORECASE,
+                    )
+                ):
                     params["to_email"] = explicit_email
                     t["parameters"] = params
                     logger.info("BugFixC: corrected to_email in planned task to '%s'", explicit_email)
 
+        # Inject fallback send task if the request requires it but LLM omitted it.
         if _request_requires_send_email(text) and not _plan_has_send_task(tasks_data):
             if explicit_email:
                 subject = _derive_email_subject(text)
@@ -400,8 +466,8 @@ def plan_with_langchain(
                 })
             else:
                 logger.warning(
-                    "BugFix3: send email intent detected but no explicit address found in request; "
-                    "skipping gmail.send_message injection to avoid unresolvable placeholder."
+                    "BugFix3: send email intent detected but no explicit address found; "
+                    "skipping injection to avoid unresolvable placeholder."
                 )
 
         tasks = []
@@ -420,7 +486,7 @@ def plan_with_langchain(
             summary=str(plan_data.get("summary", "Generated Workspace Plan")),
             confidence=float(plan_data.get("confidence") or _DEFAULT_CONFIDENCE),
             no_service_detected=bool(plan_data.get("no_service_detected", False)),
-            source="langchain"
+            source="langchain",
         )
 
     if hasattr(plan_data, "confidence") and plan_data.confidence == 0.0:
