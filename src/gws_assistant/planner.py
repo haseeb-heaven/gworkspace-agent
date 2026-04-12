@@ -33,6 +33,79 @@ _DRIVE_OPS_RE = re.compile(
 # the executor treats as a permanent skip (no retry).
 _UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
 
+# Matches:  mimeType="application/vnd.google-apps.document"
+#           mimeType='application/vnd.google-apps.document'
+#           mimeType:application/vnd.google-apps.document   (colon form)
+_MIME_EQ_RE = re.compile(
+    r"""mimeType\s*[=:]\s*["']?([^"'\s,)]+)["']?""",
+    re.IGNORECASE,
+)
+
+# Matches a leading/trailing double-quoted token that is NOT a proper Drive
+# operator expression, e.g.  "CcaaS - AI Product"
+_BARE_DQUOTE_TOKEN_RE = re.compile(r'^"([^"]+)"$')
+
+
+def _sanitize_drive_query(raw: str) -> str:
+    """
+    Normalise an LLM-generated Drive query string so it is accepted by the
+    Drive API v3.
+
+    Problems fixed:
+    - mimeType="..." / mimeType:... → mimeType = 'value'
+    - bare double-quoted name token    → name contains 'value'
+    - leftover stray quotes / spaces   → stripped
+    - pure bare name (no operator)     → name contains 'value'
+    """
+    q = raw.strip()
+
+    # Step 1 – fix mimeType=... / mimeType:... → mimeType = 'value'
+    def _fix_mime(m: re.Match) -> str:
+        return f"mimeType = '{m.group(1)}'"
+
+    q = _MIME_EQ_RE.sub(_fix_mime, q)
+
+    # Step 2 – split on 'and'/'or' to process each clause independently
+    # We only normalise clauses that still look malformed.
+    clauses = re.split(r"\b(and|or)\b", q, flags=re.IGNORECASE)
+    fixed_clauses: list[str] = []
+    conjunctions: list[str] = []
+
+    # clauses alternates: term, conj, term, conj, term …
+    # Rebuild by iterating every other element.
+    i = 0
+    while i < len(clauses):
+        clause = clauses[i].strip()
+        if clause:
+            # Step 2a – bare double-quoted token with no operator → name contains
+            dq_match = _BARE_DQUOTE_TOKEN_RE.match(clause)
+            if dq_match:
+                safe = dq_match.group(1).replace("'", "\\'")
+                clause = f"name contains '{safe}'"
+            # Step 2b – bare unquoted phrase with no operator keyword
+            elif clause and "=" not in clause and not _DRIVE_OPS_RE.search(clause):
+                safe = clause.strip("\"' ").replace("'", "\\'")
+                clause = f"name contains '{safe}'"
+            fixed_clauses.append(clause)
+        if i + 1 < len(clauses):
+            conjunctions.append(clauses[i + 1].strip())
+        i += 2
+
+    # Re-join with conjunctions
+    result_parts: list[str] = []
+    for idx, fc in enumerate(fixed_clauses):
+        result_parts.append(fc)
+        if idx < len(conjunctions):
+            result_parts.append(conjunctions[idx])
+    q = " ".join(result_parts).strip()
+
+    # Step 3 – final fallback: if q is still bare (no Drive operator at all)
+    if q and not _DRIVE_OPS_RE.search(q):
+        safe = q.strip("\"' ").replace("'", "\\'")
+        q = f"name contains '{safe}'"
+
+    return q
+
 
 class CommandPlanner:
     """Validates service/action and builds gws command arguments."""
@@ -105,19 +178,18 @@ class CommandPlanner:
     def _build_drive_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_files":
             page_size = self._safe_positive_int(params.get("page_size"), default=10)
-            query = str(params.get("q") or "").strip()
+            raw_query = str(params.get("q") or "").strip()
             request_params: dict[str, Any] = {
                 "pageSize": page_size,
                 "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
             }
-            if query:
-                # FIX Bug-Drive-Query: bare name strings with no Drive query operators cause
-                # HTTP 400 Invalid Value.  Wrap them as  name = 'foo'  (exact-match) which is
-                # both correct and what the LLM intends when it says "search by name".
-                if "=" not in query and not _DRIVE_OPS_RE.search(query):
-                    # Escape single quotes inside the name to avoid breaking the query string.
-                    safe_name = query.replace("'", "\\'")
-                    query = f"name = '{safe_name}'"
+            if raw_query:
+                # FIX Bug-Drive-Query: sanitize the LLM-generated query so the Drive API
+                # does not reject it with 400 Invalid Value.  Common bad forms:
+                #   "CcaaS - AI Product" mimeType="application/vnd.google-apps.document"
+                #   CcaaS - AI Product mimeType:application/vnd.google-apps.document
+                # _sanitize_drive_query normalises all of these to valid Drive v3 syntax.
+                query = _sanitize_drive_query(raw_query)
                 request_params["q"] = query
             return [
                 "drive",
