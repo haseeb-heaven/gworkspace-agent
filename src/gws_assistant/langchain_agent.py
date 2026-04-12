@@ -498,7 +498,4 @@ def plan_with_langchain(
             source="langchain",
         )
 
-    if hasattr(plan_data, "confidence") and plan_data.confidence == 0.0:
-        plan_data.confidence = _DEFAULT_CONFIDENCE
-
     return plan_data

@@ -6,8 +6,8 @@ import base64
 import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
-from attr import dataclass
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import APIErrorType, ValidationError, classify_api_error
@@ -115,22 +115,13 @@ _HEADERS_FIELD_ALIASES: dict[str, tuple[str, str]] = {
 # Fix #2 — structured reflection advice
 # ---------------------------------------------------------------------------
 
-@dataclass(slots=True) # sentinel; using plain class below for slots compat
+@dataclass(slots=True, frozen=True)
 class _ReflectionAdvice:
     """Internal result of _reflect_on_failure() — typed, not a raw string."""
-    __slots__ = ("error_type", "should_retry", "suggestion", "summary")
-
-    def __init__(
-        self,
-        error_type: APIErrorType,
-        should_retry: bool,
-        suggestion: str,
-        summary: str,
-    ) -> None:
-        self.error_type  = error_type
-        self.should_retry = should_retry
-        self.suggestion  = suggestion
-        self.summary     = summary
+    error_type: APIErrorType
+    should_retry: bool
+    suggestion: str
+    summary: str
 
     def __str__(self) -> str:
         return (

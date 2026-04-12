@@ -41,12 +41,20 @@ def test_plan_with_langchain(mocker, config_with_key):
     mocker.patch("gws_assistant.langchain_agent.create_agent", return_value=mock_model)
     mocker.patch("langchain_core.prompts.ChatPromptTemplate.from_messages", return_value=MagicMock(__or__=lambda self, other: mock_chain))
     
-    mock_plan = MagicMock()
-    mock_plan.summary = "Test Output"
-    mock_plan.confidence = 0.0
-    mock_plan.tasks = ["task1"]
-    mock_chain.invoke.return_value = mock_plan
+    # Return a valid dict structure so is_valid_plan(result) passes.
+    # Note: confidence 0.0 should be defaulted to 0.9.
+    mock_plan_dict = {
+        "tasks": [
+            {"id": "task-1", "service": "gmail", "action": "send_message", "parameters": {"to_email": "haseeb@example.com"}}
+        ],
+        "summary": "Test Output",
+        "confidence": 0.0
+    }
+    mock_chain.invoke.return_value = mock_plan_dict
     
     plan = plan_with_langchain("test request", config_with_key, logger)
-    assert plan is mock_plan
-    assert plan.confidence == 0.9 # Should be updated by hook
+    assert plan is not None
+    assert plan.summary == "Test Output"
+    assert plan.confidence == 0.9 # Updated from 0.0 to _DEFAULT_CONFIDENCE
+    assert len(plan.tasks) == 1
+    assert plan.tasks[0].service == "gmail"

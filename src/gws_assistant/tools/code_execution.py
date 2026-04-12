@@ -56,9 +56,22 @@ def _sanitize_llm_code(code: str) -> str:
     `from X import Y` lines at the start of a physical line are removed.
     """
     cleaned_lines: list[str] = []
+    _SAFE_NAMES = set(_SAFE_MODULES.keys())
     for line in code.splitlines():
         stripped = line.lstrip()
+        is_safe_import = False
         if stripped.startswith("import ") or stripped.startswith("from "):
+            # Check if this import targets a safe module we pre-injected.
+            # Example: "import math", "from json import loads"
+            words = stripped.split()
+            if len(words) >= 2:
+                # for "import x", words[1] is x
+                # for "from x import y", words[1] is x
+                mod_name = words[1].split(".")[0]
+                if mod_name in _SAFE_NAMES:
+                    is_safe_import = True
+
+        if is_safe_import:
             # Keep the line as a comment so line numbers stay stable for
             # error messages, but neutralise the import.
             cleaned_lines.append("# [sandbox-stripped] " + line)
