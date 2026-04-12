@@ -46,6 +46,13 @@ _DRIVE_OPS_RE = re.compile(
 # Bare double-quoted token with no operator, e.g. "CcaaS - AI Product"
 _BARE_DQUOTE_RE = re.compile(r'^"([^"]+)"$')
 
+# LLM-generated name=/name: prefix — e.g. name='CcaaS', name="foo", name:bar
+# Captured group 1 is the raw value (inner quotes already stripped by the regex).
+_NAME_EQ_RE = re.compile(
+    r"""^name\s*[=:]\s*['"]?(.+?)['"]?\s*$""",
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -139,6 +146,20 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
         if dq:
             remainder = dq.group(1).strip()
 
+        # NEW FIX — strip LLM-generated name=/name: prefix BEFORE the
+        # _DRIVE_OPS_RE check fires.  Without this, 'name' in the remainder
+        # trips _DRIVE_OPS_RE and the value gets double-wrapped:
+        #   name='CcaaS - AI Product'
+        #   → _DRIVE_OPS_RE matches 'name'
+        #   → _is_valid_clause() fails
+        #   → wraps to: name contains 'name=\'CcaaS - AI Product\''  ← CORRUPT
+        # With this fix the value is extracted cleanly first:
+        #   name='CcaaS - AI Product' → remainder = 'CcaaS - AI Product'
+        #   → _DRIVE_OPS_RE: no match → name contains 'CcaaS - AI Product' ✓
+        name_eq = _NAME_EQ_RE.match(remainder)
+        if name_eq:
+            remainder = name_eq.group(1).strip().strip("'\"")
+
         # Fix #5 — if remainder has no Drive operator it is bare text.
         if not _DRIVE_OPS_RE.search(remainder):
             safe = _escape(remainder.strip("\"' "))
@@ -168,6 +189,8 @@ def sanitize_drive_query(raw: str) -> str:
       \"CcaaS - AI Product\" mimeType=\"application/vnd.google-apps.document\"
       CcaaS - AI Product mimeType:application/vnd.google-apps.document
       CcaaS - AI Product
+      name='CcaaS - AI Product'
+      name='CcaaS - AI Product' mimeType='application/vnd.google-apps.document'
 
     All become:
       name contains 'CcaaS - AI Product' and mimeType='application/vnd.google-apps.document'
