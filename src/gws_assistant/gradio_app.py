@@ -51,7 +51,7 @@ def create_interface() -> gr.Blocks:
     assistant = GradioAssistant(
         planner=planner,
         agent_system=WorkspaceAgentSystem(config=config, logger=logger),
-        executor=PlanExecutor(planner=planner, runner=runner, logger=logger),
+        executor=PlanExecutor(planner=planner, runner=runner, logger=logger, config=config),
         formatter=HumanReadableFormatter(),
         logger=logger,
     )

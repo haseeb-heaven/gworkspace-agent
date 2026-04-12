@@ -24,10 +24,11 @@ except Exception:  # pragma: no cover
 class PlanExecutor:
     """Executes planned gws tasks sequentially and carries context forward."""
 
-    def __init__(self, planner: CommandPlanner, runner: GWSRunner, logger: logging.Logger) -> None:
+    def __init__(self, planner: CommandPlanner, runner: GWSRunner, logger: logging.Logger, config=None) -> None:
         self.planner = planner
         self.runner = runner
         self.logger = logger
+        self.config = config
 
     def execute(self, plan: RequestPlan) -> PlanExecutionReport:
         context: dict[str, Any] = {"request_text": plan.raw_text}
@@ -78,8 +79,11 @@ class PlanExecutor:
 
             current_index += 1
 
-        report = PlanExecutionReport(plan=plan, executions=executions)
-        report.thought_trace = thought_trace
+        report = PlanExecutionReport(
+            plan=plan,
+            executions=executions,
+            thought_trace=thought_trace,
+        )
 
         # Save to memory
         from .memory import save_episode
@@ -192,9 +196,7 @@ class PlanExecutor:
         """ReACT: LLM reasons about whether next planned step is correct."""
         try:
             from .langchain_agent import create_agent
-            from .config import AppConfig
-            config = AppConfig.from_env()
-            agent = create_agent(config, self.logger)
+            agent = create_agent(self.config, self.logger)
             if not agent:
                 return "No LLM configured — proceeding with planned task."
             prompt = (
@@ -225,9 +227,7 @@ class PlanExecutor:
         """Ask LLM to generate replacement tasks given current context."""
         try:
             from .langchain_agent import plan_with_langchain
-            from .config import AppConfig
-            config = AppConfig.from_env()
-            new_plan = plan_with_langchain(goal, config, self.logger)
+            new_plan = plan_with_langchain(goal, self.config, self.logger)
             if new_plan and new_plan.tasks:
                 completed_count = len(context.get("task_results", {}))
                 return new_plan.tasks[completed_count:]  # skip already-done tasks

@@ -95,7 +95,7 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
     engine = ConversationEngine(planner=planner, logger=logger)
     agent_system = WorkspaceAgentSystem(config=config, logger=logger)
     runner = GWSRunner(config.gws_binary_path, logger=logger)
-    executor = PlanExecutor(planner=planner, runner=runner, logger=logger)
+    executor = PlanExecutor(planner=planner, runner=runner, logger=logger, config=config)
 
     if not runner.validate_binary():
         console.print(
