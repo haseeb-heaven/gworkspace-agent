@@ -270,7 +270,10 @@ class PlanExecutor:
         if not code:
             return ExecutionResult(success=False, command=[], error="Missing required parameter: code")
 
-        structured = execute_generated_code(code, config=self.planner.config)
+        # Bug 1 fix: config lives on PlanExecutor (self.config), NOT on
+        # self.planner (CommandPlanner has no config attribute).
+        execution_config = self.config
+        structured = execute_generated_code(code, config=execution_config)
         output = structured.get("output") or {}
 
         stdout = output.get("stdout") or ""
@@ -362,14 +365,14 @@ class PlanExecutor:
         """Resolve all placeholder tokens in a task's parameters before execution."""
         parameters = _resolve_template(task.parameters, context)
 
-        # Pass 1 (from previous PR): bare step-ID references like '4.id'
+        # Pass 1: bare step-ID references like '4.id'
         parameters = _resolve_bare_step_id_params(parameters, context)
 
-        # Pass 2 (from previous PR): natural-language extraction instructions
+        # Pass 2: natural-language extraction instructions from web search
         if context.get("web_search_results"):
             parameters = _resolve_search_extraction_params(parameters, context, self.logger)
 
-        # Pass 3 (Bug A): PLACEHOLDER_* tokens and code executor output refs
+        # Pass 3: PLACEHOLDER_* tokens and code executor output refs
         if context.get("last_code_stdout") or context.get("last_code_result"):
             parameters = _resolve_code_output_params(parameters, context, self.logger)
 
@@ -415,7 +418,7 @@ class PlanExecutor:
         if "message_id" not in parameters and context.get("last_message_id"):
             parameters["message_id"] = context["last_message_id"]
 
-        # Bug C fix: to_email resolution — priority: explicit > valid param > context fallback
+        # to_email resolution — priority: explicit > valid param > context fallback
         if task.service == "gmail" and task.action == "send_message":
             to_email_val = str(parameters.get("to_email") or "").strip()
             explicit = str(context.get("explicit_to_email") or "").strip()
@@ -428,7 +431,7 @@ class PlanExecutor:
                     self.logger.info("Auto-resolved to_email from context: %s", resolved_addr)
                     parameters["to_email"] = resolved_addr
 
-        # Bug B fix: range tab-name rewrite — only fix generic 'Sheet1!' prefix
+        # range tab-name rewrite — only fix generic 'Sheet1!' prefix
         if (task.service == "sheets" and task.action == "append_values"
                 and "range" in parameters and context.get("last_spreadsheet_tab")):
             rng = str(parameters.get("range") or "")
@@ -771,13 +774,12 @@ def _extract_numeric_from_web_search(context: dict[str, Any]) -> str | None:
             candidate = float(match.group(1))
             if not (rate_min < candidate < rate_max):
                 continue
-            # Build a small context window around the match to score it
             start = max(0, match.start() - 60)
             end = min(len(content), match.end() + 60)
             window = content[start:end]
             score = len(_CURRENCY_SIGNAL_RE.findall(window))
             if expected_pair and expected_pair in window.upper():
-                score += 10  # strong bonus for exact currency-pair mention
+                score += 10
             if score > best_score:
                 best_score = score
                 best_value = str(round(candidate, 6))

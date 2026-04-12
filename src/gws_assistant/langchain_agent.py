@@ -50,7 +50,6 @@ _EMAIL_SEND_KEYWORDS = (
 )
 
 # Priority-ordered $-placeholders for the fallback email body.
-# The first one that produces a non-empty value at runtime wins.
 _EMAIL_BODY_PLACEHOLDERS = (
     "$last_code_stdout",
     "$sheet_email_body",
@@ -84,10 +83,9 @@ def _extract_explicit_email(text: str) -> str:
 def _derive_next_task_id(tasks_data: list[dict]) -> str:
     """Derive a new task ID that matches the naming convention used by the LLM.
 
-    If the LLM used plain numeric IDs (``'1'``, ``'2'``, ...) the new ID will
-    also be numeric.  If it used ``'task-N'`` prefixes, the new ID matches that
-    form.  Falls back to ``'task-N'`` when the list is empty or the first ID
-    is in an unexpected format.
+    If the LLM used plain numeric IDs the new ID will also be numeric.
+    If it used 'task-N' prefixes, the new ID matches that form.
+    Falls back to 'task-N' when the list is empty or format is unexpected.
     """
     n = len(tasks_data) + 1
     if tasks_data and isinstance(tasks_data[0].get("id"), str):
@@ -100,22 +98,19 @@ def _derive_next_task_id(tasks_data: list[dict]) -> str:
 def _derive_email_subject(request_text: str) -> str:
     """Infer a concise, generic email subject from the user's request text.
 
-    Strips leading verb phrases (send, email, mail, get, fetch, …) and
-    capitalises what remains, truncated to 60 characters.  Falls back to
-    ``'Your Requested Summary'`` when nothing meaningful can be extracted.
+    Strips leading verb phrases and trailing email addresses,
+    capitalises what remains, truncated to 60 characters.
+    Falls back to 'Your Requested Summary' when nothing meaningful can be extracted.
     """
-    # Remove the send-intent verb so the subject describes the *content*
     cleaned = re.sub(
         r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give\s+me)\s+(an?\s+)?",
         "",
         request_text.strip(),
     )
-    # Drop any trailing email-address so it doesn't end up in the subject
     cleaned = re.sub(r"\s+to\s+[\w.+-]+@[\w-]+\.[\w.]+.*$", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.strip(" .,;:")
     if not cleaned:
         return "Your Requested Summary"
-    # Capitalise and truncate
     subject = cleaned[0].upper() + cleaned[1:]
     if len(subject) > 60:
         subject = subject[:57].rstrip() + "..."
@@ -125,13 +120,8 @@ def _derive_email_subject(request_text: str) -> str:
 def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
     """Choose the most appropriate $-placeholder for the fallback email body.
 
-    Inspects the planned tasks to pick the placeholder that will actually be
-    populated at runtime:
-    - If a code task exists → $last_code_stdout (computed output)
-    - If a sheets task exists → $sheet_email_body (formatted sheet data)
-    - If a gmail fetch task exists → $gmail_summary_values (email summaries)
-    - If a web-search task exists → $web_search_markdown (search results)
-    - Otherwise → generic human-readable fallback message
+    Inspects the planned tasks to pick the placeholder that will be populated
+    at runtime based on which services are in the plan.
     """
     services_used = {t.get("service", "") for t in tasks_data if isinstance(t, dict)}
     if "code" in services_used or "computation" in services_used:
@@ -143,6 +133,29 @@ def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
     if "search" in services_used:
         return "$web_search_markdown"
     return "Here are the results of your Google Workspace request."
+
+
+def _safe_invoke_structured_output(chain: Any, request: str, logger: logging.Logger) -> Any:
+    """Invoke a structured-output chain and return None instead of raising on parse failures.
+
+    LangChain's with_structured_output() can raise TypeError / ValueError when the
+    LLM returns a response it cannot coerce into the target schema (e.g. when a
+    complex, heavily-quoted request confuses the model).  This wrapper turns those
+    hard crashes into a clean None so callers can fall back to the heuristic planner.
+    """
+    try:
+        return chain.invoke(request)
+    except TypeError as exc:
+        logger.warning("Structured output parse error (TypeError): %s", exc)
+        return None
+    except ValueError as exc:
+        logger.warning("Structured output parse error (ValueError): %s", exc)
+        return None
+    except Exception as exc:
+        # Catch everything else (including 'NoneType is not iterable') so it
+        # never propagates as an unhandled crash.
+        logger.warning("Structured output unexpected error: %s", exc)
+        return None
 
 
 def create_agent(config: AppConfigModel, logger: logging.Logger) -> ChatOpenAI | None:
@@ -221,11 +234,20 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
     for attempt in range(max_retries):
         try:
             chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
-            plan_data = chain.invoke(
+            plan_data = _safe_invoke_structured_output(
+                chain,
                 {"request": text},
-                config=RunnableConfig(metadata={"timeout": config.timeout_seconds})
+                logger,
             )
-            break
+            if plan_data is not None:
+                break
+            # LLM returned unparseable output — retry up to max_retries
+            if attempt < max_retries - 1:
+                logger.warning(
+                    "Structured output returned None on attempt %d/%d — retrying.",
+                    attempt + 1, max_retries,
+                )
+                time.sleep(1)
         except Exception as e:
             if "429" in str(e) and attempt < max_retries - 1:
                 logger.warning(f"LLM rate limited (attempt {attempt+1}/{max_retries}). Retrying in 2s...")
@@ -234,12 +256,14 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
             logger.error("LangChain planning failed: %s", e)
             return None
 
+    # Hard guard — if all retries returned None, fall through to heuristic planner
     if plan_data is None:
-        logger.warning("LLM planning returned None.")
+        logger.warning("LLM planning returned None after %d attempts.", max_retries)
         return None
 
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
+        # Defensive: treat any non-list (including None) as empty
         if not isinstance(tasks_data, list):
             tasks_data = []
 
@@ -260,7 +284,6 @@ def plan_with_langchain(text: str, config: AppConfigModel, logger: logging.Logge
                     logger.info("BugFixC: corrected to_email in planned task to '%s'", explicit_email)
 
         # Only inject the fallback send task when we have a valid explicit address.
-        # Skipping injection is safer than passing an unresolvable placeholder.
         if _request_requires_send_email(text) and not _plan_has_send_task(tasks_data):
             if explicit_email:
                 subject = _derive_email_subject(text)
