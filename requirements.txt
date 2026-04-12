@@ -14,3 +14,4 @@ gradio>=5.0.0
 pytest>=9.0.3
 pytest-cov>=7.1.0
 pytest-mock>=3.14.0
+ddgs>=9.13.0
