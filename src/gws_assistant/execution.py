@@ -39,16 +39,17 @@ _ARRAY_WILDCARD_RE = re.compile(
     r"\{(\d+|task-\d+)\.(\w+)\[\*\]\.(\w+)\}"
 )
 
-# Plain dot-ref pattern for single-message sender fields:
-# covers {2.senderName}, {2.sender.name}, {2.senderEmail}, {2.subject}, etc.
+# Plain dot-ref pattern for single-message sender/header fields.
+# FIX Bug 2: added 'from\.name' and 'from\.email' so {2.from.name} / {2.from.email}
+# are intercepted by Pass 0a before reaching _find_unresolved_placeholder.
 _DOT_SENDER_REF_RE = re.compile(
     r"\{(\d+|task-\d+)\.(sender\.name|sender\.email|senderName|senderEmail"
     r"|sender_name|sender_email|fromName|from_name|fromEmail|from_email"
+    r"|from\.name|from\.email"
     r"|subject|date|snippet|body)\}"
 )
 
-# Extended template regex: matches {N.key.path[0].sub} — now includes [N] bracket indexing.
-# key_path allows word chars, dots, brackets, and * for wildcards.
+# Extended template regex: matches {N.key.path[0].sub}
 _TEMPLATE_REF_RE = re.compile(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}")
 
 # Bug 2 — all LLM variants that mean "put gmail message bodies here"
@@ -65,6 +66,7 @@ _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
 
 # ---------------------------------------------------------------------------
 # Alias table: normalised LLM field name → (header_key, extract_mode)
+# FIX Bug 2: added 'from.name' and 'from.email' entries.
 # ---------------------------------------------------------------------------
 _SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "sendername":   ("from", "name"),
@@ -72,11 +74,13 @@ _SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "sender_name":  ("from", "name"),
     "fromname":     ("from", "name"),
     "from_name":    ("from", "name"),
+    "from.name":    ("from", "name"),   # FIX: {N.from.name}
     "senderemail":  ("from", "email"),
     "sender.email": ("from", "email"),
     "sender_email": ("from", "email"),
     "fromemail":    ("from", "email"),
     "from_email":   ("from", "email"),
+    "from.email":   ("from", "email"),  # FIX: {N.from.email}
     "subject":      ("subject", "raw"),
     "date":         ("date", "raw"),
     "snippet":      ("snippet", "raw"),
@@ -305,8 +309,7 @@ class PlanExecutor:
         if not code:
             return ExecutionResult(success=False, command=[], error="Missing required parameter: code")
 
-        execution_config = self.config
-        structured = execute_generated_code(code, config=execution_config)
+        structured = execute_generated_code(code, config=self.config)
         output = structured.get("output") or {}
 
         stdout = output.get("stdout") or ""
@@ -383,22 +386,22 @@ class PlanExecutor:
                 id=f"{task.id}-{index}",
                 service=task.service,
                 action=task.action,
-                parameters={**task.parameters, "message_id": message_id},
+                parameters={**task.parameters, "message_id": mid},
                 reason=task.reason,
             )
-            for index, message_id in enumerate(message_ids[:limit], start=1)
+            for index, mid in enumerate(message_ids[:limit], start=1)
         ]
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         """Resolve all placeholder tokens in a task's parameters before execution."""
 
-        # Pass 0a: resolve {N.senderName}, {N.sender.name}, etc.
+        # Pass 0a: resolve {N.senderName}, {N.sender.name}, {N.from.name}, etc.
         parameters = _resolve_dot_sender_refs(task.parameters, context, self.logger)
 
         # Pass 0b: expand array-wildcard refs like {N.messages[*].senderName}
         parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
 
-        # Pass 1: {{task_id.key}}, {N.key}, and now {N.key[0].sub} bracket-index refs
+        # Pass 1: {{task_id.key}}, {N.key}, and {N.key[0].sub} bracket-index refs
         parameters = _resolve_template(parameters, context, self.logger)
 
         # Pass 2: bare step-ID references like '4.id'
@@ -538,6 +541,27 @@ class PlanExecutor:
             context["last_document_id"] = doc_id
             if doc_id:
                 context["last_document_url"] = f"https://docs.google.com/document/d/{doc_id}/edit"
+        if task.service == "docs" and task.action == "get_document" and payload:
+            doc_id = payload.get("documentId") or ""
+            if doc_id and not context.get("last_document_id"):
+                context["last_document_id"] = doc_id
+            body = payload.get("body") or {}
+            content_list = body.get("content") or []
+            text_chunks: list[str] = []
+            for element in content_list:
+                if not isinstance(element, dict):
+                    continue
+                para = element.get("paragraph") or {}
+                for el in (para.get("elements") or []):
+                    tr = el.get("textRun") or {}
+                    chunk = tr.get("content") or ""
+                    if chunk:
+                        text_chunks.append(chunk)
+            context["last_document_content"] = "".join(text_chunks).strip()
+            self.logger.info(
+                "docs.get_document: stored %d chars in last_document_content",
+                len(context["last_document_content"]),
+            )
         if task.service == "drive" and task.action == "list_files" and payload:
             files = payload.get("files") if isinstance(payload, dict) else []
             if isinstance(files, list):
@@ -641,6 +665,7 @@ class PlanExecutor:
 
 # ---------------------------------------------------------------------------
 # Pass 0a — plain dot-ref sender field resolver
+# FIX Bug 2: _DOT_SENDER_REF_RE now also matches 'from.name' and 'from.email'
 # ---------------------------------------------------------------------------
 
 def _resolve_dot_sender_refs(
@@ -732,7 +757,7 @@ def _resolve_array_wildcard_refs(
         return [_resolve_array_wildcard_refs(item, context, logger) for item in params]
     if not isinstance(params, str):
         return params
-    return _replace_wildcard_tokens(params, context, logger, scalar=True)
+    return _replace_wildcard_tokens(params, context, logger)
 
 
 def _resolve_array_wildcard_from_key(
@@ -757,10 +782,10 @@ def _resolve_array_wildcard_from_key(
             logger.info("Bug3: resolved param '%s' wildcard {%s.%s[*].%s} → %d rows", key, step_id, collection, field_name, len(rows))
             return rows
 
-    return _replace_wildcard_tokens(value, context, logger, scalar=True)
+    return _replace_wildcard_tokens(value, context, logger)
 
 
-def _replace_wildcard_tokens(value: str, context: dict[str, Any], logger: logging.Logger, scalar: bool = True) -> str:
+def _replace_wildcard_tokens(value: str, context: dict[str, Any], logger: logging.Logger) -> str:
     def _sub(m: re.Match) -> str:
         step_id, collection, field_name = m.group(1), m.group(2), m.group(3)
         rows = _extract_wildcard_rows(step_id, collection, field_name, context, logger)
@@ -823,6 +848,102 @@ def _extract_wildcard_rows(
             rows.append([raw])
 
     return rows if rows else None
+
+
+# ---------------------------------------------------------------------------
+# Pass 1 — template resolver with bracket-index support
+# FIX Bug 1: empty brackets {N.messages[].body} are normalised to {N.messages[*].body}
+#            before tokenisation so they are resolved via gmail_messages context.
+# ---------------------------------------------------------------------------
+
+def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logger | None = None) -> Any:
+    """Resolve {N.key[0].sub} bracket-index refs, {N.key} plain refs, and {{N.key}} double-brace refs.
+
+    FIX Bug 1: empty-bracket tokens like {2.messages[].body} are first normalised to
+    {2.messages[*].body} so the existing wildcard path handles them uniformly.
+    """
+    if isinstance(value, dict):
+        return {k: _resolve_template(v, context, logger) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_template(v, context, logger) for v in value]
+    if not isinstance(value, str):
+        return value
+
+    # FIX Bug 1: normalise empty brackets [] → [*] so the tokeniser handles them.
+    normalised = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\[\]\.([\w]+)\}", r"{\1.\2[*].\3}", value)
+    if normalised != value and logger:
+        logger.info("Bug1 fix: normalised empty-bracket token in '%s'", value[:120])
+    value = normalised
+
+    def replacer(match: re.Match) -> str:
+        task_id = match.group(1)
+        key_path = match.group(2)  # may contain [N] or [*]
+        results = context.get("task_results", {})
+        current = results.get(task_id)
+
+        if not isinstance(current, dict):
+            return match.group(0)
+
+        segments: list[tuple[str, str | None]] = []
+        for raw_part in key_path.split("."):
+            bracket_m = re.match(r"^([\w]+)\[([\d\*]+)\]$", raw_part)
+            if bracket_m:
+                segments.append((bracket_m.group(1), None))
+                segments.append((bracket_m.group(2), "idx"))
+            else:
+                segments.append((raw_part, None))
+
+        # Strip leading 'output' shim
+        if segments and segments[0][0] == "output" and len(segments) > 1:
+            segments = segments[1:]
+
+        for seg_key, seg_type in segments:
+            if seg_type == "idx":
+                if not isinstance(current, list):
+                    return match.group(0)
+                if seg_key == "*":
+                    current = current[0] if current else None
+                    if current is None:
+                        return match.group(0)
+                else:
+                    try:
+                        idx = int(seg_key)
+                        current = current[idx] if 0 <= idx < len(current) else None
+                        if current is None:
+                            return match.group(0)
+                    except (ValueError, TypeError):
+                        return match.group(0)
+            else:
+                if not isinstance(current, dict):
+                    return match.group(0)
+                norm = seg_key.lower().replace("_", "")
+                found = None
+                for k, v in current.items():
+                    if k.lower().replace("_", "") == norm:
+                        found = v
+                        break
+                if found is None:
+                    if norm in ("id", "spreadsheetid") and "spreadsheetId" in current:
+                        found = current["spreadsheetId"]
+                    elif norm in ("id", "documentid") and "documentId" in current:
+                        found = current["documentId"]
+                    elif norm in ("id", "fileid") and isinstance(current.get("files"), list) and current["files"]:
+                        found = current["files"][0].get("id")
+                    elif norm in ("id", "messageid") and isinstance(current.get("messages"), list) and current["messages"]:
+                        found = current["messages"][0].get("id")
+                if found is None:
+                    return match.group(0)
+                current = found
+
+        if logger and current is not None:
+            logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
+        return str(current) if current is not None else match.group(0)
+
+    # Double-brace: {{N.key_path}}
+    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.\[\]\*]+)\}\}", replacer, value)
+    # Single-brace: {N.key_path}  — includes bracket notation
+    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}", replacer, resolved)
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -891,7 +1012,6 @@ def _resolve_code_output_params(
         return params
 
     stripped = params.strip()
-
     if _PLACEHOLDER_TOKEN_RE.match(stripped):
         return _pick_code_value(stripped, context, logger)
     if _ANGLE_BRACKET_RE.match(stripped):
@@ -1125,114 +1245,6 @@ def _gmail_messages_body_text(context: dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------------------
 # Template / placeholder utilities
-# ---------------------------------------------------------------------------
-
-def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logger | None = None) -> Any:
-    """Recursively resolve ``{{task_id.key}}``, ``{N.key}``, and ``{N.key[0].sub}``
-    bracket-index placeholder references.
-
-    Fix: the key_path regex now allows [N] and [*] bracket notation so that
-    LLM-emitted tokens like ``{1.files[0].id}`` or ``{1.messages[0].id}``
-    are matched and resolved instead of passing through as unresolved strings.
-    """
-    if isinstance(value, dict):
-        return {k: _resolve_template(v, context, logger) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_resolve_template(v, context, logger) for v in value]
-    if not isinstance(value, str):
-        return value
-
-    def replacer(match: re.Match) -> str:
-        task_id = match.group(1)
-        key_path = match.group(2)  # may contain brackets e.g. "files[0].id"
-        results = context.get("task_results", {})
-        current = results.get(task_id)
-
-        if not isinstance(current, dict):
-            return match.group(0)
-
-        # Tokenise the key_path into segments, handling bracket notation.
-        # e.g. "files[0].id"  → [("files", None), ("0", int), ("id", None)]
-        # e.g. "messages[*].body" → [("messages", None), ("*", str), ("body", None)]
-        segments: list[tuple[str, str | None]] = []
-        for raw_part in key_path.split("."):
-            # Each raw_part may be "files[0]" or "messages[*]" or plain "id"
-            bracket_m = re.match(r"^([\w]+)\[([\d\*]+)\]$", raw_part)
-            if bracket_m:
-                segments.append((bracket_m.group(1), None))   # dict key
-                segments.append((bracket_m.group(2), "idx"))  # list index
-            else:
-                segments.append((raw_part, None))
-
-        # Strip leading 'output' shim
-        if segments and segments[0][0] == "output" and len(segments) > 1:
-            segments = segments[1:]
-
-        for seg_key, seg_type in segments:
-            if seg_type == "idx":
-                # Array index navigation
-                if not isinstance(current, list):
-                    return match.group(0)
-                if seg_key == "*":
-                    # Wildcard in scalar context → take first element
-                    if current:
-                        current = current[0]
-                    else:
-                        return match.group(0)
-                else:
-                    try:
-                        idx = int(seg_key)
-                        if 0 <= idx < len(current):
-                            current = current[idx]
-                        else:
-                            return match.group(0)
-                    except (ValueError, TypeError):
-                        return match.group(0)
-            else:
-                # Dict key navigation with camelCase normalisation
-                if not isinstance(current, dict):
-                    return match.group(0)
-                norm_part = seg_key.lower().replace("_", "")
-                found = False
-                for k, v in current.items():
-                    if k.lower().replace("_", "") == norm_part:
-                        current = v
-                        found = True
-                        break
-
-                if not found:
-                    # Well-known aliases
-                    if norm_part in ("id", "spreadsheetid") and "spreadsheetId" in current:
-                        current = current["spreadsheetId"]
-                        found = True
-                    elif norm_part in ("id", "documentid") and "documentId" in current:
-                        current = current["documentId"]
-                        found = True
-                    elif norm_part in ("id", "fileid") and "files" in current and isinstance(current["files"], list) and current["files"]:
-                        current = current["files"][0].get("id")
-                        if current:
-                            found = True
-                    elif norm_part in ("id", "messageid") and "messages" in current and isinstance(current["messages"], list) and current["messages"]:
-                        current = current["messages"][0].get("id")
-                        if current:
-                            found = True
-
-                if not found:
-                    return match.group(0)
-
-        if logger and current is not None:
-            logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
-        return str(current) if current is not None else match.group(0)
-
-    # Double-brace form: {{task_id.key_path}}
-    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.\[\]\*]+)\}\}", replacer, value)
-    # Single-brace form: {N.key_path}  — now includes bracket notation
-    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}", replacer, resolved)
-    return resolved
-
-
-# ---------------------------------------------------------------------------
-# Helper utilities
 # ---------------------------------------------------------------------------
 
 def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
