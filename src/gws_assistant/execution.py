@@ -21,7 +21,6 @@ except Exception:  # pragma: no cover
     web_search_tool = None  # type: ignore[assignment]
 
 # Sender-address patterns that belong to automated receipt / invoice mailers.
-# We must NEVER use these as the reply-to / forward-to address.
 _RECEIPT_SENDER_PATTERNS = re.compile(
     r"(noreply|no-reply|invoice|receipt|statements|do-not-reply|donotreply"
     r"|notifications?|billing|payments?|stripe\.com|paypal\.com|x\.com|twitter\.com)",
@@ -40,13 +39,17 @@ _ARRAY_WILDCARD_RE = re.compile(
     r"\{(\d+|task-\d+)\.(\w+)\[\*\]\.(\w+)\}"
 )
 
-# NEW — plain dot-ref pattern that references a single message field:
+# Plain dot-ref pattern for single-message sender fields:
 # covers {2.senderName}, {2.sender.name}, {2.senderEmail}, {2.subject}, etc.
 _DOT_SENDER_REF_RE = re.compile(
     r"\{(\d+|task-\d+)\.(sender\.name|sender\.email|senderName|senderEmail"
     r"|sender_name|sender_email|fromName|from_name|fromEmail|from_email"
     r"|subject|date|snippet|body)\}"
 )
+
+# Extended template regex: matches {N.key.path[0].sub} — now includes [N] bracket indexing.
+# key_path allows word chars, dots, brackets, and * for wildcards.
+_TEMPLATE_REF_RE = re.compile(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}")
 
 # Bug 2 — all LLM variants that mean "put gmail message bodies here"
 _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
@@ -62,10 +65,6 @@ _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
 
 # ---------------------------------------------------------------------------
 # Alias table: normalised LLM field name → (header_key, extract_mode)
-# extract_mode: 'name' = display name from From header
-#               'email' = address from From header
-#               'raw'   = header value verbatim
-#               'body'  = full decoded body text
 # ---------------------------------------------------------------------------
 _SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "sendername":   ("from", "name"),
@@ -98,7 +97,6 @@ class PlanExecutor:
         """Execute all tasks in the plan sequentially, threading context forward."""
         context: dict[str, Any] = {"request_text": plan.raw_text}
 
-        # Extract any explicit to_email embedded in the plan by the planner.
         for task in plan.tasks:
             if task.service == "gmail" and task.action == "send_message":
                 addr = str(task.parameters.get("to_email") or "").strip()
@@ -114,7 +112,6 @@ class PlanExecutor:
         while current_index < len(task_list):
             task = task_list[current_index]
             for expanded_task in self._expand_task(task, context):
-                # THOUGHT
                 thought = self._think(
                     goal=plan.raw_text,
                     context=context,
@@ -122,12 +119,10 @@ class PlanExecutor:
                 )
                 self.logger.info(f"Thought [step {current_index + 1}]: {thought}")
 
-                # ACTION
                 resolved_task = self._resolve_task(expanded_task, context)
                 result = self.execute_single_task(resolved_task, context)
                 executions.append(TaskExecution(task=resolved_task, result=result))
 
-                # OBSERVATION
                 context["last_observation"] = result.stdout
                 thought_trace.append({
                     "step": current_index + 1,
@@ -137,14 +132,12 @@ class PlanExecutor:
                     "success": result.success,
                 })
 
-                # REFLECTION on failure
                 if not result.success:
                     reflection = self._reflect_on_failure(resolved_task, result, context)
                     self.logger.warning("Reflection: %s", reflection)
                     context["last_reflection"] = reflection
                     self.logger.warning("Task failed id=%s; continuing to capture full execution trace.", resolved_task.id)
 
-                # RE-PLAN if LLM signals it
                 if self._should_replan(thought, result, context):
                     new_tasks = self._replan(plan.raw_text, context)
                     if new_tasks:
@@ -159,7 +152,6 @@ class PlanExecutor:
             thought_trace=thought_trace,
         )
 
-        # Save to memory
         from .memory import save_episode
         task_summaries = [
             {"service": e.task.service, "action": e.task.action, "success": e.result.success}
@@ -219,7 +211,6 @@ class PlanExecutor:
         return result
 
     def _verify_artifact_content(self, task: PlannedTask, result: ExecutionResult, context: dict[str, Any]) -> str | None:
-        """Fetch the created/updated artifact and ensure it is not empty or filled with placeholders."""
         if not result.success:
             return None
 
@@ -261,7 +252,6 @@ class PlanExecutor:
         return None
 
     def _think(self, goal: str, context: dict, next_task: PlannedTask) -> str:
-        """ReACT: LLM reasons about whether next planned step is correct."""
         try:
             from .langchain_agent import create_agent
             agent = create_agent(self.config, self.logger)
@@ -284,7 +274,6 @@ class PlanExecutor:
             return "Thought step skipped due to LLM error."
 
     def _should_replan(self, thought: str, result: ExecutionResult, context: dict) -> bool:
-        """Decide if the remaining plan should be regenerated."""
         if not result.success:
             return False
         lower_thought = thought.lower()
@@ -292,7 +281,6 @@ class PlanExecutor:
         return any(signal in lower_thought for signal in replan_signals)
 
     def _replan(self, goal: str, context: dict) -> list[PlannedTask]:
-        """Ask LLM to generate replacement tasks given current context."""
         try:
             from .langchain_agent import plan_with_langchain
             new_plan = plan_with_langchain(goal, self.config, self.logger)
@@ -304,7 +292,6 @@ class PlanExecutor:
         return []
 
     def _reflect_on_failure(self, task: PlannedTask, result: ExecutionResult, context: dict) -> str:
-        """Build a human-readable reflection string when a task fails."""
         return (
             f"Task {task.id} ({task.service}.{task.action}) failed. "
             f"Error: {result.error or 'unknown'}. "
@@ -313,7 +300,6 @@ class PlanExecutor:
         )
 
     def _execute_code_task(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
-        """Execute a code computation task and store the result in context."""
         from .tools.code_execution import execute_generated_code
         code = str(task.parameters.get("code") or "").strip()
         if not code:
@@ -350,7 +336,6 @@ class PlanExecutor:
         return result
 
     def _execute_web_search(self, task: PlannedTask, context: dict[str, Any]) -> ExecutionResult:
-        """Execute a web search task using the web_search_tool and store results in context."""
         query = str(task.parameters.get("query") or "").strip()
         max_results = int(task.parameters.get("max_results") or 5)
         try:
@@ -380,7 +365,6 @@ class PlanExecutor:
         return result
 
     def _expand_task(self, task: PlannedTask, context: dict[str, Any]) -> list[PlannedTask]:
-        """Expand a gmail.get_message task with a wildcard message_id into per-message tasks."""
         if task.service != "gmail" or task.action != "get_message":
             return [task]
         message_id = str(task.parameters.get("message_id") or "").strip()
@@ -408,15 +392,14 @@ class PlanExecutor:
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
         """Resolve all placeholder tokens in a task's parameters before execution."""
 
-        # Pass 0a (NEW): resolve {N.senderName}, {N.sender.name}, {N.senderEmail}, etc.
-        # These are plain single-message field refs that the LLM emits without [*].
+        # Pass 0a: resolve {N.senderName}, {N.sender.name}, etc.
         parameters = _resolve_dot_sender_refs(task.parameters, context, self.logger)
 
-        # Pass 0b (Bug 3): expand array-wildcard refs like {N.messages[*].senderName}
+        # Pass 0b: expand array-wildcard refs like {N.messages[*].senderName}
         parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
 
-        # Pass 1: {{task_id.key}} and {N.key} template references
-        parameters = _resolve_template(parameters, context)
+        # Pass 1: {{task_id.key}}, {N.key}, and now {N.key[0].sub} bracket-index refs
+        parameters = _resolve_template(parameters, context, self.logger)
 
         # Pass 2: bare step-ID references like '4.id'
         parameters = _resolve_bare_step_id_params(parameters, context)
@@ -429,8 +412,7 @@ class PlanExecutor:
         if context.get("last_code_stdout") or context.get("last_code_result"):
             parameters = _resolve_code_output_params(parameters, context, self.logger)
 
-        # Pass 5 (Bug 2): normalise all gmail-body variant placeholders before
-        # the known_resolvers dict in _resolve_nested_dollar can match them.
+        # Pass 5: normalise all gmail-body variant placeholders
         parameters = _resolve_gmail_body_variants(parameters, context, self.logger)
 
         # Resolve nested $-placeholders inside list/dict values
@@ -465,7 +447,6 @@ class PlanExecutor:
                 if doc_link and doc_link not in parameters[key]:
                     parameters[key] = f"{parameters[key]}\n\nLink to document: {doc_link}"
 
-        # Automatic injection for missing but required IDs
         if "spreadsheet_id" not in parameters and context.get("last_spreadsheet_id"):
             parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
         if "document_id" not in parameters and context.get("last_document_id"):
@@ -475,7 +456,6 @@ class PlanExecutor:
         if "message_id" not in parameters and context.get("last_message_id"):
             parameters["message_id"] = context["last_message_id"]
 
-        # to_email resolution — priority: explicit > valid param > context fallback
         if task.service == "gmail" and task.action == "send_message":
             to_email_val = str(parameters.get("to_email") or "").strip()
             explicit = str(context.get("explicit_to_email") or "").strip()
@@ -488,7 +468,6 @@ class PlanExecutor:
                     self.logger.info("Auto-resolved to_email from context: %s", resolved_addr)
                     parameters["to_email"] = resolved_addr
 
-        # range tab-name rewrite — only fix generic 'Sheet1!' prefix
         if (task.service == "sheets" and task.action == "append_values"
                 and "range" in parameters and context.get("last_spreadsheet_tab")):
             rng = str(parameters.get("range") or "")
@@ -499,7 +478,6 @@ class PlanExecutor:
             elif "!" not in rng:
                 parameters["range"] = f"'{tab}'!{rng}" if " " in tab else f"{tab}!{rng}"
 
-        # Bug 2 safety net: docs.batch_update must never send empty text/content
         if task.service == "docs" and task.action == "batch_update":
             for text_key in ("text", "content"):
                 raw = parameters.get(text_key)
@@ -521,7 +499,6 @@ class PlanExecutor:
         )
 
     def _update_context(self, task: PlannedTask, stdout: str, context: dict[str, Any]) -> None:
-        """Update shared execution context from a completed task's output."""
         payload = _parse_json(stdout)
         user_keywords = extract_keywords(str(context.get("request_text") or ""))
 
@@ -573,7 +550,6 @@ class PlanExecutor:
 
     @staticmethod
     def _drive_summary_values(context: dict[str, Any]) -> list[list[str]]:
-        """Build a 2-D list of Drive file results for a Sheets append."""
         query = str(context.get("drive_query") or "Drive search")
         payload = context.get("drive_payload") or {}
         files = payload.get("files") if isinstance(payload, dict) else []
@@ -592,7 +568,6 @@ class PlanExecutor:
 
     @staticmethod
     def _gmail_summary_values(context: dict[str, Any]) -> list[list[str]]:
-        """Build a 2-D list of Gmail message summaries for a Sheets append."""
         query = str(context.get("gmail_query") or "Gmail search")
         wants_company = "company" in str(context.get("request_text") or "").lower()
         fetched_messages = context.get("gmail_messages")
@@ -643,7 +618,6 @@ class PlanExecutor:
 
     @staticmethod
     def _sheet_email_body(context: dict[str, Any]) -> str:
-        """Build the email body, preferring code output over sheet values."""
         code_stdout = str(context.get("last_code_stdout") or "").strip()
         if code_stdout:
             body_lines = ["Here are your computed results:", "", code_stdout]
@@ -666,17 +640,7 @@ class PlanExecutor:
 
 
 # ---------------------------------------------------------------------------
-# Pass 0a (NEW) — plain dot-ref sender field resolver
-#
-# Handles tokens like:
-#   {2.senderName}       {2.sender.name}      {2.senderEmail}
-#   {2.sender.email}     {2.subject}          {2.date}
-#   {3.senderName}       {3.sender.name}  ...
-#
-# Strategy: the step-id N refers to the Nth gmail.get_message call.
-# We index into context['gmail_messages'] using (N - first_get_message_step).
-# If that mapping is ambiguous we try all fetched messages and return a
-# comma-joined string so the row is still useful.
+# Pass 0a — plain dot-ref sender field resolver
 # ---------------------------------------------------------------------------
 
 def _resolve_dot_sender_refs(
@@ -684,7 +648,6 @@ def _resolve_dot_sender_refs(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Resolve plain {N.senderName} / {N.sender.name} tokens from gmail_messages."""
     if isinstance(params, dict):
         return {k: _resolve_dot_sender_refs(v, context, logger) for k, v in params.items()}
     if isinstance(params, list):
@@ -694,7 +657,7 @@ def _resolve_dot_sender_refs(
 
     def _sub(m: re.Match) -> str:
         step_id_raw = m.group(1)
-        field_raw = m.group(2).lower()  # e.g. "sendername", "sender.name"
+        field_raw = m.group(2).lower()
 
         alias = _SENDER_FIELD_ALIASES.get(field_raw)
         if alias is None:
@@ -707,13 +670,8 @@ def _resolve_dot_sender_refs(
             logger.warning("Pass0a: no gmail_messages for ref %s", m.group(0))
             return m.group(0)
 
-        # Try to map step_id to a specific message index.
-        # step_id '2' typically means the 2nd task overall; get_message tasks
-        # start after list_messages (step 1).  So message index = int(step_id) - 2.
-        # We clamp to valid range and fall back to all messages joined.
         try:
             step_num = int(step_id_raw.removeprefix("task-"))
-            # first get_message is step 2 (0-indexed message index 0)
             msg_idx = max(0, step_num - 2)
         except (ValueError, AttributeError):
             msg_idx = 0
@@ -729,22 +687,18 @@ def _resolve_dot_sender_refs(
                 if extract_mode == "email":
                     addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
                     return addr_m.group(1).strip() if addr_m else raw.strip()
-                # name — strip address part
                 return raw.split("<", 1)[0].strip().strip('"')
-            # raw
             if header_key == "snippet":
                 return str(msg.get("snippet") or "")
             headers = _gmail_headers(msg)
             return headers.get(header_key, "")
 
-        # If the specific index exists use it; otherwise join all unique values.
         if msg_idx < len(messages):
             value = _extract(messages[msg_idx])
             if value:
                 logger.info("Pass0a: resolved %s → '%s' from message[%d]", m.group(0), value, msg_idx)
                 return value
 
-        # Fallback: join all unique non-empty values
         seen_vals: list[str] = []
         seen_set: set[str] = set()
         for msg in messages:
@@ -764,9 +718,7 @@ def _resolve_dot_sender_refs(
 
 
 # ---------------------------------------------------------------------------
-# Pass 0b (Bug 3) — array-wildcard reference resolver
-# {N.messages[*].senderName}  →  joined string  (scalar context)
-# when param key is "values" / "rows"  →  2-D list  [[name, email], ...]
+# Pass 0b — array-wildcard reference resolver
 # ---------------------------------------------------------------------------
 
 def _resolve_array_wildcard_refs(
@@ -774,20 +726,12 @@ def _resolve_array_wildcard_refs(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Resolve LLM-emitted array-wildcard placeholders like {N.messages[*].fieldName}.
-
-    For each match the resolver:
-    1. Looks up ``context['gmail_messages']`` (already fetched full messages).
-    2. Extracts the named field from each message's headers or top-level keys.
-    3. For ``values``/``rows`` params returns a 2-D list; otherwise a joined string.
-    """
     if isinstance(params, dict):
         return {k: _resolve_array_wildcard_from_key(k, v, context, logger) for k, v in params.items()}
     if isinstance(params, list):
         return [_resolve_array_wildcard_refs(item, context, logger) for item in params]
     if not isinstance(params, str):
         return params
-    # Scalar string — replace all wildcard tokens inline
     return _replace_wildcard_tokens(params, context, logger, scalar=True)
 
 
@@ -797,7 +741,6 @@ def _resolve_array_wildcard_from_key(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Handle a single dict key/value pair for wildcard resolution."""
     if not isinstance(value, str):
         return _resolve_array_wildcard_refs(value, context, logger)
 
@@ -805,7 +748,6 @@ def _resolve_array_wildcard_from_key(
     if not matches:
         return value
 
-    # For values/rows params that contain a single wildcard token produce a 2-D list.
     stripped_value = value.strip()
     match = _ARRAY_WILDCARD_RE.search(value)
     if key in ("values", "rows") and match is not None and stripped_value == match.group(0):
@@ -815,12 +757,10 @@ def _resolve_array_wildcard_from_key(
             logger.info("Bug3: resolved param '%s' wildcard {%s.%s[*].%s} → %d rows", key, step_id, collection, field_name, len(rows))
             return rows
 
-    # Otherwise join extracted values as a comma-separated string
     return _replace_wildcard_tokens(value, context, logger, scalar=True)
 
 
 def _replace_wildcard_tokens(value: str, context: dict[str, Any], logger: logging.Logger, scalar: bool = True) -> str:
-    """Replace all {N.collection[*].field} tokens in a string with joined values."""
     def _sub(m: re.Match) -> str:
         step_id, collection, field_name = m.group(1), m.group(2), m.group(3)
         rows = _extract_wildcard_rows(step_id, collection, field_name, context, logger)
@@ -839,7 +779,6 @@ def _extract_wildcard_rows(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> list[list[str]] | None:
-    """Extract a list of single-value rows from gmail_messages for the given field."""
     messages = context.get("gmail_messages") or []
     if not messages:
         logger.warning("Bug3: no gmail_messages in context for wildcard %s.%s[*].%s", step_id, collection, field_name)
@@ -848,7 +787,6 @@ def _extract_wildcard_rows(
     field_lower = field_name.lower()
     rows: list[list[str]] = []
 
-    # Map common LLM field names to header keys or message-level keys
     _HEADER_ALIASES: dict[str, str] = {
         "sendername":   "from",
         "sender_name":  "from",
@@ -870,18 +808,15 @@ def _extract_wildcard_rows(
         raw = headers.get(header_key, "")
 
         if not raw:
-            # Try top-level message key as fallback
             raw = str(msg.get(field_name) or msg.get(field_lower) or "")
 
         if not raw:
             continue
 
-        # For email-type fields strip the display name, keep address only
         if field_lower in ("senderemail", "sender_email", "email"):
             addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
             raw = addr_m.group(1).strip() if addr_m else raw.strip()
         elif field_lower in ("sendername", "sender_name", "name"):
-            # Strip email address, keep display name
             raw = raw.split("<", 1)[0].strip().strip('"')
 
         if raw:
@@ -891,7 +826,7 @@ def _extract_wildcard_rows(
 
 
 # ---------------------------------------------------------------------------
-# Bug 2 — gmail body variant normaliser
+# Pass 5 — gmail body variant normaliser
 # ---------------------------------------------------------------------------
 
 def _resolve_gmail_body_variants(
@@ -899,10 +834,6 @@ def _resolve_gmail_body_variants(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Normalise all known LLM variants of the gmail-body placeholder to the
-    canonical ``$gmail_message_body`` token so ``_resolve_nested_dollar`` can
-    match it in its ``known_resolvers`` dict.
-    """
     if isinstance(params, dict):
         return {k: _resolve_gmail_body_variants(v, context, logger) for k, v in params.items()}
     if isinstance(params, list):
@@ -917,7 +848,7 @@ def _resolve_gmail_body_variants(
 
 
 # ---------------------------------------------------------------------------
-# Bug A helpers — code output placeholder resolution
+# Code output placeholder resolution
 # ---------------------------------------------------------------------------
 
 _PLACEHOLDER_TOKEN_RE = re.compile(r"^PLACEHOLDER_[A-Z_]+$")
@@ -925,11 +856,6 @@ _ANGLE_BRACKET_RE = re.compile(r"^[<\[\{][a-z_\s]+[>\]\}]$")
 
 
 def _ingest_code_stdout_into_context(stdout: str, context: dict[str, Any]) -> None:
-    """Parse structured output lines from code execution into context['code_values'].
-
-    Looks for patterns such as 'Total USD: $8.00' or 'Total INR: 665.50' and
-    stores the numeric value under normalised keys for later placeholder resolution.
-    """
     code_values: dict[str, str] = context.setdefault("code_values", {})
     line_re = re.compile(
         r"(?P<label>[A-Za-z][\w\s/]+?)\s*[:=]\s*[$\u20b9\u20ac\u00a3]?\s*(?P<value>[\d,]+(?:\.\d+)?)",
@@ -957,7 +883,6 @@ def _resolve_code_output_params(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Replace PLACEHOLDER_* tokens and angle-bracket stubs with real code output values."""
     if isinstance(params, dict):
         return {k: _resolve_code_output_params(v, context, logger) for k, v in params.items()}
     if isinstance(params, list):
@@ -980,7 +905,6 @@ def _resolve_code_output_params(
 
 
 def _pick_code_value(token: str, context: dict[str, Any], logger: logging.Logger) -> str:
-    """Select the most appropriate scalar value from code_values or fallback to last_code_result."""
     code_values: dict[str, str] = context.get("code_values") or {}
     token_lower = token.lower().replace("placeholder_", "").replace("_", " ").strip()
 
@@ -999,18 +923,13 @@ def _pick_code_value(token: str, context: dict[str, Any], logger: logging.Logger
 
 
 # ---------------------------------------------------------------------------
-# Bug Fix 1 helpers — bare step-ID param resolution
+# Bare step-ID param resolution
 # ---------------------------------------------------------------------------
 
 _BARE_STEP_REF_RE = re.compile(r"^(\d+|task-\d+)\.([\w\.]+)$")
 
 
 def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
-    """Second-pass resolver for bare 'N.field' step references emitted by the LLM.
-
-    Detects strings matching ``<step>.<field>`` (e.g. ``4.id``) and replaces them
-    with the real value from ``context['task_results']``.
-    """
     if isinstance(params, dict):
         return {k: _resolve_bare_step_id_params(v, context) for k, v in params.items()}
     if isinstance(params, list):
@@ -1052,7 +971,7 @@ def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Bug Fix 2 helpers — web-search extraction instruction replacement
+# Web-search extraction instruction replacement
 # ---------------------------------------------------------------------------
 
 _EXTRACTION_KEYWORDS = (
@@ -1062,21 +981,11 @@ _EXTRACTION_KEYWORDS = (
 
 
 def _looks_like_extraction_instruction(value: str) -> bool:
-    """Return True when a parameter string reads like a natural-language extraction instruction."""
     lowered = value.lower().strip()
     return any(kw in lowered for kw in _EXTRACTION_KEYWORDS)
 
 
 def _extract_numeric_from_web_search(context: dict[str, Any]) -> str | None:
-    """Scan web_search_results for the best-matching numeric exchange-rate candidate.
-
-    Uses configurable bounds via ``context['exchange_rate_min']`` and
-    ``context['exchange_rate_max']`` (defaults: 0.0001 – 1e9).  Scores each
-    candidate by how many currency-signal keywords appear in its surrounding
-    text window and returns the highest-scoring value.  Ties are broken by
-    preferring candidates whose window also contains the expected currency pair
-    stored in ``context['expected_currency_pair']`` (e.g. ``'USD/INR'``).
-    """
     results = context.get("web_search_results") or []
     rate_min = float(context.get("exchange_rate_min") or 0.0001)
     rate_max = float(context.get("exchange_rate_max") or 1e9)
@@ -1113,7 +1022,6 @@ def _resolve_search_extraction_params(
     context: dict[str, Any],
     logger: logging.Logger,
 ) -> Any:
-    """Walk params and replace extraction-instruction strings with numeric values from web search."""
     if isinstance(params, dict):
         return {k: _resolve_search_extraction_params(v, context, logger) for k, v in params.items()}
     if isinstance(params, list):
@@ -1133,7 +1041,6 @@ def _resolve_search_extraction_params(
 
 # ---------------------------------------------------------------------------
 def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanExecutor") -> Any:
-    """Recursively resolve $-style placeholders that may appear inside lists/dicts."""
     if isinstance(value, dict):
         return {k: _resolve_nested_dollar(v, context, executor) for k, v in value.items()}
     if isinstance(value, list):
@@ -1151,7 +1058,6 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
         "$drive_summary_values": executor._drive_summary_values(context),
         "$web_search_markdown": _web_search_markdown(context),
         "$web_search_table_values": _web_search_table_values(context),
-        # Canonical gmail-body token — all variants are normalised to this before this point
         "$gmail_message_body": _gmail_messages_body_text(context),
     }
     if value in known_resolvers:
@@ -1164,7 +1070,6 @@ def _resolve_nested_dollar(value: Any, context: dict[str, Any], executor: "PlanE
 # ---------------------------------------------------------------------------
 
 def _web_search_markdown(context: dict[str, Any]) -> str:
-    """Format web search results as a Markdown document body."""
     results = context.get("web_search_results") or []
     if not results:
         return "No web search results available."
@@ -1182,7 +1087,6 @@ def _web_search_markdown(context: dict[str, Any]) -> str:
 
 
 def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
-    """Format web search results as a 2-D list suitable for Sheets append."""
     results = context.get("web_search_results") or []
     rows: list[list[str]] = [["Title", "Content", "Link"]]
     for item in results:
@@ -1198,7 +1102,6 @@ def _web_search_table_values(context: dict[str, Any]) -> list[list[str]]:
 
 
 def _gmail_messages_body_text(context: dict[str, Any]) -> str:
-    """Return body text of fetched full messages, or fall back to listing message IDs."""
     full_messages = context.get("gmail_messages")
     if isinstance(full_messages, list) and full_messages:
         parts: list[str] = []
@@ -1224,38 +1127,72 @@ def _gmail_messages_body_text(context: dict[str, Any]) -> str:
 # Template / placeholder utilities
 # ---------------------------------------------------------------------------
 
-def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolve ``{{task_id.key}}`` and ``{N.key}`` placeholder references.
+def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logger | None = None) -> Any:
+    """Recursively resolve ``{{task_id.key}}``, ``{N.key}``, and ``{N.key[0].sub}``
+    bracket-index placeholder references.
 
-    Bug 1 fix: the inner replacer now normalises both the looked-up key and the
-    requested key_path segment to lowercase-no-underscores before comparison, so
-    camelCase keys like ``spreadsheetId`` / ``documentId`` are always found even
-    when the LLM emits them in mixed case inside the placeholder.
+    Fix: the key_path regex now allows [N] and [*] bracket notation so that
+    LLM-emitted tokens like ``{1.files[0].id}`` or ``{1.messages[0].id}``
+    are matched and resolved instead of passing through as unresolved strings.
     """
     if isinstance(value, dict):
-        return {k: _resolve_template(v, context) for k, v in value.items()}
+        return {k: _resolve_template(v, context, logger) for k, v in value.items()}
     if isinstance(value, list):
-        return [_resolve_template(v, context) for v in value]
+        return [_resolve_template(v, context, logger) for v in value]
     if not isinstance(value, str):
         return value
 
     def replacer(match: re.Match) -> str:
         task_id = match.group(1)
-        key_path = match.group(2)
+        key_path = match.group(2)  # may contain brackets e.g. "files[0].id"
         results = context.get("task_results", {})
         current = results.get(task_id)
 
         if not isinstance(current, dict):
             return match.group(0)
 
-        parts = key_path.split(".")
-        if parts[0] == "output" and len(parts) > 1:
-            parts = parts[1:]
+        # Tokenise the key_path into segments, handling bracket notation.
+        # e.g. "files[0].id"  → [("files", None), ("0", int), ("id", None)]
+        # e.g. "messages[*].body" → [("messages", None), ("*", str), ("body", None)]
+        segments: list[tuple[str, str | None]] = []
+        for raw_part in key_path.split("."):
+            # Each raw_part may be "files[0]" or "messages[*]" or plain "id"
+            bracket_m = re.match(r"^([\w]+)\[([\d\*]+)\]$", raw_part)
+            if bracket_m:
+                segments.append((bracket_m.group(1), None))   # dict key
+                segments.append((bracket_m.group(2), "idx"))  # list index
+            else:
+                segments.append((raw_part, None))
 
-        for part in parts:
-            if isinstance(current, dict):
-                # Bug 1: normalise to lowercase-no-underscores for camelCase tolerance
-                norm_part = part.lower().replace("_", "")
+        # Strip leading 'output' shim
+        if segments and segments[0][0] == "output" and len(segments) > 1:
+            segments = segments[1:]
+
+        for seg_key, seg_type in segments:
+            if seg_type == "idx":
+                # Array index navigation
+                if not isinstance(current, list):
+                    return match.group(0)
+                if seg_key == "*":
+                    # Wildcard in scalar context → take first element
+                    if current:
+                        current = current[0]
+                    else:
+                        return match.group(0)
+                else:
+                    try:
+                        idx = int(seg_key)
+                        if 0 <= idx < len(current):
+                            current = current[idx]
+                        else:
+                            return match.group(0)
+                    except (ValueError, TypeError):
+                        return match.group(0)
+            else:
+                # Dict key navigation with camelCase normalisation
+                if not isinstance(current, dict):
+                    return match.group(0)
+                norm_part = seg_key.lower().replace("_", "")
                 found = False
                 for k, v in current.items():
                     if k.lower().replace("_", "") == norm_part:
@@ -1264,7 +1201,7 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
                         break
 
                 if not found:
-                    # Well-known aliases: spreadsheetId, documentId, fileId, messageId
+                    # Well-known aliases
                     if norm_part in ("id", "spreadsheetid") and "spreadsheetId" in current:
                         current = current["spreadsheetId"]
                         found = True
@@ -1282,22 +1219,15 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 
                 if not found:
                     return match.group(0)
-            elif isinstance(current, list):
-                try:
-                    idx = int(part)
-                    if 0 <= idx < len(current):
-                        current = current[idx]
-                    else:
-                        return match.group(0)
-                except ValueError:
-                    return match.group(0)
-            else:
-                return match.group(0)
 
-        return str(current)
+        if logger and current is not None:
+            logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
+        return str(current) if current is not None else match.group(0)
 
-    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.]+)\}\}", replacer, value)
-    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\}", replacer, resolved)
+    # Double-brace form: {{task_id.key_path}}
+    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.\[\]\*]+)\}\}", replacer, value)
+    # Single-brace form: {N.key_path}  — now includes bracket notation
+    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}", replacer, resolved)
     return resolved
 
 
@@ -1306,11 +1236,6 @@ def _resolve_template(value: Any, context: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
-    """Extract a valid reply-to address from fetched gmail_messages.
-
-    Skips receipt / no-reply sender addresses (Stripe, X, PayPal, etc.).
-    Returns the first clean sender address found, or empty string.
-    """
     fetched = context.get("gmail_messages") or []
     for message in fetched:
         if not isinstance(message, dict):
@@ -1328,7 +1253,6 @@ def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
 
 
 def _parse_json(stdout: str) -> dict[str, Any] | None:
-    """Attempt to parse stdout as JSON; return None on failure."""
     try:
         payload = json.loads(stdout or "{}")
         return payload if isinstance(payload, dict) else None
@@ -1337,7 +1261,6 @@ def _parse_json(stdout: str) -> dict[str, Any] | None:
 
 
 def _gmail_messages(context: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the list of stub Gmail messages from the list_messages payload."""
     payload = context.get("gmail_payload") or {}
     messages = payload.get("messages") if isinstance(payload, dict) else []
     if not isinstance(messages, list):
@@ -1346,12 +1269,10 @@ def _gmail_messages(context: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _gmail_message_ids(context: dict[str, Any]) -> list[str]:
-    """Return message IDs from the current gmail_payload context."""
     return [str(message.get("id")) for message in _gmail_messages(context) if message.get("id")]
 
 
 def _gmail_headers(message: dict[str, Any]) -> dict[str, str]:
-    """Parse Gmail message payload headers into a lowercase-keyed dict."""
     payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
     headers = payload.get("headers") if isinstance(payload.get("headers"), list) else []
     parsed: dict[str, str] = {}
@@ -1365,7 +1286,6 @@ def _gmail_headers(message: dict[str, Any]) -> dict[str, str]:
 
 
 def _company_from_sender(value: str) -> str:
-    """Extract a human-readable company name from a raw From header value."""
     display = value.split("<", 1)[0].strip().strip('"')
     if display:
         return display
@@ -1376,7 +1296,6 @@ def _company_from_sender(value: str) -> str:
 
 
 def _extract_company_candidates(from_value: str, subject: str, body_text: str) -> list[str]:
-    """Extract potential company names from email sender, subject, and body."""
     candidates: list[str] = []
     sender_company = _company_from_sender(from_value)
     if sender_company and sender_company.lower() not in {"gmail", "googlemail"}:
@@ -1403,7 +1322,6 @@ def _extract_company_candidates(from_value: str, subject: str, body_text: str) -
 
 
 def _gmail_body_text(message: dict[str, Any]) -> str:
-    """Extract plain-text body from a full Gmail message object."""
     snippet = str(message.get("snippet") or "")
     payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
     body_chunks: list[str] = []
@@ -1413,7 +1331,6 @@ def _gmail_body_text(message: dict[str, Any]) -> str:
 
 
 def _collect_payload_text(payload: dict[str, Any], chunks: list[str]) -> None:
-    """Recursively collect base64-decoded text from a Gmail message payload."""
     if not isinstance(payload, dict):
         return
     body = payload.get("body") if isinstance(payload.get("body"), dict) else {}
@@ -1430,7 +1347,6 @@ def _collect_payload_text(payload: dict[str, Any], chunks: list[str]) -> None:
 
 
 def _decode_base64_urlsafe(value: str) -> str:
-    """Decode a URL-safe base64 string, returning empty string on failure."""
     try:
         padded = value + "=" * (-len(value) % 4)
         decoded = base64.urlsafe_b64decode(padded.encode("ascii"))
@@ -1440,7 +1356,6 @@ def _decode_base64_urlsafe(value: str) -> str:
 
 
 def _is_placeholder(value: str) -> bool:
-    """Return True if value looks like an unresolved template placeholder."""
     stripped = value.strip()
     return (
         stripped.startswith("$")
@@ -1448,25 +1363,22 @@ def _is_placeholder(value: str) -> bool:
         or "}}" in stripped
         or "_from_task_" in stripped
         or "from_task_" in stripped
-        or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.]+\}", stripped))
+        or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.\[\]\*]+\}", stripped))
         or bool(re.search(r"(\d+|task-\d+)\.[\w\.]+", stripped))
     )
 
 
 def _is_gmail_values_placeholder(value: str) -> bool:
-    """Return True if value is a placeholder referencing Gmail message data."""
     lowered = value.lower()
     return _is_placeholder(lowered) and any(term in lowered for term in ("gmail", "company", "message", "email"))
 
 
 def _is_sheet_body_placeholder(value: str) -> bool:
-    """Return True if value is a placeholder referencing spreadsheet data."""
     lowered = value.lower()
     return _is_placeholder(lowered) and any(term in lowered for term in ("sheet", "spreadsheet", "table", "data"))
 
 
 def _find_unresolved_placeholder(value: Any) -> str | None:
-    """Recursively search for any remaining unresolved placeholder in a parameter tree."""
     if isinstance(value, str) and _is_placeholder(value):
         return value
     if isinstance(value, dict):
