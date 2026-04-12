@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import base64
+import email as email_lib
+import email.mime.application
+import email.mime.multipart
+import email.mime.text
 import json
+import os
 import re
+import tempfile
 from typing import Any
 
 from .exceptions import ValidationError
@@ -21,7 +27,10 @@ _DRIVE_OPS_RE = re.compile(
 )
 
 # Services that are recognised by the LLM but have no real CLI backing.
-# build_command returns a no-op result instead of raising ValidationError.
+# build_command returns a graceful skip instead of raising ValidationError.
+# FIX Bug-Admin: previously this raised ValidationError which triggered the
+# reflection retry loop (3 attempts). Now we raise a dedicated subclass that
+# the executor treats as a permanent skip (no retry).
 _UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
 
 
@@ -60,11 +69,13 @@ class CommandPlanner:
         return SERVICES[service_key].actions[action_key].parameters
 
     def build_command(self, service: str, action: str, parameters: dict[str, Any]) -> list[str]:
-        # Gracefully skip services that have no real CLI backing (e.g. admin, analytics).
+        # FIX Bug-Admin: unsupported stub services (admin, analytics, bigquery) must be
+        # silently skipped — NOT retried.  We raise UnsupportedServiceError (a subclass of
+        # ValidationError) so the executor can detect the permanent-skip case and avoid the
+        # 3-attempt reflection retry loop that was burning time and polluting the log.
         if str(service).lower() in _UNSUPPORTED_STUB_SERVICES:
-            raise ValidationError(
-                f"Service '{service}' is not supported by the Google Workspace CLI. "
-                f"Action '{action}' will be skipped."
+            raise UnsupportedServiceError(
+                f"No command builder for service: {service}"
             )
 
         service_key = self.ensure_service(service)
@@ -100,10 +111,13 @@ class CommandPlanner:
                 "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
             }
             if query:
-                # Fix: bare name strings with no Drive query operators cause HTTP 400 Invalid Value.
-                # e.g. q="Agentic AI - Builders" → q="fullText contains 'Agentic AI - Builders'"
+                # FIX Bug-Drive-Query: bare name strings with no Drive query operators cause
+                # HTTP 400 Invalid Value.  Wrap them as  name = 'foo'  (exact-match) which is
+                # both correct and what the LLM intends when it says "search by name".
                 if "=" not in query and not _DRIVE_OPS_RE.search(query):
-                    query = f"fullText contains '{query}'"
+                    # Escape single quotes inside the name to avoid breaking the query string.
+                    safe_name = query.replace("'", "\\'")
+                    query = f"name = '{safe_name}'"
                 request_params["q"] = query
             return [
                 "drive",
@@ -230,7 +244,36 @@ class CommandPlanner:
             to_email = self._required_text(params, "to_email")
             subject = self._required_text(params, "subject")
             body = self._required_text(params, "body")
-            raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
+
+            # FIX Bug-Gmail-Attachment: the original _build_raw_email() produced a
+            # plain text/plain message and completely ignored the 'attachments' param,
+            # resulting in emails sent without any attachment even when the user said
+            # "send as attachment".
+            #
+            # New behaviour:
+            #   - If 'attachments' is a non-empty string (file path) or a list of paths,
+            #     build a multipart/mixed MIME message with the file(s) attached.
+            #   - If 'drive_file_id' is present (and no local file), export the Google Doc
+            #     as PDF first (handled in execution.py), then attach.
+            #   - Fall back to plain text/plain when there are no attachments (original
+            #     behaviour preserved).
+            attachments = params.get("attachments")
+            attachment_paths: list[str] = []
+            if isinstance(attachments, str) and attachments.strip():
+                attachment_paths = [attachments.strip()]
+            elif isinstance(attachments, list):
+                attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
+
+            if attachment_paths:
+                raw_email = self._build_raw_email_with_attachments(
+                    to_email=to_email,
+                    subject=subject,
+                    body=body,
+                    attachment_paths=attachment_paths,
+                )
+            else:
+                raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
+
             return [
                 "gmail",
                 "users",
@@ -441,6 +484,7 @@ class CommandPlanner:
 
     @staticmethod
     def _build_raw_email(to_email: str, subject: str, body: str) -> str:
+        """Build a plain text/plain RFC-2822 message (no attachment)."""
         message = (
             f"To: {to_email}\r\n"
             f"Subject: {subject}\r\n"
@@ -450,3 +494,44 @@ class CommandPlanner:
             f"{body}"
         )
         return base64.urlsafe_b64encode(message.encode("utf-8")).decode("ascii")
+
+    @staticmethod
+    def _build_raw_email_with_attachments(
+        to_email: str,
+        subject: str,
+        body: str,
+        attachment_paths: list[str],
+    ) -> str:
+        """
+        Build a multipart/mixed RFC-2822 message with file attachments.
+
+        Each entry in attachment_paths must be a readable local file path.
+        Non-existent paths are silently skipped so the email still sends.
+        """
+        msg = email_lib.mime.multipart.MIMEMultipart("mixed")
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg["MIME-Version"] = "1.0"
+
+        msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
+
+        for path in attachment_paths:
+            if not os.path.isfile(path):
+                continue
+            filename = os.path.basename(path)
+            with open(path, "rb") as fh:
+                data = fh.read()
+            part = email_lib.mime.application.MIMEApplication(data, Name=filename)
+            part["Content-Disposition"] = f'attachment; filename="{filename}"'
+            msg.attach(part)
+
+        raw_bytes = msg.as_bytes()
+        return base64.urlsafe_b64encode(raw_bytes).decode("ascii")
+
+
+# ---------------------------------------------------------------------------
+# Custom exception for permanently unsupported services (no retry needed)
+# ---------------------------------------------------------------------------
+
+class UnsupportedServiceError(ValidationError):
+    """Raised when a service has no CLI backing and must be skipped without retry."""
