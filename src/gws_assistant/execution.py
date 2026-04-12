@@ -64,7 +64,7 @@ _HEADERS_DOT_REF_RE = re.compile(
 )
 
 # Extended template regex: matches {N.key.path[0].sub}
-_TEMPLATE_REF_RE = re.compile(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}")
+_TEMPLATE_REF_RE = re.compile(r"\{(\d+|task-\d+)\.[\w\.\[\]\*]+\}")
 
 # Bug 2 — all LLM variants that mean "put gmail message bodies here"
 _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
@@ -76,6 +76,19 @@ _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
     "$gmail_message_bodies",
     "$messages_body",
     "$message_body",
+)
+
+# ---------------------------------------------------------------------------
+# Pass 6 — Drive file field resolver
+# FIX: The LLM sometimes generates named-alias task IDs like "drive-search"
+# (e.g. {drive-search.files[0].webViewLink}) which do NOT match the numeric /
+# task-N patterns used by _TEMPLATE_REF_RE / Pass 1. This regex matches ANY
+# token of the form {<anything>.files[<index>].<field>} so it resolves against
+# context['drive_payload']['files'] regardless of the alias the LLM chose.
+# ---------------------------------------------------------------------------
+_DRIVE_FILE_REF_RE = re.compile(
+    r"\{[^}]+\.files\[(\d+)\]\.(\w+)\}",
+    re.IGNORECASE,
 )
 
 # ---------------------------------------------------------------------------
@@ -454,6 +467,13 @@ class PlanExecutor:
         # Pass 5: normalise all gmail-body variant placeholders
         parameters = _resolve_gmail_body_variants(parameters, context, self.logger)
 
+        # Pass 6: resolve Drive file field refs like {drive-search.files[0].webViewLink}
+        # This handles named-alias task IDs (e.g. 'drive-search') that do not match the
+        # numeric / task-N pattern used by Pass 1, preventing raw placeholder leakage
+        # into email bodies.
+        if context.get("drive_payload"):
+            parameters = _resolve_drive_file_refs(parameters, context, self.logger)
+
         # Resolve nested $-placeholders inside list/dict values
         parameters = _resolve_nested_dollar(parameters, context, self)
 
@@ -605,6 +625,14 @@ class PlanExecutor:
                 payload["files"] = filtered
             context["drive_query"] = task.parameters.get("q") or ""
             context["drive_payload"] = payload
+            # Also register under task_results so numeric-ID Pass 1 refs resolve too.
+            results = context.setdefault("task_results", {})
+            results[task.id] = payload
+            if task.id.startswith("task-"):
+                try:
+                    results[task.id.removeprefix("task-")] = payload
+                except Exception:
+                    pass
         if task.service == "sheets" and task.action == "get_values" and payload:
             context["sheet_values_payload"] = payload
 
@@ -1079,6 +1107,63 @@ def _resolve_gmail_body_variants(
         logger.info("Bug2: normalised gmail-body variant '%s' → '$gmail_message_body'", stripped)
         return "$gmail_message_body"
     return params
+
+
+# ---------------------------------------------------------------------------
+# Pass 6 — Drive file field resolver
+#
+# FIX: The LLM generates named-alias task IDs such as "drive-search" that do
+# NOT match the numeric / task-N patterns consumed by Pass 1. When the planner
+# emits a body like "Here is the document: {drive-search.files[0].webViewLink}"
+# the token survives all earlier passes and lands literally in the email.
+#
+# This pass uses _DRIVE_FILE_REF_RE — which matches {<anything>.files[N].field}
+# regardless of the alias — and resolves it from context['drive_payload']['files'].
+# ---------------------------------------------------------------------------
+
+def _resolve_drive_file_refs(
+    params: Any,
+    context: dict[str, Any],
+    logger: logging.Logger,
+) -> Any:
+    if isinstance(params, dict):
+        return {k: _resolve_drive_file_refs(v, context, logger) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_drive_file_refs(item, context, logger) for item in params]
+    if not isinstance(params, str):
+        return params
+
+    drive_payload = context.get("drive_payload") or {}
+    files: list[dict] = drive_payload.get("files") if isinstance(drive_payload, dict) else []
+    if not isinstance(files, list) or not files:
+        return params
+
+    def _sub(m: re.Match) -> str:
+        try:
+            idx = int(m.group(1))
+        except (ValueError, TypeError):
+            return m.group(0)
+        field = m.group(2)
+        if idx < 0 or idx >= len(files):
+            logger.warning("Pass6: files[%d] out of range (have %d files)", idx, len(files))
+            return m.group(0)
+        file_obj = files[idx]
+        if not isinstance(file_obj, dict):
+            return m.group(0)
+        # Case-insensitive field lookup
+        field_lower = field.lower().replace("_", "")
+        value = None
+        for k, v in file_obj.items():
+            if k.lower().replace("_", "") == field_lower:
+                value = v
+                break
+        if value is None:
+            logger.warning("Pass6: field '%s' not found in files[%d]", field, idx)
+            return m.group(0)
+        logger.info("Pass6: resolved %s → '%s'", m.group(0), str(value)[:120])
+        return str(value)
+
+    return _DRIVE_FILE_REF_RE.sub(_sub, params)
 
 
 # ---------------------------------------------------------------------------
