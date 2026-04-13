@@ -125,6 +125,10 @@ _DOCS_MIN_CHAR_THRESHOLD            = 50
 _DEFAULT_SHEETS_CHECK_RANGE         = "A1:E20"
 _GOOGLE_DOCS_URL_TEMPLATE           = "https://docs.google.com/document/d/{doc_id}/edit"
 
+# Bug 5 fix — Windows CreateProcess fails (WinError 206) when the command
+# line exceeds ~32 767 chars.  We cap any single resolved string argument
+# at _MAX_ARG_CHARS so subprocess never hits that limit.
+_MAX_ARG_CHARS = 7_000
 
 # ---------------------------------------------------------------------------
 # Fix #2 — structured reflection advice
@@ -398,6 +402,10 @@ class PlanExecutor:
                 error=f"Command construction error: expected list[str], got {bad}",
             )
 
+        # Bug 5 fix — truncate oversized string args to avoid WinError 206
+        # (ERROR_FILENAME_EXCED_RANGE / command line too long on Windows).
+        args = _truncate_args(args, _MAX_ARG_CHARS, self.logger)
+
         if hasattr(self.runner, "run_with_retry"):
             result = self.runner.run_with_retry(args)
         else:
@@ -657,7 +665,7 @@ class PlanExecutor:
         ]
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
-        """Resolve all placeholder tokens in a task’s parameters before execution."""
+        """Resolve all placeholder tokens in a task's parameters before execution."""
         parameters = _resolve_dot_sender_refs(task.parameters, context, self.logger)
         parameters = _resolve_array_wildcard_refs(parameters, context, self.logger)
         parameters = _resolve_headers_dot_refs(parameters, context, self.logger)
@@ -1001,7 +1009,9 @@ def _resolve_dot_sender_refs(
         messages: list[dict] = context.get("gmail_messages") or []
         if not messages:
             logger.warning("Pass0a: no gmail_messages for ref %s", m.group(0))
-            return m.group(0)
+            # Bug 2 fix — return empty string instead of the raw placeholder token
+            # so downstream tasks receive a blank value rather than literal template text.
+            return ""
         try:
             task_num_str = re.sub(r"^(task-|t-|t)", "", step_id_raw)
             step_num = int(task_num_str)
@@ -1042,7 +1052,8 @@ def _resolve_dot_sender_refs(
             logger.info("Pass0a: resolved %s → joined '%s'", m.group(0), joined[:80])
             return joined
         logger.warning("Pass0a: could not resolve %s", m.group(0))
-        return m.group(0)
+        # Bug 2 fix — return empty string instead of unresolved placeholder.
+        return ""
 
     return _DOT_SENDER_REF_RE.sub(_sub, params)
 
@@ -1250,7 +1261,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
                 continue
 
             # key[index]
-            m = re.match(r"^([\w]+)\[([\d\*]+)\]$", raw_part)
+            m = re.match(r"^([\w]+)\[([\\d\\*]+)\]$", raw_part)
             if m:
                 segments.append((m.group(1), None))
                 segments.append((m.group(2), "idx"))
@@ -1338,8 +1349,9 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
     resolved = re.sub(fr"\{{{_TASK_ID_PAT}\.([\w\.\[\]\*]+)\}}", replacer, resolved)
 
     return resolved
+
 # ---------------------------------------------------------------------------
-# Pass 5 — gmail body variant normaliser
+# Pass 5 — gmail body variant normaliser + immediate resolver
 # ---------------------------------------------------------------------------
 
 def _resolve_gmail_body_variants(
@@ -1352,9 +1364,16 @@ def _resolve_gmail_body_variants(
     if not isinstance(params, str):
         return params
     stripped = params.strip()
+    # Normalise any variant alias to the canonical sentinel.
     if stripped in _GMAIL_BODY_VARIANTS and stripped != "$gmail_message_body":
         logger.info("Bug2: normalised gmail-body variant '%s' → '$gmail_message_body'", stripped)
-        return "$gmail_message_body"
+        stripped = "$gmail_message_body"
+    # Bug 4 fix — immediately resolve the canonical sentinel to actual body text
+    # so the value never reaches subprocess as a literal "$gmail_message_body" string.
+    if stripped == "$gmail_message_body":
+        body_text = _gmail_messages_body_text(context)
+        logger.info("Pass5: resolved $gmail_message_body → %d chars", len(body_text))
+        return body_text
     return params
 
 
@@ -1489,7 +1508,7 @@ def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
     step_id_raw = m.group(1)
     key_path    = m.group(2)
     results     = context.get("task_results", {})
-    
+
     # Flexible lookup: normalize "task-5", "t5", "t-5" all to "5"
     task_num    = re.sub(r"^(task-|t-|t)", "", step_id_raw)
     payload     = results.get(step_id_raw) or results.get(task_num) or results.get(f"task-{task_num}")
@@ -1725,6 +1744,7 @@ def _company_from_sender(value: str) -> str:
     address = value.strip().strip("<>")
     domain  = address.split("@", 1)[1] if "@" in address else address
     domain  = domain.split(">", 1)[0].split(".", 1)[0]
+    # Bug 3 fix — was `.title` (method reference), must be `.title()` (call).
     return domain.replace("-", " ").replace("_", " ").title()
 
 
@@ -1754,6 +1774,24 @@ def _extract_company_candidates(from_value: str, subject: str, body_text: str) -
     return unique
 
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and decode common HTML entities from decoded email body text."""
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", " ", text)
+    # Decode common HTML entities
+    entities = {
+        "&amp;": "&", "&lt;": "<", "&gt;": ">",
+        "&quot;": '"', "&#39;": "'", "&nbsp;": " ",
+        "&#160;": " ", "&apos;": "'",
+    }
+    for entity, replacement in entities.items():
+        text = text.replace(entity, replacement)
+    # Collapse excessive whitespace
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def _gmail_body_text(message: dict[str, Any]) -> str:
     snippet = str(message.get("snippet") or "")
     payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
@@ -1766,11 +1804,17 @@ def _gmail_body_text(message: dict[str, Any]) -> str:
 def _collect_payload_text(payload: dict[str, Any], chunks: list[str]) -> None:
     if not isinstance(payload, dict):
         return
+    mime_type = str(payload.get("mimeType") or "").lower()
     body = payload.get("body") if isinstance(payload.get("body"), dict) else {}
     data = body.get("data")
     if isinstance(data, str) and data:
         decoded = _decode_base64_urlsafe(data)
         if decoded:
+            # Bug 1 fix — strip HTML tags so callers receive plain text,
+            # not raw HTML markup that ends up verbatim in spreadsheet cells
+            # or email bodies.
+            if "html" in mime_type:
+                decoded = _strip_html(decoded)
             chunks.append(decoded)
     parts = payload.get("parts")
     if isinstance(parts, list):
@@ -1786,6 +1830,23 @@ def _decode_base64_urlsafe(value: str) -> str:
         return decoded.decode("utf-8", errors="ignore")
     except Exception:
         return ""
+
+
+def _truncate_args(args: list[str], max_chars: int, logger: logging.Logger) -> list[str]:
+    """Bug 5 fix — truncate any single arg that exceeds max_chars to prevent
+    WinError 206 (command line too long) on Windows when Gmail/Sheets body
+    text is passed directly as a CLI argument."""
+    result: list[str] = []
+    for arg in args:
+        if len(arg) > max_chars:
+            logger.warning(
+                "Truncating oversized CLI arg (%d chars → %d) to avoid WinError 206.",
+                len(arg), max_chars,
+            )
+            result.append(arg[:max_chars])
+        else:
+            result.append(arg)
+    return result
 
 
 def _is_likely_real_content(value: str) -> bool:
