@@ -100,12 +100,74 @@ def gmail_send_message(to_email: str, subject: str, body: str,
         body:     Email body text (plain text or basic HTML).
         cc:       Optional CC recipients (comma-separated).
         bcc:      Optional BCC recipients (comma-separated).
-        attachments: Optional local file path to attach.
+        attachments: Optional workspace-relative file path to attach (e.g., 'output/file.pdf').
     """
+    import os
+    import pathlib
+
     params: dict[str, Any] = {"to_email": to_email, "subject": subject, "body": body}
     if cc:          params["cc"] = cc
     if bcc:         params["bcc"] = bcc
-    if attachments: params["attachments"] = attachments
+
+    # Validate and normalize attachment path if provided
+    if attachments:
+        workspace_root = os.getenv("GWS_WORKSPACE_ROOT", "/tmp/gws_workspace")
+        try:
+            # Reject absolute paths
+            if os.path.isabs(attachments):
+                return {
+                    "success": False,
+                    "error": f"Absolute paths are not allowed for attachments. Use workspace-relative paths only. Got: {attachments}"
+                }
+
+            # Reject paths containing '..'
+            if ".." in attachments:
+                return {
+                    "success": False,
+                    "error": f"Path traversal (..) is not allowed in attachments. Got: {attachments}"
+                }
+
+            # Build the full path and resolve it
+            full_path = pathlib.Path(workspace_root) / attachments
+            canonical_path = full_path.resolve()
+
+            # Ensure the canonical path is within the workspace root
+            workspace_canonical = pathlib.Path(workspace_root).resolve()
+            if not str(canonical_path).startswith(str(workspace_canonical)):
+                return {
+                    "success": False,
+                    "error": f"Attachment path escapes workspace boundary. Workspace: {workspace_canonical}, Requested: {canonical_path}"
+                }
+
+            # Reject symlinks
+            if canonical_path.is_symlink():
+                return {
+                    "success": False,
+                    "error": f"Symlinks are not allowed for attachments. Got: {attachments}"
+                }
+
+            # Verify file exists
+            if not canonical_path.exists():
+                return {
+                    "success": False,
+                    "error": f"Attachment file does not exist in workspace: {attachments}"
+                }
+
+            if not canonical_path.is_file():
+                return {
+                    "success": False,
+                    "error": f"Attachment path is not a file: {attachments}"
+                }
+
+            # Use the validated canonical path
+            params["attachments"] = str(canonical_path)
+
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": f"Attachment path validation failed: {exc}"
+            }
+
     return _run_gws_action("gmail", "send_message", params)
 
 
@@ -467,6 +529,7 @@ def execute_python_code(code: str) -> dict:
             "stdout":  output.get("stdout") or "",
             "stderr":  output.get("stderr") or "",
             "error":   structured.get("error") or None,
+            "result":  structured.get("result") or None,
         }
     except Exception as exc:
         logger.error("execute_python_code failed: %s", exc)
@@ -567,10 +630,72 @@ def build_gws_tools(executor: Any, config: Any) -> list:
         elif tool_name == "gmail_send_message":
             def bound_func(to_email: str, subject: str, body: str,
                            cc: str = "", bcc: str = "", attachments: str = "") -> dict:
+                import os
+                import pathlib
+
                 params: dict[str, Any] = {"to_email": to_email, "subject": subject, "body": body}
                 if cc:          params["cc"] = cc
                 if bcc:         params["bcc"] = bcc
-                if attachments: params["attachments"] = attachments
+
+                # Validate and normalize attachment path if provided
+                if attachments:
+                    workspace_root = os.getenv("GWS_WORKSPACE_ROOT", "/tmp/gws_workspace")
+                    try:
+                        # Reject absolute paths
+                        if os.path.isabs(attachments):
+                            return {
+                                "success": False,
+                                "error": f"Absolute paths are not allowed for attachments. Use workspace-relative paths only. Got: {attachments}"
+                            }
+
+                        # Reject paths containing '..'
+                        if ".." in attachments:
+                            return {
+                                "success": False,
+                                "error": f"Path traversal (..) is not allowed in attachments. Got: {attachments}"
+                            }
+
+                        # Build the full path and resolve it
+                        full_path = pathlib.Path(workspace_root) / attachments
+                        canonical_path = full_path.resolve()
+
+                        # Ensure the canonical path is within the workspace root
+                        workspace_canonical = pathlib.Path(workspace_root).resolve()
+                        if not str(canonical_path).startswith(str(workspace_canonical)):
+                            return {
+                                "success": False,
+                                "error": f"Attachment path escapes workspace boundary. Workspace: {workspace_canonical}, Requested: {canonical_path}"
+                            }
+
+                        # Reject symlinks
+                        if canonical_path.is_symlink():
+                            return {
+                                "success": False,
+                                "error": f"Symlinks are not allowed for attachments. Got: {attachments}"
+                            }
+
+                        # Verify file exists
+                        if not canonical_path.exists():
+                            return {
+                                "success": False,
+                                "error": f"Attachment file does not exist in workspace: {attachments}"
+                            }
+
+                        if not canonical_path.is_file():
+                            return {
+                                "success": False,
+                                "error": f"Attachment path is not a file: {attachments}"
+                            }
+
+                        # Use the validated canonical path
+                        params["attachments"] = str(canonical_path)
+
+                    except Exception as exc:
+                        return {
+                            "success": False,
+                            "error": f"Attachment path validation failed: {exc}"
+                        }
+
                 return bound_run_gws("gmail", "send_message", params)
         elif tool_name == "gmail_search_emails":
             def bound_func(q: str, max_results: int = 10) -> dict:
@@ -695,6 +820,7 @@ def build_gws_tools(executor: Any, config: Any) -> list:
                         "stdout":  output.get("stdout") or "",
                         "stderr":  output.get("stderr") or "",
                         "error":   structured.get("error") or None,
+                        "result":  structured.get("result") or None,
                     }
                 except Exception as exc:
                     logger.error("execute_python_code failed: %s", exc)

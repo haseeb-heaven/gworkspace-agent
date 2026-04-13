@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent  # LangGraph native ReAct
 
@@ -169,15 +169,15 @@ def run_react_agent(
     messages = [HumanMessage(content=user_text)]
     logger.info("ReAct agent: starting run for query='%s'", user_text[:120])
 
+    # First, import RunnableConfig with fallback
     try:
         from langgraph.core.runnables import RunnableConfig
-        final_state = agent_graph.invoke(
-            {"messages": messages},
-            config=RunnableConfig(recursion_limit=recursion_limit),
-        )
     except ImportError:
         # RunnableConfig path differs across LangGraph versions — try fallback
         from langchain_core.runnables import RunnableConfig
+
+    # Then, invoke the graph with proper error handling
+    try:
         final_state = agent_graph.invoke(
             {"messages": messages},
             config=RunnableConfig(recursion_limit=recursion_limit),
@@ -189,12 +189,10 @@ def run_react_agent(
     # Extract final answer from the last AIMessage with no tool calls
     messages_out = final_state.get("messages", [])
     for msg in reversed(messages_out):
-        content = getattr(msg, "content", None)
-        tool_calls = getattr(msg, "tool_calls", [])
-        if content and not tool_calls:
+        if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", []):
             logger.info("ReAct agent: completed with %d messages in history.",
                         len(messages_out))
-            return str(content).strip()
+            return str(msg.content).strip()
 
     logger.warning("ReAct agent: no final AIMessage found in state.")
     return "ReAct agent completed but produced no final text output."
