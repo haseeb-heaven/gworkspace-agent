@@ -181,8 +181,11 @@ class CommandPlanner:
                 "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
             }
             if raw_query:
-                # Fix #9 — always run through sanitize_drive_query; no legacy fallback.
-                request_params["q"] = sanitize_drive_query(raw_query)
+                # If the query specifically mentions 'document' and 'name', prioritize Google Docs mimeType.
+                if "document" in raw_query.lower() and "name" in raw_query.lower():
+                    request_params["q"] = f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
+                else:
+                    request_params["q"] = sanitize_drive_query(raw_query)
             return ["drive", "files", "list", "--params", json.dumps(request_params)]
 
         if action == "create_folder":

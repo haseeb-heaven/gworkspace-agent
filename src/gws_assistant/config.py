@@ -33,18 +33,19 @@ class AppConfig:
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
         openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        generic_key = (os.getenv("LLM_API_KEY") or "").strip()
 
         if not provider:
             provider = "openrouter" if openrouter_key else "openai"
 
         if provider == "openrouter":
-            api_key = openrouter_key or openai_key or None
-            model = (os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
+            api_key = generic_key or openrouter_key or openai_key or None
+            model = (os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
             base_url = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
         else:
             provider = "openai"
-            api_key = openai_key or None
-            model = (os.getenv("OPENAI_MODEL") or OPENAI_DEFAULT_MODEL).strip()
+            api_key = generic_key or openai_key or None
+            model = (os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or OPENAI_DEFAULT_MODEL).strip()
             base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
@@ -66,6 +67,7 @@ class AppConfig:
         # on LLM planning errors (useful for strict CI/test environments).
         use_heuristic_fallback = _to_bool(os.getenv("USE_HEURISTIC_FALLBACK"), default=True)
 
+        code_execution_enabled = _to_bool(os.getenv("CODE_EXECUTION_ENABLED"), default=True)
         code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
         e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
 
@@ -89,6 +91,7 @@ class AppConfig:
             max_replans=max_replans,
             langchain_enabled=langchain_enabled,
             use_heuristic_fallback=use_heuristic_fallback,
+            code_execution_enabled=code_execution_enabled,
             code_execution_backend=code_execution_backend,
             e2b_api_key=e2b_api_key,
             gws_timeout_seconds=gws_timeout_seconds,

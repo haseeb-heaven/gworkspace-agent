@@ -124,7 +124,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     def execute_task_node(state: AgentState) -> dict[str, Any]:
         plan = state.get("plan")
         idx = state.get("current_task_index", 0)
-        context = state.get("context", {})
+        context = dict(state.get("context", {}))
         executions = list(state.get("executions", []))
         thought_trace = list(state.get("thought_trace", []))
 
@@ -138,6 +138,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "error": f"Task {task.id} expanded to no executable tasks.",
                 "last_result": StructuredToolResult(success=False, output={}, error="Empty expansion"),
                 "executions": executions,
+                "context": context,
             }
 
         latest: StructuredToolResult | None = None
@@ -147,11 +148,40 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             result = executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
+            
+            # Store results in context for placeholder resolution
+            # executor._resolve_template expects dict with keys like 'files', 'id' etc.
+            # latest['output'] usually contains 'parsed_payload' which has the real data.
+            results_map = context.setdefault("task_results", {})
+            payload = latest["output"].get("parsed_payload") or latest["output"]
+            
+            # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
+            t_id = str(task.id)
+            results_map[t_id] = payload
+            
+            # Also store with numeric ID for {task-1...} vs {1...}
+            if t_id.startswith("task-"):
+                num = t_id.removeprefix("task-")
+                results_map[num] = payload
+                results_map[f"t{num}"] = payload
+            elif t_id.isdigit():
+                results_map[f"task-{t_id}"] = payload
+                results_map[f"t{t_id}"] = payload
+
+            if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
+                # Special handling: if we exported a file, its content (if text) is stored directly.
+                # This is used by later tasks like gmail.send_message via $drive_export_content.
+                if "drive_export_content" in latest["output"]:
+                    content = latest["output"]["drive_export_content"]
+                    context["drive_export_content"] = content
+                    # Also put it in task_results so {task-N.content} works
+                    results_map[t_id] = {"content": content}
+                    if t_id.startswith("task-"):
+                        results_map[t_id.removeprefix("task-")] = {"content": content}
             thought_trace.append({
                 "step": idx + 1,
                 "action": f"{resolved.service}.{resolved.action}",
-                "observation": str(latest.get("output", {})
-                                .get("stdout", ""))[:300],
+                "observation": str(latest["output"].get("stdout", ""))[:300],
                 "success": result.success,
                 "reason": resolved.reason,
             })
