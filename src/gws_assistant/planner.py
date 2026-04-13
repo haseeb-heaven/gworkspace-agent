@@ -8,8 +8,10 @@ import email.mime.application
 import email.mime.multipart
 import email.mime.text
 import json
+import logging
 import os
 import re
+import tempfile
 from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
@@ -20,6 +22,13 @@ from .service_catalog import SERVICES, normalize_service, supported_services
 
 
 _UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
+
+# Matches a raw Google Drive file ID (alphanumeric + hyphens/underscores, 25-60 chars).
+# Drive file IDs look like: 1-A9SUqwDnbUE51VZ7FbAh8i-wUGz8Cqw9jCIUw0nMjo
+_DRIVE_FILE_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{25,60}$')
+
+# MIME type used when exporting Google Docs to PDF for attachment.
+_GDOC_EXPORT_MIME = "application/pdf"
 
 
 class CommandPlanner:
@@ -184,9 +193,36 @@ class CommandPlanner:
             elif isinstance(attachments, list):
                 attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
-            if attachment_paths:
+            # Resolve any raw Drive file IDs in attachment_paths to local PDF files.
+            # When the planner receives a Drive file ID (e.g. the agent passed the ID
+            # from a drive.list_files result directly as the attachment value), we must
+            # export/download the file first so that _build_raw_email_with_attachments
+            # can open a real local file.  Without this step the attachment silently
+            # disappears because os.path.isfile(drive_id) is always False.
+            resolved_attachment_paths: list[str] = []
+            for path in attachment_paths:
+                if _DRIVE_FILE_ID_RE.match(path):
+                    # It looks like a Drive file ID, not a local filesystem path.
+                    local_path = self._export_drive_file_to_temp(path)
+                    if local_path:
+                        resolved_attachment_paths.append(local_path)
+                    else:
+                        # Export failed — fall back to sending a Drive link in the body
+                        # so the recipient still has access to the document.
+                        drive_link = f"https://docs.google.com/document/d/{path}/export?format=pdf"
+                        body = (
+                            body.rstrip()
+                            + f"\n\nNote: The requested document could not be attached directly. "
+                            + f"You can access it here: {drive_link}"
+                        )
+                else:
+                    resolved_attachment_paths.append(path)
+
+            if resolved_attachment_paths:
                 raw_email = self._build_raw_email_with_attachments(
-                    to_email=to_email, subject=subject, body=body, attachment_paths=attachment_paths)
+                    to_email=to_email, subject=subject, body=body,
+                    attachment_paths=resolved_attachment_paths,
+                )
             else:
                 raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
 
@@ -359,3 +395,71 @@ class CommandPlanner:
             msg.attach(part)
 
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+
+    @staticmethod
+    def _export_drive_file_to_temp(file_id: str) -> str | None:
+        """Export a Google Drive file to a local temp PDF and return the path.
+
+        Uses the Drive export URL directly via the requests library so this
+        stays self-contained within the planner without requiring a GWSRunner
+        reference.  Returns None on any failure so the caller can fall back
+        gracefully.
+        """
+        try:
+            import subprocess  # noqa: PLC0415
+            import sys
+
+            # Use gws.exe (the same CLI binary the runner uses) to export the file
+            # to a temp directory as PDF so we have a real local file to attach.
+            tmp_dir  = tempfile.mkdtemp(prefix="gws_attach_")
+            pdf_path = os.path.join(tmp_dir, f"{file_id}.pdf")
+
+            gws_exe = os.environ.get("GWS_EXE") or os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "gws.exe",
+            )
+
+            export_params = json.dumps({
+                "fileId":   file_id,
+                "mimeType": _GDOC_EXPORT_MIME,
+            })
+            result = subprocess.run(
+                [gws_exe, "drive", "files", "export",
+                 "--params", export_params,
+                 "--output", pdf_path],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and os.path.isfile(pdf_path) and os.path.getsize(pdf_path) > 0:
+                return pdf_path
+
+            # Fallback: try the Google export URL via requests (requires valid
+            # OAuth token in the environment — same token gws.exe uses).
+            try:
+                import requests  # noqa: PLC0415
+                token_result = subprocess.run(
+                    [gws_exe, "auth", "token"],
+                    capture_output=True, timeout=10, text=True,
+                )
+                token = token_result.stdout.strip()
+                if not token:
+                    return None
+                export_url = (
+                    f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
+                    f"?mimeType={_GDOC_EXPORT_MIME}"
+                )
+                resp = requests.get(
+                    export_url,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30,
+                )
+                if resp.status_code == 200 and resp.content:
+                    with open(pdf_path, "wb") as fh:
+                        fh.write(resp.content)
+                    return pdf_path
+            except Exception:
+                pass
+
+            return None
+        except Exception:
+            return None
