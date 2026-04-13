@@ -64,10 +64,10 @@ _EMAIL_BODY_PLACEHOLDERS = (
 # Model fallback chain — updated to currently-available OpenRouter endpoints.
 # ---------------------------------------------------------------------------
 _MODEL_FALLBACK_CHAIN: list[str] = [
-    "google/gemini-2.0-flash-001",
-    "google/gemini-flash-1.5-8b",
+    "minimax/minimax-m2.5:free",
+    "openai/gpt-oss-120b:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen-2.5-72b-instruct:free",
 ]
 
 _BACKOFF_SCHEDULE: list[float] = [2.0, 4.0, 8.0, 16.0, 30.0]
