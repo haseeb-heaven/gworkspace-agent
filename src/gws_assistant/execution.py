@@ -1869,7 +1869,7 @@ def _is_placeholder(value: str) -> bool:
     ):
         return True
     return bool(
-        re.search(r"\{(task-\d+|t\d+|t-\d+|\d+)\.[\w\.\[\]\*]+\}", stripped)
+        re.search(r"\{(task-\d+|t\d+|t-\d+|\d+)\.[A-Za-z_][\w\.\[\]\*]*\}", stripped)
         or re.search(r"\b(task-\d+|t\d+|t-\d+|\d+)\.[A-Za-z_][\w\.]*\b", stripped)
     )
 
