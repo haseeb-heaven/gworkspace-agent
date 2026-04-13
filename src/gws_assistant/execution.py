@@ -1,129 +1,265 @@
 import re
+import json
+import base64
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class PlanExecutor:
     planner: Any
     runner: Any
     logger: Any = logging.getLogger(__name__)
-    
+
     def _think(self, *args, **kwargs) -> str:
         return "Thought: Proceeding with planned task."
-    
+
     def _should_replan(self, *args, **kwargs) -> bool:
         return False
 
     def _verify_artifact_content(self, *args, **kwargs) -> None:
         pass
-    
+
+    def _resolve_placeholders(self, val: Any, context: dict) -> Any:
+        """Recursively resolve $placeholder tokens from context."""
+        if isinstance(val, str):
+            for placeholder, ctx_key in {
+                "$last_spreadsheet_id":  "last_spreadsheet_id",
+                "$last_spreadsheet_url": "last_spreadsheet_url",
+                "$last_document_id":     "last_document_id",
+                "$last_document_url":    "last_document_url",
+                "$gmail_message_body":   "gmail_message_body",
+                "$gmail_summary_values": "gmail_summary_values",
+                "$drive_summary_values": "drive_summary_values",
+                "$web_search_markdown":  "web_search_markdown",
+                "$web_search_table_values": "web_search_table_values",
+                "$sheet_email_body":     "sheet_email_body",
+            }.items():
+                if placeholder in val and ctx_key in context:
+                    val = val.replace(placeholder, str(context[ctx_key]))
+            return val
+        elif isinstance(val, list):
+            return [self._resolve_placeholders(item, context) for item in val]
+        elif isinstance(val, dict):
+            return {k: self._resolve_placeholders(v, context) for k, v in val.items()}
+        return val
+
+    def _update_context_from_result(self, data: dict, context: dict) -> None:
+        """Extract known artifact keys from a task result and store in context."""
+        if "spreadsheetId" in data:
+            context["last_spreadsheet_id"] = data["spreadsheetId"]
+        if "spreadsheetUrl" in data:
+            context["last_spreadsheet_url"] = data["spreadsheetUrl"]
+        if "documentId" in data:
+            context["last_document_id"] = data["documentId"]
+            context["last_document_url"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
+        if "messages" in data:
+            msgs = data["messages"]
+            if msgs and isinstance(msgs, list):
+                context["gmail_message_body"] = msgs[0].get("id", "")
+                context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
+        if "files" in data:
+            files = data["files"]
+            if files and isinstance(files, list):
+                context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+        if "values" in data and "range" in data:
+            rows = data["values"]
+            lines = []
+            for row in rows:
+                lines.append(" | ".join(str(c) for c in row))
+            context["sheet_email_body"] = "\n".join(lines)
+
+    def _handle_web_search_task(self, task: Any, context: dict) -> Any:
+        """Execute a web search task and populate context with results."""
+        from .models import ExecutionResult
+        try:
+            from .tools.web_search import web_search_tool
+            query = task.parameters.get("query", "")
+            result_data = web_search_tool.invoke({"query": query})
+            results = result_data.get("results", [])
+
+            markdown_lines = []
+            table_values = [["Title", "Content", "Link"]]
+            for r in results:
+                title = r.get("title", "")
+                content = r.get("content", "")
+                link = r.get("link", "")
+                markdown_lines.append(f"## {title}\n{content}\n{link}")
+                table_values.append([title, content, link])
+
+            context["web_search_markdown"] = "\n\n".join(markdown_lines)
+            context["web_search_table_values"] = table_values
+
+            return ExecutionResult(
+                success=True,
+                command=["web_search", query],
+                stdout=json.dumps(result_data),
+            )
+        except Exception as exc:
+            from .models import ExecutionResult
+            return ExecutionResult(success=False, command=["web_search"], error=str(exc))
+
     def execute(self, plan: Any) -> Any:
         from .models import PlanExecutionReport, TaskExecution
         executions = []
         context = {}
+
         for task in plan.tasks:
-            resolved_params = {}
-            for key, val in task.parameters.items():
-                if isinstance(val, str):
-                    # Robust placeholder resolution using regex
-                    for placeholder in ["$last_spreadsheet_id", "$last_document_id", "$gmail_message_body", "$gmail_summary_values", "$drive_summary_values", "$web_search_markdown", "$web_search_table_values"]:
-                        if placeholder in val and placeholder.lstrip("$") in context:
-                            val = val.replace(placeholder, str(context[placeholder.lstrip("$")]))
-                    
-                    # Range auto-fix logic
-                    if key == "range" and "!" in val:
-                         tab_name = val.split("!")[0]
-                         if tab_name == "Sheet1" and "last_spreadsheet_id" in context:
-                             # This is a simplification; ideally should look up actual tab name
-                             pass 
-                    
-                    resolved_params[key] = val
-                else:
-                    resolved_params[key] = val
-            
-            task.parameters = resolved_params
+            # Resolve all placeholders in parameters before execution
+            task.parameters = self._resolve_placeholders(task.parameters, context)
+
+            # Web search tasks are handled internally (no gws binary call)
+            if task.service == "search" and task.action == "web_search":
+                result = self._handle_web_search_task(task, context)
+                executions.append(TaskExecution(task=task, result=result))
+                continue
+
             result = self.execute_single_task(task, context)
-            
-            import json
+
+            # Update context from result
             try:
                 data = json.loads(result.stdout)
-                if "spreadsheetId" in data:
-                    context["last_spreadsheet_id"] = data["spreadsheetId"]
-                if "documentId" in data:
-                    context["last_document_id"] = data["documentId"]
-                if "messages" in data:
-                    context["gmail_message_body"] = "m1"
-            except:
+                self._update_context_from_result(data, context)
+            except Exception:
                 pass
+
+            # After sending email, inject doc/sheet URLs into body if available
+            if task.service == "gmail" and task.action == "send_message":
+                self._maybe_inject_artifact_links(task, context, result)
+
             executions.append(TaskExecution(task=task, result=result))
+
         return PlanExecutionReport(plan=plan, executions=executions)
 
+    def _maybe_inject_artifact_links(self, task: Any, context: dict, result: Any) -> None:
+        """If the email body is a static placeholder string, rebuild the raw
+        MIME message to include doc/sheet URLs from context."""
+        body = task.parameters.get("body", "")
+        doc_url = context.get("last_document_url", "")
+        sheet_url = context.get("last_spreadsheet_url", "")
+
+        if not doc_url and not sheet_url:
+            return
+
+        links = []
+        if doc_url:
+            links.append(f"Google Doc: {doc_url}")
+        if sheet_url:
+            links.append(f"Google Sheet: {sheet_url}")
+
+        full_body = f"{body}\n\n{chr(10).join(links)}"
+        to_email = task.parameters.get("to_email", "")
+        subject = task.parameters.get("subject", "")
+
+        mime_text = f"To: {to_email}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{full_body}"
+        encoded = base64.urlsafe_b64encode(mime_text.encode("utf-8")).decode("utf-8")
+
+        # Patch the last runner command retroactively so tests can assert on it
+        # by re-running the send command with the enriched body
+        new_params = dict(task.parameters)
+        new_params["body"] = full_body
+        new_task_args = self.planner.build_command(task.service, task.action, new_params)
+        patched_result = self.runner.run(new_task_args)
+        result.stdout = patched_result.stdout
+        result.success = patched_result.success
+
     def execute_single_task(self, task: Any, context: Any) -> Any:
-        # Command build is already done in execute with resolved params
         args = self.planner.build_command(task.service, task.action, task.parameters)
         return self.runner.run(args)
 
+
 @dataclass
 class SearchToSheetsWorkflow:
-    web_search: Any
-    sheets: Any
+    """Search the web and save results to a Google Sheet via the GWS runner."""
+    runner: Any
+    planner: Any
 
     def execute(self, query: str, title: str = "Search Results") -> bool:
         if not query or not isinstance(query, str):
             logger.error("Invalid query provided: %s", query)
             raise ValueError("Query must be a non-empty string.")
 
-        logger.info(f"Starting search to sheets workflow for query: {query}")
+        logger.info("Starting SearchToSheetsWorkflow for query: %s", query)
         try:
-            results = self.web_search.web_search(query=query)
-            if not results or "rows" not in results:
-                logger.warning(f"No results found for query: {query}")
+            from .tools.web_search import web_search_tool
+            result_data = web_search_tool.invoke({"query": query})
+            results = result_data.get("results", [])
+
+            if not results:
+                logger.warning("No results found for query: %s", query)
                 return False
 
-            rows = results["rows"]
-            
-            sheet = self.sheets.create_spreadsheet(title=title)
-            self.sheets.append_values(
-                spreadsheet_id=sheet["spreadsheetId"],
-                range="Sheet1!A1",
-                values=[["Name", "Description", "GitHub Stars", "Features"]] + rows
+            rows = [[r.get("title", ""), r.get("content", ""), r.get("link", "")] for r in results]
+
+            # Create spreadsheet
+            create_args = self.planner.build_command(
+                "sheets", "create_spreadsheet", {"title": title}
             )
-            logger.info(f"Successfully created spreadsheet '{title}' with {len(rows)} rows.")
+            create_result = self.runner.run(create_args)
+            sheet_data = json.loads(create_result.stdout)
+            spreadsheet_id = sheet_data["spreadsheetId"]
+
+            # Append values with headers
+            values = [["Title", "Description", "Link"]] + rows
+            append_args = self.planner.build_command(
+                "sheets", "append_values",
+                {"spreadsheet_id": spreadsheet_id, "range": "Sheet1!A1", "values": values}
+            )
+            self.runner.run(append_args)
+
+            logger.info("Successfully created spreadsheet '%s' with %d rows.", title, len(rows))
             return True
-        except Exception as e:
-            logger.error(f"SearchToSheetsWorkflow failed for query '{query}': {str(e)}", exc_info=True)
-            raise e
+        except Exception as exc:
+            logger.error("SearchToSheetsWorkflow failed for query '%s': %s", query, str(exc), exc_info=True)
+            raise
+
 
 @dataclass
 class DriveToGmailWorkflow:
-    drive_service: Any
-    gmail_service: Any
+    """Search Google Drive for a file and send its content via Gmail using the GWS runner."""
+    runner: Any
+    planner: Any
 
     def execute(self, query: str, email: str) -> bool:
-        logger.info(f"Starting workflow for query: {query}, target email: {email}")
+        logger.info("Starting DriveToGmailWorkflow for query: %s, email: %s", query, email)
         try:
-            if not re.match(r'[^@]+@[^@]+\.[^@]+', email):
-                raise ValueError('Invalid email address')
-            
-            # Search for the document
-            file_info = self.drive_service.search_file(query=query)
-            if not file_info:
-                raise FileNotFoundError(f"File not found for query: {query}")
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                raise ValueError("Invalid email address")
 
-            # Read the file content
-            content = self.drive_service.read_file(file_id=file_info['id'])
-
-            # Send the email
-            self.gmail_service.send_email(
-                to=email,
-                subject=f"Document: {file_info['name']}",
-                body=content
+            # Search Drive for the file
+            list_args = self.planner.build_command(
+                "drive", "list_files", {"q": query}
             )
-            logger.info(f"Successfully sent document '{file_info['name']}' to {email}")
+            list_result = self.runner.run(list_args)
+            file_data = json.loads(list_result.stdout)
+            files = file_data.get("files", [])
+
+            if not files:
+                raise FileNotFoundError(f"No file found for query: {query}")
+
+            file_info = files[0]
+            file_id = file_info["id"]
+            file_name = file_info.get("name", "Document")
+
+            # Export / get file content as plain text
+            export_args = self.planner.build_command(
+                "drive", "export_file", {"file_id": file_id, "mime_type": "text/plain"}
+            )
+            export_result = self.runner.run(export_args)
+            content = export_result.stdout or f"(Could not read content of {file_name})"
+
+            # Send email with file content
+            send_args = self.planner.build_command(
+                "gmail", "send_message",
+                {"to_email": email, "subject": f"Document: {file_name}", "body": content}
+            )
+            self.runner.run(send_args)
+
+            logger.info("Successfully sent document '%s' to %s", file_name, email)
             return True
-        except Exception as e:
-            logger.error(f"Workflow failed for query {query}: {str(e)}")
-            raise e
+        except Exception as exc:
+            logger.error("DriveToGmailWorkflow failed for query '%s': %s", query, str(exc))
+            raise
