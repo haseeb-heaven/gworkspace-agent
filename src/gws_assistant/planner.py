@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import tempfile
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
@@ -29,6 +30,88 @@ _DRIVE_FILE_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{25,60}$')
 
 # MIME type used when exporting Google Docs to PDF for attachment.
 _GDOC_EXPORT_MIME = "application/pdf"
+
+# ---------------------------------------------------------------------------
+# Date / time helpers
+# ---------------------------------------------------------------------------
+
+_WEEKDAY_NAMES = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+# ISO-8601 date pattern  YYYY-MM-DD
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Loose time pattern — matches "10 AM", "10:30 AM", "14:00", "9pm", etc.
+_TIME_RE = re.compile(
+    r"\b(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_date_expression(raw: str) -> str:
+    """Resolve a relative or absolute date string to YYYY-MM-DD.
+
+    Handles:
+      - ISO dates already in YYYY-MM-DD format  → returned as-is
+      - "today"                                 → date.today()
+      - "tomorrow"                              → date.today() + 1 day
+      - "yesterday"                             → date.today() - 1 day
+      - "next <weekday>"                        → next occurrence of that weekday
+      - "<weekday>"                             → nearest future occurrence
+      - Anything else                           → returned as-is (LLM supplied a literal)
+    """
+    val = raw.strip().lower()
+
+    if _ISO_DATE_RE.match(raw.strip()):
+        return raw.strip()
+
+    today = date.today()
+
+    if val == "today":
+        return today.isoformat()
+
+    if val in ("tomorrow", "tmrw", "tmr"):
+        return (today + timedelta(days=1)).isoformat()
+
+    if val == "yesterday":
+        return (today - timedelta(days=1)).isoformat()
+
+    # "next monday" / "next friday" etc.
+    next_prefix = val.startswith("next ")
+    check_val   = val[5:] if next_prefix else val
+
+    if check_val in _WEEKDAY_NAMES:
+        target_wd = _WEEKDAY_NAMES[check_val]
+        days_ahead = (target_wd - today.weekday()) % 7
+        # "next X" always means at least 7 days from now even if today is X
+        if next_prefix and days_ahead == 0:
+            days_ahead = 7
+        elif days_ahead == 0:
+            days_ahead = 7  # bare weekday name that matches today → next week
+        return (today + timedelta(days=days_ahead)).isoformat()
+
+    # Fallback — return as-is; the LLM may have already supplied an ISO date
+    # embedded inside a longer string like "2026-04-14T10:00:00".
+    return raw.strip().split("T")[0][:10]
+
+
+def _parse_time_to_hhmm(raw: str) -> tuple[int, int] | None:
+    """Extract (hour_24, minute) from a loose time string.  Returns None if unparseable."""
+    m = _TIME_RE.search(raw.strip())
+    if not m:
+        return None
+    hour   = int(m.group(1))
+    minute = int(m.group(2)) if m.group(2) else 0
+    ampm   = (m.group(3) or "").lower()
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour, minute
 
 
 class CommandPlanner:
@@ -274,13 +357,105 @@ class CommandPlanner:
 
         if action == "create_event":
             summary = self._required_text(params, "summary")
+
+            # ------------------------------------------------------------------
+            # Fix 1 — resolve relative date expressions ("tomorrow", "next monday"…)
+            # The LLM sometimes passes the literal word "tomorrow" or a stale
+            # hardcoded date.  _resolve_date_expression() converts both to a
+            # correct YYYY-MM-DD string anchored to today's actual date.
+            # ------------------------------------------------------------------
             start_date_raw = self._required_text(params, "start_date")
-            start_date = start_date_raw.split("T")[0][:10]
+            start_date     = _resolve_date_expression(start_date_raw)
+
+            # ------------------------------------------------------------------
+            # Fix 2 — use dateTime + timeZone when a time is provided.
+            # Prefer an explicit start_datetime param (already ISO-8601), then
+            # fall back to combining start_date + start_time.  Only use the
+            # all-day {"date": ...} format when absolutely no time is given.
+            # ------------------------------------------------------------------
+            time_zone = str(params.get("time_zone") or params.get("timezone") or "UTC").strip()
+
+            # Accept a fully-qualified start_datetime from the LLM if provided.
+            start_datetime_raw = str(params.get("start_datetime") or "").strip()
+
+            # Also accept a bare time string in start_time or start_date itself.
+            start_time_raw = str(params.get("start_time") or "").strip()
+
+            # If start_date_raw itself contains a time component, extract it.
+            if not start_time_raw and "T" in start_date_raw:
+                start_time_raw = start_date_raw  # e.g. "2026-04-14T10:00:00"
+
+            event_start: dict[str, str]
+            event_end:   dict[str, str]
+
+            if start_datetime_raw:
+                # LLM supplied a full ISO datetime — use it directly.
+                dt_str = start_datetime_raw if "T" in start_datetime_raw else f"{start_date}T{start_datetime_raw}"
+                event_start = {"dateTime": dt_str, "timeZone": time_zone}
+                # Default end = start + 1 hour
+                try:
+                    dt_obj  = datetime.fromisoformat(dt_str)
+                    end_str = (dt_obj + timedelta(hours=1)).isoformat()
+                except ValueError:
+                    end_str = dt_str
+                event_end = {"dateTime": end_str, "timeZone": time_zone}
+
+            elif start_time_raw:
+                parsed_time = _parse_time_to_hhmm(start_time_raw)
+                if parsed_time:
+                    h, m     = parsed_time
+                    dt_start = datetime(
+                        *[int(p) for p in start_date.split("-")], h, m
+                    )
+                    dt_end   = dt_start + timedelta(hours=1)
+                    event_start = {"dateTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": time_zone}
+                    event_end   = {"dateTime": dt_end.strftime("%Y-%m-%dT%H:%M:%S"),   "timeZone": time_zone}
+                else:
+                    # Unparseable time string — fall back to all-day.
+                    event_start = {"date": start_date}
+                    event_end   = {"date": start_date}
+            else:
+                # No time provided at all — create an all-day event.
+                event_start = {"date": start_date}
+                event_end   = {"date": start_date}
+
+            # ------------------------------------------------------------------
+            # Fix 3 — populate description with spreadsheet_url / description.
+            # The LLM may pass the sheet URL as "spreadsheet_url", "sheet_url",
+            # "description", or "body".  Accept all aliases.
+            # ------------------------------------------------------------------
+            description = (
+                str(params.get("description") or "").strip()
+                or str(params.get("spreadsheet_url") or "").strip()
+                or str(params.get("sheet_url") or "").strip()
+                or str(params.get("body") or "").strip()
+            )
+
+            # ------------------------------------------------------------------
+            # Fix 4 — forward reminder_minutes into the reminders block.
+            # Previously this param was silently ignored.
+            # ------------------------------------------------------------------
+            reminder_minutes_raw = params.get("reminder_minutes") or params.get("reminder")
+            reminder_minutes     = self._safe_positive_int(reminder_minutes_raw, default=0)
+
+            event_body: dict[str, Any] = {
+                "summary": summary,
+                "start":   event_start,
+                "end":     event_end,
+            }
+
+            if description:
+                event_body["description"] = description
+
+            if reminder_minutes > 0:
+                event_body["reminders"] = {
+                    "useDefault": False,
+                    "overrides":  [{"method": "popup", "minutes": reminder_minutes}],
+                }
+
             return ["calendar", "events", "insert",
                     "--params", json.dumps({"calendarId": "primary"}),
-                    "--json",   json.dumps({"summary": summary,
-                                            "start": {"date": start_date},
-                                            "end":   {"date": start_date}}, ensure_ascii=True)]
+                    "--json",   json.dumps(event_body, ensure_ascii=True)]
 
         raise ValidationError(f"Unsupported calendar action: {action}")
 
