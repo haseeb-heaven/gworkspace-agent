@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import tempfile
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -462,11 +463,9 @@ class CommandPlanner:
 
     def _build_docs_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "create_document":
-            title        = self._required_text(params, "title") if params.get("title") else "Untitled Document"
-            body_content = str(params.get("content") or "").strip()
+            # Fix #3 — Google Docs REST API ignores 'body' on creation; only 'title' is accepted.
+            title = self._required_text(params, "title") if params.get("title") else "Untitled Document"
             doc_body: dict[str, Any] = {"title": title}
-            if body_content:
-                doc_body["body"] = {"content": [{"paragraph": {"elements": [{"textRun": {"content": body_content}}]}}]}
             return ["docs", "documents", "create", "--json", json.dumps(doc_body, ensure_ascii=True)]
 
         if action == "get_document":
@@ -600,11 +599,7 @@ class CommandPlanner:
     @staticmethod
     def _export_drive_file_to_temp(file_id: str) -> str | None:
         try:
-            import subprocess
-            import tempfile
-            import os
-            import json
-
+            # Fix #4 — stdlib imports (subprocess, tempfile, os, json) are already at module level.
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
 
             gws_exe = os.environ.get("GWS_EXE") or os.path.join(

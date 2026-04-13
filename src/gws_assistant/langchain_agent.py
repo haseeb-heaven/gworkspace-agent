@@ -213,10 +213,15 @@ def create_agent(
     logger: logging.Logger,
     model_override: str | None = None,
 ) -> ChatOpenAI | None:
+    api_key = config.api_key
+    if not api_key or not str(api_key).strip():
+        logger.warning("create_agent: API key is missing or empty. Cannot create ChatOpenAI agent.")
+        return None
+
     try:
         return ChatOpenAI(
             model=model_override or config.model,
-            api_key=config.api_key,
+            api_key=api_key,
             base_url=config.base_url,
             temperature=0,
         )

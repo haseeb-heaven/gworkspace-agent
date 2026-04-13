@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
+from gws_assistant.exceptions import APIErrorType, classify_api_error
 from gws_assistant.models import (
     AgentState,
     AppConfigModel,
@@ -159,6 +160,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 task_error = result.error or result.stderr or "Task execution failed"
                 break
 
+        # Fix #5 — fallback if loop had no iterations
+        if latest is None:
+            latest = StructuredToolResult(success=True, output={}, error=None)
+
         return {
             "executions": executions,
             "context": context,
@@ -181,7 +186,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         elif "unresolved placeholder" in str(error).lower():
             decision = ReflectionDecision(action="continue", reason="Deterministic placeholder error; skip retry.")
         elif attempts < config.max_retries:
-            decision = ReflectionDecision(action="retry", reason="Retrying failed task.")
+            # Fix #2 — branch on error type, never blindly retry.
+            # Only transient errors (SERVER, UNKNOWN) are retried.
+            error_str = str(error)
+            error_type = classify_api_error(stderr=error_str, stdout="")
+            if error_type in (APIErrorType.SERVER, APIErrorType.UNKNOWN):
+                decision = ReflectionDecision(action="retry", reason=f"Retrying transient/unknown error ({error_type.value}).")
+            else:
+                decision = ReflectionDecision(action="continue", reason=f"Permanent or specific error ({error_type.value}); skip retry.")
         elif state.get("plan") and context.get("replan_count", 0) < config.max_replans:
             context["replan_count"] = int(context.get("replan_count", 0)) + 1
             updates["context"] = context
@@ -409,7 +421,17 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     workflow.add_conditional_edges("generate_plan", route_after_plan)
     workflow.add_edge("validate", "execute_task")
     workflow.add_conditional_edges("execute_task", route_after_task)
-    workflow.add_conditional_edges("reflect_node", route_after_reflection)
+    workflow.add_conditional_edges(
+        "reflect_node",
+        route_after_reflection,
+        {
+            "update_context": "update_context",
+            "execute_task": "execute_task",
+            "generate_plan": "generate_plan",
+            "format_output": "format_output",
+            "generate_code": "generate_code",
+        }
+    )
     workflow.add_conditional_edges("update_context", route_after_context)
     workflow.add_conditional_edges("web_search", route_after_web_search)
     workflow.add_edge("generate_code", "code_execution")
