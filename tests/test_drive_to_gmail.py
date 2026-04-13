@@ -23,3 +23,20 @@ def test_drive_to_gmail_workflow():
         subject="Document: Shibuz",
         body="Content of Shibuz"
     )
+
+def test_drive_to_gmail_invalid_email():
+    mock_drive = MagicMock()
+    mock_gmail = MagicMock()
+    workflow = DriveToGmailWorkflow(drive_service=mock_drive, gmail_service=mock_gmail)
+    
+    with pytest.raises(ValueError, match="Invalid email address"):
+        workflow.execute(query="Shibuz", email="invalid-email")
+
+def test_drive_to_gmail_file_not_found():
+    mock_drive = MagicMock()
+    mock_gmail = MagicMock()
+    mock_drive.search_file.return_value = None
+    workflow = DriveToGmailWorkflow(drive_service=mock_drive, gmail_service=mock_gmail)
+    
+    with pytest.raises(FileNotFoundError, match="File not found"):
+        workflow.execute(query="NonExistent", email="test@example.com")
