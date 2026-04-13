@@ -381,9 +381,6 @@ class CommandPlanner:
             # Also accept a bare time string in start_time or start_date itself.
             start_time_raw = str(params.get("start_time") or "").strip()
 
-            # If start_date_raw itself contains a time component, extract it.
-            if not start_time_raw and "T" in start_date_raw:
-                start_time_raw = start_date_raw  # e.g. "2026-04-14T10:00:00"
 
             event_start: dict[str, str]
             event_end:   dict[str, str]
