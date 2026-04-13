@@ -1850,21 +1850,27 @@ def _truncate_args(args: list[str], max_chars: int, logger: logging.Logger) -> l
 
 
 def _is_likely_real_content(value: str) -> bool:
-    return len(value) > 120 or "\n" in value
+    stripped = value.strip()
+    return len(stripped) > 120 or "\n" in stripped or "\\n" in stripped
 
 
 def _is_placeholder(value: str) -> bool:
     stripped = value.strip()
+    if not stripped:
+        return False
     if _is_likely_real_content(stripped):
         return False
-    return (
+    if (
         stripped.startswith("$")
         or "{{" in stripped
         or "}}" in stripped
         or "_from_task_" in stripped
         or "from_task_" in stripped
-        or bool(re.search(r"\{(\d+|task-\d+)\.[\w\.\[\]\*]+\}", stripped))
-        or bool(re.search(r"(\d+|task-\d+)\.[\w\.]+", stripped))
+    ):
+        return True
+    return bool(
+        re.search(r"\{(task-\d+|t\d+|t-\d+|\d+)\.[\w\.\[\]\*]+\}", stripped)
+        or re.search(r"\b(task-\d+|t\d+|t-\d+|\d+)\.[A-Za-z_][\w\.]*\b", stripped)
     )
 
 

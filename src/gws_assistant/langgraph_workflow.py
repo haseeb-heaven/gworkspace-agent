@@ -178,6 +178,8 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             decision = ReflectionDecision(action="continue", reason="Task completed successfully.")
         elif "CODE_EXECUTION_ENABLED=false" in str(error):
             decision = ReflectionDecision(action="continue", reason="Code execution is disabled by configuration.")
+        elif "unresolved placeholder" in str(error).lower():
+            decision = ReflectionDecision(action="continue", reason="Deterministic placeholder error; skip retry.")
         elif attempts < config.max_retries:
             decision = ReflectionDecision(action="retry", reason="Retrying failed task.")
         elif state.get("plan") and context.get("replan_count", 0) < config.max_replans:
