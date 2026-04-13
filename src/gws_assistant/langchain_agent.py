@@ -167,8 +167,17 @@ def is_valid_plan(plan_data: Any) -> bool:
             return False
         service = str(t.get("service") or "").strip().lower()
         action = str(t.get("action") or "").strip()
+
         if service not in SERVICES:
             return False
+
+        # Support both 'action' and 'service.action' formats.
+        if "." in action:
+            prefix, actual_action = action.split(".", 1)
+            if prefix.lower() == service:
+                action = actual_action
+                t["action"] = action  # Update the task in-place for subsequent use
+
         if action not in SERVICES[service].actions:
             return False
     return True

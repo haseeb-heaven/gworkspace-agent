@@ -376,6 +376,40 @@ SERVICES: dict[str, ServiceSpec] = {
             ),
         },
     ),
+    "code": ServiceSpec(
+        key="code",
+        label="Code Execution",
+        aliases=("code", "python", "computation", "compute", "script"),
+        description="Execute Python code in a restricted sandbox for logic, math, data processing, and sorting. Output is captured as stdout and return values.",
+        actions={
+            "execute": ActionSpec(
+                key="execute",
+                label="Execute Python code",
+                description="Run a block of Python code. Captured results are available as $last_code_stdout and $last_code_result.",
+                keywords=("run", "execute", "python", "code", "sort", "calculate", "math", "compute"),
+                parameters=(
+                    ParameterSpec("code", "Python code to execute", "sorted([3, 1, 2])"),
+                ),
+            ),
+        },
+    ),
+    "computation": ServiceSpec(
+        key="computation",
+        label="Computation Engine",
+        aliases=("computation", "math", "calc"),
+        description="Alias for code execution service, specifically for mathematical and logical processing.",
+        actions={
+            "execute": ActionSpec(
+                key="execute",
+                label="Run calculation",
+                description="Run Python-based logic or calculation. Results are stored in context.",
+                keywords=("run", "execute", "calculate", "math", "compute"),
+                parameters=(
+                    ParameterSpec("code", "Python code to execute", "x = 10 + 5; print(x)"),
+                ),
+            ),
+        },
+    ),
 }
 
 
