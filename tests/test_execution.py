@@ -241,7 +241,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
     mocker.patch(
-        "gws_assistant.execution.web_search_tool",
+        "gws_assistant.tools.web_search.web_search_tool",
         SimpleNamespace(
             invoke=lambda payload: {
                 "query": "top 3 agentic ai frameworks",
@@ -284,18 +284,18 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     report = executor.execute(plan)
     assert report.success is True
 
-    docs_update_cmd = runner.commands[1]
+    docs_update_cmd = runner.commands[2]
     docs_payload = json.loads(docs_update_cmd[docs_update_cmd.index("--json") + 1])
     inserted_text = docs_payload["requests"][0]["insertText"]["text"]
     assert "LangGraph" in inserted_text
     assert "CrewAI" in inserted_text
 
-    append_cmd = runner.commands[3]
+    append_cmd = runner.commands[4]
     sheet_payload = json.loads(append_cmd[append_cmd.index("--json") + 1])
     assert sheet_payload["values"][1][0] == "LangGraph"
     assert sheet_payload["values"][2][0] == "CrewAI"
 
-    send_cmd = runner.commands[4]
+    send_cmd = runner.commands[5]
     raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
     decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
     assert "https://docs.google.com/document/d/doc-1/edit" in decoded

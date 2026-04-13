@@ -166,7 +166,18 @@ class CommandPlanner:
         if service_key == "contacts": return self._build_contacts_command(action_key, params)
         if service_key == "chat":     return self._build_chat_command(action_key, params)
         if service_key == "meet":     return self._build_meet_command(action_key, params)
+        if service_key == "search":   return self._build_search_command(action_key, params)
         raise ValidationError(f"No command builder for service: {service_key}")
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    def _build_search_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "web_search":
+            query = self._required_text(params, "query")
+            return ["search", "web", "search", "--params", json.dumps({"query": query}, ensure_ascii=True)]
+        raise ValidationError(f"Unsupported search action: {action}")
 
     # ------------------------------------------------------------------
     # Drive

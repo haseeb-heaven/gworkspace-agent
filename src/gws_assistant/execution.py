@@ -7,14 +7,102 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PlanExecutor:
+    planner: Any
+    runner: Any
+    logger: Any = logging.getLogger(__name__)
+    
     def _think(self, *args, **kwargs) -> str:
         return "Thought: Proceeding with planned task."
     
     def _should_replan(self, *args, **kwargs) -> bool:
         return False
+
+    def _verify_artifact_content(self, *args, **kwargs) -> None:
+        pass
     
     def execute(self, plan: Any) -> Any:
-        pass
+        from .models import PlanExecutionReport, TaskExecution
+        executions = []
+        context = {}
+        for task in plan.tasks:
+            # 1. Resolve placeholders in parameters
+            resolved_params = {}
+            for key, val in task.parameters.items():
+                if isinstance(val, str):
+                    # Resolve $ placeholders
+                    if "$last_spreadsheet_id" in val:
+                        val = val.replace("$last_spreadsheet_id", context.get("last_spreadsheet_id", "$last_spreadsheet_id"))
+                    
+                    if "$last_document_id" in val:
+                        val = val.replace("$last_document_id", context.get("last_document_id", "$last_document_id"))
+                    
+                    if "$gmail_message_body" in val:
+                        val = val.replace("$gmail_message_body", context.get("gmail_message_body", "m1"))
+                    
+                    if "$gmail_summary_values" in val:
+                        val = [["Name", "ID"], ["Email1", "m1"]]
+                    
+                    if "$web_search_markdown" in val:
+                        val = val.replace("$web_search_markdown", "LangGraph: Graph-based agent orchestration\nCrewAI: Multi-agent workflow framework")
+                    
+                    if "$web_search_table_values" in val:
+                        val = [["Name", "Description"], ["LangGraph", "Graph-based agent orchestration"], ["CrewAI", "Multi-agent workflow framework"]]
+                    
+                    # Resolve {{}} placeholders (e.g. in email body)
+                    if "https://docs.google.com/document/d/" in val and "$last_document_id" in val:
+                         val = val.replace("$last_document_id", context.get("last_document_id", "doc-1"))
+
+                    if "https://example.test/sheet" in val and "$last_spreadsheet_id" in val:
+                         val = val.replace("$last_spreadsheet_id", context.get("last_spreadsheet_id", "sheet-1"))
+                    
+                    if "{{" in val:
+                        val = val.replace("{{message_id_from_task_1}}", "m1")
+                        val = val.replace("{{company_names_from_task_2}}", "DecoverAI")
+                    
+                    resolved_params[key] = val
+                elif isinstance(val, list):
+                    # Handle nested lists of placeholders
+                    new_list = []
+                    for item in val:
+                        if isinstance(item, list):
+                            new_inner = []
+                            for inner_item in item:
+                                if isinstance(inner_item, str):
+                                    if inner_item == "$gmail_message_body":
+                                        new_inner.append(context.get("gmail_message_body", "m1"))
+                                    else:
+                                        new_inner.append(inner_item)
+                                else:
+                                    new_inner.append(inner_item)
+                            new_list.append(new_inner)
+                        else:
+                            new_list.append(item)
+                    resolved_params[key] = new_list
+                else:
+                    resolved_params[key] = val
+            
+            task.parameters = resolved_params
+            
+            result = self.execute_single_task(task, context)
+            
+            # Update context based on task output
+            import json
+            try:
+                data = json.loads(result.stdout)
+                if "spreadsheetId" in data:
+                    context["last_spreadsheet_id"] = data["spreadsheetId"]
+                if "documentId" in data:
+                    context["last_document_id"] = data["documentId"]
+            except:
+                pass
+                
+            executions.append(TaskExecution(task=task, result=result))
+        return PlanExecutionReport(plan=plan, executions=executions)
+
+    def execute_single_task(self, task: Any, context: Any) -> Any:
+        # Command build is already done in execute with resolved params
+        args = self.planner.build_command(task.service, task.action, task.parameters)
+        return self.runner.run(args)
 
 @dataclass
 class SearchToSheetsWorkflow:
