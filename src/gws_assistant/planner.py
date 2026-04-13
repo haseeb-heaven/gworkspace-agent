@@ -112,9 +112,38 @@ class CommandPlanner:
 
         if action == "export_file":
             file_id = self._required_text(params, "file_id")
-            mime_type = str(params.get("mime_type") or "text/plain").strip()
-            return ["drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type})]
 
+            requested_mime = str(params.get("mime_type") or "").strip()
+            source_mime    = str(params.get("source_mime") or "").strip()
+
+            # 🔥 PRIMARY: use source_mime if available
+            if source_mime == "application/vnd.google-apps.document":
+                mime_type = "application/pdf"
+
+            elif source_mime == "application/vnd.google-apps.spreadsheet":
+                mime_type = "text/csv"
+
+            elif source_mime == "application/vnd.google-apps.presentation":
+                mime_type = "application/pdf"
+
+            else:
+                # 🔥 HARD FALLBACK: NEVER allow invalid conversions
+                if requested_mime in ("text/plain", "text/csv"):
+                    mime_type = "application/pdf"
+                else:
+                    mime_type = requested_mime or "application/pdf"
+
+            return [
+                "drive",
+                "files",
+                "export",
+                "--params",
+                json.dumps({
+                    "fileId": file_id,
+                    "mimeType": mime_type
+                })
+            ]
+        
         if action == "delete_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
@@ -209,10 +238,10 @@ class CommandPlanner:
                     else:
                         # Export failed — fall back to sending a Drive link in the body
                         # so the recipient still has access to the document.
-                        drive_link = f"https://docs.google.com/document/d/{path}/export?format=pdf"
+                        drive_link = f"https://drive.google.com/file/d/{path}/view"
                         body = (
                             body.rstrip()
-                            + f"\n\nNote: The requested document could not be attached directly. "
+                            + "\n\nNote: The requested document could not be attached directly. "
                             + f"You can access it here: {drive_link}"
                         )
                 else:
@@ -398,68 +427,56 @@ class CommandPlanner:
 
     @staticmethod
     def _export_drive_file_to_temp(file_id: str) -> str | None:
-        """Export a Google Drive file to a local temp PDF and return the path.
-
-        Uses the Drive export URL directly via the requests library so this
-        stays self-contained within the planner without requiring a GWSRunner
-        reference.  Returns None on any failure so the caller can fall back
-        gracefully.
-        """
         try:
-            import subprocess  # noqa: PLC0415
-            import sys
+            import subprocess
+            import tempfile
+            import os
+            import json
 
-            # Use gws.exe (the same CLI binary the runner uses) to export the file
-            # to a temp directory as PDF so we have a real local file to attach.
-            tmp_dir  = tempfile.mkdtemp(prefix="gws_attach_")
-            pdf_path = os.path.join(tmp_dir, f"{file_id}.pdf")
+            tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
 
             gws_exe = os.environ.get("GWS_EXE") or os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                 "gws.exe",
             )
 
-            export_params = json.dumps({
-                "fileId":   file_id,
-                "mimeType": _GDOC_EXPORT_MIME,
-            })
-            result = subprocess.run(
-                [gws_exe, "drive", "files", "export",
-                 "--params", export_params,
-                 "--output", pdf_path],
-                capture_output=True,
-                timeout=30,
-            )
-            if result.returncode == 0 and os.path.isfile(pdf_path) and os.path.getsize(pdf_path) > 0:
-                return pdf_path
+            # 🔥 Try multiple formats intelligently
+            export_attempts = [
+                ("application/pdf", ".pdf"),   # Docs, Slides
+                ("text/csv", ".csv"),          # Sheets
+            ]
 
-            # Fallback: try the Google export URL via requests (requires valid
-            # OAuth token in the environment — same token gws.exe uses).
-            try:
-                import requests  # noqa: PLC0415
-                token_result = subprocess.run(
-                    [gws_exe, "auth", "token"],
-                    capture_output=True, timeout=10, text=True,
-                )
-                token = token_result.stdout.strip()
-                if not token:
-                    return None
-                export_url = (
-                    f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
-                    f"?mimeType={_GDOC_EXPORT_MIME}"
-                )
-                resp = requests.get(
-                    export_url,
-                    headers={"Authorization": f"Bearer {token}"},
+            for mime_type, ext in export_attempts:
+                file_path = os.path.join(tmp_dir, f"{file_id}{ext}")
+
+                export_params = json.dumps({
+                    "fileId": file_id,
+                    "mimeType": mime_type,
+                })
+
+                result = subprocess.run(
+                    [
+                        gws_exe,
+                        "drive",
+                        "files",
+                        "export",
+                        "--params",
+                        export_params,
+                        "--output",
+                        file_path,
+                    ],
+                    capture_output=True,
                     timeout=30,
                 )
-                if resp.status_code == 200 and resp.content:
-                    with open(pdf_path, "wb") as fh:
-                        fh.write(resp.content)
-                    return pdf_path
-            except Exception:
-                pass
+
+                if (
+                    result.returncode == 0
+                    and os.path.isfile(file_path)
+                    and os.path.getsize(file_path) > 0
+                ):
+                    return file_path
 
             return None
+
         except Exception:
             return None

@@ -1197,18 +1197,26 @@ def _resolve_headers_dot_refs(
 # ---------------------------------------------------------------------------
 # Pass 1 — template resolver
 # ---------------------------------------------------------------------------
-
 def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logger | None = None) -> Any:
     if isinstance(value, dict):
         return {k: _resolve_template(v, context, logger) for k, v in value.items()}
+
     if isinstance(value, list):
         return [_resolve_template(v, context, logger) for v in value]
+
     if not isinstance(value, str):
         return value
 
-    normalised = re.sub(fr"\{{{_TASK_ID_PAT}\.([\w\.]+)\[\]\.([\w]+)\}}", r"{\1.\2[*].\3}", value)
+    # Normalize [] → [*]
+    normalised = re.sub(
+        fr"\{{{_TASK_ID_PAT}\.([\w\.]+)\[\]\.([\w]+)\}}",
+        r"{\1.\2[*].\3}",
+        value
+    )
+
     if normalised != value and logger:
-        logger.info("Bug1 fix: normalised empty-bracket token in '%s'", value[:120])
+        logger.info("Template fix: normalized [] → [*] in '%s'", value[:120])
+
     value = normalised
 
     def replacer(match: re.Match) -> str:
@@ -1216,72 +1224,120 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
         key_path    = match.group(2)
         results     = context.get("task_results", {})
 
-        # Flexible lookup: normalize "task-5", "t5", "t-5" all to "5"
-        task_num    = re.sub(r"^(task-|t-|t)", "", task_id_raw)
-        current     = results.get(task_id_raw) or results.get(task_num) or results.get(f"task-{task_num}")
-        
-        if not isinstance(current, dict):
+        # Normalize task id
+        task_num = re.sub(r"^(task-|t-|t)", "", task_id_raw)
+
+        current = (
+            results.get(task_id_raw)
+            or results.get(task_num)
+            or results.get(f"task-{task_num}")
+        )
+
+        if current is None:
             return match.group(0)
 
+        # -------------------------------
+        # Build traversal segments
+        # -------------------------------
         segments: list[tuple[str, str | None]] = []
+
         for raw_part in key_path.split("."):
-            bracket_m = re.match(r"^([\w]+)\[([\d\*]+)\]$", raw_part)
-            if bracket_m:
-                segments.append((bracket_m.group(1), None))
-                segments.append((bracket_m.group(2), "idx"))
+
+            # ✅ FIX 1: bare [0]
+            m = re.match(r"^\[(\d+)\]$", raw_part)
+            if m:
+                segments.append((m.group(1), "idx"))
+                continue
+
+            # key[index]
+            m = re.match(r"^([\w]+)\[([\d\*]+)\]$", raw_part)
+            if m:
+                segments.append((m.group(1), None))
+                segments.append((m.group(2), "idx"))
             else:
                 segments.append((raw_part, None))
 
+        # Remove "output" wrapper
         if segments and segments[0][0] == "output" and len(segments) > 1:
             segments = segments[1:]
 
+        # -------------------------------
+        # Traverse
+        # -------------------------------
         for seg_key, seg_type in segments:
+
+            # 🔢 INDEX ACCESS
             if seg_type == "idx":
+
+                # ✅ FIX 2: dict → list fallback
                 if not isinstance(current, list):
-                    return match.group(0)
+                    if isinstance(current, dict):
+
+                        # common API patterns
+                        for key in ("files", "messages", "data", "items"):
+                            if isinstance(current.get(key), list):
+                                current = current[key]
+                                break
+                        else:
+                            return match.group(0)
+                    else:
+                        return match.group(0)
+
                 if seg_key == "*":
                     current = current[0] if current else None
-                    if current is None:
-                        return match.group(0)
                 else:
                     try:
-                        idx     = int(seg_key)
-                        current = current[idx] if 0 <= idx < len(current) else None
-                        if current is None:
+                        idx = int(seg_key)
+                        if idx >= len(current):
                             return match.group(0)
-                    except (ValueError, TypeError):
+                        current = current[idx]
+                    except Exception:
                         return match.group(0)
-            else:
-                if not isinstance(current, dict):
+
+                if current is None:
                     return match.group(0)
-                norm  = seg_key.lower().replace("_", "")
-                found = None
-                for k, v in current.items():
-                    if k.lower().replace("_", "") == norm:
-                        found = v
-                        break
-                if found is None:
-                    if norm in ("id", "spreadsheetid") and "spreadsheetId" in current:
-                        found = current["spreadsheetId"]
-                    elif norm in ("id", "documentid") and "documentId" in current:
-                        found = current["documentId"]
-                    elif norm in ("id", "fileid") and isinstance(current.get("files"), list) and current["files"]:
-                        found = current["files"][0].get("id")
-                    elif norm in ("id", "messageid") and isinstance(current.get("messages"), list) and current["messages"]:
-                        found = current["messages"][0].get("id")
-                if found is None:
-                    return match.group(0)
-                current = found
+
+                continue
+
+            # 📦 DICT ACCESS
+            if not isinstance(current, dict):
+                return match.group(0)
+
+            norm = seg_key.lower().replace("_", "")
+            found = None
+
+            # direct match (case-insensitive, underscore-insensitive)
+            for k, v in current.items():
+                if k.lower().replace("_", "") == norm:
+                    found = v
+                    break
+
+            # fallback heuristics
+            if found is None:
+                if norm in ("id", "fileid") and isinstance(current.get("files"), list):
+                    found = current["files"][0].get("id") if current["files"] else None
+                elif norm in ("id", "messageid") and isinstance(current.get("messages"), list):
+                    found = current["messages"][0].get("id") if current["messages"] else None
+                elif norm in ("spreadsheetid", "id") and "spreadsheetId" in current:
+                    found = current["spreadsheetId"]
+                elif norm in ("documentid", "id") and "documentId" in current:
+                    found = current["documentId"]
+
+            if found is None:
+                return match.group(0)
+
+            current = found
 
         if logger and current is not None:
-            logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
+            logger.info("Resolved %s → '%s'", match.group(0), str(current)[:80])
+
         return str(current) if current is not None else match.group(0)
 
+    # Apply twice (nested templates)
     resolved = re.sub(fr"\{{{{{_TASK_ID_PAT}\.([\w\.\[\]\*]+)\}}}}", replacer, value)
     resolved = re.sub(fr"\{{{_TASK_ID_PAT}\.([\w\.\[\]\*]+)\}}", replacer, resolved)
+
     return resolved
-
-
 # ---------------------------------------------------------------------------
 # Pass 5 — gmail body variant normaliser
 # ---------------------------------------------------------------------------
