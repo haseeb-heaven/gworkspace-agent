@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from .exceptions import ValidationError
+from .intent_parser import IntentParser
 from .models import ExecutionResult, Intent, ParameterSpec
 from .output_formatter import HumanReadableFormatter
 from .planner import CommandPlanner
@@ -19,9 +20,25 @@ class ConversationEngine:
         self,
         planner: CommandPlanner,
         logger: logging.Logger,
+        parser: IntentParser | None = None,
     ) -> None:
         self.planner = planner
         self.logger = logger
+        self._parser = parser
+
+    def parse_user_request(self, user_text: str) -> Intent:
+        """Parse a raw user utterance into a structured Intent.
+
+        Delegates to the injected IntentParser when available, otherwise raises
+        a clear error so the caller knows the engine was not configured with a
+        parser.
+        """
+        if self._parser is None:
+            raise RuntimeError(
+                "ConversationEngine was not initialised with an IntentParser. "
+                "Pass parser=<IntentParser instance> to the constructor."
+            )
+        return self._parser.parse(user_text)
 
     def needs_service_clarification(self, intent: Intent) -> bool:
         if not intent.service:
