@@ -24,6 +24,19 @@ class PlanExecutor:
     def _verify_artifact_content(self, *args, **kwargs) -> None:
         pass
 
+    def _expand_task(self, task: Any, context: dict) -> list:
+        """Expand a single task into a list of executable tasks.
+        Default: return the task as-is in a list (no expansion needed).
+        """
+        return [task]
+
+    def _resolve_task(self, task: Any, context: dict) -> Any:
+        """Resolve all placeholders in a task's parameters using context.
+        Returns the task with resolved parameters.
+        """
+        task.parameters = self._resolve_placeholders(task.parameters, context)
+        return task
+
     def _resolve_placeholders(self, val: Any, context: dict) -> Any:
         """Recursively resolve $placeholder tokens from context."""
         if isinstance(val, str):
@@ -80,9 +93,9 @@ class PlanExecutor:
 
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
-        from .models import ExecutionResult
         try:
             from .tools.web_search import web_search_tool
+            from .models import ExecutionResult
             query = task.parameters.get("query", "")
             result_data = web_search_tool.invoke({"query": query})
             results = result_data.get("results", [])
@@ -96,7 +109,7 @@ class PlanExecutor:
                 markdown_lines.append(f"## {title}\n{content}\n{link}")
                 table_values.append([title, content, link])
 
-            context["web_search_markdown"]    = "\n\n".join(markdown_lines)
+            context["web_search_markdown"]     = "\n\n".join(markdown_lines)
             context["web_search_table_values"] = table_values
 
             return ExecutionResult(
@@ -142,10 +155,8 @@ class PlanExecutor:
         context: dict = {}
 
         for task in plan.tasks:
-            # Resolve all placeholders before execution
             task.parameters = self._resolve_placeholders(task.parameters, context)
 
-            # Web search tasks handled internally
             if task.service == "search" and task.action == "web_search":
                 result = self._handle_web_search_task(task, context)
                 executions.append(TaskExecution(task=task, result=result))
