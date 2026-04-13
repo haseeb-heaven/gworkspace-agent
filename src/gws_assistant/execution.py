@@ -45,23 +45,25 @@ _CURRENCY_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+_TASK_ID_PAT = r"(\d+|task-\d+|t\d+|t-\d+)"
+
 _ARRAY_WILDCARD_RE = re.compile(
-    r"\{(\d+|task-\d+)\.(\w+)\[\*\]\.(\w+)\}"
+    fr"\{{{_TASK_ID_PAT}\.(\w+)\[\*\]\.(\w+)\}}"
 )
 
 _DOT_SENDER_REF_RE = re.compile(
-    r"\{(\d+|task-\d+)\.(sender\.name|sender\.email|senderName|senderEmail"
+    fr"\{{{_TASK_ID_PAT}\.(sender\.name|sender\.email|senderName|senderEmail"
     r"|sender_name|sender_email|fromName|from_name|fromEmail|from_email"
     r"|from\.name|from\.email"
     r"|subject|date|snippet|body)\}"
 )
 
 _HEADERS_DOT_REF_RE = re.compile(
-    r"\{(\d+|task-\d+)\.headers\.(from\.name|from\.email|from|subject|date|snippet|to|cc|bcc)\}",
+    fr"\{{{_TASK_ID_PAT}\.headers\.(from\.name|from\.email|from|subject|date|snippet|to|cc|bcc)\}}",
     re.IGNORECASE,
 )
 
-_TEMPLATE_REF_RE = re.compile(r"\{(\d+|task-\d+)\.[\w\.\[\]\*]+\}")
+_TEMPLATE_REF_RE = re.compile(fr"\{{{_TASK_ID_PAT}\.[\w\.\[\]\*]+\}}")
 
 _GMAIL_BODY_VARIANTS: tuple[str, ...] = (
     "$gmail_message_body",
@@ -109,6 +111,19 @@ _HEADERS_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "cc":         ("cc", "raw"),
     "bcc":        ("bcc", "raw"),
 }
+
+# ---------------------------------------------------------------------------
+# Constants for data truncation & thresholds
+# ---------------------------------------------------------------------------
+
+_MAX_EXPAND_MESSAGES                = 5
+_MAX_DRIVE_SUMMARY_FILES            = 50
+_MAX_GMAIL_SUMMARY_MESSAGES_VERBOSE = 100
+_MAX_GMAIL_SUMMARY_MESSAGES         = 50
+_MAX_SHEET_UI_ROWS                  = 200
+_DOCS_MIN_CHAR_THRESHOLD            = 50
+_DEFAULT_SHEETS_CHECK_RANGE         = "A1:E20"
+_GOOGLE_DOCS_URL_TEMPLATE           = "https://docs.google.com/document/d/{doc_id}/edit"
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +193,7 @@ class PlanExecutor:
                     "step":        current_index + 1,
                     "thought":     thought,
                     "action":      f"{resolved_task.service}.{resolved_task.action}",
-                    "observation": (result.stdout or "")[:300],
+                    "observation": (result.stdout or "")[:(self.config.max_context_snippet_len if self.config else 300)],
                     "success":     result.success,
                 })
 
@@ -430,7 +445,7 @@ class PlanExecutor:
             if fetch_res.return_code != 0:
                 return f"Failed to fetch document for verification: {fetch_res.stderr}"
             content = fetch_res.stdout
-            if len(content.strip()) < 100:
+            if len(content.strip()) < _DOCS_MIN_CHAR_THRESHOLD:
                 return "Newly created document is nearly empty."
             if "{{" in content or "placeholder" in content.lower():
                 return "Document contains unresolved placeholders."
@@ -440,7 +455,7 @@ class PlanExecutor:
             if not sheet_id:
                 return None
             if task.action == "append_values":
-                range_val = task.parameters.get("range", "A1:C5")
+                range_val = task.parameters.get("range") or _DEFAULT_SHEETS_CHECK_RANGE
                 check_res = self.runner.run(["sheets", "spreadsheets", "values", "get", "--params",
                                              json.dumps({"spreadsheetId": sheet_id, "range": range_val})])
                 if "{{" in check_res.stdout or "No data" in check_res.stdout:
@@ -475,8 +490,8 @@ class PlanExecutor:
             prompt = (
                 f"Goal: {goal}\n"
                 f"Completed steps: {len(context.get('task_results', {}))}\n"
-                f"Last observation: {str(context.get('last_observation', 'None'))[:300]}\n"
-                f"Last reflection: {str(context.get('last_reflection', 'None'))[:200]}\n"
+                f"Last observation: {str(context.get('last_observation', 'None'))[:(self.config.max_context_snippet_len if self.config else 300)]}\n"
+                f"Last reflection: {str(context.get('last_reflection', 'None'))[:(self.config.max_context_snippet_len if self.config else 200)]}\n"
                 f"Next planned action: {next_task.service}.{next_task.action}\n"
                 f"Parameters: {list(next_task.parameters.keys())}\n\n"
                 "In one sentence: Is this the right next step? "
@@ -638,7 +653,7 @@ class PlanExecutor:
                 parameters={**task.parameters, "message_id": mid},
                 reason=task.reason,
             )
-            for idx, mid in enumerate(message_ids[:5], start=1)
+            for idx, mid in enumerate(message_ids[:_MAX_EXPAND_MESSAGES], start=1)
         ]
 
     def _resolve_task(self, task: PlannedTask, context: dict[str, Any]) -> PlannedTask:
@@ -782,7 +797,9 @@ class PlanExecutor:
             results[task.id] = payload
             if task.id.startswith("task-"):
                 try:
-                    results[task.id.removeprefix("task-")] = payload
+                    num = task.id.removeprefix("task-")
+                    results[num] = payload
+                    results[f"t{num}"] = payload
                 except Exception:
                     pass
 
@@ -811,7 +828,7 @@ class PlanExecutor:
             doc_id = payload.get("documentId") or ""
             context["last_document_id"] = doc_id
             if doc_id:
-                context["last_document_url"] = f"https://docs.google.com/document/d/{doc_id}/edit"
+                context["last_document_url"] = _GOOGLE_DOCS_URL_TEMPLATE.format(doc_id=doc_id)
         if task.service == "docs" and task.action == "get_document" and payload:
             doc_id = payload.get("documentId") or ""
             if doc_id and not context.get("last_document_id"):
@@ -848,7 +865,10 @@ class PlanExecutor:
                 except Exception:
                     pass
         if task.service == "drive" and task.action == "export_file" and payload:
-            saved_file = payload.get("saved_file") or "download.txt"
+            saved_file = payload.get("saved_file")
+            if not saved_file:
+                self.logger.warning("drive.export_file: API response missing 'saved_file'; artifact ingestion skipped.")
+                return
             try:
                 import pathlib
                 content = pathlib.Path(saved_file).read_text(encoding="utf-8", errors="ignore")
@@ -875,7 +895,7 @@ class PlanExecutor:
         if not isinstance(files, list) or not files:
             return [["Search", "File Name", "File Type", "Link"], [query, "No files found", "", ""]]
         rows = [["Search", "File Name", "File Type", "Link"]]
-        for item in files[:50]:
+        for item in files[:_MAX_DRIVE_SUMMARY_FILES]:
             if isinstance(item, dict):
                 rows.append([
                     query,
@@ -894,7 +914,7 @@ class PlanExecutor:
             if wants_company:
                 rows: list[list[str]] = [["Search", "Company Name", "Subject", "From", "Message ID"]]
                 seen: set[str] = set()
-                for message in fetched_messages[:100]:
+                for message in fetched_messages[:_MAX_GMAIL_SUMMARY_MESSAGES_VERBOSE]:
                     if not isinstance(message, dict):
                         continue
                     headers   = _gmail_headers(message)
@@ -915,7 +935,7 @@ class PlanExecutor:
                 return rows
 
             rows = [["Search", "Company", "From", "Subject", "Message ID"]]
-            for message in fetched_messages[:50]:
+            for message in fetched_messages[:_MAX_GMAIL_SUMMARY_MESSAGES]:
                 if isinstance(message, dict):
                     headers  = _gmail_headers(message)
                     from_val = headers.get("from", "")
@@ -929,7 +949,7 @@ class PlanExecutor:
             return rows
 
         rows = [["Search", "Message ID", "Thread ID"]]
-        for message in _gmail_messages(context)[:50]:
+        for message in _gmail_messages(context)[:_MAX_GMAIL_SUMMARY_MESSAGES]:
             rows.append([query, str(message.get("id") or ""), str(message.get("threadId") or "")])
         if len(rows) == 1:
             rows.append([query, "No messages returned", ""])
@@ -951,7 +971,7 @@ class PlanExecutor:
             return "No spreadsheet data was found."
         range_name = str(payload.get("range") or "spreadsheet range")
         lines = [f"Spreadsheet data from {range_name}:", ""]
-        for row in values[:200]:
+        for row in values[:_MAX_SHEET_UI_ROWS]:
             if isinstance(row, list):
                 lines.append(" | ".join(str(cell) for cell in row))
         return "\n".join(lines).strip()
@@ -983,7 +1003,8 @@ def _resolve_dot_sender_refs(
             logger.warning("Pass0a: no gmail_messages for ref %s", m.group(0))
             return m.group(0)
         try:
-            step_num = int(step_id_raw.removeprefix("task-"))
+            task_num_str = re.sub(r"^(task-|t-|t)", "", step_id_raw)
+            step_num = int(task_num_str)
             msg_idx  = max(0, step_num - 2)
         except (ValueError, AttributeError):
             msg_idx = 0
@@ -1133,7 +1154,8 @@ def _resolve_headers_dot_refs(
             logger.warning("Pass0c: no gmail_messages for ref %s", m.group(0))
             return m.group(0)
         try:
-            step_num = int(step_id_raw.removeprefix("task-"))
+            task_num_str = re.sub(r"^(task-|t-|t)", "", step_id_raw)
+            step_num = int(task_num_str)
             msg_idx  = max(0, step_num - 2)
         except (ValueError, AttributeError):
             msg_idx = 0
@@ -1184,16 +1206,20 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
     if not isinstance(value, str):
         return value
 
-    normalised = re.sub(r"\{(\d+|task-\d+)\.([\w\.]+)\[\]\.([\w]+)\}", r"{\1.\2[*].\3}", value)
+    normalised = re.sub(fr"\{{{_TASK_ID_PAT}\.([\w\.]+)\[\]\.([\w]+)\}}", r"{\1.\2[*].\3}", value)
     if normalised != value and logger:
         logger.info("Bug1 fix: normalised empty-bracket token in '%s'", value[:120])
     value = normalised
 
     def replacer(match: re.Match) -> str:
-        task_id  = match.group(1)
-        key_path = match.group(2)
-        results  = context.get("task_results", {})
-        current  = results.get(task_id)
+        task_id_raw = match.group(1)
+        key_path    = match.group(2)
+        results     = context.get("task_results", {})
+
+        # Flexible lookup: normalize "task-5", "t5", "t-5" all to "5"
+        task_num    = re.sub(r"^(task-|t-|t)", "", task_id_raw)
+        current     = results.get(task_id_raw) or results.get(task_num) or results.get(f"task-{task_num}")
+        
         if not isinstance(current, dict):
             return match.group(0)
 
@@ -1251,8 +1277,8 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
             logger.info("Pass1: resolved %s → '%s'", match.group(0), str(current)[:80])
         return str(current) if current is not None else match.group(0)
 
-    resolved = re.sub(r"\{\{([\w\-]+)\.([\w\.\[\]\*]+)\}\}", replacer, value)
-    resolved = re.sub(r"\{(\d+|task-\d+)\.([\w\.\[\]\*]+)\}", replacer, resolved)
+    resolved = re.sub(fr"\{{{{{_TASK_ID_PAT}\.([\w\.\[\]\*]+)\}}}}", replacer, value)
+    resolved = re.sub(fr"\{{{_TASK_ID_PAT}\.([\w\.\[\]\*]+)\}}", replacer, resolved)
     return resolved
 
 
@@ -1391,7 +1417,7 @@ def _pick_code_value(token: str, context: dict[str, Any], logger: logging.Logger
 # Bare step-ID param resolution
 # ---------------------------------------------------------------------------
 
-_BARE_STEP_REF_RE = re.compile(r"^(\d+|task-\d+)\.([\w\.]+)$")
+_BARE_STEP_REF_RE = re.compile(fr"^{_TASK_ID_PAT}\.([\w\.]+)$")
 
 
 def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
@@ -1404,10 +1430,14 @@ def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
     m = _BARE_STEP_REF_RE.match(params.strip())
     if not m:
         return params
-    step_id  = m.group(1)
-    key_path = m.group(2)
-    results  = context.get("task_results", {})
-    payload  = results.get(step_id)
+    step_id_raw = m.group(1)
+    key_path    = m.group(2)
+    results     = context.get("task_results", {})
+    
+    # Flexible lookup: normalize "task-5", "t5", "t-5" all to "5"
+    task_num    = re.sub(r"^(task-|t-|t)", "", step_id_raw)
+    payload     = results.get(step_id_raw) or results.get(task_num) or results.get(f"task-{task_num}")
+
     if not isinstance(payload, dict):
         return params
     current: Any = payload

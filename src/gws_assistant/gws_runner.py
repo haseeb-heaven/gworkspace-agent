@@ -13,9 +13,10 @@ from .models import ExecutionResult
 class GWSRunner:
     """Runs gws commands with timeout and robust error handling."""
 
-    def __init__(self, gws_binary_path: Path, logger: logging.Logger) -> None:
+    def __init__(self, gws_binary_path: Path, logger: logging.Logger, config: AppConfigModel | None = None) -> None:
         self.gws_binary_path = gws_binary_path
         self.logger = logger
+        self.config = config
 
     def validate_binary(self) -> bool:
         exists = self.gws_binary_path.exists() and self.gws_binary_path.is_file()
@@ -23,7 +24,8 @@ class GWSRunner:
             self.logger.error("gws binary was not found at %s", self.gws_binary_path)
         return exists
 
-    def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
+    def run(self, args: list[str], timeout_seconds: int | None = None) -> ExecutionResult:
+        timeout = timeout_seconds if timeout_seconds is not None else (self.config.gws_timeout_seconds if self.config else 90)
         command = [str(self.gws_binary_path), *args]
         self.logger.info("Executing command: %s", " ".join(command))
         try:
@@ -33,7 +35,7 @@ class GWSRunner:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=timeout_seconds,
+                timeout=timeout,
                 check=False,
             )
             success = result.returncode == 0
@@ -57,7 +59,7 @@ class GWSRunner:
             return ExecutionResult(
                 success=False,
                 command=command,
-                error=f"Command timed out after {timeout_seconds}s.",
+                error=f"Command timed out after {timeout}s.",
             )
         except Exception as exc:
             self.logger.exception("Unexpected command execution error: %s", exc)
@@ -67,10 +69,13 @@ class GWSRunner:
                 error=str(exc),
             )
 
-    def run_with_retry(self, args: list[str], timeout_seconds: int = 90, max_retries: int = 3) -> ExecutionResult:
+    def run_with_retry(self, args: list[str], timeout_seconds: int | None = None, max_retries: int | None = None) -> ExecutionResult:
         """Runs the command with exponential backoff for transient errors."""
-        for attempt in range(1, max_retries + 1):
-            result = self.run(args, timeout_seconds)
+        timeout      = timeout_seconds if timeout_seconds is not None else (self.config.gws_timeout_seconds if self.config else 90)
+        retries_limit = max_retries if max_retries is not None else (self.config.gws_max_retries if self.config else 3)
+
+        for attempt in range(1, retries_limit + 1):
+            result = self.run(args, timeout_seconds=timeout)
             if result.success:
                 return result
                 
@@ -80,14 +85,14 @@ class GWSRunner:
                 for term in ["timeout", "429", "500", "502", "503", "504", "quota", "connection reset", "network", "transient"]
             )
             
-            if is_transient and attempt < max_retries:
+            if is_transient and attempt < retries_limit:
                 sleep_time = 2 ** attempt
                 self.logger.warning(
                     f"Transient error on attempt {attempt}. Retrying in {sleep_time}s... Error: {result.error} | {result.stderr}"
                 )
                 time.sleep(sleep_time)
             else:
-                if attempt == max_retries and not result.success:
+                if attempt == retries_limit and not result.success:
                      self.logger.error(f"Command execution failed permanently after {attempt} attempts: {result.error} | {result.stderr}")
                 return result
         return result

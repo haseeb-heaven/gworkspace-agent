@@ -27,6 +27,9 @@ class AppConfigModel:
     code_execution_enabled: bool = True
     code_execution_backend: str = "local"
     e2b_api_key: str | None = None
+    gws_timeout_seconds: int = 90
+    gws_max_retries: int = 3
+    max_context_snippet_len: int = 300
 
 
 @dataclass(slots=True)

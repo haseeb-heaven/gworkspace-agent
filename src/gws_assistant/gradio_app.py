@@ -43,7 +43,7 @@ def create_interface() -> gr.Blocks:
         raise RuntimeError(
             "Setup is missing. Run python gws_cli.py --setup first so .env and GWS_BINARY_PATH are configured."
         )
-    runner = GWSRunner(config.gws_binary_path, logger=logger)
+    runner = GWSRunner(config.gws_binary_path, logger=logger, config=config)
     if not runner.validate_binary():
         raise RuntimeError(f"gws binary not found at {config.gws_binary_path}. Run python gws_cli.py --setup.")
     planner = CommandPlanner()

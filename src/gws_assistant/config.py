@@ -69,6 +69,10 @@ class AppConfig:
         code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
         e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
 
+        gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
+        gws_max_retries     = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
+        max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
+
         return AppConfigModel(
             provider=provider,
             model=model,
@@ -87,6 +91,9 @@ class AppConfig:
             use_heuristic_fallback=use_heuristic_fallback,
             code_execution_backend=code_execution_backend,
             e2b_api_key=e2b_api_key,
+            gws_timeout_seconds=gws_timeout_seconds,
+            gws_max_retries=gws_max_retries,
+            max_context_snippet_len=max_snippet_len,
         )
 
 

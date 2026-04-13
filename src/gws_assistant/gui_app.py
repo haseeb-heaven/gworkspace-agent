@@ -32,7 +32,7 @@ class AssistantGUI(ctk.CTk):
         self.parser = IntentParser(config=self.config_model, logger=self.logger)
         self.planner = CommandPlanner()
         self.engine = ConversationEngine(parser=self.parser, planner=self.planner, logger=self.logger)
-        self.runner = GWSRunner(self.config_model.gws_binary_path, logger=self.logger)
+        self.runner = GWSRunner(self.config_model.gws_binary_path, logger=self.logger, config=self.config_model)
 
         self.current_parameters: dict[str, ctk.CTkEntry] = {}
 
