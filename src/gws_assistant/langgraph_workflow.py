@@ -17,6 +17,7 @@ from gws_assistant.models import (
     ReflectionDecision,
     StructuredToolResult,
     TaskExecution,
+    validate_planned_task,
 )
 from gws_assistant.output_formatter import HumanReadableFormatter
 from gws_assistant.tools.code_execution import execute_generated_code
@@ -145,6 +146,19 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         task_error: str | None = None
         for exp_task in expanded:
             resolved = executor._resolve_task(exp_task, context)
+            
+            # Bug Fix: Ensure task is structurally valid AND all placeholders resolved
+            try:
+                validate_planned_task(resolved)
+            except Exception as val_exc:
+                logger.error(f"Validation failed after resolution for task {resolved.id}: {val_exc}")
+                return {
+                    "error": str(val_exc),
+                    "last_result": StructuredToolResult(success=False, output={}, error=str(val_exc)),
+                    "executions": executions,
+                    "context": context,
+                }
+
             result = executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
@@ -158,18 +172,25 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
             executor._update_context_from_result(payload, context)
 
+            # Always also store by sequential index (task-1, task-2, etc.) to 
+            # support LLMs that refer to tasks by their order regardless of name.
+            seq_id = f"task-{idx+1}"
+            results_map[seq_id] = payload
+            results_map[str(idx+1)] = payload
+            results_map[f"t{idx+1}"] = payload
+
             # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
             t_id = str(task.id)
-            results_map[t_id] = payload
-            
-            # Also store with numeric ID for {task-1...} vs {1...}
-            if t_id.startswith("task-"):
-                num = t_id.removeprefix("task-")
-                results_map[num] = payload
-                results_map[f"t{num}"] = payload
-            elif t_id.isdigit():
-                results_map[f"task-{t_id}"] = payload
-                results_map[f"t{t_id}"] = payload
+            if t_id != seq_id:
+                results_map[t_id] = payload
+                # Also store with numeric ID for {task-1...} vs {1...}
+                if t_id.startswith("task-"):
+                    num = t_id.removeprefix("task-")
+                    results_map[num] = payload
+                    results_map[f"t{num}"] = payload
+                elif t_id.isdigit():
+                    results_map[f"task-{t_id}"] = payload
+                    results_map[f"t{t_id}"] = payload
 
             if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
                 # Special handling: if we exported a file, its content (if text) is stored directly.
@@ -216,7 +237,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             decision = ReflectionDecision(action="continue", reason="Task completed successfully.")
         elif "CODE_EXECUTION_ENABLED=false" in str(error):
             decision = ReflectionDecision(action="continue", reason="Code execution is disabled by configuration.")
-        elif "unresolved placeholder" in str(error).lower():
+        elif "unresolved placeholder" in str(error).lower() or "unresolved stub" in str(error).lower():
             decision = ReflectionDecision(action="continue", reason="Deterministic placeholder error; skip retry.")
         elif attempts < config.max_retries:
             # Fix #2 — branch on error type, never blindly retry.

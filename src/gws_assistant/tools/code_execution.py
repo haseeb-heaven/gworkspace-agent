@@ -32,13 +32,18 @@ _BANNED_PATTERNS = [
     r"__import__",
 ]
 
-# Safe stdlib modules that the LLM commonly needs for numeric/currency work.
+import datetime
+import time
+
+# Safe stdlib modules that the LLM commonly needs for numeric/currency/date work.
 # These are pre-injected into the sandbox globals so LLM-generated `import X`
 # statements can be stripped without breaking the computation.
 _SAFE_MODULES: dict[str, Any] = {
     "math": math,
     "re": re,
     "json": json,
+    "datetime": datetime,
+    "time": time,
 }
 
 

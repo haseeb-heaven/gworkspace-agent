@@ -2,6 +2,7 @@ import re
 import json
 import base64
 import logging
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -121,19 +122,29 @@ class PlanExecutor:
         parts = path.split('.')
         curr: Any = data
         
-        for part in parts:
+        for i, part in enumerate(parts):
             index_match = re.search(r'\[(\d+)\]$', part)
             if index_match:
                 index = int(index_match.group(1))
                 name = part[:index_match.start()]
                 if name:
                     if isinstance(curr, dict):
-                        curr = curr.get(name)
+                        # Try exact name, then variations if not found
+                        val = curr.get(name)
+                        if val is None:
+                            if name.startswith("task-"):
+                                num = name.removeprefix("task-")
+                                val = curr.get(num) or curr.get(f"t{num}")
+                            elif name.isdigit():
+                                val = curr.get(f"task-{name}") or curr.get(f"t{name}")
+                        curr = val
                     else:
+                        self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict.")
                         return None
                 
+                # Auto-unwrap common result containers if we're indexing into a dict
                 if isinstance(curr, dict) and not isinstance(curr, list):
-                    for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows"]:
+                    for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
                         if list_key in curr and isinstance(curr[list_key], list):
                             curr = curr[list_key]
                             break
@@ -141,14 +152,26 @@ class PlanExecutor:
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
                 else:
+                    self.logger.warning(f"Path resolution failed at '{part}': index {index} out of range or not a list.")
                     return None
             else:
                 if isinstance(curr, dict):
-                    curr = curr.get(part)
+                    # Smart synthesis for URLs if requested but not present
+                    if part == "documentUrl" and "documentId" in curr and "documentUrl" not in curr:
+                        curr = f"https://docs.google.com/document/d/{curr['documentId']}/edit"
+                    elif part == "spreadsheetUrl" and "spreadsheetId" in curr and "spreadsheetUrl" not in curr:
+                        curr = f"https://docs.google.com/spreadsheets/d/{curr['spreadsheetId']}/edit"
+                    elif part == "webViewLink" and "id" in curr and "webViewLink" not in curr:
+                        curr = f"https://drive.google.com/file/d/{curr['id']}/view"
+                    else:
+                        curr = curr.get(part)
                 else:
+                    self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict.")
                     return None
             
             if curr is None:
+                sub_path = '.'.join(parts[:i+1])
+                self.logger.warning(f"Path resolution failed: sub-path '{sub_path}' resolved to None.")
                 return None
                 
         return curr
@@ -369,14 +392,12 @@ class PlanExecutor:
         args = self.planner.build_command(task.service, task.action, task.parameters)
 
         if task.service == "search" and task.action == "web_search":
-            self.runner.run(args)
             return self._handle_web_search_task(task, context)
         
         if task.service == "admin" and task.action == "log_activity":
             return self._handle_admin_task(task, context)
         
         if task.service in ("code", "computation"):
-            self.runner.run(args)
             return self._handle_code_execution_task(task, context)
 
         result = self.runner.run(args)

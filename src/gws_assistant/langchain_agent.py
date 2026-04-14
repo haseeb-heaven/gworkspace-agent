@@ -1,5 +1,6 @@
 """LangChain-backed planning and reasoning agent."""
 
+import datetime
 import logging
 import re
 import time
@@ -348,10 +349,13 @@ def plan_with_langchain(
         "the services and actions listed in the catalog below.\n\n"
         "AVAILABLE SERVICES, ACTIONS, AND PARAMETERS:\n"
         f"{catalog_summary_escaped}\n\n"
+        f"CURRENT CONTEXT: Today is {datetime.date.today().isoformat()}\n\n"
         "STRICT RULES:\n"
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
         "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
-        "2. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
+        "2. PYTHON CODE: in code.execute, write standard, valid Python. No dots at the start of lines, no markdown. "
+        "   'datetime', 'time', 'math', 're', 'json' are pre-imported. Do NOT write `import` statements.\n"
+        "3. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
         "   {{task-N.field}} (double braces), e.g. {{task-1.id}}.\n"
         "   If the output is a list, use {{task-N[0].field}}, e.g. {{task-1[0].id}}.\n"
         "   NEVER use names like {{drive-list.id}} or {{task_1.id}}.\n"

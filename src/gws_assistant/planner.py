@@ -273,8 +273,7 @@ class CommandPlanner:
             title = self._required_text(params, "title")
             return ["sheets", "spreadsheets", "create", "--json",
                     json.dumps({
-                        "properties": {"title": title},
-                        "sheets": [{"properties": {"title": title}}]
+                        "properties": {"title": title}
                     }, ensure_ascii=True)]
 
         if action == "get_spreadsheet":
