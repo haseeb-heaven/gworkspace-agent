@@ -45,6 +45,7 @@ class PlanExecutor:
     def _resolve_placeholders(self, val: Any, context: dict) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context."""
         if isinstance(val, str):
+            logger.info(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
             legacy_map = {
                 "$last_spreadsheet_id":     "last_spreadsheet_id",
@@ -71,6 +72,8 @@ class PlanExecutor:
                 path = stripped[2:-2].strip()
             elif stripped.startswith("{") and stripped.endswith("}"):
                 path = stripped[1:-1].strip()
+            elif stripped.startswith("$task-"):
+                path = stripped[1:].strip()
             
             if path:
                 if path in context:
@@ -87,7 +90,11 @@ class PlanExecutor:
 
             results_map = context.get("task_results", {})
             def replace_match(match):
-                p = (match.group(1) or match.group(2)).strip()
+                # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...
+                p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
+                if p.startswith("$"):
+                    p = p[1:] # strip $ from $task-N
+                
                 if p in context:
                     res = context[p]
                 else:
@@ -99,8 +106,8 @@ class PlanExecutor:
                     return str(res)
                 return match.group(0)
 
-            # Match {{...}} or {...}
-            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}', replace_match, val)
+            # Match {{...}}, {...}, or $task-N[.field]
+            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-[\w\-\.\[\]]+)', replace_match, val)
             return val
 
         elif isinstance(val, list):
@@ -148,6 +155,11 @@ class PlanExecutor:
 
     def _update_context_from_result(self, data: dict, context: dict) -> None:
         """Extract known artifact keys from a task result and store in context."""
+        if "stdout" in data:
+            context["last_code_stdout"] = data["stdout"]
+        if "parsed_value" in data:
+            context["last_code_result"] = data["parsed_value"]
+
         if "spreadsheetId" in data:
             context["last_spreadsheet_id"] = data["spreadsheetId"]
         if "spreadsheetUrl" in data:
@@ -262,7 +274,16 @@ class PlanExecutor:
             try:
                 if result.output:
                     data = result.output
+                    
                     self._update_context_from_result(data, context)
+
+                    # Alias common ID fields to 'id' for simpler placeholder resolution
+                    # Also ensure it goes into context['id'] for legacy reasons
+                    for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
+                        if id_field in data:
+                            data["id"] = data[id_field]
+                            context["id"] = data[id_field]
+                            break
                     
                     results_map[str(task.id)] = data
                     if str(task.id).startswith("task-"):
@@ -285,8 +306,8 @@ class PlanExecutor:
                         
                         if isinstance(data, dict) and data.get("id") == "m1":
                              context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to update context from result: {e}")
 
             executions.append(TaskExecution(task=task, result=result))
             if not result.success:
