@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import logging
@@ -19,8 +20,11 @@ class SimplePlanner:
 def get_executor():
     config = AppConfig.from_env()
     logger = setup_logging(config)
-    # Default to gws.exe in project root
-    runner = GWSRunner(gws_binary_path=Path("D:/Code/gworkspace-agent/gws.exe"), logger=logger, config=config)
+    # Correct path to gws.exe in project root
+    gws_path = Path(__file__).resolve().parent.parent.parent / "gws.exe"
+    runner = GWSRunner(gws_binary_path=gws_path, logger=logger, config=config)
+    # Ensure keyring backend is set to file to avoid secure storage errors
+    os.environ["GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND"] = "file"
     return PlanExecutor(planner=SimplePlanner(), runner=runner, config=config)
 
 def create_task(service, action, parameters):
