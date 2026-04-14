@@ -38,6 +38,8 @@ Thumbs.db
 # .agent framework (Unignored to allow tracking)
 .agent/
 
+scratch/*.py
+
 # Re-ignore skills and other artifacts
 skills/
 artifacts/

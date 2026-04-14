@@ -170,7 +170,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             payload = latest["output"].get("parsed_payload") or latest["output"]
             
             # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
-            executor._update_context_from_result(payload, context)
+            executor._update_context_from_result(payload, context, resolved)
 
             # Always also store by sequential index (task-1, task-2, etc.) to 
             # support LLMs that refer to tasks by their order regardless of name.

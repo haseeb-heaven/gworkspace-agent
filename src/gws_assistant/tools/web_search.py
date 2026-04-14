@@ -62,8 +62,22 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
                 results = raw
             else:
                 results = []
+            def sanitize(text: str) -> str:
+                if not text:
+                    return ""
+                # Replace newlines with spaces
+                text = text.replace("\r", " ").replace("\n", " ")
+                # Remove non-ASCII characters
+                text = text.encode("ascii", "ignore").decode("ascii")
+                # Limit length
+                return (text[:2000] + "...") if len(text) > 2000 else text
+
             snippets = [
-                {"title": r.get("title", ""), "content": r.get("content", ""), "url": r.get("url", "")}
+                {
+                    "title": sanitize(r.get("title", "")),
+                    "content": sanitize(r.get("content", "")),
+                    "url": r.get("url", "")
+                }
                 for r in results
                 if isinstance(r, dict)
             ]

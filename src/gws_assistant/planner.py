@@ -55,13 +55,13 @@ def _resolve_date_expression(raw: str) -> str:
     """Resolve a relative or absolute date string to YYYY-MM-DD.
 
     Handles:
-      - ISO dates already in YYYY-MM-DD format  → returned as-is
-      - "today"                                 → date.today()
-      - "tomorrow"                              → date.today() + 1 day
-      - "yesterday"                             → date.today() - 1 day
-      - "next <weekday>"                        → next occurrence of that weekday
-      - "<weekday>"                             → nearest future occurrence
-      - Anything else                           → returned as-is (LLM supplied a literal)
+      - ISO dates already in YYYY-MM-DD format  -> returned as-is
+      - "today"                                 -> date.today()
+      - "tomorrow"                              -> date.today() + 1 day
+      - "yesterday"                             -> date.today() - 1 day
+      - "next <weekday>"                        -> next occurrence of that weekday
+      - "<weekday>"                             -> nearest future occurrence
+      - Anything else                           -> returned as-is (LLM supplied a literal)
     """
     val = raw.strip().lower()
 
@@ -90,7 +90,7 @@ def _resolve_date_expression(raw: str) -> str:
         if next_prefix and days_ahead == 0:
             days_ahead = 7
         elif days_ahead == 0:
-            days_ahead = 7  # bare weekday name that matches today → next week
+            days_ahead = 7  # bare weekday name that matches today -> next week
         return (today + timedelta(days=days_ahead)).isoformat()
 
     # Fallback — return as-is; the LLM may have already supplied an ISO date
@@ -328,7 +328,7 @@ class CommandPlanner:
                     json.dumps({"userId": "me", "id": message_id})]
 
         if action == "send_message":
-            to_email = self._required_text(params, "to_email")
+            to_email = self._required_text(params, "to_email").strip().rstrip(".")
             subject  = self._required_text(params, "subject")
             body     = self._required_text(params, "body")
 

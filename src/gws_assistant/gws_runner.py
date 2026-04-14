@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
-import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +44,7 @@ def _rewrite_large_args_via_tempfile(
         arg = args[i]
         if arg in ("--json", "--params") and i + 1 < len(args) and stdin_content is None:
             value = args[i + 1]
-            if len(value.encode("utf-8", errors="replace")) > _WIN_ARG_SAFE_BYTES:
+            if len(str(value).encode("utf-8", errors="replace")) > _WIN_ARG_SAFE_BYTES:
                 stdin_content = value
                 new_args.extend([arg, "-"])
                 i += 2
@@ -94,77 +91,41 @@ class GWSRunner:
                 encoding="utf-8",
                 errors="replace",
                 timeout=timeout,
-                check=False,
             )
-            if stdin_input is not None:
+            if stdin_input:
                 proc_kwargs["input"] = stdin_input
 
             result = subprocess.run(command, **proc_kwargs)
-            success = result.returncode == 0
-            if success:
-                self.logger.info("Command completed successfully with code=%s", result.returncode)
-            else:
-                self.logger.warning(
-                    "Command failed with code=%s stderr=%s",
-                    result.returncode,
-                    (result.stderr or "").strip()[:500],
-                )
-            return ExecutionResult(
-                success=success,
-                command=command,
-                stdout=(result.stdout or "").strip(),
-                stderr=(result.stderr or "").strip(),
-                return_code=result.returncode,
-            )
-        except subprocess.TimeoutExpired as exc:
-            self.logger.exception("Command timed out: %s", exc)
-            return ExecutionResult(
-                success=False,
-                command=command,
-                error=f"Command timed out after {timeout}s.",
-            )
-        except Exception as exc:
-            self.logger.exception("Unexpected command execution error: %s", exc)
-            return ExecutionResult(
-                success=False,
-                command=command,
-                error=str(exc),
-            )
-        finally:
-            for tmp_path in tmp_files:
+
+            # Cleanup temp files if any were created
+            for f in tmp_files:
                 try:
-                    os.unlink(tmp_path)
-                except OSError:
+                    os.remove(f)
+                except Exception:
                     pass
 
-    def run_with_retry(self, args: list[str], timeout_seconds: int | None = None, max_retries: int | None = None) -> ExecutionResult:
-        """Runs the command with exponential backoff for transient errors."""
-        timeout       = timeout_seconds if timeout_seconds is not None else (self.config.gws_timeout_seconds if self.config else 90)
-        retries_limit = max_retries if max_retries is not None else (self.config.gws_max_retries if self.config else 3)
-
-        for attempt in range(1, retries_limit + 1):
-            result = self.run(args, timeout_seconds=timeout)
-            if result.success:
-                return result
-
-            error_msg = str(result.error).lower() + str(result.stderr).lower()
-            is_transient = result.return_code in (429, 500, 502, 503, 504) or any(
-                term in error_msg
-                for term in ["timeout", "429", "500", "502", "503", "504", "quota", "connection reset", "network", "transient"]
+            return ExecutionResult(
+                success=result.returncode == 0,
+                command=command,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                return_code=result.returncode,
             )
-
-            if is_transient and attempt < retries_limit:
-                sleep_time = 2 ** attempt
-                self.logger.warning(
-                    "Transient error on attempt %d. Retrying in %ds... Error: %s | %s",
-                    attempt, sleep_time, result.error, result.stderr,
-                )
-                time.sleep(sleep_time)
-            else:
-                if attempt == retries_limit and not result.success:
-                    self.logger.error(
-                        "Command execution failed permanently after %d attempts: %s | %s",
-                        attempt, result.error, result.stderr,
-                    )
-                return result
-        return result
+        except subprocess.TimeoutExpired:
+            self.logger.error("Command timed out after %d seconds: %s", timeout, " ".join(command))
+            return ExecutionResult(
+                success=False,
+                command=command,
+                stdout="",
+                stderr=f"Command timed out after {timeout} seconds.",
+                return_code=-1,
+            )
+        except Exception as exc:
+            self.logger.exception("Failed to run gws command: %s", exc)
+            return ExecutionResult(
+                success=False,
+                command=command,
+                stdout="",
+                stderr=str(exc),
+                return_code=-1,
+            )

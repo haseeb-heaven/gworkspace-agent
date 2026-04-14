@@ -192,7 +192,7 @@ def _safe_invoke_structured_output(
     """Invoke a structured-output chain, returning None on parse failures.
 
     HTTP 429 and HTTP 404 are RE-RAISED so the caller's retry/fallback loop
-    can handle them. All other unexpected errors are swallowed → None.
+    can handle them. All other unexpected errors are swallowed -> None.
     """
     try:
         return chain.invoke(request)
@@ -354,26 +354,30 @@ def plan_with_langchain(
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
         "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
         "2. PYTHON CODE: in code.execute, write standard, valid Python. No dots at the start of lines, no markdown. "
+        "   Use standard Python syntax (True, False, None) — NOT lowercase true/false/null. "
+        "   Do NOT use `return` at the top level — use `print()` or assign to variables instead. "
         "   'datetime', 'time', 'math', 're', 'json' are pre-imported. Do NOT write `import` statements.\n"
         "3. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
         "   {{task-N.field}} (double braces), e.g. {{task-1.id}}.\n"
         "   If the output is a list, use {{task-N[0].field}}, e.g. {{task-1[0].id}}.\n"
         "   NEVER use names like {{drive-list.id}} or {{task_1.id}}.\n"
-        "3. EMAIL DETAILS: always follow gmail.list_messages with gmail.get_message when "
+        "4. EMAIL DETAILS: always follow gmail.list_messages with gmail.get_message when "
         "   full content is needed. Pass 'q' to list_messages. Omit message_id in "
         "   get_message — the executor resolves it automatically.\n"
-        "4. EXPORTS: use drive.export_file to read Doc/Sheet content. "
+        "5. EXPORTS: use drive.export_file to read Doc/Sheet content. "
         "   Never use docs/sheets APIs for reading raw content.\n"
         "5. WEB SEARCH: use search.web_search for external info ('top X', 'best Y'). "
         "   Use $web_search_table_values for sheet cell values, $web_search_summary for doc content.\n"
-        "6. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
+        "6. CALENDAR: use $calendar_events to loop through event lists in code.execute.\n"
+        "7. GMAIL: use $gmail_message_body_text if you need the decoded plain text of a message.\n"
+        "8. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
         "   $last_code_stdout (text) in the next task's parameter. Never write 'PLACEHOLDER_AMOUNT'.\n"
         "7. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
         "   gmail.send_message with to_email set to the EXACT address in the request. "
         "   Choose the most appropriate body $placeholder from: "
         "   $last_code_stdout, $sheet_email_body, $gmail_summary_values, $web_search_markdown.\n"
         "8. PIPELINE: for complex workflows prefer: "
-        "   search.web_search → code → sheets.append_values → gmail.send_message.\n"
+        "   search.web_search -> code -> sheets.append_values -> gmail.send_message.\n"
         "9. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
         "   never reuse 'Sheet1!A1' for different write targets.\n"
         "10. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "

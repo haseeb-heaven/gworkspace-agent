@@ -50,16 +50,30 @@ def main():
         else:
             print("Failed to get doc details.")
     
-    # GMAIL 2: Spreadsheet Verification
-    print("\n[GMAIL 2] Checking Spreadsheet content...")
-    sheet_id = "13RSOy0sSUZknUn9TmUE2oa-j-Nk78v7dd3FWlewGjEk"
-    values = run_gws(["sheets", "spreadsheets", "values", "get"], params={"spreadsheetId": sheet_id, "range": "Sheet1!A1:B10"})
-    if values and isinstance(values, dict) and "values" in values:
-        print(f"Sheet Data: {values['values']}")
+    # DOCS B.2: Verification
+    print("\n[DOCS B.2] Checking 'Travel Plan 2026' Doc...")
+    travel_doc_id = "19jYcHZ2el_N8eVD_XXzatDjhSDkusrclQTZMxAKNAJg"
+    doc = run_gws(["docs", "documents", "get"], params={"documentId": travel_doc_id})
+    if doc and isinstance(doc, dict):
+        print(f"Doc Title: {doc.get('title')}")
+        # Check snippet or body
+        body = "".join([el.get('paragraph', {}).get('elements', [{}])[0].get('textRun', {}).get('content', '') 
+                       for el in doc.get('body', {}).get('content', []) if 'paragraph' in el])
+        print(f"Content Length: {len(body)}")
+        print(f"Snippet: {body[:100]}...")
     else:
-        print("Sheet Data NOT found or empty.")
+        print("Doc NOT found!")
 
-    # GMAIL 3: Doc check
+    # GMAIL B.3: Verification
+    print("\n[GMAIL B.3] Checking Reply Email...")
+    reply_id = "19d8cdf525743eb0"
+    reply = run_gws(["gmail", "users", "messages", "get"], params={"userId": "me", "id": reply_id})
+    if reply and isinstance(reply, dict):
+        print(f"Reply Subject: {next((h['value'] for h in reply.get('payload', {}).get('headers', []) if h['name'] == 'Subject'), 'N/A')}")
+        print(f"Reply Snippet: {reply.get('snippet')}...")
+    else:
+        print("Reply Email NOT found!")
+
     print("\n[GMAIL 3] Checking 'Urgent Search Result' Doc...")
     urgent_doc_id = "10ttUK5dxibKIxcUA2UJP0rsvsA5K7TixFm3BxZNUtjE"
     doc = run_gws(["docs", "documents", "get"], params={"documentId": urgent_doc_id})

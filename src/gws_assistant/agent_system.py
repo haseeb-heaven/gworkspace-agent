@@ -46,7 +46,7 @@ class WorkspaceAgentSystem:
         if past:
             self.logger.info("Memory: found %d similar past episodes", len(past))
             memory_hint = "\n".join(
-                f"- Past: '{ep['goal'][:80]}' → {ep['outcome']}"
+                f"- Past: '{ep['goal'][:80]}' -> {ep['outcome']}"
                 for ep in past[:3]
             )
 
@@ -151,7 +151,7 @@ class WorkspaceAgentSystem:
             return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search → docs.create_document + sheets.create_spreadsheet + sheets.append_values",
+                summary=f"Planned {len(tasks)} tasks: web search -> docs.create_document + sheets.create_spreadsheet + sheets.append_values",
                 confidence=0.7,
                 no_service_detected=False,
                 source="heuristic",
@@ -162,7 +162,7 @@ class WorkspaceAgentSystem:
             return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search → sheets.create_spreadsheet + sheets.append_values",
+                summary=f"Planned {len(tasks)} tasks: web search -> sheets.create_spreadsheet + sheets.append_values",
                 confidence=0.65,
                 no_service_detected=False,
                 source="heuristic",
@@ -173,7 +173,7 @@ class WorkspaceAgentSystem:
             return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search → docs.create_document",
+                summary=f"Planned {len(tasks)} tasks: web search -> docs.create_document",
                 confidence=0.65,
                 no_service_detected=False,
                 source="heuristic",

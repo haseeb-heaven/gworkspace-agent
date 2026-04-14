@@ -63,7 +63,7 @@ def validate_planned_task(task: "PlannedTask") -> None:
     """Validate that a PlannedTask is structurally sound before execution.
 
     Raises ValidationError with a clear message if anything is wrong.
-    This is the planner→executor contract enforcement point.
+    This is the planner->executor contract enforcement point.
     """
     if not task.id or not str(task.id).strip():
         raise ValidationError("PlannedTask.id is empty or missing.")
@@ -82,7 +82,7 @@ def validate_planned_task(task: "PlannedTask") -> None:
         )
     # Detect obviously unresolved placeholder values that should have been
     # caught by _resolve_task but slipped through.
-    _STUB_PATTERNS = ("{{task", "{task-", "$gmail_message_ids", "PLACEHOLDER_")
+    _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_")
     for key, val in task.parameters.items():
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:

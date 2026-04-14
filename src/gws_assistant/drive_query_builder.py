@@ -150,12 +150,12 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
         # _DRIVE_OPS_RE check fires.  Without this, 'name' in the remainder
         # trips _DRIVE_OPS_RE and the value gets double-wrapped:
         #   name='CcaaS - AI Product'
-        #   → _DRIVE_OPS_RE matches 'name'
-        #   → _is_valid_clause() fails
-        #   → wraps to: name contains 'name=\'CcaaS - AI Product\''  ← CORRUPT
+        #   -> _DRIVE_OPS_RE matches 'name'
+        #   -> _is_valid_clause() fails
+        #   -> wraps to: name contains 'name=\'CcaaS - AI Product\''  ← CORRUPT
         # With this fix the value is extracted cleanly first:
-        #   name='CcaaS - AI Product' → remainder = 'CcaaS - AI Product'
-        #   → _DRIVE_OPS_RE: no match → name contains 'CcaaS - AI Product' ✓
+        #   name='CcaaS - AI Product' -> remainder = 'CcaaS - AI Product'
+        #   -> _DRIVE_OPS_RE: no match -> name contains 'CcaaS - AI Product' ✓
         name_eq = _NAME_EQ_RE.match(remainder)
         if name_eq:
             remainder = name_eq.group(1).strip().strip("'\"")

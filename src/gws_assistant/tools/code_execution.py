@@ -105,11 +105,19 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
     safe_g.update(_SAFE_MODULES)
+    
+    # AI Robustness: Pre-inject common lowercase aliases often emitted by LLMs
+    safe_g["true"]  = True
+    safe_g["false"] = False
+    safe_g["null"]  = None
+    
     return safe_g
 
 
-def _restricted_import(*_: Any, **__: Any) -> None:
-    raise ImportError("Imports are disabled inside the code sandbox.")
+def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name in _SAFE_MODULES:
+        return _SAFE_MODULES[name]
+    raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
 
 
 def _validate_submitted_code(code: str) -> str | None:
@@ -149,10 +157,14 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
             exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
 
         # Capture all variables from sandbox_globals except builtins/internals
+        # ONLY capture JSON-serializable types to prevent failures later in the pipeline
+        def is_json_serializable(v):
+            return isinstance(v, (str, int, float, bool, list, dict, type(None)))
+
         results_vars = {
             k: v for k, v in sandbox_globals.items()
             if not k.startswith("_") and k != "__builtins__" and not callable(v)
-            and k not in _SAFE_MODULES
+            and k not in _SAFE_MODULES and is_json_serializable(v)
         }
         if "result" in sandbox_globals:
             exec_result.return_value = sandbox_globals["result"]

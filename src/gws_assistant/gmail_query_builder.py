@@ -55,10 +55,10 @@ def sanitize_gmail_query(raw: str) -> str:
     """Normalise an LLM-generated Gmail search query.
 
     Handles:
-      from=user@example.com           → from:user@example.com
-      subject='foo bar'               → subject:foo bar
-      "some topic"                    → subject:\"some topic\" OR body:\"some topic\"
-      foo bar (bare text, no op)      → foo bar  (Gmail accepts bare text natively)
+      from=user@example.com           -> from:user@example.com
+      subject='foo bar'               -> subject:foo bar
+      "some topic"                    -> subject:\"some topic\" OR body:\"some topic\"
+      foo bar (bare text, no op)      -> foo bar  (Gmail accepts bare text natively)
 
     Gmail's own query parser is lenient about bare text, so we only fix
     structural issues (= vs :, stray quote wrappers) and leave valid
@@ -68,7 +68,7 @@ def sanitize_gmail_query(raw: str) -> str:
     if not q:
         return q
 
-    # Step 1 — fix operator=value → operator:value
+    # Step 1 — fix operator=value -> operator:value
     def _fix_eq(m: re.Match) -> str:
         op = m.group(1).lower()
         val = _escape_gmail_value(m.group(2))
@@ -76,7 +76,7 @@ def sanitize_gmail_query(raw: str) -> str:
 
     q = _EQ_OP_RE.sub(_fix_eq, q)
 
-    # Step 2 — strip redundant quotes from operator:"value" → operator:value
+    # Step 2 — strip redundant quotes from operator:"value" -> operator:value
     # (Gmail handles unquoted values fine; quoted values with spaces are OK too)
     def _fix_quoted_op(m: re.Match) -> str:
         op = m.group(1)          # e.g. "subject:"

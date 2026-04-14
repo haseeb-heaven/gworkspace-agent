@@ -35,15 +35,35 @@ class PlanExecutor:
         """Resolve all placeholders in a task's parameters using context.
         Returns the task with resolved parameters.
         """
-        # Inject default placeholders for specific actions if missing
+        # 1. Action-specific defaults
         if task.service == "gmail" and task.action == "get_message":
             if "message_id" not in task.parameters:
                 task.parameters["message_id"] = "{{message_id}}"
 
+        # 2. Variable resolution
         task.parameters = self._resolve_placeholders(task.parameters, context)
+
+        # 3. Last-resort ID fallbacks for common missing parameters
+        # If a required ID is still missing or remains a placeholder after resolution,
+        # try to pull the most recent matching ID from the global context.
+        if task.service == "sheets":
+            s_id = str(task.parameters.get("spreadsheet_id") or "")
+            if (not s_id or s_id.startswith("{{")) and context.get("last_spreadsheet_id"):
+                task.parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
+        
+        if task.service == "docs":
+            d_id = str(task.parameters.get("document_id") or "")
+            if (not d_id or d_id.startswith("{{")) and context.get("last_document_id"):
+                task.parameters["document_id"] = context["last_document_id"]
+
+        if task.service == "drive":
+            f_id = str(task.parameters.get("file_id") or "")
+            if (not f_id or f_id.startswith("{{")) and context.get("last_document_id"):
+                 task.parameters["file_id"] = context["last_document_id"]
+
         return task
 
-    def _resolve_placeholders(self, val: Any, context: dict) -> Any:
+    def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context."""
         if isinstance(val, str):
             logger.info(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
@@ -58,6 +78,10 @@ class PlanExecutor:
                 "$drive_summary_values":    "drive_summary_values",
                 "$web_search_markdown":     "web_search_markdown",
                 "$web_search_table_values": "web_search_table_values",
+                "$web_search_rows":         "web_search_rows",
+                "$web_search_summary":      "web_search_summary",
+                "$calendar_events":         "calendar_events",
+                "$calendar_items":          "calendar_events",
                 "$sheet_email_body":        "sheet_email_body",
                 "$last_code_stdout":       "last_code_stdout",
             }
@@ -71,8 +95,6 @@ class PlanExecutor:
             path = None
             if stripped.startswith("{{") and stripped.endswith("}}"):
                 path = stripped[2:-2].strip()
-            elif stripped.startswith("{") and stripped.endswith("}"):
-                path = stripped[1:-1].strip()
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
             
@@ -87,7 +109,11 @@ class PlanExecutor:
             # 3. Partial string replacement
             for placeholder, ctx_key in legacy_map.items():
                 if placeholder in val and ctx_key in context:
-                    val = val.replace(placeholder, str(context[ctx_key]))
+                    res = context[ctx_key]
+                    if use_repr_for_complex and isinstance(res, (dict, list)):
+                        val = val.replace(placeholder, repr(res))
+                    else:
+                        val = val.replace(placeholder, str(res))
 
             results_map = context.get("task_results", {})
             def replace_match(match):
@@ -102,19 +128,22 @@ class PlanExecutor:
                     res = self._get_value_by_path(results_map, p)
                 
                 if res is not None:
-                    if isinstance(res, (dict, list)):
+                    if use_repr_for_complex and isinstance(res, (dict, list)):
+                        return repr(res)
+                    elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
                 return match.group(0)
 
-            # Match {{...}}, {...}, or $task-N[.field]
-            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-[\w\-\.\[\]]+)', replace_match, val)
+            # 4. Partial string replacement with regex (Match {{...}}, {task-...}, or $task-N[.field])
+            # Single braces are ONLY resolved if they start with 'task-' to avoid f-string collisions.
+            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([tT]ask-[\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
             return val
 
         elif isinstance(val, list):
-            return [self._resolve_placeholders(item, context) for item in val]
+            return [self._resolve_placeholders(item, context, use_repr_for_complex) for item in val]
         elif isinstance(val, dict):
-            return {k: self._resolve_placeholders(v, context) for k, v in val.items()}
+            return {k: self._resolve_placeholders(v, context, use_repr_for_complex) for k, v in val.items()}
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
@@ -163,6 +192,8 @@ class PlanExecutor:
                         curr = f"https://docs.google.com/spreadsheets/d/{curr['spreadsheetId']}/edit"
                     elif part == "webViewLink" and "id" in curr and "webViewLink" not in curr:
                         curr = f"https://drive.google.com/file/d/{curr['id']}/view"
+                    elif part == "id" and "id" not in curr:
+                        curr = curr.get("documentId") or curr.get("spreadsheetId") or curr.get("messageId") or curr.get("formId") or curr.get("presentationId")
                     else:
                         curr = curr.get(part)
                 else:
@@ -176,44 +207,76 @@ class PlanExecutor:
                 
         return curr
 
-    def _update_context_from_result(self, data: dict, context: dict) -> None:
+    def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
         """Extract known artifact keys from a task result and store in context."""
+        if not isinstance(data, dict):
+            return
+
+        # 1. ID Aliasing (Ensure generic 'id' works for all services)
+        for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
+            if id_field in data:
+                data["id"] = data[id_field]
+                context["id"] = data[id_field]
+                break
+
         if "stdout" in data:
             context["last_code_stdout"] = data["stdout"]
         if "parsed_value" in data:
             context["last_code_result"] = data["parsed_value"]
 
+        # 2. Service Specific Extractions
         if "spreadsheetId" in data:
             context["last_spreadsheet_id"] = data["spreadsheetId"]
-        if "spreadsheetUrl" in data:
+            if "spreadsheetUrl" not in data:
+                data["spreadsheetUrl"] = f"https://docs.google.com/spreadsheets/d/{data['spreadsheetId']}/edit"
             context["last_spreadsheet_url"] = data["spreadsheetUrl"]
-        if "properties" in data and "title" in data["properties"]:
-            context["last_spreadsheet_title"] = data["properties"]["title"]
+
         if "documentId" in data:
             context["last_document_id"] = data["documentId"]
-            context["last_document_url"] = (
-                f"https://docs.google.com/document/d/{data['documentId']}/edit"
-            )
+            if "documentUrl" not in data:
+                data["documentUrl"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
+            context["last_document_url"] = data["documentUrl"]
+
+        # Gmail Body Extraction (Recursive base64 decode)
+        has_gmail_payload = "payload" in data and ("get_message" in str(task.action if task else ""))
+        if has_gmail_payload or (task and task.service == "gmail" and task.action == "get_message"):
+            payload = data.get("payload", {})
+            import base64
+            def find_body(p):
+                b = p.get("body", {})
+                if b.get("data"):
+                    try: return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
+                    except: return ""
+                if "parts" in p:
+                    for part in p["parts"]:
+                        res = find_body(part)
+                        if res: return res
+                return ""
+            body = find_body(payload)
+            if body:
+                data["body"] = body
+                context["gmail_message_body_text"] = body
+
         if "messages" in data:
             msgs = data["messages"]
-            if msgs and isinstance(msgs, list) and msgs:
+            if msgs and isinstance(msgs, list):
                 m_id = msgs[0].get("id", "")
                 context["message_id"] = m_id
                 context["gmail_message_body"] = m_id
-                context["gmail_summary_values"] = [
-                    [m.get("id", ""), m.get("threadId", "")] for m in msgs
-                ]
+                context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
+        
         if "files" in data:
             files = data["files"]
             if files and isinstance(files, list):
-                context["drive_summary_values"] = [
-                    [f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")]
-                    for f in files
-                ]
+                context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+
         if "values" in data and "range" in data:
             rows = data["values"]
             lines = [" | ".join(str(c) for c in row) for row in rows]
             context["sheet_email_body"] = "\n".join(lines)
+        
+        if "items" in data and isinstance(data["items"], list):
+            context["calendar_events"] = data["items"]
 
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
@@ -344,6 +407,29 @@ class PlanExecutor:
                         
                         if isinstance(data, dict) and data.get("id") == "m1":
                              context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
+                        
+                        # Extract Gmail Body if present
+                        if task.service == "gmail" and task.action == "get_message":
+                            payload = data.get("payload", {})
+                            body_text = ""
+                            import base64
+                            
+                            def find_body(p):
+                                b = p.get("body", {})
+                                if b.get("data"):
+                                    return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
+                                if "parts" in p:
+                                    for part in p["parts"]:
+                                        res = find_body(part)
+                                        if res: return res
+                                return ""
+                            
+                            body_text = find_body(payload)
+                            if body_text:
+                                data["body"] = body_text
+                                # Also update context key if needed for legacy
+                                context["gmail_message_body_text"] = body_text
+
             except Exception as e:
                 logger.warning(f"Failed to update context from result: {e}")
 
@@ -358,7 +444,10 @@ class PlanExecutor:
         try:
             from .tools.code_execution import execute_generated_code
             from .models import ExecutionResult
-            code = task.parameters.get("code", "")
+            
+            # Use code-safe resolution (use repr for dicts/lists)
+            code = self._resolve_placeholders(task.parameters.get("code", ""), context, use_repr_for_complex=True)
+            
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
             
@@ -404,6 +493,14 @@ class PlanExecutor:
         if result.success and result.stdout:
             try:
                 data = json.loads(result.stdout)
+                
+                # Special Case: docs.create_document with initial content
+                if task.service == "docs" and task.action == "create_document":
+                    content = task.parameters.get("content")
+                    if content and "documentId" in data:
+                        update_args = self.planner.build_command("docs", "batch_update", {"document_id": data["documentId"], "text": content})
+                        self.runner.run(update_args)
+
                 if task.service == "drive" and task.action == "export_file":
                     mime_type = task.parameters.get("mime_type", "")
                     saved_file = data.get("saved_file")
