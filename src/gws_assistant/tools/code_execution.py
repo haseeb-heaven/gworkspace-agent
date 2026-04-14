@@ -130,12 +130,15 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         sanitized = _sanitize_llm_code(code)
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
+        
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)  # noqa: S102
 
+        # Capture both _print_ (RestrictedPython internal) and direct stdout
         if "_print" in sandbox_globals:
             exec_result.stdout = sandbox_globals["_print"]()
+        
         buffer_val = output_buffer.getvalue()
         if buffer_val:
             exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()

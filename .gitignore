@@ -31,6 +31,17 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Framework and test folders (Already tracked, but ensuring they stay unignored)
+!framework/
+!tests/
+
+# .agent framework (Unignored to allow tracking)
+.agent/
+
+# Re-ignore skills and other artifacts
+skills/
+artifacts/
+
 *.exe
 *.txt
 *.pdf
