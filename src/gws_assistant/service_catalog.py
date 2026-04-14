@@ -354,16 +354,26 @@ SERVICES: dict[str, ServiceSpec] = {
     "admin": ServiceSpec(
         key="admin",
         label="Google Admin SDK",
-        aliases=("admin", "directory", "users", "sdk"),
-        description="Log and audit activity metadata via the Google Admin SDK.",
+        aliases=("admin", "directory", "users", "sdk", "reports", "admin-reports"),
+        description="Audit logs and activity reports via the Google Admin SDK (Reports API). Use for tracking user logins, drive events, or admin changes.",
         actions={
             "log_activity": ActionSpec(
                 key="log_activity",
                 label="Log activity",
-                description="Store an audit log entry. Returns: {success, logged_at}.",
+                description="Synthetic internal tool to record an audit log entry for the agent's actions. Returns: {success, logged_at}.",
                 keywords=("log", "audit", "track", "metadata", "store"),
                 parameters=(
                     ParameterSpec("data", "Metadata or activity to log", "User performed X"),
+                ),
+            ),
+            "list_activities": ActionSpec(
+                key="list_activities",
+                label="List activities",
+                description="Retrieve audit logs for a specific application (e.g. 'drive', 'admin'). Returns: {items: [...]}.",
+                keywords=("list", "find", "search", "logs", "audit", "events"),
+                parameters=(
+                    ParameterSpec("application_name", "Application to audit (admin, drive, etc.)", "drive"),
+                    ParameterSpec("max_results", "How many logs to show?", "10", required=False),
                 ),
             ),
         },
@@ -371,17 +381,25 @@ SERVICES: dict[str, ServiceSpec] = {
     "forms": ServiceSpec(
         key="forms",
         label="Google Forms",
-        aliases=("forms", "form", "survey", "sync"),
-        description="Sync data into Google Forms responses.",
+        aliases=("forms", "form", "survey"),
+        description="Create and manage Google Forms.",
         actions={
-            "sync_data": ActionSpec(
-                key="sync_data",
-                label="Sync data to form",
-                description="Push data into a Google Form as synthetic responses. Returns: {success, form_id}.",
-                keywords=("sync", "save", "connect", "form"),
+            "create_form": ActionSpec(
+                key="create_form",
+                label="Create form",
+                description="Create a new Google Form. Returns: {formId, info: {title}}.",
+                keywords=("create", "new", "form", "survey"),
                 parameters=(
-                    ParameterSpec("form_id", "Google Form ID", "1AbCdEFg123", required=False),
-                    ParameterSpec("data", "Data to sync", "Result of tasks"),
+                    ParameterSpec("title", "What should the form title be?", "Untitled Form"),
+                ),
+            ),
+            "get_form": ActionSpec(
+                key="get_form",
+                label="Get form",
+                description="Fetch metadata for a Google Form by ID. Returns: {formId, info, items}.",
+                keywords=("get", "open", "read", "form"),
+                parameters=(
+                    ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),
                 ),
             ),
         },

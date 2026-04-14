@@ -226,6 +226,21 @@ class PlanExecutor:
             from .models import ExecutionResult
             return ExecutionResult(success=False, command=["web_search"], error=str(exc))
 
+    def _handle_admin_task(self, task: Any, context: dict) -> Any:
+        """Handle synthetic admin tasks like log_activity."""
+        from .models import ExecutionResult
+        action = task.action
+        if action == "log_activity":
+            data = task.parameters.get("data", "")
+            logger.info("AUDIT LOG: %s", data)
+            return ExecutionResult(
+                success=True,
+                command=["admin", "log_activity", "internal"],
+                stdout=json.dumps({"success": True, "logged_at": datetime.now().isoformat()}),
+                output={"success": True}
+            )
+        return ExecutionResult(success=False, command=["admin"], error=f"Unsupported synthetic admin action: {action}")
+
     def _get_artifact_links_body(self, body: str, context: dict) -> str:
         """Inject doc/sheet URLs from context into email body."""
         doc_url   = context.get("last_document_url", "")
@@ -347,14 +362,18 @@ class PlanExecutor:
             return ExecutionResult(success=False, command=["code_execute"], error=str(exc))
 
     def execute_single_task(self, task: Any, context: Any) -> Any:
-        try:
-            args = self.planner.build_command(task.service, task.action, task.parameters)
-        except Exception:
-            args = [task.service, task.action, "internal"]
+        # Service-specific overrides or synthetic handling
+        if task.service == "admin" and task.action == "log_activity":
+             return self._handle_admin_task(task, context)
+
+        args = self.planner.build_command(task.service, task.action, task.parameters)
 
         if task.service == "search" and task.action == "web_search":
             self.runner.run(args)
             return self._handle_web_search_task(task, context)
+        
+        if task.service == "admin" and task.action == "log_activity":
+            return self._handle_admin_task(task, context)
         
         if task.service in ("code", "computation"):
             self.runner.run(args)

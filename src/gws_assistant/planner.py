@@ -23,7 +23,7 @@ from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
 
 
-_UNSUPPORTED_STUB_SERVICES = frozenset({"admin", "analytics", "bigquery"})
+_UNSUPPORTED_STUB_SERVICES = frozenset({"analytics", "bigquery"})
 
 # Matches a raw Google Drive file ID (alphanumeric + hyphens/underscores, 25-60 chars).
 # Drive file IDs look like: 1-A9SUqwDnbUE51VZ7FbAh8i-wUGz8Cqw9jCIUw0nMjo
@@ -167,6 +167,8 @@ class CommandPlanner:
         if service_key == "chat":     return self._build_chat_command(action_key, params)
         if service_key == "meet":     return self._build_meet_command(action_key, params)
         if service_key == "search":   return self._build_search_command(action_key, params)
+        if service_key == "admin":    return self._build_admin_command(action_key, params)
+        if service_key == "forms":    return self._build_forms_command(action_key, params)
         if service_key in ("code", "computation"): return [service_key, action_key, "internal"]
         raise ValidationError(f"No command builder for service: {service_key}")
 
@@ -561,6 +563,34 @@ class CommandPlanner:
         if action == "create_meeting":
             return ["meet", "spaces", "create"]
         raise ValidationError(f"Unsupported meet action: {action}")
+
+    # ------------------------------------------------------------------
+    # Admin & Forms
+    # ------------------------------------------------------------------
+
+    def _build_admin_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "log_activity":
+            # Synthetic tool handled in execution.py
+            return ["admin", "log_activity", "internal"]
+        
+        if action == "list_activities":
+            app_name = str(params.get("application_name") or "drive").strip()
+            max_res  = self._safe_positive_int(params.get("max_results"), default=10)
+            return ["admin-reports", "activities", "list", 
+                    "--params", json.dumps({"userKey": "all", "applicationName": app_name, "maxResults": max_res})]
+        
+        raise ValidationError(f"Unsupported admin action: {action}")
+
+    def _build_forms_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "create_form":
+            title = str(params.get("title") or "Untitled Form").strip()
+            return ["forms", "forms", "create", "--json", json.dumps({"info": {"title": title}}, ensure_ascii=True)]
+        
+        if action == "get_form":
+            form_id = self._required_text(params, "form_id")
+            return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
+        
+        raise ValidationError(f"Unsupported forms action: {action}")
 
     # ------------------------------------------------------------------
     # Utilities
