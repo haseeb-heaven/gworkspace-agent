@@ -214,22 +214,19 @@ class CommandPlanner:
             requested_mime = str(params.get("mime_type") or "").strip()
             source_mime    = str(params.get("source_mime") or "").strip()
 
-            # 🔥 PRIMARY: use source_mime if available
+            # 🔥 PRIMARY: use source_mime if available to determine best export format
             if source_mime == "application/vnd.google-apps.document":
-                mime_type = "application/pdf"
+                mime_type = requested_mime or "application/pdf"
 
             elif source_mime == "application/vnd.google-apps.spreadsheet":
-                mime_type = "text/csv"
+                mime_type = requested_mime or "text/csv"
 
             elif source_mime == "application/vnd.google-apps.presentation":
                 mime_type = "application/pdf"
 
             else:
-                # 🔥 HARD FALLBACK: NEVER allow invalid conversions
-                if requested_mime in ("text/plain", "text/csv"):
-                    mime_type = "application/pdf"
-                else:
-                    mime_type = requested_mime or "application/pdf"
+                # If no source_mime, respect requested_mime or default to PDF
+                mime_type = requested_mime or "application/pdf"
 
             return [
                 "drive",
@@ -256,7 +253,7 @@ class CommandPlanner:
         if action == "create_spreadsheet":
             title = self._required_text(params, "title")
             return ["sheets", "spreadsheets", "create", "--json",
-                    json.dumps({"properties": {"title": title}, "sheets": [{"properties": {"title": title}}]}, ensure_ascii=True)]
+                    json.dumps({"properties": {"title": title}}, ensure_ascii=True)]
 
         if action == "get_spreadsheet":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
@@ -264,13 +261,13 @@ class CommandPlanner:
 
         if action == "get_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = self._format_range(str(params.get("range") or "Sheet1!A1:Z500"))
+            range_name = self._format_range(str(params.get("range") or "A1:Z500"))
             return ["sheets", "spreadsheets", "values", "get", "--params",
                     json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name})]
 
         if action == "append_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = self._format_range(str(params.get("range") or "Sheet1!A1"))
+            range_name = self._format_range(str(params.get("range") or "A1"))
             values = params.get("values")
             if isinstance(values, str):
                 values = [[values]]
