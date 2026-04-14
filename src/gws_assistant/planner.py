@@ -243,6 +243,22 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
 
+        if action == "move_file":
+            file_id = self._required_text(params, "file_id")
+            folder_id = self._required_text(params, "folder_id")
+            # In Drive v3, move is accomplished via update with addParents/removeParents
+            return [
+                "drive",
+                "files",
+                "update",
+                "--params",
+                json.dumps({
+                    "fileId": file_id,
+                    "addParents": folder_id,
+                    "removeParents": "root"  # Optional: assuming it was in root or we don't know the old parent
+                })
+            ]
+
         raise ValidationError(f"Unsupported drive action: {action}")
 
     # ------------------------------------------------------------------
@@ -253,7 +269,10 @@ class CommandPlanner:
         if action == "create_spreadsheet":
             title = self._required_text(params, "title")
             return ["sheets", "spreadsheets", "create", "--json",
-                    json.dumps({"properties": {"title": title}}, ensure_ascii=True)]
+                    json.dumps({
+                        "properties": {"title": title},
+                        "sheets": [{"properties": {"title": title}}]
+                    }, ensure_ascii=True)]
 
         if action == "get_spreadsheet":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
@@ -301,7 +320,8 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "list", "--params", json.dumps(request_params)]
 
         if action == "get_message":
-            message_id = self._required_text(params, "message_id")
+            # Allow message_id to be missing or a placeholder during planning
+            message_id = params.get("message_id") or "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params",
                     json.dumps({"userId": "me", "id": message_id})]
 

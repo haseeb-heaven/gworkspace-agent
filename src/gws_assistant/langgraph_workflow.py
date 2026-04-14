@@ -155,6 +155,9 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             results_map = context.setdefault("task_results", {})
             payload = latest["output"].get("parsed_payload") or latest["output"]
             
+            # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
+            executor._update_context_from_result(payload, context)
+
             # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
             t_id = str(task.id)
             results_map[t_id] = payload

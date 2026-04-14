@@ -34,6 +34,11 @@ class PlanExecutor:
         """Resolve all placeholders in a task's parameters using context.
         Returns the task with resolved parameters.
         """
+        # Inject default placeholders for specific actions if missing
+        if task.service == "gmail" and task.action == "get_message":
+            if "message_id" not in task.parameters:
+                task.parameters["message_id"] = "{{message_id}}"
+
         task.parameters = self._resolve_placeholders(task.parameters, context)
         return task
 
@@ -52,6 +57,7 @@ class PlanExecutor:
                 "$web_search_markdown":     "web_search_markdown",
                 "$web_search_table_values": "web_search_table_values",
                 "$sheet_email_body":        "sheet_email_body",
+                "$last_code_stdout":       "last_code_stdout",
             }
             
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
@@ -156,7 +162,9 @@ class PlanExecutor:
         if "messages" in data:
             msgs = data["messages"]
             if msgs and isinstance(msgs, list) and msgs:
-                context["gmail_message_body"] = msgs[0].get("id", "")
+                m_id = msgs[0].get("id", "")
+                context["message_id"] = m_id
+                context["gmail_message_body"] = m_id
                 context["gmail_summary_values"] = [
                     [m.get("id", ""), m.get("threadId", "")] for m in msgs
                 ]
@@ -301,6 +309,10 @@ class PlanExecutor:
             results_map = context.setdefault("task_results", {})
             results_map["code"] = result.get("output", {})
             results_map["computation"] = result.get("output", {})
+            
+            # Extract stdout if present
+            stdout = result.get("output", {}).get("stdout", "")
+            context["last_code_stdout"] = stdout
             
             return ExecutionResult(
                 success=result.get("success", False),

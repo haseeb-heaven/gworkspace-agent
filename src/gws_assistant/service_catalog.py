@@ -59,6 +59,16 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
                 ),
             ),
+            "move_file": ActionSpec(
+                key="move_file",
+                label="Move file",
+                description="Move a Drive file to a new folder. Requires file_id and folder_id.",
+                keywords=("move", "relocate", "transfer", "organize"),
+                parameters=(
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
+                    ParameterSpec("folder_id", "Enter the destination folder ID", "1XyZ..."),
+                ),
+            ),
         },
     ),
     "sheets": ServiceSpec(
@@ -130,7 +140,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Fetch the full content of a Gmail message by id. Returns: {id, subject, from, to, date, snippet, body}. The executor auto-resolves message_id from the preceding list_messages result — you may omit it.",
                 keywords=("get", "open", "message", "email"),
                 parameters=(
-                    ParameterSpec("message_id", "Enter message ID (or omit — auto-resolved from list_messages)", "18c5a4fbe123"),
+                    ParameterSpec("message_id", "Enter message ID (or omit — auto-resolved from list_messages)", "18c5a4fbe123", required=False),
                 ),
             ),
             "send_message": ActionSpec(
