@@ -28,46 +28,33 @@ def _args_too_long(args: list[str]) -> bool:
 def _rewrite_large_args_via_tempfile(
     args: list[str],
 ) -> tuple[list[str], list[str], str | None]:
-    """Rewrite oversized --json / --params values to a temporary file.
+    """Rewrite oversized --json / --params values.
 
     Returns:
         (new_args, temp_files_to_cleanup, stdin_content | None)
 
     Strategy
     --------
-    For each ``--json VALUE`` or ``--params VALUE`` pair where VALUE is too
-    large we write VALUE to a ``*.tmp`` file and replace the pair with
-    ``--json-file PATH`` / ``--params-file PATH``.
-
-    If the gws binary does not support ``*-file`` flags we fall back to
-    passing the *first* oversized value through stdin (``--json -`` sentinel)
-    and drop it from the arg list so subprocess receives a short command line.
-    The caller must then pass ``input=stdin_content`` to subprocess.run.
+    If a --json or --params value is too large for Windows CLI limits,
+    we pass it via stdin using the '-' sentinel.
+    Note: 'gws' does not support --json-file, so we MUST use stdin.
+    Currently, we only support ONE oversized value via stdin.
     """
     new_args: list[str] = []
-    tmp_files: list[str] = []
     stdin_content: str | None = None
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg in ("--json", "--params") and i + 1 < len(args):
+        if arg in ("--json", "--params") and i + 1 < len(args) and stdin_content is None:
             value = args[i + 1]
             if len(value.encode("utf-8", errors="replace")) > _WIN_ARG_SAFE_BYTES:
-                # Write to a temp file; gws may support --json-file / --params-file
-                fd, tmp_path = tempfile.mkstemp(suffix=".tmp", prefix="gws_arg_")
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                        fh.write(value)
-                except Exception:
-                    os.close(fd)
-                tmp_files.append(tmp_path)
-                file_flag = f"{arg}-file"
-                new_args.extend([file_flag, tmp_path])
+                stdin_content = value
+                new_args.extend([arg, "-"])
                 i += 2
                 continue
         new_args.append(arg)
         i += 1
-    return new_args, tmp_files, stdin_content
+    return new_args, [], stdin_content
 
 
 class GWSRunner:

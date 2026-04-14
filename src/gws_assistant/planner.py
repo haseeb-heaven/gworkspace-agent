@@ -167,6 +167,7 @@ class CommandPlanner:
         if service_key == "chat":     return self._build_chat_command(action_key, params)
         if service_key == "meet":     return self._build_meet_command(action_key, params)
         if service_key == "search":   return self._build_search_command(action_key, params)
+        if service_key in ("code", "computation"): return [service_key, action_key, "internal"]
         raise ValidationError(f"No command builder for service: {service_key}")
 
     # ------------------------------------------------------------------
