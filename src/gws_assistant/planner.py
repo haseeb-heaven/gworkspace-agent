@@ -572,7 +572,7 @@ class CommandPlanner:
 
     def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_conferences":
-            return ["meet", "spaces", "list"]
+            return ["meet", "conferenceRecords", "list"]
         if action == "get_conference":
             name = self._required_text(params, "name")
             return ["meet", "spaces", "get", "--params", json.dumps({"name": name})]
