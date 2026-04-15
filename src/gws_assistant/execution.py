@@ -49,6 +49,31 @@ class PlanExecutor:
             body = task.parameters.get("body", "")
             task.parameters["body"] = self._get_artifact_links_body(body, context)
 
+        if task.service == "drive" and task.action == "export_file":
+            if not task.parameters.get("source_mime"):
+                # Try to find the mimeType from the file_id in context
+                f_id = task.parameters.get("file_id")
+                if f_id:
+                    # Check global context
+                    if context.get("last_spreadsheet_id") == f_id:
+                        task.parameters["source_mime"] = "application/vnd.google-apps.spreadsheet"
+                    elif context.get("last_document_id") == f_id:
+                        task.parameters["source_mime"] = "application/vnd.google-apps.document"
+                    elif context.get("last_file_mime"):
+                        # If the most recently found file ID matches, use its mime
+                        results_map = context.get("task_results", {})
+                        # Search results_map for this file_id to find its mime
+                        for t_res in results_map.values():
+                            if isinstance(t_res, dict) and "files" in t_res:
+                                for f in t_res["files"]:
+                                    if f.get("id") == f_id:
+                                        task.parameters["source_mime"] = f.get("mimeType")
+                                        break
+                
+                # Fallback to last_file_mime if still missing
+                if not task.parameters.get("source_mime") and context.get("last_file_mime"):
+                    task.parameters["source_mime"] = context["last_file_mime"]
+
         # 3. Variable resolution
         task.parameters = self._resolve_placeholders(task.parameters, context)
         
@@ -177,54 +202,88 @@ class PlanExecutor:
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
-        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id' against task_results."""
+        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id' against task_results.
+        Handles keys with dots by checking prefixes.
+        """
         self.logger.info(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
         
-        # 1. Try exact match first (handles keys with dots like 'drive.list_files')
+        # 1. Try exact match first
         if path in data:
             return data[path]
 
-        # 2. Handle indexed root match (e.g. 'drive.list_files[0]')
-        index_match = re.search(r'\[(\d+)\]$', path)
-        if index_match:
-            index = int(index_match.group(1))
-            name = path[:index_match.start()]
-            if name in data:
-                curr = data[name]
-                # Auto-unwrap common result containers
-                if isinstance(curr, dict) and not isinstance(curr, list):
-                    for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
-                        if list_key in curr and isinstance(curr[list_key], list):
-                            curr = curr[list_key]
-                            break
-                if isinstance(curr, list) and 0 <= index < len(curr):
-                    return curr[index]
-
-        # 3. Fallback to recursive splitting
+        # 2. Try prefix matching for keys with dots
+        # e.g. path="drive.list_files[0].id"
+        # Prefixes: "drive", "drive.list_files", "drive.list_files[0]", "drive.list_files[0].id"
         parts = path.split('.')
-        curr: Any = data
+        curr: Any = None
+        remaining_parts: list[str] = []
+
+        for i in range(len(parts), 0, -1):
+            prefix = '.'.join(parts[:i])
+            # Handle indexed prefix like "drive.list_files[0]"
+            index_match = re.search(r'\[(\d+)\]$', prefix)
+            clean_prefix = prefix
+            index = -1
+            if index_match:
+                index = int(index_match.group(1))
+                clean_prefix = prefix[:index_match.start()]
+            
+            if clean_prefix in data:
+                curr = data[clean_prefix]
+                if index != -1:
+                    # Auto-unwrap if needed
+                    if isinstance(curr, dict) and not isinstance(curr, list):
+                        for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
+                            if list_key in curr and isinstance(curr[list_key], list):
+                                curr = curr[list_key]
+                                break
+                    if isinstance(curr, list) and 0 <= index < len(curr):
+                        curr = curr[index]
+                    else:
+                        curr = None # Index fail
+                
+                if curr is not None:
+                    remaining_parts = parts[i:]
+                    break
         
-        for i, part in enumerate(parts):
+        if curr is None:
+            # Fallback to standard root-key search if no prefix matched
+            first_part = parts[0]
+            index_match = re.search(r'\[(\d+)\]$', first_part)
+            if index_match:
+                index = int(index_match.group(1))
+                name = first_part[:index_match.start()]
+                if name in data:
+                    curr = data[name]
+                    if isinstance(curr, dict) and not isinstance(curr, list):
+                        for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
+                            if list_key in curr and isinstance(curr[list_key], list):
+                                curr = curr[list_key]
+                                break
+                    if isinstance(curr, list) and 0 <= index < len(curr):
+                        curr = curr[index]
+                        remaining_parts = parts[1:]
+            else:
+                if first_part in data:
+                    curr = data[first_part]
+                    remaining_parts = parts[1:]
+
+        if curr is None:
+            self.logger.warning(f"Path resolution failed: root of '{path}' not found in data.")
+            return None
+
+        # 3. Resolve remaining parts
+        for i, part in enumerate(remaining_parts):
             index_match = re.search(r'\[(\d+)\]$', part)
             if index_match:
                 index = int(index_match.group(1))
                 name = part[:index_match.start()]
                 if name:
                     if isinstance(curr, dict):
-                        # Try exact name, then variations if not found
-                        val = curr.get(name)
-                        if val is None:
-                            if name.startswith("task-"):
-                                num = name.removeprefix("task-")
-                                val = curr.get(num) or curr.get(f"t{num}")
-                            elif name.isdigit():
-                                val = curr.get(f"task-{name}") or curr.get(f"t{name}")
-                        curr = val
+                        curr = curr.get(name)
                     else:
-                        self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict (type: {type(curr)}).")
                         return None
                 
-                # Auto-unwrap common result containers if we're indexing into a dict
                 if isinstance(curr, dict) and not isinstance(curr, list):
                     for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
                         if list_key in curr and isinstance(curr[list_key], list):
@@ -234,11 +293,10 @@ class PlanExecutor:
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
                 else:
-                    self.logger.warning(f"Path resolution failed at '{part}': index {index} out of range or not a list (type: {type(curr)}).")
                     return None
             else:
                 if isinstance(curr, dict):
-                    # Smart synthesis for URLs if requested but not present
+                    # Smart synthesis for URLs
                     if part == "documentUrl" and "documentId" in curr and "documentUrl" not in curr:
                         curr = f"https://docs.google.com/document/d/{curr['documentId']}/edit"
                     elif part == "spreadsheetUrl" and "spreadsheetId" in curr and "spreadsheetUrl" not in curr:
@@ -250,12 +308,9 @@ class PlanExecutor:
                     else:
                         curr = curr.get(part)
                 else:
-                    self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict (type: {type(curr)}).")
                     return None
             
             if curr is None:
-                sub_path = '.'.join(parts[:i+1])
-                self.logger.warning(f"Path resolution failed: sub-path '{sub_path}' resolved to None (parent keys: {list(curr_parent.keys()) if 'curr_parent' in locals() else 'N/A'}).")
                 return None
                 
         return curr
@@ -365,6 +420,11 @@ class PlanExecutor:
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+                if len(files) > 0 and "mimeType" in files[0]:
+                    context["last_file_mime"] = files[0]["mimeType"]
+                    # Also store in results map for {task-N.mimeType} access
+                    if task and hasattr(task, "id") and task.id:
+                        results_map[str(task.id)]["mimeType"] = files[0]["mimeType"]
 
         if "values" in data and "range" in data:
             rows = data["values"]
