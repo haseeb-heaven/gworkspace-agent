@@ -30,6 +30,9 @@ logs/
 .vscode/
 .DS_Store
 Thumbs.db
+google-cloud-sdk
+.config
+gcloud
 
 # Framework and test folders (Already tracked, but ensuring they stay unignored)
 !framework/
@@ -37,8 +40,8 @@ Thumbs.db
 
 # .agent framework (Unignored to allow tracking)
 .agent/
-
 scratch/*.py
+
 
 # Re-ignore skills and other artifacts
 skills/
