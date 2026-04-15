@@ -319,18 +319,25 @@ class CommandPlanner:
 
         if action == "append_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = self._format_range(str(params.get("range") or "A1"))
+            range_name = params.get("range", "{{task-1.range}}") # Use placeholder if missing
+
+            # Default to 'A1' if range is still a placeholder or unresolved
+            if not range_name or range_name == "{{task-1.range}}" or str(range_name).startswith("___UNRESOLVED_PLACEHOLDER___"):
+                range_name = "A1"
+
             values = params.get("values")
+            # Ensure 'values' is a list of lists, even if it's a single string or empty
             if isinstance(values, str):
                 values = [[values]]
-            if not isinstance(values, list) or not values:
+            elif not isinstance(values, list) or not values:
                 values = [["No values supplied"]]
+
             return [
                 "sheets", "spreadsheets", "values", "append",
-                "--params", json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name,
-                                        "valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"}, ensure_ascii=True),
+                "--params", json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name, "valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"}, ensure_ascii=True),
                 "--json",  json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}, ensure_ascii=True),
             ]
+
 
         raise ValidationError(f"Unsupported sheets action: {action}")
 
