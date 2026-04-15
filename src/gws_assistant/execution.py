@@ -6,6 +6,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+_UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
 logger = logging.getLogger(__name__)
 
 
@@ -98,7 +99,8 @@ class PlanExecutor:
                 "$calendar_events":         "calendar_events",
                 "$calendar_items":          "calendar_events",
                 "$sheet_email_body":        "sheet_email_body",
-                "$last_code_stdout":       "last_code_stdout",
+                "$last_code_stdout":        "last_code_stdout",
+                "$last_code_result":        "last_code_result",
             }
             
             results_map = context.get("task_results", {})
@@ -148,12 +150,12 @@ class PlanExecutor:
                     res = self._get_value_by_path(results_map, p)
                 
                 if res is not None:
-                    if use_repr_for_complex and isinstance(res, (dict, list)):
+                    if use_repr_for_complex:
                         return repr(res)
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-                return match.group(0)
+                return _UNRESOLVED_MARKER
 
             # 4. Partial string replacement with regex 
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
@@ -161,13 +163,44 @@ class PlanExecutor:
             return val
 
         elif isinstance(val, list):
+            # If the list contains a single placeholder string, and that placeholder
+            # resolves to a list, return the resolved list directly to avoid double-wrapping.
+            if len(val) == 1 and isinstance(val[0], str) and ("{" in val[0] or "$" in val[0]):
+                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex)
+                if isinstance(resolved_item, list):
+                    self.logger.info(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
+                    return resolved_item
+
             return [self._resolve_placeholders(item, context, use_repr_for_complex) for item in val]
         elif isinstance(val, dict):
             return {k: self._resolve_placeholders(v, context, use_repr_for_complex) for k, v in val.items()}
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
-        """Evaluate a path like 'task-1[0].id' against task_results."""
+        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id' against task_results."""
+        self.logger.info(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
+        
+        # 1. Try exact match first (handles keys with dots like 'drive.list_files')
+        if path in data:
+            return data[path]
+
+        # 2. Handle indexed root match (e.g. 'drive.list_files[0]')
+        index_match = re.search(r'\[(\d+)\]$', path)
+        if index_match:
+            index = int(index_match.group(1))
+            name = path[:index_match.start()]
+            if name in data:
+                curr = data[name]
+                # Auto-unwrap common result containers
+                if isinstance(curr, dict) and not isinstance(curr, list):
+                    for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
+                        if list_key in curr and isinstance(curr[list_key], list):
+                            curr = curr[list_key]
+                            break
+                if isinstance(curr, list) and 0 <= index < len(curr):
+                    return curr[index]
+
+        # 3. Fallback to recursive splitting
         parts = path.split('.')
         curr: Any = data
         
@@ -188,7 +221,7 @@ class PlanExecutor:
                                 val = curr.get(f"task-{name}") or curr.get(f"t{name}")
                         curr = val
                     else:
-                        self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict.")
+                        self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict (type: {type(curr)}).")
                         return None
                 
                 # Auto-unwrap common result containers if we're indexing into a dict
@@ -201,7 +234,7 @@ class PlanExecutor:
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
                 else:
-                    self.logger.warning(f"Path resolution failed at '{part}': index {index} out of range or not a list.")
+                    self.logger.warning(f"Path resolution failed at '{part}': index {index} out of range or not a list (type: {type(curr)}).")
                     return None
             else:
                 if isinstance(curr, dict):
@@ -217,12 +250,12 @@ class PlanExecutor:
                     else:
                         curr = curr.get(part)
                 else:
-                    self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict.")
+                    self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict (type: {type(curr)}).")
                     return None
             
             if curr is None:
                 sub_path = '.'.join(parts[:i+1])
-                self.logger.warning(f"Path resolution failed: sub-path '{sub_path}' resolved to None.")
+                self.logger.warning(f"Path resolution failed: sub-path '{sub_path}' resolved to None (parent keys: {list(curr_parent.keys()) if 'curr_parent' in locals() else 'N/A'}).")
                 return None
                 
         return curr
@@ -293,6 +326,17 @@ class PlanExecutor:
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
         if is_gmail_get or "payload" in data:
             payload = data.get("payload", {})
+            
+            # Extract headers into top-level keys for easy access (e.g. {task-2.from})
+            headers = payload.get("headers", [])
+            for h in headers:
+                name = h.get("name", "").lower()
+                if name in ("from", "subject", "date", "to", "cc", "bcc"):
+                    data[name] = h.get("value")
+                    # Also store in context for legacy/global access if this is the latest get_message
+                    if is_gmail_get:
+                        context[f"gmail_{name}"] = h.get("value")
+
             import base64
             def find_body(p):
                 b = p.get("body", {})
@@ -469,7 +513,23 @@ class PlanExecutor:
         if task.service == "admin" and task.action == "log_activity":
              return self._handle_admin_task(task, context)
 
+        # 1. Resolve placeholders in parameters FIRST (type-preserving)
+        task.parameters = self._resolve_placeholders(task.parameters, context)
+
+        # 2. Build the command using already-resolved parameters
         args = self.planner.build_command(task.service, task.action, task.parameters)
+        
+        # 3. Final safety resolve for placeholders that planner might have added internally
+        args = self._resolve_placeholders(args, context)
+
+        # 4. Guard against unresolved placeholders
+        if any(_UNRESOLVED_MARKER in str(arg) for arg in args):
+            from .models import ExecutionResult
+            return ExecutionResult(
+                success=False,
+                command=["<aborted>"],
+                error=f"Unresolved placeholder in arguments: {args}",
+            )
 
         if task.service == "search" and task.action == "web_search":
             return self._handle_web_search_task(task, context)
