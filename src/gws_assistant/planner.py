@@ -218,18 +218,46 @@ class CommandPlanner:
             source_mime    = str(params.get("source_mime") or "").strip()
 
             # 🔥 PRIMARY: use source_mime if available to determine best export format
+            # If it's a PDF or other non-Workspace file, use 'files get' with 'alt=media'
+            is_workspace_doc = source_mime.startswith("application/vnd.google-apps.")
+            if source_mime and not is_workspace_doc:
+                 return [
+                    "drive",
+                    "files",
+                    "get",
+                    "--params",
+                    json.dumps({
+                        "fileId": file_id,
+                        "alt": "media"
+                    }),
+                    "-o",
+                    f"scratch/exports/download_{file_id}"
+                ]
+
             if source_mime == "application/vnd.google-apps.document":
                 mime_type = requested_mime or "application/pdf"
-
             elif source_mime == "application/vnd.google-apps.spreadsheet":
                 mime_type = requested_mime or "text/csv"
-
             elif source_mime == "application/vnd.google-apps.presentation":
                 mime_type = "application/pdf"
-
             else:
                 # If no source_mime, respect requested_mime or default to PDF
                 mime_type = requested_mime or "application/pdf"
+            
+            # If the user explicitly asks for media/download or it's already a PDF and they want it
+            if mime_type == "media" or (source_mime == "application/pdf" and mime_type == "application/pdf"):
+                 return [
+                    "drive",
+                    "files",
+                    "get",
+                    "--params",
+                    json.dumps({
+                        "fileId": file_id,
+                        "alt": "media"
+                    }),
+                    "-o",
+                    f"scratch/exports/download_{file_id}"
+                ]
 
             return [
                 "drive",
@@ -239,7 +267,9 @@ class CommandPlanner:
                 json.dumps({
                     "fileId": file_id,
                     "mimeType": mime_type
-                })
+                }),
+                "-o",
+                f"scratch/exports/download_{file_id}"
             ]
         
         if action == "delete_file":
@@ -572,7 +602,7 @@ class CommandPlanner:
 
     def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_conferences":
-            return ["meet", "spaces", "list"]
+            return ["meet", "conferenceRecords", "list"]
         if action == "get_conference":
             name = self._required_text(params, "name")
             return ["meet", "spaces", "get", "--params", json.dumps({"name": name})]

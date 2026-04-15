@@ -6,6 +6,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+_UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +48,31 @@ class PlanExecutor:
         if task.service == "gmail" and task.action == "send_message":
             body = task.parameters.get("body", "")
             task.parameters["body"] = self._get_artifact_links_body(body, context)
+
+        if task.service == "drive" and task.action == "export_file":
+            if not task.parameters.get("source_mime"):
+                # Try to find the mimeType from the file_id in context
+                f_id = task.parameters.get("file_id")
+                if f_id:
+                    # Check global context
+                    if context.get("last_spreadsheet_id") == f_id:
+                        task.parameters["source_mime"] = "application/vnd.google-apps.spreadsheet"
+                    elif context.get("last_document_id") == f_id:
+                        task.parameters["source_mime"] = "application/vnd.google-apps.document"
+                    elif context.get("last_file_mime"):
+                        # If the most recently found file ID matches, use its mime
+                        results_map = context.get("task_results", {})
+                        # Search results_map for this file_id to find its mime
+                        for t_res in results_map.values():
+                            if isinstance(t_res, dict) and "files" in t_res:
+                                for f in t_res["files"]:
+                                    if f.get("id") == f_id:
+                                        task.parameters["source_mime"] = f.get("mimeType")
+                                        break
+                
+                # Fallback to last_file_mime if still missing
+                if not task.parameters.get("source_mime") and context.get("last_file_mime"):
+                    task.parameters["source_mime"] = context["last_file_mime"]
 
         # 3. Variable resolution
         task.parameters = self._resolve_placeholders(task.parameters, context)
@@ -98,7 +124,8 @@ class PlanExecutor:
                 "$calendar_events":         "calendar_events",
                 "$calendar_items":          "calendar_events",
                 "$sheet_email_body":        "sheet_email_body",
-                "$last_code_stdout":       "last_code_stdout",
+                "$last_code_stdout":        "last_code_stdout",
+                "$last_code_result":        "last_code_result",
             }
             
             results_map = context.get("task_results", {})
@@ -148,12 +175,12 @@ class PlanExecutor:
                     res = self._get_value_by_path(results_map, p)
                 
                 if res is not None:
-                    if use_repr_for_complex and isinstance(res, (dict, list)):
+                    if use_repr_for_complex:
                         return repr(res)
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-                return match.group(0)
+                return _UNRESOLVED_MARKER
 
             # 4. Partial string replacement with regex 
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
@@ -161,37 +188,102 @@ class PlanExecutor:
             return val
 
         elif isinstance(val, list):
+            # If the list contains a single placeholder string, and that placeholder
+            # resolves to a list, return the resolved list directly to avoid double-wrapping.
+            if len(val) == 1 and isinstance(val[0], str) and ("{" in val[0] or "$" in val[0]):
+                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex)
+                if isinstance(resolved_item, list):
+                    self.logger.info(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
+                    return resolved_item
+
             return [self._resolve_placeholders(item, context, use_repr_for_complex) for item in val]
         elif isinstance(val, dict):
             return {k: self._resolve_placeholders(v, context, use_repr_for_complex) for k, v in val.items()}
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
-        """Evaluate a path like 'task-1[0].id' against task_results."""
-        parts = path.split('.')
-        curr: Any = data
+        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id' against task_results.
+        Handles keys with dots by checking prefixes.
+        """
+        self.logger.info(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
         
-        for i, part in enumerate(parts):
+        # 1. Try exact match first
+        if path in data:
+            return data[path]
+
+        # 2. Try prefix matching for keys with dots
+        # e.g. path="drive.list_files[0].id"
+        # Prefixes: "drive", "drive.list_files", "drive.list_files[0]", "drive.list_files[0].id"
+        parts = path.split('.')
+        curr: Any = None
+        remaining_parts: list[str] = []
+
+        for i in range(len(parts), 0, -1):
+            prefix = '.'.join(parts[:i])
+            # Handle indexed prefix like "drive.list_files[0]"
+            index_match = re.search(r'\[(\d+)\]$', prefix)
+            clean_prefix = prefix
+            index = -1
+            if index_match:
+                index = int(index_match.group(1))
+                clean_prefix = prefix[:index_match.start()]
+            
+            if clean_prefix in data:
+                curr = data[clean_prefix]
+                if index != -1:
+                    # Auto-unwrap if needed
+                    if isinstance(curr, dict) and not isinstance(curr, list):
+                        for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
+                            if list_key in curr and isinstance(curr[list_key], list):
+                                curr = curr[list_key]
+                                break
+                    if isinstance(curr, list) and 0 <= index < len(curr):
+                        curr = curr[index]
+                    else:
+                        curr = None # Index fail
+                
+                if curr is not None:
+                    remaining_parts = parts[i:]
+                    break
+        
+        if curr is None:
+            # Fallback to standard root-key search if no prefix matched
+            first_part = parts[0]
+            index_match = re.search(r'\[(\d+)\]$', first_part)
+            if index_match:
+                index = int(index_match.group(1))
+                name = first_part[:index_match.start()]
+                if name in data:
+                    curr = data[name]
+                    if isinstance(curr, dict) and not isinstance(curr, list):
+                        for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
+                            if list_key in curr and isinstance(curr[list_key], list):
+                                curr = curr[list_key]
+                                break
+                    if isinstance(curr, list) and 0 <= index < len(curr):
+                        curr = curr[index]
+                        remaining_parts = parts[1:]
+            else:
+                if first_part in data:
+                    curr = data[first_part]
+                    remaining_parts = parts[1:]
+
+        if curr is None:
+            self.logger.warning(f"Path resolution failed: root of '{path}' not found in data.")
+            return None
+
+        # 3. Resolve remaining parts
+        for i, part in enumerate(remaining_parts):
             index_match = re.search(r'\[(\d+)\]$', part)
             if index_match:
                 index = int(index_match.group(1))
                 name = part[:index_match.start()]
                 if name:
                     if isinstance(curr, dict):
-                        # Try exact name, then variations if not found
-                        val = curr.get(name)
-                        if val is None:
-                            if name.startswith("task-"):
-                                num = name.removeprefix("task-")
-                                val = curr.get(num) or curr.get(f"t{num}")
-                            elif name.isdigit():
-                                val = curr.get(f"task-{name}") or curr.get(f"t{name}")
-                        curr = val
+                        curr = curr.get(name)
                     else:
-                        self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict.")
                         return None
                 
-                # Auto-unwrap common result containers if we're indexing into a dict
                 if isinstance(curr, dict) and not isinstance(curr, list):
                     for list_key in ["files", "messages", "items", "events", "values", "threads", "connections", "results", "rows", "table_values"]:
                         if list_key in curr and isinstance(curr[list_key], list):
@@ -201,11 +293,10 @@ class PlanExecutor:
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
                 else:
-                    self.logger.warning(f"Path resolution failed at '{part}': index {index} out of range or not a list.")
                     return None
             else:
                 if isinstance(curr, dict):
-                    # Smart synthesis for URLs if requested but not present
+                    # Smart synthesis for URLs
                     if part == "documentUrl" and "documentId" in curr and "documentUrl" not in curr:
                         curr = f"https://docs.google.com/document/d/{curr['documentId']}/edit"
                     elif part == "spreadsheetUrl" and "spreadsheetId" in curr and "spreadsheetUrl" not in curr:
@@ -217,12 +308,9 @@ class PlanExecutor:
                     else:
                         curr = curr.get(part)
                 else:
-                    self.logger.warning(f"Path resolution failed at '{part}': current object is not a dict.")
                     return None
             
             if curr is None:
-                sub_path = '.'.join(parts[:i+1])
-                self.logger.warning(f"Path resolution failed: sub-path '{sub_path}' resolved to None.")
                 return None
                 
         return curr
@@ -293,6 +381,17 @@ class PlanExecutor:
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
         if is_gmail_get or "payload" in data:
             payload = data.get("payload", {})
+            
+            # Extract headers into top-level keys for easy access (e.g. {task-2.from})
+            headers = payload.get("headers", [])
+            for h in headers:
+                name = h.get("name", "").lower()
+                if name in ("from", "subject", "date", "to", "cc", "bcc"):
+                    data[name] = h.get("value")
+                    # Also store in context for legacy/global access if this is the latest get_message
+                    if is_gmail_get:
+                        context[f"gmail_{name}"] = h.get("value")
+
             import base64
             def find_body(p):
                 b = p.get("body", {})
@@ -321,6 +420,11 @@ class PlanExecutor:
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+                if len(files) > 0 and "mimeType" in files[0]:
+                    context["last_file_mime"] = files[0]["mimeType"]
+                    # Also store in results map for {task-N.mimeType} access
+                    if task and hasattr(task, "id") and task.id:
+                        results_map[str(task.id)]["mimeType"] = files[0]["mimeType"]
 
         if "values" in data and "range" in data:
             rows = data["values"]
@@ -469,7 +573,23 @@ class PlanExecutor:
         if task.service == "admin" and task.action == "log_activity":
              return self._handle_admin_task(task, context)
 
+        # 1. Resolve placeholders in parameters FIRST (type-preserving)
+        task.parameters = self._resolve_placeholders(task.parameters, context)
+
+        # 2. Build the command using already-resolved parameters
         args = self.planner.build_command(task.service, task.action, task.parameters)
+        
+        # 3. Final safety resolve for placeholders that planner might have added internally
+        args = self._resolve_placeholders(args, context)
+
+        # 4. Guard against unresolved placeholders
+        if any(_UNRESOLVED_MARKER in str(arg) for arg in args):
+            from .models import ExecutionResult
+            return ExecutionResult(
+                success=False,
+                command=["<aborted>"],
+                error=f"Unresolved placeholder in arguments: {args}",
+            )
 
         if task.service == "search" and task.action == "web_search":
             return self._handle_web_search_task(task, context)

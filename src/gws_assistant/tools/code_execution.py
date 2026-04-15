@@ -162,20 +162,32 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         if buffer_val:
             exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
 
-        # Capture all variables from sandbox_globals except builtins/internals
-        # ONLY capture JSON-serializable types to prevent failures later in the pipeline
-        def is_json_serializable(v):
-            return isinstance(v, (str, int, float, bool, list, dict, type(None)))
-
-        results_vars = {
-            k: v for k, v in sandbox_globals.items()
-            if not k.startswith("_") and k != "__builtins__" and not callable(v)
-            and k not in _SAFE_MODULES and is_json_serializable(v)
-        }
+        # --- PARSE RETURN VALUE ---
+        # 1. Best case: user explicitly assigned to 'result'
         if "result" in sandbox_globals:
             exec_result.return_value = sandbox_globals["result"]
+        
+        # 2. Next best: parse the last line of stdout as a Python literal
+        elif exec_result.stdout:
+            try:
+                last_line = exec_result.stdout.strip().splitlines()[-1]
+                exec_result.return_value = ast.literal_eval(last_line)
+            except (SyntaxError, ValueError):
+                # Fallback if stdout is not a literal
+                exec_result.return_value = exec_result.stdout
+        
+        # 3. Fallback: capture all variables from sandbox_globals
         else:
+            def is_json_serializable(v):
+                return isinstance(v, (str, int, float, bool, list, dict, type(None)))
+            
+            results_vars = {
+                k: v for k, v in sandbox_globals.items()
+                if not k.startswith("_") and k != "__builtins__" and not callable(v)
+                and k not in _SAFE_MODULES and is_json_serializable(v)
+            }
             exec_result.return_value = results_vars
+
         exec_result.success = True
     except Exception as exc:
         exec_result.success = False
