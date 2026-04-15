@@ -106,6 +106,12 @@ def get_safe_globals() -> dict[str, Any]:
     # Pre-inject safe stdlib modules so stripped imports still resolve.
     safe_g.update(_SAFE_MODULES)
     
+    # Pre-inject common datetime classes for AI robustness
+    safe_g["datetime"]  = datetime.datetime
+    safe_g["date"]      = datetime.date
+    safe_g["timedelta"] = datetime.timedelta
+    safe_g["now"]       = datetime.datetime.now()
+    
     # AI Robustness: Pre-inject common lowercase aliases often emitted by LLMs
     safe_g["true"]  = True
     safe_g["false"] = False

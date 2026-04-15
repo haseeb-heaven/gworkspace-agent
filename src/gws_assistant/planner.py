@@ -273,7 +273,8 @@ class CommandPlanner:
             title = self._required_text(params, "title")
             return ["sheets", "spreadsheets", "create", "--json",
                     json.dumps({
-                        "properties": {"title": title}
+                        "properties": {"title": title},
+                        "sheets": [{"properties": {"title": title}}]
                     }, ensure_ascii=True)]
 
         if action == "get_spreadsheet":
@@ -478,14 +479,30 @@ class CommandPlanner:
             if description:
                 event_body["description"] = description
 
+            # ------------------------------------------------------------------
+            # Fix 5 — Google Meet support (conferenceData)
+            # If with_meet or add_meet is truthy, request a Meet link.
+            # ------------------------------------------------------------------
+            if params.get("with_meet") or params.get("add_meet"):
+                event_body["conferenceData"] = {
+                    "createRequest": {
+                        "requestId": f"meet-{int(datetime.now().timestamp())}",
+                        "conferenceSolutionKey": {"type": "hangoutsMeet"}
+                    }
+                }
+
             if reminder_minutes > 0:
                 event_body["reminders"] = {
                     "useDefault": False,
                     "overrides":  [{"method": "popup", "minutes": reminder_minutes}],
                 }
 
+            params_dict = {"calendarId": "primary"}
+            if "conferenceData" in event_body:
+                params_dict["conferenceDataVersion"] = 1
+
             return ["calendar", "events", "insert",
-                    "--params", json.dumps({"calendarId": "primary"}),
+                    "--params", json.dumps(params_dict),
                     "--json",   json.dumps(event_body, ensure_ascii=True)]
 
         raise ValidationError(f"Unsupported calendar action: {action}")

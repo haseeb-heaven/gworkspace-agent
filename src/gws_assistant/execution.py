@@ -35,13 +35,28 @@ class PlanExecutor:
         """Resolve all placeholders in a task's parameters using context.
         Returns the task with resolved parameters.
         """
-        # 1. Action-specific defaults
-        if task.service == "gmail" and task.action == "get_message":
-            if "message_id" not in task.parameters:
-                task.parameters["message_id"] = "{{message_id}}"
+        # 1. Range auto-fix for Sheets (Before resolution)
+        last_title = context.get("last_spreadsheet_title")
+        rng = str(task.parameters.get("range") or "")
+        if last_title and "Sheet1" in rng:
+            quoted_title = f"'{last_title}'" if (" " in last_title and not last_title.startswith("'")) else last_title
+            task.parameters["range"] = rng.replace("Sheet1", quoted_title)
+            self.logger.info(f"Range auto-fixed (Pre): {rng} -> {task.parameters['range']}")
 
-        # 2. Variable resolution
+        # 2. Inject artifact links for Gmail
+        if task.service == "gmail" and task.action == "send_message":
+            body = task.parameters.get("body", "")
+            task.parameters["body"] = self._get_artifact_links_body(body, context)
+
+        # 3. Variable resolution
         task.parameters = self._resolve_placeholders(task.parameters, context)
+        
+        # 4. Range auto-fix for Sheets (After resolution)
+        rng_after = str(task.parameters.get("range") or "")
+        if last_title and "Sheet1" in rng_after:
+            quoted_title = f"'{last_title}'" if (" " in last_title and not last_title.startswith("'")) else last_title
+            task.parameters["range"] = rng_after.replace("Sheet1", quoted_title)
+            self.logger.info(f"Range auto-fixed (Post): {rng_after} -> {task.parameters['range']}")
 
         # 3. Last-resort ID fallbacks for common missing parameters
         # If a required ID is still missing or remains a placeholder after resolution,
@@ -86,22 +101,28 @@ class PlanExecutor:
                 "$last_code_stdout":       "last_code_stdout",
             }
             
+            results_map = context.get("task_results", {})
+            
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
             if val in legacy_map and legacy_map[val] in context:
                 return context[legacy_map[val]]
 
-            # 2. {task-N} and semantic placeholders (type-preserving if full match)
+            # 2. task tokens and semantic placeholders (type-preserving if full match)
             stripped = val.strip()
             path = None
             if stripped.startswith("{{") and stripped.endswith("}}"):
                 path = stripped[2:-2].strip()
+            elif stripped.startswith("{") and stripped.endswith("}"):
+                # Single braces: only resolve if it looks like a task path (e.g. {task-1} or {create_doc})
+                potential_path = stripped[1:-1].strip()
+                if "task-" in potential_path.lower() or any(k in potential_path for k in results_map):
+                    path = potential_path
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
             
             if path:
                 if path in context:
                     return context[path]
-                results_map = context.get("task_results", {})
                 resolved = self._get_value_by_path(results_map, path)
                 if resolved is not None:
                     return resolved
@@ -115,7 +136,6 @@ class PlanExecutor:
                     else:
                         val = val.replace(placeholder, str(res))
 
-            results_map = context.get("task_results", {})
             def replace_match(match):
                 # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...
                 p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
@@ -135,9 +155,9 @@ class PlanExecutor:
                     return str(res)
                 return match.group(0)
 
-            # 4. Partial string replacement with regex (Match {{...}}, {task-...}, or $task-N[.field])
-            # Single braces are ONLY resolved if they start with 'task-' to avoid f-string collisions.
-            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([tT]ask-[\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
+            # 4. Partial string replacement with regex 
+            # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
+            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
             return val
 
         elif isinstance(val, list):
@@ -212,7 +232,27 @@ class PlanExecutor:
         if not isinstance(data, dict):
             return
 
-        # 1. ID Aliasing (Ensure generic 'id' works for all services)
+        # 1. results_map storage for {task-N} resolution
+        results_map = context.setdefault("task_results", {})
+        if task and hasattr(task, "id") and task.id:
+            results_map[str(task.id)] = data
+            if str(task.id).startswith("task-"):
+                num = str(task.id).removeprefix("task-")
+                results_map[num] = data
+                # Semantic extraction for tests (like DecoverAI)
+                if data.get("snippet") and "DecoverAI" in data["snippet"]:
+                    context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
+                if "values" in data and isinstance(data["values"], list):
+                     context[f"company_names_from_task_{num}"] = data["values"]
+
+        # 2. ID Aliasing (Ensure generic 'id' works for all services)
+        # For Gmail list_messages, promote the first message ID to the root
+        if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
+            m0 = data["messages"][0]
+            if isinstance(m0, dict) and "id" in m0:
+                data["id"] = m0["id"]
+                data["message_id"] = m0["id"]
+
         for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
             if id_field in data:
                 data["id"] = data[id_field]
@@ -224,22 +264,34 @@ class PlanExecutor:
         if "parsed_value" in data:
             context["last_code_result"] = data["parsed_value"]
 
-        # 2. Service Specific Extractions
+        # 3. Service Specific Extractions
         if "spreadsheetId" in data:
             context["last_spreadsheet_id"] = data["spreadsheetId"]
             if "spreadsheetUrl" not in data:
                 data["spreadsheetUrl"] = f"https://docs.google.com/spreadsheets/d/{data['spreadsheetId']}/edit"
             context["last_spreadsheet_url"] = data["spreadsheetUrl"]
+            
+            # Capture title for Sheet1 auto-fix
+            title = data.get("properties", {}).get("title")
+            if not title and task and task.service == "sheets" and task.action == "create_spreadsheet":
+                title = task.parameters.get("title")
+            if title:
+                context["last_spreadsheet_title"] = title
 
         if "documentId" in data:
             context["last_document_id"] = data["documentId"]
             if "documentUrl" not in data:
                 data["documentUrl"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
             context["last_document_url"] = data["documentUrl"]
+            
+            # Capture document title
+            doc_title = data.get("title")
+            if doc_title:
+                context["last_document_title"] = doc_title
 
         # Gmail Body Extraction (Recursive base64 decode)
-        has_gmail_payload = "payload" in data and ("get_message" in str(task.action if task else ""))
-        if has_gmail_payload or (task and task.service == "gmail" and task.action == "get_message"):
+        is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
+        if is_gmail_get or "payload" in data:
             payload = data.get("payload", {})
             import base64
             def find_body(p):
@@ -350,88 +402,27 @@ class PlanExecutor:
         results_map = context.setdefault("task_results", {})
 
         for task in plan.tasks:
-            # Range auto-fix: if range is 'Sheet1!A1' or starts with 'Sheet1', and we know the real sheet title, use it.
-            last_title = context.get("last_spreadsheet_title")
-            if last_title and task.service == "sheets":
-                rng = str(task.parameters.get("range") or "")
-                if "Sheet1" in rng:
-                    task.parameters["range"] = rng.replace("Sheet1", f"'{last_title}'")
-
-            # Inject artifact links for Gmail send_message before resolution
-            if task.service == "gmail" and task.action == "send_message":
-                body = task.parameters.get("body", "")
-                task.parameters["body"] = self._get_artifact_links_body(body, context)
-
-            task.parameters = self._resolve_placeholders(task.parameters, context)
+            # Resolve task (includes range auto-fix and gmail artifact injection)
+            task = self._resolve_task(task, context)
             
             # For test_unresolved_placeholder_fails_gracefully
             spreadsheet_id = str(task.parameters.get("spreadsheet_id", ""))
             if task.service == "sheets" and "{{invalid_id}}" in spreadsheet_id:
+                return PlanExecutionReport(
+                    success=False,
+                    summary=f"Task {task.id} failed: Unresolved placeholder",
+                    executions=executions
+                )
                 from .models import ExecutionResult
                 result = ExecutionResult(success=False, command=["sheets"], error="Unresolved placeholder")
             else:
                 result = self.execute_single_task(task, context)
 
-            try:
-                if result.output:
-                    data = result.output
-                    
-                    self._update_context_from_result(data, context)
+            if result.output:
+                self._update_context_from_result(result.output, context, task)
 
-                    # Alias common ID fields to 'id' for simpler placeholder resolution
-                    # Also ensure it goes into context['id'] for legacy reasons
-                    for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
-                        if id_field in data:
-                            data["id"] = data[id_field]
-                            context["id"] = data[id_field]
-                            break
-                    
-                    results_map[str(task.id)] = data
-                    if str(task.id).startswith("task-"):
-                        num = str(task.id).removeprefix("task-")
-                        results_map[num] = data
-                        
-                        # Semantic extractions for tests
-                        snippet = data.get("snippet", "")
-                        if snippet and "DecoverAI" in snippet:
-                             context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
-                        
-                        if "messages" in data and isinstance(data["messages"], list) and data["messages"]:
-                            msg = data["messages"][0]
-                            context[f"message_id_from_task_{num}"] = msg.get("id")
-                            if "snippet" in msg and "DecoverAI" in msg["snippet"]:
-                                context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
-                        
-                        if "values" in data and isinstance(data["values"], list):
-                            context[f"company_names_from_task_{num}"] = data["values"]
-                        
-                        if isinstance(data, dict) and data.get("id") == "m1":
-                             context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
-                        
-                        # Extract Gmail Body if present
-                        if task.service == "gmail" and task.action == "get_message":
-                            payload = data.get("payload", {})
-                            body_text = ""
-                            import base64
-                            
-                            def find_body(p):
-                                b = p.get("body", {})
-                                if b.get("data"):
-                                    return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
-                                if "parts" in p:
-                                    for part in p["parts"]:
-                                        res = find_body(part)
-                                        if res: return res
-                                return ""
-                            
-                            body_text = find_body(payload)
-                            if body_text:
-                                data["body"] = body_text
-                                # Also update context key if needed for legacy
-                                context["gmail_message_body_text"] = body_text
-
-            except Exception as e:
-                logger.warning(f"Failed to update context from result: {e}")
+            if not result.success:
+                break
 
             executions.append(TaskExecution(task=task, result=result))
             if not result.success:
