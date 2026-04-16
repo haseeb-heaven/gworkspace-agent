@@ -79,6 +79,8 @@ class HumanReadableFormatter:
             return _format_docs(payload)
         if "items" in payload and isinstance(payload.get("items"), list):
             return _format_calendar_items(payload)
+        if "stdout" in payload and payload.get("stdout"):
+            return str(payload.get("stdout")).strip()
         return _compact_json_summary(payload)
 
 

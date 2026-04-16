@@ -225,7 +225,7 @@ class WorkspaceAgentSystem:
 
         if "drive" in services and "sheets" in services and "gmail" in services:
             tasks = self._drive_to_sheets_email_tasks(text, lowered)
-        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered) and _has_any(lowered, ("save", "write", "export", "append", "convert")):
+        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered) and _has_any(lowered, ("save", "write", "export", "append", "convert", "extract")):
              # Complex case: Gmail -> Sheets -> Email
              tasks = self._gmail_to_sheets_tasks(text, lowered)
              recipient = _extract_email(text) or self.config.default_recipient_email
