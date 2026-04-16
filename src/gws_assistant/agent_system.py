@@ -422,10 +422,36 @@ class WorkspaceAgentSystem:
         elif service == "sheets" and action == "create_spreadsheet":
             topic = _extract_search_topic(lowered) or "Data"
             parameters["title"] = topic.title()
+        elif service == "gmail" and action == "send_message":
+            parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
+            parameters["subject"] = _email_subject_from_text(lowered) or "GWorkspace Notification"
+            parameters["body"] = f"Update regarding: {lowered[:100]}..."
         elif service == "telegram" and action == "send_message":
             parameters["message"] = f"Task update: {lowered[:50]}..."
         elif service == "calendar":
-            if action == "delete_event":
+            if action == "create_event":
+                # Extract summary: "event called '...'" or "event '...'"
+                summary_match = re.search(r"event\s+(?:called|named)?\s+['\"]([^'\"]+)['\"]", lowered)
+                if not summary_match:
+                    summary_match = re.search(r"event\s+(?:called|named)?\s+([a-zA-Z0-9 _.-]{3,60})", lowered)
+
+                if summary_match:
+                    parameters["summary"] = summary_match.group(1).strip()
+                else:
+                    parameters["summary"] = "New Event"
+
+                # Extract date: "tomorrow", "today", or "YYYY-MM-DD"
+                if "tomorrow" in lowered:
+                    parameters["start_date"] = "tomorrow"
+                elif "today" in lowered:
+                    parameters["start_date"] = "today"
+                else:
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", lowered)
+                    if date_match:
+                        parameters["start_date"] = date_match.group(1)
+                    else:
+                        parameters["start_date"] = "today"
+            elif action == "delete_event":
                 # Try to find a calendar ID in the text
                 cal_id = _extract_google_id(lowered)
                 if cal_id:

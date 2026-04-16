@@ -90,12 +90,14 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"] = safe_builtins.copy()
     safe_g["__builtins__"].update(utility_builtins)
     safe_g["__builtins__"]["__import__"] = _restricted_import
+    safe_g["__builtins__"]["sum"] = sum
     safe_g["_print_"] = PrintCollector
     safe_g["_getattr_"] = getattr
     safe_g["_setattr_"] = setattr
     safe_g["_getiter_"] = iter
     safe_g["_getitem_"] = lambda obj, key: obj[key]
     safe_g["_write_"] = lambda obj: obj
+    safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     def _inplacevar(op, target, expr):
         if op == '+=':
             return target + expr
@@ -120,6 +122,7 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["true"]  = True
     safe_g["false"] = False
     safe_g["null"]  = None
+    safe_g["quote"] = lambda x: json.dumps(x, ensure_ascii=True)
 
     return safe_g
 
@@ -281,7 +284,11 @@ def code_execution_tool_with_config(config, logger: Any):
     """Factory to create a config-aware code execution tool for LangChain."""
     @tool
     def code_execution_tool(code: str) -> dict[str, Any]:
-        """Execute Python in a restricted sandbox or cloud (E2B) with normalized results."""
+        """Execute Python in a restricted sandbox or cloud (E2B) with normalized results.
+        
+        CRITICAL: Use the pre-injected 'quote(value)' helper for all strings to avoid syntax errors 
+        with nested quotes or special characters. Example: name = quote("O'Reilly")
+        """
         structured = execute_generated_code(code, config=config)
         output = structured["output"] if isinstance(structured["output"], dict) else {}
         return {

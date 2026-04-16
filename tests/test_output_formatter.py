@@ -12,7 +12,7 @@ def test_formatter_treats_sheets_append_as_save_not_create():
         stdout='{"spreadsheetId":"sheet-1","updates":{"updatedRows":2,"updatedCells":6,"updatedRange":"Sheet1!A1:C2"}}',
     )
     output = formatter.format_execution_result(result)
-    assert output == "Saved 2 rows and 6 cells to Sheet1!A1:C2."
+    assert output == "Command succeeded.\nSaved 2 rows and 6 cells to Sheet1!A1:C2."
 
 
 def test_formatter_reports_sheet_values_read():
@@ -23,7 +23,7 @@ def test_formatter_reports_sheet_values_read():
         stdout='{"range":"Sheet1!A1:B2","values":[["Name","Role"],["Alice","Engineer"]]}',
     )
     output = formatter.format_execution_result(result)
-    assert output.startswith("Read 2 rows and 4 cells from Sheet1!A1:B2.")
+    assert output.startswith("Command succeeded.\nRead 2 rows and 4 cells from Sheet1!A1:B2.")
     assert "Name" in output
     assert "Alice" in output
 
@@ -36,7 +36,7 @@ def test_formatter_reports_email_sent():
         stdout='{"id":"abc123","labelIds":["SENT"]}',
     )
     output = formatter.format_execution_result(result)
-    assert output == "Email sent successfully. Message ID: abc123"
+    assert output == "Command succeeded.\nEmail sent successfully. Message ID: abc123"
 
 
 def test_formatter_previews_drive_files_as_table():

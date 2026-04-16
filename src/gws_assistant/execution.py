@@ -74,7 +74,8 @@ class PlanExecutor:
                     task.parameters["source_mime"] = context["last_file_mime"]
 
         # 3. Variable resolution
-        task.parameters = self._resolve_placeholders(task.parameters, context)
+        use_repr = (task.service == "code" and task.action == "execute")
+        task.parameters = self._resolve_placeholders(task.parameters, context, use_repr_for_complex=use_repr)
 
         # 4. Range auto-fix for Sheets (After resolution)
         rng_after = str(task.parameters.get("range") or "")
@@ -229,6 +230,14 @@ class PlanExecutor:
             if token.startswith('['):
                 # Indexed access
                 index = int(token[1:-1])
+                
+                # Auto-unwrap if dict contains a known list key
+                if isinstance(curr, dict):
+                    for list_key in ["files", "messages", "items", "events", "values", "threads"]:
+                        if list_key in curr and isinstance(curr[list_key], list):
+                            curr = curr[list_key]
+                            break
+
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
                 else:
@@ -275,23 +284,33 @@ class PlanExecutor:
             # Consistent mapping
             task_id = str(task.id)
             num = task_id.removeprefix("task-")
+            seq_num = str(getattr(task, "_sequence_index", num))
+            action_name = str(task.action)
 
             # Map the full task result object
             results_map[task_id] = data
             results_map[num] = data
             results_map[f"task-{num}"] = data
+            results_map[seq_num] = data
+            results_map[f"task-{seq_num}"] = data
+            results_map[action_name] = data
 
             # Map individual fields (if they exist)
             for k, v in data.items():
                 results_map[f"{task_id}.{k}"] = v
                 results_map[f"{num}.{k}"] = v
                 results_map[f"task-{num}.{k}"] = v
+                results_map[f"{seq_num}.{k}"] = v
+                results_map[f"task-{seq_num}.{k}"] = v
+                results_map[f"{action_name}.{k}"] = v
 
             # Special case: map 'id' specifically for easier path resolution
             if "id" in data:
                 results_map[f"{task_id}.id"] = data["id"]
                 results_map[f"{num}.id"] = data["id"]
                 results_map[f"task-{num}.id"] = data["id"]
+                results_map[f"{seq_num}.id"] = data["id"]
+                results_map[f"task-{seq_num}.id"] = data["id"]
 
             # Semantic/Legacy extraction for tests
             if data.get("snippet") and "DecoverAI" in data["snippet"]:
@@ -491,7 +510,10 @@ class PlanExecutor:
         context: dict = {}
         context.setdefault("task_results", {})
 
-        for task in plan.tasks:
+        for i, task in enumerate(plan.tasks):
+            # Store the 1-based index in the task object temporarily for _update_context_from_result
+            task._sequence_index = i + 1
+            
             # Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)
 
@@ -607,7 +629,7 @@ class PlanExecutor:
                     if saved_file and ("text/" in mime_type or "csv" in mime_type):
                         try:
                             with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
-                                content = f.read()
+                                content = f.read().lstrip('\ufeff')
                                 data["content"] = content # Ensure it is here!
                                 data["drive_export_content"] = content
                         except Exception as e:

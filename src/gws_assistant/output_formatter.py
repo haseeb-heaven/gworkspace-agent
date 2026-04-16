@@ -14,7 +14,9 @@ class HumanReadableFormatter:
     def format_execution_result(self, result: ExecutionResult) -> str:
         if not result.success:
             return result.stderr or result.error or "Command failed with unknown error."
-        return self._format_stdout(result.stdout)
+        formatted = self._format_stdout(result.stdout)
+        # Prepend success marker for automated validation
+        return f"Command succeeded.\n{formatted}".strip() if formatted else "Command succeeded."
 
     def format_report(self, report: PlanExecutionReport) -> str:
         lines: list[str] = []

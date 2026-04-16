@@ -53,14 +53,14 @@ def test_agent_adds_get_message_for_company_extraction(tmp_path):
 def test_agent_plans_sheet_to_email_flow(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
     plan = agent.plan(
-        "Search Google Sheets with ID: 1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo create email with this data to haseebmahr.hm@gmail.com and send it."
+        "Search Google Sheets with ID: 1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo create email with this data to igiproz.hm@gmail.com and send it."
     )
     assert [(task.service, task.action) for task in plan.tasks] == [
         ("sheets", "get_values"),
         ("gmail", "send_message"),
     ]
     assert plan.tasks[0].parameters["spreadsheet_id"] == "1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo"
-    assert plan.tasks[1].parameters["to_email"] == "haseebmahr.hm@gmail.com"
+    assert plan.tasks[1].parameters["to_email"] == "igiproz.hm@gmail.com"
 
 
 def test_agent_reports_no_service(tmp_path):
