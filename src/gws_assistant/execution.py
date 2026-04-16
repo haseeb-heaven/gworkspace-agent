@@ -107,7 +107,7 @@ class PlanExecutor:
     def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context."""
         if isinstance(val, str):
-            logger.info(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
+            logger.debug(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
             legacy_map = {
                 "$last_spreadsheet_id":     "last_spreadsheet_id",
@@ -205,7 +205,7 @@ class PlanExecutor:
             if len(val) == 1 and isinstance(val[0], str) and ("{" in val[0] or "$" in val[0]):
                 resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex)
                 if isinstance(resolved_item, list):
-                    self.logger.info(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
+                    self.logger.debug(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
                     return resolved_item
 
             return [self._resolve_placeholders(item, context, use_repr_for_complex) for item in val]
@@ -215,7 +215,7 @@ class PlanExecutor:
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
-        self.logger.info(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
+        self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first
         if path in data:
@@ -232,7 +232,7 @@ class PlanExecutor:
             if token.startswith('['):
                 # Indexed access
                 index = int(token[1:-1])
-                
+
                 # Auto-unwrap if dict contains a known list key
                 if isinstance(curr, dict):
                     for list_key in ["files", "messages", "items", "events", "values", "threads"]:
@@ -258,10 +258,10 @@ class PlanExecutor:
                                 if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
                                     curr = curr[list_key]
                                     break
-                    
+
                     if isinstance(curr, dict):
                         curr = curr.get(token)
-                
+
                 # If curr became a list (via unwrap above or already a list), apply token to items
                 if isinstance(curr, list):
                     new_curr = []
@@ -442,8 +442,17 @@ class PlanExecutor:
                         results_map[str(task.id)]["mimeType"] = files[0]["mimeType"]
 
         if "drive_export_content" in data:
-            context["drive_export_content"] = data["drive_export_content"]
-            context["drive_export_file"] = data["drive_export_content"]
+            val = data["drive_export_content"]
+            context["drive_export_content"] = val
+            context["drive_export_file"] = val
+            context["last_export_file_content"] = val
+            context["last_export_content"] = val
+            context["last_file_content"] = val
+        elif "content" in data and task and task.action == "export_file":
+            val = data["content"]
+            context["last_export_file_content"] = val
+            context["last_export_content"] = val
+            context["last_file_content"] = val
 
         if "values" in data and isinstance(data["values"], list):
             # Semantic extraction for tests
@@ -533,7 +542,7 @@ class PlanExecutor:
         for i, task in enumerate(plan.tasks):
             # Store the 1-based index in the task object temporarily for _update_context_from_result
             task._sequence_index = i + 1
-            
+
             # Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)
 

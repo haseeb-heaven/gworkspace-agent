@@ -63,15 +63,22 @@ class WorkspaceAgentSystem:
                 return plan
             if plan and plan.no_service_detected:
                 return plan
-            if not self.config.use_heuristic_fallback:
-                return RequestPlan(
-                    raw_text=text,
-                    summary="LLM planning failed and USE_HEURISTIC_FALLBACK is disabled.",
-                    confidence=0.0,
-                    no_service_detected=True,
-                )
+            
+        if not self.config.use_heuristic_fallback:
+            return RequestPlan(
+                raw_text=text,
+                summary="LLM planning failed and USE_HEURISTIC_FALLBACK is disabled.",
+                confidence=0.0,
+                no_service_detected=True,
+            )
         
-        # Heuristic fallback using IntentParser
+        # Heuristic fallback
+        # 1. Try legacy complex heuristic (handles multi-task flows)
+        legacy_plan = self._plan_with_heuristics(text)
+        if not legacy_plan.no_service_detected:
+            return legacy_plan
+            
+        # 2. Try simple IntentParser (good for single-task with parameters)
         parser = IntentParser(self.config, self.logger)
         intent = parser.parse(text)
         
@@ -92,8 +99,7 @@ class WorkspaceAgentSystem:
                 source="intent_parser",
             )
 
-        # Legacy complex heuristic fallback
-        return self._plan_with_heuristics(text)
+        return legacy_plan
 
     def _plan_from_payload(self, text: str, payload: dict[str, Any], source: str) -> RequestPlan:
         tasks: list[PlannedTask] = []
@@ -164,6 +170,17 @@ class WorkspaceAgentSystem:
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: web search -> docs.create_document + sheets.create_spreadsheet + sheets.append_values",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
+            tasks = self._drive_to_gmail_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
                 confidence=0.7,
                 no_service_detected=False,
                 source="heuristic",
@@ -356,6 +373,37 @@ class WorkspaceAgentSystem:
             )
         ]
         return tasks
+
+    def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _drive_query_from_text(lowered)
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": 1},
+                reason="Search for the requested document in Drive."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="drive",
+                action="export_file",
+                parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
+                reason="Extract the document content for the email."
+            ),
+            PlannedTask(
+                id="task-3",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Document: {query}",
+                    "body": "Hi,\n\nPlease find the document content below:\n\n$last_export_file_content"
+                },
+                reason="Send the document content via email as requested."
+            )
+        ]
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(lowered)
@@ -658,6 +706,14 @@ def _trim_follow_on_instruction(value: str) -> str:
             cleaned = cleaned[: match.start()].strip(" .")
             break
     return cleaned
+
+
+def _is_drive_to_email_request(text: str) -> bool:
+    drive_terms = ("drive", "file", "document", "shibuz")
+    email_terms = ("email", "send", "mail")
+    has_drive = any(t in text for t in drive_terms)
+    has_email = any(t in text for t in email_terms)
+    return has_drive and has_email
 
 
 def _is_sheet_to_email_request(text: str) -> bool:
