@@ -285,8 +285,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             report = state.get("final_output") or state.get("error") or "No result produced."
 
         # Guard: if report is still empty and there was an error in state, use it.
-        if (not report or report == "No result produced.") and state.get("error"):
-            report = state["error"]
+        if (not report or report == "No result produced."):
+            err = state.get("error")
+            if err:
+                report = err
         if any(not item.result.success for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
         return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
