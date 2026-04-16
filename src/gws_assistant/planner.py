@@ -560,7 +560,7 @@ class CommandPlanner:
 
     def _build_docs_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "create_document":
-            title = self._required_text(params, "title") if params.get("title") else "Untitled Document"
+            title = self._required_text(params, "title")
             doc_body: dict[str, Any] = {"title": title}
             return ["docs", "documents", "create", "--json", json.dumps(doc_body, ensure_ascii=True)]
 
@@ -669,7 +669,8 @@ class CommandPlanner:
         if action == "send_message":
             message = self._required_text(params, "message")
             python_exe = r"D:\henv\Scripts\python.exe"
-            if not os.path.exists(python_exe): python_exe = "python"
+            if not os.path.exists(python_exe):
+                python_exe = "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
             return [python_exe, script_path, message]
@@ -677,7 +678,8 @@ class CommandPlanner:
 
     def _format_range(self, range_str: str) -> str:
         range_str = range_str.strip()
-        if "!" not in range_str: return range_str
+        if "!" not in range_str:
+            return range_str
         sheet_part, cell_part = range_str.split("!", 1)
         if " " in sheet_part and not (sheet_part.startswith("'") and sheet_part.endswith("'")):
             return f"'{sheet_part}'!{cell_part}"
@@ -686,7 +688,8 @@ class CommandPlanner:
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
         value = params.get(key)
-        if value is not None and str(value).strip(): return str(value).strip()
+        if value is not None and str(value).strip():
+            return str(value).strip()
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
         for k, v in params.items():
             if k.lower().replace("_", "") in variations and v is not None and str(v).strip():
@@ -698,7 +701,8 @@ class CommandPlanner:
         try:
             parsed = int(str(value).strip())
             return parsed if parsed > 0 else default
-        except Exception: return default
+        except Exception:
+            return default
 
     @staticmethod
     def _build_raw_email(to_email: str, subject: str, body: str) -> str:
@@ -711,9 +715,11 @@ class CommandPlanner:
         msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
         msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
         for path in attachment_paths:
-            if not os.path.isfile(path): continue
+            if not os.path.isfile(path):
+                continue
             filename = os.path.basename(path)
-            with open(path, "rb") as fh: data = fh.read()
+            with open(path, "rb") as fh:
+                data = fh.read()
             part = email_lib.mime.application.MIMEApplication(data, Name=filename)
             part["Content-Disposition"] = f'attachment; filename="{filename}"'
             msg.attach(part)
@@ -727,6 +733,8 @@ class CommandPlanner:
             for mime_type, ext in [("application/pdf", ".pdf"), ("text/csv", ".csv")]:
                 file_path = os.path.join(tmp_dir, f"{file_id}{ext}")
                 result = subprocess.run([gws_exe, "drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type}), "-o", file_path], capture_output=True, timeout=30)
-                if result.returncode == 0 and os.path.isfile(file_path) and os.path.getsize(file_path) > 0: return file_path
+                if result.returncode == 0 and os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+                    return file_path
             return None
-        except Exception: return None
+        except Exception:
+            return None

@@ -197,15 +197,15 @@ def _safe_invoke_structured_output(
     try:
         return chain.invoke(request)
     except TypeError as exc:
-        logger.warning("Structured output parse error (TypeError): %s", exc)
+        logger.info("Structured output parse error (TypeError): %s", exc)
         return None
     except ValueError as exc:
-        logger.warning("Structured output parse error (ValueError): %s", exc)
+        logger.info("Structured output parse error (ValueError): %s", exc)
         return None
     except Exception as exc:
         if _is_rate_limit_error(exc) or _is_endpoint_missing_error(exc):
             raise
-        logger.warning("Structured output unexpected error: %s", exc)
+        logger.info("Structured output unexpected error: %s", exc)
         return None
 
 
@@ -281,7 +281,7 @@ def _invoke_with_backoff(
 
             # Validate plan — treat invalid plan same as None (retry).
             if result is not None and not is_valid_plan(result):
-                logger.warning(
+                logger.info(
                     "Model '%s': plan failed validation on attempt %d/%d — "
                     "tasks contained unknown service/action keys. Raw: %s",
                     model_name, attempt + 1, max_retries, result,
@@ -292,18 +292,18 @@ def _invoke_with_backoff(
                 return result
 
             if attempt < max_retries - 1:
-                logger.warning(
+                logger.info(
                     "Model '%s': structured output None/invalid on attempt %d/%d — retrying.",
                     model_name, attempt + 1, max_retries,
                 )
                 time.sleep(1)
         except Exception as exc:
             if _is_endpoint_missing_error(exc):
-                logger.warning("Model '%s': endpoint missing (404) — skipping.", model_name)
+                logger.info("Model '%s': endpoint missing (404) — skipping.", model_name)
                 raise
             if _is_rate_limit_error(exc):
                 delay = _backoff_delay(attempt)
-                logger.warning(
+                logger.info(
                     "Model '%s' rate-limited (attempt %d/%d, HTTP 429). "
                     "Backing off %.0fs before retry.",
                     model_name, attempt + 1, max_retries, delay,
@@ -414,7 +414,7 @@ def plan_with_langchain(
     for model_idx, model_name in enumerate(models_to_try):
         is_fallback = model_idx > 0
         if is_fallback:
-            logger.warning(
+            logger.info(
                 "Primary model '%s' exhausted. Trying fallback model %d/%d: '%s'.",
                 primary_model, model_idx, len(models_to_try) - 1, model_name,
             )
@@ -428,7 +428,7 @@ def plan_with_langchain(
             )
         except Exception as exc:
             if _is_rate_limit_error(exc) or _is_endpoint_missing_error(exc):
-                logger.warning(
+                logger.info(
                     "Model '%s' skipped (%s). Moving to next fallback.",
                     model_name,
                     "rate-limited" if _is_rate_limit_error(exc) else "endpoint missing",
@@ -439,13 +439,13 @@ def plan_with_langchain(
 
         if plan_data is not None:
             if is_fallback:
-                logger.warning(
+                logger.info(
                     "Plan generated successfully using fallback model '%s'.", model_name
                 )
             break
 
     if plan_data is None:
-        logger.warning(
+        logger.info(
             "LLM planning returned None after trying %d model(s): %s",
             len(models_to_try),
             ", ".join(models_to_try),
@@ -456,7 +456,7 @@ def plan_with_langchain(
         tasks_data = plan_data.get("tasks")
         # Guard: some models return tasks=None instead of tasks=[]
         if not isinstance(tasks_data, list):
-            logger.warning(
+            logger.info(
                 "Structured output returned tasks=%r — treating as empty list.",
                 tasks_data,
             )
@@ -489,7 +489,7 @@ def plan_with_langchain(
             if explicit_email:
                 subject = _derive_email_subject(text)
                 body_placeholder = _derive_email_body_placeholder(tasks_data)
-                logger.warning(
+                logger.info(
                     "BugFix3: gmail.send_message missing from plan. "
                     "Injecting fallback task to '%s' (subject='%s', body='%s').",
                     explicit_email, subject, body_placeholder,
@@ -507,7 +507,7 @@ def plan_with_langchain(
                     "reason": "User explicitly requested sending an email — auto-injected by BugFix3.",
                 })
             else:
-                logger.warning(
+                logger.info(
                     "BugFix3: send email intent detected but no explicit address found; "
                     "skipping injection to avoid unresolvable placeholder."
                 )

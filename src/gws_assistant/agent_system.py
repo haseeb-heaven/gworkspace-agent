@@ -225,7 +225,7 @@ class WorkspaceAgentSystem:
 
         if "drive" in services and "sheets" in services and "gmail" in services:
             tasks = self._drive_to_sheets_email_tasks(text, lowered)
-        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered) and _has_any(lowered, ("save", "write", "export", "append", "convert", "extract")):
+        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered) and _has_any(lowered, ("save", "write", "export", "append", "convert", "extract", "sender", "email address", "name")):
              # Complex case: Gmail -> Sheets -> Email
              tasks = self._gmail_to_sheets_tasks(text, lowered)
              recipient = _extract_email(text) or self.config.default_recipient_email
@@ -409,37 +409,34 @@ class WorkspaceAgentSystem:
         query = _gmail_query_from_text(lowered)
         max_results = _first_int(lowered) or 10
         spreadsheet_id = _extract_google_id(text)
-        wants_company = _has_any(lowered, ("company", "companies", "organization", "employer"))
         tasks = [
             PlannedTask(
                 id="task-1",
                 service="gmail",
                 action="list_messages",
                 parameters={"q": query, "max_results": max_results},
-                reason="Search Gmail before writing the results anywhere else.",
+                reason="Search Gmail for relevant messages.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="get_message",
+                parameters={"message_id": "$gmail_message_ids"},
+                reason="Fetch full message details to extract sender names and email addresses.",
             )
         ]
-        if wants_company:
-            tasks.append(
-                PlannedTask(
-                    id=f"task-{len(tasks) + 1}",
-                    service="gmail",
-                    action="get_message",
-                    parameters={"message_id": "$gmail_message_ids"},
-                    reason="Fetch full message content so company names can be extracted.",
-                )
-            )
+        
         if spreadsheet_id:
             target_spreadsheet = spreadsheet_id
         else:
             target_spreadsheet = "$last_spreadsheet_id"
             tasks.append(
                 PlannedTask(
-                    id="task-2",
+                    id="task-3",
                     service="sheets",
                     action="create_spreadsheet",
                     parameters={"title": _spreadsheet_title_from_query(query)},
-                    reason="Create a spreadsheet because the request asked to save results to Sheets.",
+                    reason="Create a spreadsheet for the detailed results.",
                 )
             )
         tasks.append(
@@ -450,9 +447,9 @@ class WorkspaceAgentSystem:
                 parameters={
                     "spreadsheet_id": target_spreadsheet,
                     "range": "Sheet1!A1",
-                    "values": "$gmail_summary_values",
+                    "values": "$gmail_details_values",
                 },
-                reason="Append a readable summary of the Gmail search results.",
+                reason="Save sender names and email addresses to the spreadsheet.",
             )
         )
         return tasks

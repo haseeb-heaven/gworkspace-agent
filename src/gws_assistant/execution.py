@@ -27,8 +27,24 @@ class PlanExecutor:
 
     def _expand_task(self, task: Any, context: dict) -> list:
         """Expand a single task into a list of executable tasks.
-        Default: return the task as-is in a list (no expansion needed).
+        Example: gmail.get_message with message_id=['id1', 'id2']
         """
+        # 1. Resolve placeholders in parameters FIRST to see if we have a list
+        # We use a copy to avoid mutating the original task before expansion
+        import copy
+        resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
+        
+        if task.service == "gmail" and task.action == "get_message":
+            msg_ids = resolved_params.get("message_id")
+            if isinstance(msg_ids, list):
+                expanded = []
+                for i, m_id in enumerate(msg_ids):
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i+1}"
+                    new_task.parameters["message_id"] = m_id
+                    expanded.append(new_task)
+                return expanded
+                
         return [task]
 
     def _resolve_task(self, task: Any, context: dict) -> Any:
@@ -124,6 +140,8 @@ class PlanExecutor:
                 "$calendar_events":         "calendar_events",
                 "$calendar_items":          "calendar_events",
                 "$sheet_email_body":        "sheet_email_body",
+                "$gmail_message_ids":       "gmail_message_ids",
+                "$gmail_details_values":    "gmail_details_values",
                 "$last_code_stdout":        "last_code_stdout",
                 "$last_code_result":        "last_code_result",
                 "$drive_export_content":    "drive_export_content",
@@ -391,13 +409,21 @@ class PlanExecutor:
 
             # Extract headers into top-level keys for easy access (e.g. {task-2.from})
             headers = payload.get("headers", [])
-            for h in headers:
-                name = h.get("name", "").lower()
+            headers_dict = {}
+            if isinstance(headers, list):
+                for h in headers:
+                    name = h.get("name", "").lower()
+                    if name:
+                        headers_dict[name] = h.get("value")
+            else:
+                headers_dict = {str(k).lower(): v for k, v in headers.items()}
+
+            for name, value in headers_dict.items():
                 if name in ("from", "subject", "date", "to", "cc", "bcc"):
-                    data[name] = h.get("value")
+                    data[name] = value
                     # Also store in context for legacy/global access if this is the latest get_message
                     if is_gmail_get:
-                        context[f"gmail_{name}"] = h.get("value")
+                        context[f"gmail_{name}"] = value
 
             def find_body(p):
                 b = p.get("body", {})
@@ -417,6 +443,16 @@ class PlanExecutor:
             if body:
                 data["body"] = body
                 context["gmail_message_body_text"] = body
+            
+            # Populate gmail_details_values for Sheets extraction
+            sender = headers_dict.get("from", "Unknown")
+            subject = headers_dict.get("subject", "No Subject")
+            # We want to build a cumulative list if this is part of an expansion
+            details_list = context.setdefault("gmail_details_values", [])
+            # Extract just email from "Name <email@example.com>"
+            email_match = re.search(r"<(.+?)>", str(sender))
+            email_addr = email_match.group(1) if email_match else sender
+            details_list.append([sender, email_addr, subject])
 
         if "messages" in data:
             msgs = data["messages"]
@@ -433,6 +469,9 @@ class PlanExecutor:
                         context[f"thread_id_from_task_{num}"] = t_id
 
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
+                context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
+                # Reset details for fresh extraction
+                context["gmail_details_values"] = []
 
         if "files" in data:
             files = data["files"]
@@ -542,11 +581,26 @@ class PlanExecutor:
         context: dict = {}
         context.setdefault("task_results", {})
 
-        for i, task in enumerate(plan.tasks):
-            # Store the 1-based index in the task object temporarily for _update_context_from_result
+        # Use a list of tasks that can grow if expansion occurs
+        task_queue = list(plan.tasks)
+        i = 0
+        while i < len(task_queue):
+            task = task_queue[i]
+            
+            # 1. Expand task if needed (e.g. multi-message get_message)
+            expanded = self._expand_task(task, context)
+            
+            # If expansion happened, replace the current task with expanded ones
+            if len(expanded) > 1 or expanded[0] is not task:
+                # Insert expanded tasks into queue after current index
+                task_queue[i:i+1] = expanded
+                # Re-fetch the first expanded task for this iteration
+                task = task_queue[i]
+
+            # Store the 1-based sequence index
             task._sequence_index = i + 1
 
-            # Resolve task (includes range auto-fix and gmail artifact injection)
+            # 2. Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)
 
             # For test_unresolved_placeholder_fails_gracefully

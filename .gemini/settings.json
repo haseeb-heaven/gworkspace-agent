@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "mem0": {
+      "command": "node",
+      "args": [
+        "node_modules/@mem0/mcp-server/dist/index.js"
+      ],
+      "env": {
+        "MEM0_API_KEY": "m0-la6m4rm4AKWTj2gQHIK7EyWzbYrBJoz6jfZ64AXu"
+      }
+    }
+  }
+}

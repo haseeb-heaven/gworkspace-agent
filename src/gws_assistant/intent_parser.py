@@ -110,7 +110,7 @@ class IntentParser:
         lowered = text.lower()
         service = self._detect_service(lowered)
         action = self._detect_action(service, text) if service else None
-        
+
         # IDs are case-sensitive, so we need original text
         parameters = self._extract_simple_parameters(text)
 
@@ -138,9 +138,9 @@ class IntentParser:
             all_aliases.append((service_key, service_key))
             for alias in spec.aliases:
                 all_aliases.append((alias, service_key))
-        
+
         all_aliases.sort(key=lambda x: len(x[0]), reverse=True)
-        
+
         detected_service = None
         for alias, service_key in all_aliases:
             if alias in text:
@@ -149,7 +149,7 @@ class IntentParser:
                 if service_key == "docs":
                     return "docs"
                 # Keep looking for more specific matches unless we found docs
-                
+
         return detected_service
 
     def _detect_action(self, service: str | None, text: str) -> str | None:
@@ -157,7 +157,7 @@ class IntentParser:
             return None
         actions = SERVICES[service].actions
         lowered = text.lower()
-        
+
         # Priority 1: Strong verb match
         if service == "gmail":
             if "send" in lowered or "compose" in lowered or "write" in lowered:
@@ -166,7 +166,7 @@ class IntentParser:
                 return "list_messages"
             if "get" in lowered or "read" in lowered or "open" in lowered:
                 return "get_message"
-        
+
         if service == "docs":
             if "read" in lowered or "get" in lowered or "open" in lowered or "show" in lowered:
                 return "get_document"
@@ -190,14 +190,14 @@ class IntentParser:
                 return "move_file"
             if "folder" in lowered:
                 return "create_folder"
-                
+
         # Fallback to scoring for other services
         best_action = None
         best_score = -999
         for action_key, action_spec in actions.items():
-            score = sum(2 if keyword in lowered.split() else 1 if keyword in lowered else 0 
+            score = sum(2 if keyword in lowered.split() else 1 if keyword in lowered else 0
                         for keyword in action_spec.keywords)
-            
+
             # Penalize list actions if 'send' is present (generic)
             if "list" in action_key and "send" in lowered:
                 score -= 10
@@ -207,16 +207,16 @@ class IntentParser:
                 for neg in action_spec.negative_keywords:
                     if neg in lowered:
                         score -= 20
-            
+
             if score > best_score:
                 best_score = score
                 best_action = action_key
-                
+
         return best_action if best_score > 0 else None
 
     def _extract_simple_parameters(self, text: str) -> dict[str, Any]:
         params: dict[str, Any] = {}
-        
+
         # 1. Look for explicit key=value pairs (highest priority)
         kv_pairs = re.findall(r"([a-zA-Z0-9_-]+)=([a-zA-Z0-9_-]+)", text)
         for k, v in kv_pairs:
@@ -235,9 +235,9 @@ class IntentParser:
                 params["file_id"] = doc_id
             if "presentation_id" not in params:
                 params["presentation_id"] = doc_id
-        
+
         lowered = text.lower()
-        
+
         # 3. Extract Title (for Docs/Sheets)
         title_match = re.search(r"(?:titled|named|called)\s+['\"](.+?)['\"]", text)
         if not title_match:
@@ -269,7 +269,7 @@ class IntentParser:
                     params["to_email"] = to_part.strip().rstrip(".")
             except IndexError:
                 pass
-        
+
         if "subject" in lowered:
             # Look for quoted subject or just the rest of the string
             match = re.search(r"subject ['\"](.+?)['\"]", lowered)
@@ -280,11 +280,11 @@ class IntentParser:
                     params["subject"] = lowered.split("subject ")[1].split("body")[0].strip()
                 except IndexError:
                     pass
-        
+
         if "body" in lowered:
             try:
                 params["body"] = lowered.split("body ")[1].strip()
             except IndexError:
                 pass
-                
+
         return params
