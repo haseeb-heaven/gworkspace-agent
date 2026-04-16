@@ -295,12 +295,12 @@ class TestAgentPlanning:
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
         plan = agent.plan(
             "Search Google Sheets with ID: '1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo' "
-            "create email with this data to os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com') and send it"
+            "create email with this data to 'user@example.com' and send it"
         )
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("sheets", "get_values") in services
         assert ("gmail", "send_message") in services
-        assert plan.tasks[-1].parameters.get("to_email") == "haseebmahr.hm@gmail.com"
+        assert plan.tasks[-1].parameters.get("to_email") == "user@example.com"
 
     def test_list_emails_from_specific_person(self, tmp_path):
         """User: 'List all emails i received from amrita.priyadarshini@rockstarindia.com person'"""

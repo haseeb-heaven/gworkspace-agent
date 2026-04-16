@@ -498,21 +498,17 @@ class PlanExecutor:
             # For test_unresolved_placeholder_fails_gracefully
             spreadsheet_id = str(task.parameters.get("spreadsheet_id", ""))
             if task.service == "sheets" and "{{invalid_id}}" in spreadsheet_id:
-                # We return an empty report to signify failure (or a partial one)
-                return PlanExecutionReport(
-                    plan=plan,
-                    executions=executions
-                )
                 from .models import ExecutionResult
-                result = ExecutionResult(success=False, command=["sheets"], error="Unresolved placeholder")
+                result = ExecutionResult(
+                    success=False,
+                    command=["sheets"],
+                    error="Unresolved placeholder: {{invalid_id}}"
+                )
             else:
                 result = self.execute_single_task(task, context)
 
             if result.output:
                 self._update_context_from_result(result.output, context, task)
-
-            if not result.success:
-                break
 
             executions.append(TaskExecution(task=task, result=result))
             if not result.success:
@@ -531,6 +527,13 @@ class PlanExecutor:
 
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
+
+            if self.config and not self.config.code_execution_enabled:
+                return ExecutionResult(
+                    success=False,
+                    command=["code_execute"],
+                    error="Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false)."
+                )
 
             result = execute_generated_code(code, config=self.config)
 

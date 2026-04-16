@@ -265,7 +265,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     def update_context_node(state: AgentState) -> dict[str, Any]:
         return {
             "current_task_index": state.get("current_task_index", 0) + 1,
-            "error": None,
+            "error": state.get("error"),
             "current_attempt": 0,
             "conversation_history": _trim_history(state.get("conversation_history", [])),
         }
@@ -283,6 +283,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             )
         else:
             report = state.get("final_output") or state.get("error") or "No result produced."
+
+        # Guard: if report is still empty and there was an error in state, use it.
+        if (not report or report == "No result produced.") and state.get("error"):
+            report = state["error"]
         if any(not item.result.success for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
         return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
@@ -317,9 +321,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
     def code_execution_node(state: AgentState) -> dict[str, Any]:
         if not config.code_execution_enabled:
+            msg = "Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false)."
             return {
-                "error": "Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false).",
-                "last_result": StructuredToolResult(success=False, output={}, error="code_execution_disabled"),
+                "error": msg,
+                "last_result": StructuredToolResult(success=False, output={}, error=msg),
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
         code = (state.get("context", {}) or {}).get("generated_code")

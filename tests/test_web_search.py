@@ -4,8 +4,8 @@ from gws_assistant.tools.web_search import summarize_results
 def test_web_search_tool_no_ddg(mocker):
     # Mock community import failure
     import gws_assistant.tools.web_search as ws
-    mocker.patch.object(ws, 'DuckDuckGoSearchResults', None)
-    mocker.patch.object(ws, 'TavilySearchResults', None)
+    mocker.patch.object(ws, 'HAS_DDG', False)
+    mocker.patch.object(ws, 'HAS_TAVILY', False)
 
     result = ws.web_search_tool.invoke({"query": "test"})
     assert result["error"] is not None
@@ -37,6 +37,8 @@ def test_web_search_tool_falls_back_to_tavily(mocker):
                 ]
             }
 
+    mocker.patch.object(ws, "HAS_DDG", True)
+    mocker.patch.object(ws, "HAS_TAVILY", True)
     mocker.patch.object(ws, "DuckDuckGoSearchResults", FailingDuckDuckGo)
     mocker.patch.object(ws, "TavilySearchResults", FakeTavily)
     mocker.patch.dict(ws.os.environ, {"TAVILY_API_KEY": "test-key"}, clear=False)

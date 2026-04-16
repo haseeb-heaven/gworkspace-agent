@@ -112,13 +112,15 @@ class GWSRunner:
                 return_code=result.returncode,
             )
         except subprocess.TimeoutExpired:
-            self.logger.error("Command timed out after %d seconds: %s", timeout, " ".join(command))
+            msg = f"Command timed out after {timeout} seconds."
+            self.logger.error("%s: %s", msg, " ".join(command))
             return ExecutionResult(
                 success=False,
                 command=command,
                 stdout="",
-                stderr=f"Command timed out after {timeout} seconds.",
+                stderr=msg,
                 return_code=-1,
+                error=msg,
             )
         except Exception as exc:
             self.logger.exception("Failed to run gws command: %s", exc)
@@ -128,4 +130,30 @@ class GWSRunner:
                 stdout="",
                 stderr=str(exc),
                 return_code=-1,
+                error=str(exc),
             )
+
+    def run_with_retry(self, args: list[str], max_retries: int | None = None) -> ExecutionResult:
+        """Run a command with exponential backoff on transient errors (429, 500, 502, 503, 504)."""
+        import time
+        retries = max_retries if max_retries is not None else (self.config.gws_max_retries if self.config else 3)
+        last_result: ExecutionResult | None = None
+
+        for attempt in range(retries):
+            if attempt > 0:
+                delay = 2**attempt
+                self.logger.warning("Transient error detected. Retrying in %ds (attempt %d/%d)...", delay, attempt + 1, retries)
+                time.sleep(delay)
+
+            last_result = self.run(args)
+            if last_result.success:
+                return last_result
+
+            # Only retry on transient errors
+            # gws returns HTTP-like codes in some error messages or return codes.
+            # We check return_code for 429 (Too Many Requests), 500 (Internal Server Error), 503 (Service Unavailable).
+            is_transient = last_result.return_code in (429, 500, 502, 503, 504)
+            if not is_transient:
+                break
+
+        return last_result or ExecutionResult(success=False, command=[], error="Unknown error in run_with_retry")
