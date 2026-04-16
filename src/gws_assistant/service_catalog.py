@@ -25,10 +25,20 @@ SERVICES: dict[str, ServiceSpec] = {
             "create_folder": ActionSpec(
                 key="create_folder",
                 label="Create folder",
-                description="Create a new folder in Google Drive. Returns: {id, name, mimeType}.",
-                keywords=("create", "folder", "new"),
+                description="Create a new folder in Google Drive. Returns: {id, name}.",
+                keywords=("create", "new", "folder", "drive"),
                 parameters=(
-                    ParameterSpec("folder_name", "What should the folder name be?", "My Folder"),
+                    ParameterSpec("folder_name", "What should the folder be named?", "My Folder"),
+                ),
+            ),
+            "upload_file": ActionSpec(
+                key="upload_file",
+                label="Upload file",
+                description="Upload a local file to Google Drive. Returns: {id, name, mimeType}.",
+                keywords=("upload", "add", "put", "drive"),
+                parameters=(
+                    ParameterSpec("file_path", "Local path to the file to upload", "README.md"),
+                    ParameterSpec("name", "Optional: name for the file on Drive", "Uploaded File", required=False),
                 ),
             ),
             "get_file": ActionSpec(

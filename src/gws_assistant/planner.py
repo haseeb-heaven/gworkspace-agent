@@ -208,6 +208,11 @@ class CommandPlanner:
             return ["drive", "files", "create", "--json",
                     json.dumps({"mimeType": "application/vnd.google-apps.folder", "name": folder_name}, ensure_ascii=True)]
 
+        if action == "upload_file":
+            file_path = self._required_text(params, "file_path")
+            name = str(params.get("name") or os.path.basename(file_path)).strip()
+            return ["drive", "files", "create", "--upload", file_path, "--json", json.dumps({"name": name}, ensure_ascii=True)]
+
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id})]
