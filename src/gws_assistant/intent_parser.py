@@ -60,6 +60,8 @@ class IntentParser:
         return self._parse_with_heuristics(text)
 
     def _parse_with_llm(self, text: str) -> Intent | None:
+        if not self.client:
+            return None
         try:
             services = ", ".join(sorted(SERVICES.keys()))
             prompt = (
