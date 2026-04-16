@@ -36,9 +36,9 @@ class WorkspaceAgentSystem:
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
 
     def plan(self, user_text: str) -> RequestPlan:
-        from .memory import recall_similar
         from .intent_parser import IntentParser
-        
+        from .memory import recall_similar
+
         past = recall_similar(user_text)
         memory_hint = ""
         if past:
@@ -63,7 +63,7 @@ class WorkspaceAgentSystem:
                 return plan
             if plan and plan.no_service_detected:
                 return plan
-            
+
         if not self.config.use_heuristic_fallback:
             return RequestPlan(
                 raw_text=text,
@@ -71,17 +71,17 @@ class WorkspaceAgentSystem:
                 confidence=0.0,
                 no_service_detected=True,
             )
-        
+
         # Heuristic fallback
         # 1. Try legacy complex heuristic (handles multi-task flows)
         legacy_plan = self._plan_with_heuristics(text)
         if not legacy_plan.no_service_detected:
             return legacy_plan
-            
+
         # 2. Try simple IntentParser (good for single-task with parameters)
         parser = IntentParser(self.config, self.logger)
         intent = parser.parse(text)
-        
+
         if intent.service and intent.action and not intent.needs_clarification:
             task = PlannedTask(
                 id="task-1",
@@ -527,6 +527,28 @@ class WorkspaceAgentSystem:
             parameters["message"] = f"Task update: {lowered[:50]}..."
         elif service == "search" and action == "web_search":
             parameters["query"] = _extract_search_topic(lowered) or lowered
+        elif service in ("code", "computation"):
+            # Extract data for sorting/processing
+            list_match = re.search(r"(\[.+?\])", lowered)
+            data_str = list_match.group(1) if list_match else "[]"
+            
+            if "sort" in lowered:
+                # Basic sorting logic
+                rev = "True" if "expensive" in lowered or "descending" in lowered or "reverse" in lowered else "False"
+                # If it looks like a list of tuples (e.g. price sorting)
+                if "), (" in data_str:
+                    parameters["code"] = f"data = {data_str}\nresult = sorted(data, key=lambda x: x[1], reverse={rev})\nprint(result)"
+                else:
+                    parameters["code"] = f"data = {data_str}\nresult = sorted(data, reverse={rev})\nprint(result)"
+            elif "reverse" in lowered:
+                parameters["code"] = f"data = {data_str}\nresult = list(reversed(data))\nprint(result)"
+            else:
+                # Fallback: just echo or try to evaluate math
+                extracted = "".join(ch for ch in lowered if ch.isdigit() or ch in ".+-*/() ")
+                if extracted.strip():
+                    parameters["code"] = f"result = {extracted}\nprint(result)"
+                else:
+                    parameters["code"] = f"print('{lowered}')"
         elif service == "calendar":
             if action == "create_event":
                 # Extract summary: "event called '...'" or "event '...'"
@@ -571,10 +593,16 @@ class WorkspaceAgentSystem:
 def _detect_services_in_order(text: str) -> list[str]:
     hits: list[tuple[int, str]] = []
     for service_key, spec in SERVICES.items():
+        # Match only whole words to avoid 'docs' matching 'documents' (unless doc is an alias)
+        # and to avoid accidental substrings in long requests.
         terms = (service_key, *spec.aliases)
-        positions = [text.find(term) for term in terms if term in text]
-        if positions:
-            hits.append((min(position for position in positions if position >= 0), service_key))
+        for term in terms:
+            # Use regex for word boundary matching
+            pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+            match = pattern.search(text)
+            if match:
+                hits.append((match.start(), service_key))
+                break  # Found this service, move to next
     return [service for _, service in sorted(hits, key=lambda item: item[0])]
 
 

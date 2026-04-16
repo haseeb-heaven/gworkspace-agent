@@ -99,7 +99,8 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
 
     def _log_step(tool_name: str, normalized_input: Any, normalized_output: StructuredToolResult | ReflectionDecision | dict[str, Any]) -> None:
-        logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
+        if config.verbose:
+            logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
 
     def plan_node(state: AgentState) -> dict[str, Any]:
         try:
@@ -329,17 +330,28 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "last_result": StructuredToolResult(success=False, output={}, error=msg),
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
-        code = (state.get("context", {}) or {}).get("generated_code")
+        
+        context = dict(state.get("context", {}))
+        code = context.get("generated_code")
+        
+        # Fallback: if no generated_code, check current task parameters
+        if not code:
+            plan = state.get("plan")
+            idx = state.get("current_task_index", 0)
+            if plan and idx < len(plan.tasks):
+                task = plan.tasks[idx]
+                if task.service in ("code", "computation"):
+                    code = task.parameters.get("code")
+        
         if not code:
             return {
-                "error": "Code execution requires generated_code in context.",
-                "last_result": StructuredToolResult(success=False, output={}, error="Missing generated_code"),
+                "error": "Code execution requires generated_code in context or code parameter in task.",
+                "last_result": StructuredToolResult(success=False, output={}, error="Missing code"),
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
         result = execute_generated_code(str(code), config=config)
         _log_step("sandbox_execute", {"code": code}, result)
 
-        context = dict(state.get("context", {}))
         results_map = context.setdefault("task_results", {})
         results_map["code"] = result.get("output", {})
         results_map["computation"] = result.get("output", {})
@@ -361,10 +373,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             f"User request:\n{state['user_text']}"
         )
         model = create_agent(config, logger)
+        lowered = state["user_text"].lower()
+        is_computation = any(kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers"))
+        
         if not model:
-            if not config.use_heuristic_fallback:
+            if not config.use_heuristic_fallback or not is_computation:
+                msg = "Unable to generate code because no LLM is configured" if not model else "LLM failed"
                 return {
-                    "error": "Unable to generate code because no LLM is configured and heuristic fallback is disabled.",
+                    "error": f"{msg} and request is not a simple computation.",
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error="code_generation_unavailable"),
                 }
             extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
@@ -378,6 +394,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             llm_response = model.invoke(prompt)
         except Exception as exc:
             logger.warning("LLM code generation failed: %s. Falling back to heuristics.", exc)
+            if not is_computation:
+                return {
+                    "error": f"LLM code generation failed and request is not a simple computation: {exc}",
+                    "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
+                }
             import re
             numbers = re.findall(r"\b\d+\b", state["user_text"])
             lowered = state["user_text"].lower()
@@ -394,7 +415,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 if " " in cleaned:
                     cleaned = " + ".join(cleaned.split())
                 generated = f"result = {cleaned or '0'}\nprint(result)"
-            
+
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
             _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback_enhanced"})
