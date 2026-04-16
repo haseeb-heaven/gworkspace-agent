@@ -15,7 +15,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 key="list_files",
                 label="List files",
                 description="List or search files in Drive. Returns: [{id, name, mimeType, modifiedTime, webViewLink}]. Use id for subsequent get_file or export_file calls.",
-                keywords=("list", "show", "view", "files", "documents", "search", "find"),
+                keywords=("list files", "show files", "view files", "search files", "find files"),
                 parameters=(
                     ParameterSpec("page_size", "How many files should I show?", "10", required=False),
                     ParameterSpec("q", "Drive search query (e.g. name contains 'report')", "", required=False),
@@ -259,25 +259,27 @@ SERVICES: dict[str, ServiceSpec] = {
     "slides": ServiceSpec(
         key="slides",
         label="Google Slides",
-        aliases=("slides", "presentation", "presentations", "deck"),
-        description="Read and create Google Slides presentations.",
+        aliases=("slides", "presentation", "presentations", "google slides"),
+        description="Create and read Google Slides presentations.",
         actions={
-            "get_presentation": ActionSpec(
-                key="get_presentation",
-                label="Get presentation",
-                description="Get slides content and metadata for a presentation by presentationId. Returns: {presentationId, title, slides[]}.",
-                keywords=("get", "open", "show", "read", "presentation", "slides", "deck"),
-                parameters=(
-                    ParameterSpec("presentation_id", "Enter the Google Slides presentation ID", "1AbCdEFg123"),
-                ),
-            ),
             "create_presentation": ActionSpec(
                 key="create_presentation",
                 label="Create presentation",
-                description="Create a new blank Google Slides presentation. Returns: {presentationId, title}.",
-                keywords=("create", "new", "presentation", "slides", "deck"),
+                description="Create a new Google Slides presentation. Returns: {presentationId, title, presentationUrl}.",
+                keywords=("create", "new", "write"),
+                negative_keywords=("search", "find", "list", "show"),
                 parameters=(
-                    ParameterSpec("title", "What should the presentation title be?", "Sales Deck"),
+                    ParameterSpec("title", "What should the presentation title be?", "My Presentation"),
+                ),
+            ),
+            "get_presentation": ActionSpec(
+                key="get_presentation",
+                label="Get presentation",
+                description="Fetch the content and metadata of a Google Slides presentation. Returns: {presentationId, title, slides}.",
+                keywords=("get", "open", "show", "read"),
+                negative_keywords=("create", "new", "search"),
+                parameters=(
+                    ParameterSpec("presentation_id", "Enter the Google Slides presentation ID", "1AbCdEFg123"),
                 ),
             ),
         },

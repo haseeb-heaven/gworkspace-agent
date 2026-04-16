@@ -415,21 +415,13 @@ class CommandPlanner:
                 attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
             # Resolve any raw Drive file IDs in attachment_paths to local PDF files.
-            # When the planner receives a Drive file ID (e.g. the agent passed the ID
-            # from a drive.list_files result directly as the attachment value), we must
-            # export/download the file first so that _build_raw_email_with_attachments
-            # can open a real local file.  Without this step the attachment silently
-            # disappears because os.path.isfile(drive_id) is always False.
             resolved_attachment_paths: list[str] = []
             for path in attachment_paths:
                 if _DRIVE_FILE_ID_RE.match(path):
-                    # It looks like a Drive file ID, not a local filesystem path.
                     local_path = self._export_drive_file_to_temp(path)
                     if local_path:
                         resolved_attachment_paths.append(local_path)
                     else:
-                        # Export failed — fall back to sending a Drive link in the body
-                        # so the recipient still has access to the document.
                         drive_link = f"https://drive.google.com/file/d/{path}/view"
                         body = (
                             body.rstrip()
@@ -466,46 +458,24 @@ class CommandPlanner:
 
         if action == "create_event":
             summary = self._required_text(params, "summary")
-
-            # ------------------------------------------------------------------
-            # Fix 1 — resolve relative date expressions ("tomorrow", "next monday"…)
-            # The LLM sometimes passes the literal word "tomorrow" or a stale
-            # hardcoded date.  _resolve_date_expression() converts both to a
-            # correct YYYY-MM-DD string anchored to today's actual date.
-            # ------------------------------------------------------------------
             start_date_raw = self._required_text(params, "start_date")
             start_date     = _resolve_date_expression(start_date_raw)
-
-            # ------------------------------------------------------------------
-            # Fix 2 — use dateTime + timeZone when a time is provided.
-            # Prefer an explicit start_datetime param (already ISO-8601), then
-            # fall back to combining start_date + start_time.  Only use the
-            # all-day {"date": ...} format when absolutely no time is given.
-            # ------------------------------------------------------------------
             time_zone = str(params.get("time_zone") or params.get("timezone") or "UTC").strip()
-
-            # Accept a fully-qualified start_datetime from the LLM if provided.
             start_datetime_raw = str(params.get("start_datetime") or "").strip()
-
-            # Also accept a bare time string in start_time or start_date itself.
             start_time_raw = str(params.get("start_time") or "").strip()
-
 
             event_start: dict[str, str]
             event_end:   dict[str, str]
 
             if start_datetime_raw:
-                # LLM supplied a full ISO datetime — use it directly.
                 dt_str = start_datetime_raw if "T" in start_datetime_raw else f"{start_date}T{start_datetime_raw}"
                 event_start = {"dateTime": dt_str, "timeZone": time_zone}
-                # Default end = start + 1 hour
                 try:
                     dt_obj  = datetime.fromisoformat(dt_str)
                     end_str = (dt_obj + timedelta(hours=1)).isoformat()
                 except ValueError:
                     end_str = dt_str
                 event_end = {"dateTime": end_str, "timeZone": time_zone}
-
             elif start_time_raw:
                 parsed_time = _parse_time_to_hhmm(start_time_raw)
                 if parsed_time:
@@ -516,19 +486,12 @@ class CommandPlanner:
                     event_start = {"dateTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": time_zone}
                     event_end   = {"dateTime": dt_end.strftime("%Y-%m-%dT%H:%M:%S"),   "timeZone": time_zone}
                 else:
-                    # Unparseable time string — fall back to all-day.
                     event_start = {"date": start_date}
                     event_end   = {"date": start_date}
             else:
-                # No time provided at all — create an all-day event.
                 event_start = {"date": start_date}
                 event_end   = {"date": start_date}
 
-            # ------------------------------------------------------------------
-            # Fix 3 — populate description with spreadsheet_url / description.
-            # The LLM may pass the sheet URL as "spreadsheet_url", "sheet_url",
-            # "description", or "body".  Accept all aliases.
-            # ------------------------------------------------------------------
             description = (
                 str(params.get("description") or "").strip()
                 or str(params.get("spreadsheet_url") or "").strip()
@@ -536,10 +499,6 @@ class CommandPlanner:
                 or str(params.get("body") or "").strip()
             )
 
-            # ------------------------------------------------------------------
-            # Fix 4 — forward reminder_minutes into the reminders block.
-            # Previously this param was silently ignored.
-            # ------------------------------------------------------------------
             reminder_minutes_raw = params.get("reminder_minutes") or params.get("reminder")
             reminder_minutes     = self._safe_positive_int(reminder_minutes_raw, default=0)
 
@@ -552,10 +511,6 @@ class CommandPlanner:
             if description:
                 event_body["description"] = description
 
-            # ------------------------------------------------------------------
-            # Fix 5 — Google Meet support (conferenceData)
-            # If with_meet or add_meet is truthy, request a Meet link.
-            # ------------------------------------------------------------------
             if params.get("with_meet") or params.get("add_meet"):
                 event_body["conferenceData"] = {
                     "createRequest": {
@@ -587,8 +542,6 @@ class CommandPlanner:
         if action == "update_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
             event_id = self._required_text(params, "event_id")
-
-            # Build patch body
             patch_body = {}
             if params.get("summary"):
                 patch_body["summary"] = str(params.get("summary")).strip()
@@ -607,7 +560,6 @@ class CommandPlanner:
 
     def _build_docs_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "create_document":
-            # Fix #3 — Google Docs REST API ignores 'body' on creation; only 'title' is accepted.
             title = self._required_text(params, "title") if params.get("title") else "Untitled Document"
             doc_body: dict[str, Any] = {"title": title}
             return ["docs", "documents", "create", "--json", json.dumps(doc_body, ensure_ascii=True)]
@@ -630,14 +582,24 @@ class CommandPlanner:
         raise ValidationError(f"Unsupported docs action: {action}")
 
     # ------------------------------------------------------------------
-    # Slides, Contacts, Chat, Meet
+    # Slides
     # ------------------------------------------------------------------
 
     def _build_slides_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "create_presentation":
+            title = str(params.get("title") or "Untitled Presentation").strip()
+            return ["slides", "presentations", "create", "--json", json.dumps({"title": title}, ensure_ascii=True)]
         if action == "get_presentation":
-            presentation_id = self._required_text(params, "presentation_id")
-            return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": presentation_id})]
+            presentation_id = (params.get("presentation_id") or params.get("presentationId")
+                               or params.get("id") or params.get("file_id"))
+            if not presentation_id:
+                raise ValidationError("Missing required parameter: presentation_id")
+            return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": str(presentation_id)})]
         raise ValidationError(f"Unsupported slides action: {action}")
+
+    # ------------------------------------------------------------------
+    # Contacts, Chat, Meet, Keep, Admin, Forms, Telegram
+    # ------------------------------------------------------------------
 
     def _build_contacts_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_contacts":
@@ -684,63 +646,38 @@ class CommandPlanner:
             return ["keep", "notes", "create", "--json", json.dumps({"title": title, "body": {"text": {"text": body}}}, ensure_ascii=True)]
         raise ValidationError(f"Unsupported keep action: {action}")
 
-    # ------------------------------------------------------------------
-    # Admin & Forms
-    # ------------------------------------------------------------------
-
     def _build_admin_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "log_activity":
-            # Synthetic tool handled in execution.py
             return ["admin", "log_activity", "internal"]
-
         if action == "list_activities":
             app_name = str(params.get("application_name") or "drive").strip()
             max_res  = self._safe_positive_int(params.get("max_results"), default=10)
             return ["admin-reports", "activities", "list",
                     "--params", json.dumps({"userKey": "all", "applicationName": app_name, "maxResults": max_res})]
-
         raise ValidationError(f"Unsupported admin action: {action}")
 
     def _build_forms_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "create_form":
             title = str(params.get("title") or "Untitled Form").strip()
             return ["forms", "forms", "create", "--json", json.dumps({"info": {"title": title}}, ensure_ascii=True)]
-
         if action == "get_form":
             form_id = self._required_text(params, "form_id")
             return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
-
         raise ValidationError(f"Unsupported forms action: {action}")
-
-    # ------------------------------------------------------------------
-    # Telegram
-    # ------------------------------------------------------------------
 
     def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "send_message":
             message = self._required_text(params, "message")
-            # Use the python executable from henv if possible, otherwise just python
             python_exe = r"D:\henv\Scripts\python.exe"
-            if not os.path.exists(python_exe):
-                python_exe = "python"
-
-            # Calculate absolute path to the script relative to this file
-            # src/gws_assistant/planner.py -> ../../.agent/skills/telegram-update/scripts/send_message.py
+            if not os.path.exists(python_exe): python_exe = "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
-
             return [python_exe, script_path, message]
-
         raise ValidationError(f"Unsupported telegram action: {action}")
-
-    # ------------------------------------------------------------------
-    # Utilities
-    # ------------------------------------------------------------------
 
     def _format_range(self, range_str: str) -> str:
         range_str = range_str.strip()
-        if "!" not in range_str:
-            return range_str
+        if "!" not in range_str: return range_str
         sheet_part, cell_part = range_str.split("!", 1)
         if " " in sheet_part and not (sheet_part.startswith("'") and sheet_part.endswith("'")):
             return f"'{sheet_part}'!{cell_part}"
@@ -749,8 +686,7 @@ class CommandPlanner:
     @staticmethod
     def _required_text(params: dict[str, Any], key: str) -> str:
         value = params.get(key)
-        if value is not None and str(value).strip():
-            return str(value).strip()
+        if value is not None and str(value).strip(): return str(value).strip()
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
         for k, v in params.items():
             if k.lower().replace("_", "") in variations and v is not None and str(v).strip():
@@ -762,91 +698,35 @@ class CommandPlanner:
         try:
             parsed = int(str(value).strip())
             return parsed if parsed > 0 else default
-        except Exception:
-            return default
+        except Exception: return default
 
     @staticmethod
     def _build_raw_email(to_email: str, subject: str, body: str) -> str:
-        message = (
-            f"To: {to_email}\r\n"
-            f"Subject: {subject}\r\n"
-            "Content-Type: text/plain; charset=utf-8\r\n"
-            "MIME-Version: 1.0\r\n"
-            "\r\n"
-            f"{body}"
-        )
+        message = f"To: {to_email}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\nMIME-Version: 1.0\r\n\r\n{body}"
         return base64.urlsafe_b64encode(message.encode("utf-8")).decode("ascii")
 
     @staticmethod
-    def _build_raw_email_with_attachments(
-        to_email: str, subject: str, body: str, attachment_paths: list[str],
-    ) -> str:
+    def _build_raw_email_with_attachments(to_email: str, subject: str, body: str, attachment_paths: list[str]) -> str:
         msg = email_lib.mime.multipart.MIMEMultipart("mixed")
-        msg["To"]           = to_email
-        msg["Subject"]      = subject
-        msg["MIME-Version"] = "1.0"
+        msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
         msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
-
         for path in attachment_paths:
-            if not os.path.isfile(path):
-                continue
+            if not os.path.isfile(path): continue
             filename = os.path.basename(path)
-            with open(path, "rb") as fh:
-                data = fh.read()
+            with open(path, "rb") as fh: data = fh.read()
             part = email_lib.mime.application.MIMEApplication(data, Name=filename)
             part["Content-Disposition"] = f'attachment; filename="{filename}"'
             msg.attach(part)
-
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
     @staticmethod
     def _export_drive_file_to_temp(file_id: str) -> str | None:
         try:
-            # Fix #4 — stdlib imports (subprocess, tempfile, os, json) are already at module level.
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
-
-            gws_exe = os.environ.get("GWS_EXE") or os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                "gws.exe",
-            )
-
-            # 🔥 Try multiple formats intelligently
-            export_attempts = [
-                ("application/pdf", ".pdf"),   # Docs, Slides
-                ("text/csv", ".csv"),          # Sheets
-            ]
-
-            for mime_type, ext in export_attempts:
+            gws_exe = os.environ.get("GWS_EXE") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "gws.exe")
+            for mime_type, ext in [("application/pdf", ".pdf"), ("text/csv", ".csv")]:
                 file_path = os.path.join(tmp_dir, f"{file_id}{ext}")
-
-                export_params = json.dumps({
-                    "fileId": file_id,
-                    "mimeType": mime_type,
-                })
-
-                result = subprocess.run(
-                    [
-                        gws_exe,
-                        "drive",
-                        "files",
-                        "export",
-                        "--params",
-                        export_params,
-                        "--output",
-                        file_path,
-                    ],
-                    capture_output=True,
-                    timeout=30,
-                )
-
-                if (
-                    result.returncode == 0
-                    and os.path.isfile(file_path)
-                    and os.path.getsize(file_path) > 0
-                ):
-                    return file_path
-
+                result = subprocess.run([gws_exe, "drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type}), "-o", file_path], capture_output=True, timeout=30)
+                if result.returncode == 0 and os.path.isfile(file_path) and os.path.getsize(file_path) > 0: return file_path
             return None
-
-        except Exception:
-            return None
+        except Exception: return None
