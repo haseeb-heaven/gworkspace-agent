@@ -141,14 +141,38 @@ class IntentParser:
         if not service or service not in SERVICES:
             return None
         actions = SERVICES[service].actions
+        
+        # Priority 1: Strong verb match
+        if service == "gmail":
+            if "send" in text or "compose" in text or "write" in text:
+                return "send_message"
+            if "list" in text or "search" in text or "find" in text or "show" in text or "inbox" in text:
+                return "list_messages"
+            if "get" in text or "read" in text or "open" in text:
+                return "get_message"
+                
+        # Fallback to scoring for other services
         best_action = None
-        best_score = 0
+        best_score = -999
         for action_key, action_spec in actions.items():
-            score = sum(1 for keyword in action_spec.keywords if keyword in text)
+            score = sum(2 if keyword in text.split() else 1 if keyword in text else 0 
+                        for keyword in action_spec.keywords)
+            
+            # Penalize list actions if 'send' is present (generic)
+            if "list" in action_key and "send" in text:
+                score -= 10
+
+            # Apply heavy penalty for negative keywords
+            if hasattr(action_spec, "negative_keywords"):
+                for neg in action_spec.negative_keywords:
+                    if neg in text:
+                        score -= 20
+            
             if score > best_score:
                 best_score = score
                 best_action = action_key
-        return best_action
+                
+        return best_action if best_score > 0 else None
 
     def _extract_simple_parameters(self, text: str) -> dict[str, Any]:
         params: dict[str, Any] = {}
@@ -156,5 +180,29 @@ class IntentParser:
         if digits:
             params["page_size"] = digits[:3]
             params["max_results"] = digits[:3]
+        
+        # Simple extraction for Gmail send_message
+        if " to " in text:
+            to_part = text.split(" to ")[1].split()[0]
+            if "@" in to_part:
+                params["to_email"] = to_part.strip().rstrip(".")
+        
+        if "subject" in text:
+            # Look for quoted subject or just the rest of the string
+            match = re.search(r"subject ['\"](.+?)['\"]", text)
+            if match:
+                params["subject"] = match.group(1)
+            else:
+                try:
+                    params["subject"] = text.split("subject ")[1].split("body")[0].strip()
+                except IndexError:
+                    pass
+        
+        if "body" in text:
+            try:
+                params["body"] = text.split("body ")[1].strip()
+            except IndexError:
+                pass
+                
         return params
 

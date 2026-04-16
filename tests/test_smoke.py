@@ -23,6 +23,7 @@ def _run_command(args: list[str], env: dict | None = None) -> subprocess.Complet
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=20,
         check=False,
         env=env,

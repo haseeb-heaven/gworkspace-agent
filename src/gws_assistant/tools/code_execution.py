@@ -20,7 +20,6 @@ from typing import Any
 
 from langchain_core.tools import tool
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
-from RestrictedPython.PrintCollector import PrintCollector
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
@@ -108,26 +107,30 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["enumerate"] = enumerate
     safe_g["__builtins__"]["zip"] = zip
 
-    # Use a custom print collector to capture output from print()
-    class RobustCollector:
-        def __init__(self):
-            self.buf = []
-        def __call__(self, arg=None):
-            if arg is not None:
-                self.buf.append(str(arg))
-                return self
-            return "\n".join(self.buf)
+    # Simple object that has a write method to satisfy RestrictedPython print()
+    class SimpleCollector:
+        def __init__(self, _getattr_=None):
+            self.txt = []
+            self._getattr_ = _getattr_
         def write(self, text):
-            self.buf.append(text)
+            self.txt.append(text)
+        def __call__(self):
+            return "".join(self.txt).strip()
         def _call_print(self, *args, **kwargs):
-            return self.__call__(*args, **kwargs)
+            import builtins
+            if kwargs.get("file", None) is None:
+                kwargs["file"] = self
+            builtins.print(*args, **kwargs)
 
-    collector = RobustCollector()
-    safe_g["_print_"] = collector
-    safe_g["_print_buffer_instance"] = collector # Keep reference for retrieval
+    collector = SimpleCollector()
+    def _print_factory(_getattr_=None):
+        collector._getattr_ = _getattr_
+        return collector
+
+    safe_g["_print_"] = _print_factory
+    safe_g["_print_buffer_instance"] = collector
 
     safe_g["_getattr_"] = getattr
-
     safe_g["_setattr_"] = setattr
     safe_g["_getiter_"] = iter
     safe_g["_getitem_"] = lambda obj, key: obj[key]
@@ -200,7 +203,7 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         if "_print_buffer_instance" in sandbox_globals:
             collector = sandbox_globals["_print_buffer_instance"]
             if callable(collector):
-                exec_result.stdout = collector()
+                exec_result.stdout = str(collector())
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:
@@ -322,8 +325,8 @@ def code_execution_tool_with_config(config, logger: Any):
     @tool
     def code_execution_tool(code: str) -> dict[str, Any]:
         """Execute Python in a restricted sandbox or cloud (E2B) with normalized results.
-        
-        CRITICAL: Use the pre-injected 'quote(value)' helper for all strings to avoid syntax errors 
+
+        CRITICAL: Use the pre-injected 'quote(value)' helper for all strings to avoid syntax errors
         with nested quotes or special characters. Example: name = quote("O'Reilly")
         """
         structured = execute_generated_code(code, config=config)

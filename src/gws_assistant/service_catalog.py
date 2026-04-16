@@ -138,6 +138,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="List messages",
                 description="Search the Gmail inbox and return a list of message stubs. Returns: [{id, threadId}]. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com'). Must call get_message next to read content.",
                 keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
+                negative_keywords=("send", "compose", "mail to", "write email", "email to"),
                 parameters=(
                     ParameterSpec("max_results", "How many emails should I show?", "10", required=False),
                     ParameterSpec("q", "What Gmail search query should I use?", "ticket", required=False),
@@ -148,6 +149,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Get message details",
                 description="Fetch the full content of a Gmail message by id. Returns: {id, subject, from, to, date, snippet, body}. The executor auto-resolves message_id from the preceding list_messages result — you may omit it.",
                 keywords=("get", "open", "message", "email"),
+                negative_keywords=("send", "list", "search"),
                 parameters=(
                     ParameterSpec("message_id", "Enter message ID (or omit — auto-resolved from list_messages)", "18c5a4fbe123", required=False),
                 ),
@@ -157,6 +159,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Send email",
                 description="Send an email from the authenticated account. 'body' can be a $placeholder (e.g. $sheet_email_body, $last_code_stdout, $web_search_markdown) resolved at runtime.",
                 keywords=("send", "compose", "mail", "email", "share"),
+                negative_keywords=("list", "search", "find", "inbox"),
                 parameters=(
                     ParameterSpec("to_email", "Recipient email address", "person@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),

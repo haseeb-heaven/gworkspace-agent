@@ -121,6 +121,7 @@ class ActionSpec:
     key: str
     label: str
     keywords: tuple[str, ...]
+    negative_keywords: tuple[str, ...] = ()
     parameters: tuple[ParameterSpec, ...] = ()
     description: str = ""
 
