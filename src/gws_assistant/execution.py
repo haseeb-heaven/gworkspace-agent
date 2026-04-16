@@ -128,6 +128,9 @@ class PlanExecutor:
                 "$last_code_result":        "last_code_result",
                 "$drive_export_content":    "drive_export_content",
                 "$drive_export_file":       "drive_export_content",
+                "$last_export_file_content": "last_export_file_content",
+                "$last_export_content":      "last_export_file_content",
+                "$last_file_content":        "last_export_file_content",
             }
 
             results_map = context.get("task_results", {})
