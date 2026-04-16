@@ -221,14 +221,14 @@ SERVICES: dict[str, ServiceSpec] = {
     "docs": ServiceSpec(
         key="docs",
         label="Google Docs",
-        aliases=("docs", "doc", "document", "documents", "google docs", "google documents"),
+        aliases=("docs", "doc", "document", "documents", "google doc", "google docs", "google documents"),
         description="Create and edit Google Docs documents.",
         actions={
             "create_document": ActionSpec(
                 key="create_document",
                 label="Create document",
                 description="Create a new Google Doc with an optional initial body. 'content' can be a $placeholder (e.g. $web_search_summary). Returns: {documentId, title, documentUrl}.",
-                keywords=("create", "new", "write", "save", "document", "doc"),
+                keywords=("create", "new", "write", "draft"),
                 parameters=(
                     ParameterSpec("title", "What should the document title be?", "My Document"),
                     ParameterSpec("content", "Initial document content or $placeholder", "$web_search_summary", required=False),
@@ -238,7 +238,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 key="get_document",
                 label="Get document",
                 description="Fetch the content and metadata of a Google Doc by documentId. Returns: {documentId, title, body}.",
-                keywords=("get", "open", "show", "read", "document", "doc"),
+                keywords=("get", "open", "show", "read", "fetch"),
                 parameters=(
                     ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),
                 ),
@@ -247,7 +247,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 key="batch_update",
                 label="Update document content",
                 description="Insert or append text into an existing Google Doc at index 1. Use documentId from a preceding create_document.",
-                keywords=("update", "append", "write", "insert", "text", "content"),
+                keywords=("update document", "append to document", "write to document", "insert into document", "add text to document"),
+                negative_keywords=("read", "get", "show", "find", "search", "open"),
                 parameters=(
                     ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),
                     ParameterSpec("text", "Text to append/insert", "Hello world"),

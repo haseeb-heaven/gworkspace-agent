@@ -37,6 +37,8 @@ class WorkspaceAgentSystem:
 
     def plan(self, user_text: str) -> RequestPlan:
         from .memory import recall_similar
+        from .intent_parser import IntentParser
+        
         past = recall_similar(user_text)
         memory_hint = ""
         if past:
@@ -68,14 +70,29 @@ class WorkspaceAgentSystem:
                     confidence=0.0,
                     no_service_detected=True,
                 )
-        elif not self.config.use_heuristic_fallback:
+        
+        # Heuristic fallback using IntentParser
+        parser = IntentParser(self.config, self.logger)
+        intent = parser.parse(text)
+        
+        if intent.service and intent.action and not intent.needs_clarification:
+            task = PlannedTask(
+                id="task-1",
+                service=intent.service,
+                action=intent.action,
+                parameters=intent.parameters,
+                reason=f"Heuristically detected {intent.service}.{intent.action}",
+            )
             return RequestPlan(
                 raw_text=text,
-                summary="No LLM configured and USE_HEURISTIC_FALLBACK is disabled.",
-                confidence=0.0,
-                no_service_detected=True,
+                tasks=[task],
+                summary=f"Planned 1 task via IntentParser: {intent.service}.{intent.action}",
+                confidence=intent.confidence,
+                no_service_detected=False,
+                source="intent_parser",
             )
 
+        # Legacy complex heuristic fallback
         return self._plan_with_heuristics(text)
 
     def _plan_from_payload(self, text: str, payload: dict[str, Any], source: str) -> RequestPlan:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from .models import AppConfigModel, Intent
@@ -108,8 +109,10 @@ class IntentParser:
     def _parse_with_heuristics(self, text: str) -> Intent:
         lowered = text.lower()
         service = self._detect_service(lowered)
-        action = self._detect_action(service, lowered) if service else None
-        parameters = self._extract_simple_parameters(lowered)
+        action = self._detect_action(service, text) if service else None
+        
+        # IDs are case-sensitive, so we need original text
+        parameters = self._extract_simple_parameters(text)
 
         needs_clarification = not service
         reason = None
@@ -129,43 +132,80 @@ class IntentParser:
         )
 
     def _detect_service(self, text: str) -> str | None:
+        # Sort aliases by length descending to match 'google docs' before 'docs' or 'google'
+        all_aliases = []
         for service_key, spec in SERVICES.items():
-            if service_key in text:
-                return service_key
+            all_aliases.append((service_key, service_key))
             for alias in spec.aliases:
-                if alias in text:
-                    return service_key
-        return None
+                all_aliases.append((alias, service_key))
+        
+        all_aliases.sort(key=lambda x: len(x[0]), reverse=True)
+        
+        detected_service = None
+        for alias, service_key in all_aliases:
+            if alias in text:
+                detected_service = service_key
+                # If we detect 'docs', prioritize it immediately over 'drive'
+                if service_key == "docs":
+                    return "docs"
+                # Keep looking for more specific matches unless we found docs
+                
+        return detected_service
 
     def _detect_action(self, service: str | None, text: str) -> str | None:
         if not service or service not in SERVICES:
             return None
         actions = SERVICES[service].actions
+        lowered = text.lower()
         
         # Priority 1: Strong verb match
         if service == "gmail":
-            if "send" in text or "compose" in text or "write" in text:
+            if "send" in lowered or "compose" in lowered or "write" in lowered:
                 return "send_message"
-            if "list" in text or "search" in text or "find" in text or "show" in text or "inbox" in text:
+            if "list" in lowered or "search" in lowered or "find" in lowered or "show" in lowered or "inbox" in lowered:
                 return "list_messages"
-            if "get" in text or "read" in text or "open" in text:
+            if "get" in lowered or "read" in lowered or "open" in lowered:
                 return "get_message"
+        
+        if service == "docs":
+            if "read" in lowered or "get" in lowered or "open" in lowered or "show" in lowered:
+                return "get_document"
+            if "create" in lowered or "new" in lowered:
+                return "create_document"
+            if "update" in lowered or "append" in lowered or "insert" in lowered or "write" in lowered:
+                return "batch_update"
+
+        if service == "drive":
+            if "list" in lowered or "search" in lowered or "find" in lowered or "show" in lowered:
+                return "list_files"
+            if "get" in lowered or "open" in lowered:
+                return "get_file"
+            if "upload" in lowered or "add" in lowered:
+                return "upload_file"
+            if "export" in lowered or "download" in lowered:
+                return "export_file"
+            if "delete" in lowered or "remove" in lowered:
+                return "delete_file"
+            if "move" in lowered or "relocate" in lowered:
+                return "move_file"
+            if "folder" in lowered:
+                return "create_folder"
                 
         # Fallback to scoring for other services
         best_action = None
         best_score = -999
         for action_key, action_spec in actions.items():
-            score = sum(2 if keyword in text.split() else 1 if keyword in text else 0 
+            score = sum(2 if keyword in lowered.split() else 1 if keyword in lowered else 0 
                         for keyword in action_spec.keywords)
             
             # Penalize list actions if 'send' is present (generic)
-            if "list" in action_key and "send" in text:
+            if "list" in action_key and "send" in lowered:
                 score -= 10
 
             # Apply heavy penalty for negative keywords
             if hasattr(action_spec, "negative_keywords"):
                 for neg in action_spec.negative_keywords:
-                    if neg in text:
+                    if neg in lowered:
                         score -= 20
             
             if score > best_score:
@@ -176,33 +216,57 @@ class IntentParser:
 
     def _extract_simple_parameters(self, text: str) -> dict[str, Any]:
         params: dict[str, Any] = {}
-        digits = "".join(ch for ch in text if ch.isdigit())
+        
+        # 1. Look for explicit key=value pairs (highest priority)
+        kv_pairs = re.findall(r"([a-zA-Z0-9_-]+)=([a-zA-Z0-9_-]+)", text)
+        for k, v in kv_pairs:
+            params[k] = v
+
+        # 2. Extract Google IDs (fallback for bare IDs)
+        id_match = re.search(r"\b([a-zA-Z0-9_-]{35,65})\b", text)
+        if id_match:
+            doc_id = id_match.group(1)
+            # Only use if not already found via kv
+            if "document_id" not in params:
+                params["document_id"] = doc_id
+            if "spreadsheet_id" not in params:
+                params["spreadsheet_id"] = doc_id
+            if "file_id" not in params:
+                params["file_id"] = doc_id
+            if "presentation_id" not in params:
+                params["presentation_id"] = doc_id
+        
+        lowered = text.lower()
+        # 3. Handle specific Gmail fields
+        digits = "".join(ch for ch in lowered if ch.isdigit())
         if digits:
             params["page_size"] = digits[:3]
             params["max_results"] = digits[:3]
-        
+
         # Simple extraction for Gmail send_message
-        if " to " in text:
-            to_part = text.split(" to ")[1].split()[0]
-            if "@" in to_part:
-                params["to_email"] = to_part.strip().rstrip(".")
+        if " to " in lowered:
+            try:
+                to_part = lowered.split(" to ")[1].split()[0]
+                if "@" in to_part:
+                    params["to_email"] = to_part.strip().rstrip(".")
+            except IndexError:
+                pass
         
-        if "subject" in text:
+        if "subject" in lowered:
             # Look for quoted subject or just the rest of the string
-            match = re.search(r"subject ['\"](.+?)['\"]", text)
+            match = re.search(r"subject ['\"](.+?)['\"]", lowered)
             if match:
                 params["subject"] = match.group(1)
             else:
                 try:
-                    params["subject"] = text.split("subject ")[1].split("body")[0].strip()
+                    params["subject"] = lowered.split("subject ")[1].split("body")[0].strip()
                 except IndexError:
                     pass
         
-        if "body" in text:
+        if "body" in lowered:
             try:
-                params["body"] = text.split("body ")[1].strip()
+                params["body"] = lowered.split("body ")[1].strip()
             except IndexError:
                 pass
                 
         return params
-
