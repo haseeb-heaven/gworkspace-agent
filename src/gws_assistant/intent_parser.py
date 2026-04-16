@@ -237,7 +237,25 @@ class IntentParser:
                 params["presentation_id"] = doc_id
         
         lowered = text.lower()
-        # 3. Handle specific Gmail fields
+        
+        # 3. Extract Title (for Docs/Sheets)
+        title_match = re.search(r"(?:titled|named|called)\s+['\"](.+?)['\"]", text)
+        if not title_match:
+            title_match = re.search(r"(?:titled|named|called)\s+([a-zA-Z0-9_-]+)", text)
+        if title_match:
+            params["title"] = title_match.group(1).strip()
+            self.logger.info("Found title: %s", params["title"])
+
+        # 4. Extract Values (for Sheets) - Look for [[...]] or list-like content
+        values_match = re.search(r"(\[\[.+?\]\])", text)
+        if values_match:
+             try:
+                 params["values"] = json.loads(values_match.group(1).replace("'", '"'))
+                 self.logger.info("Found values array: %s", params["values"])
+             except Exception:
+                 params["values"] = values_match.group(1)
+
+        # 5. Handle specific Gmail fields
         digits = "".join(ch for ch in lowered if ch.isdigit())
         if digits:
             params["page_size"] = digits[:3]
