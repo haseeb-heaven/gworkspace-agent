@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
 from typing import Any
 
@@ -143,8 +141,6 @@ class WorkspaceAgentSystem:
                 confidence=0.2,
                 no_service_detected=True,
             )
-
-        has_save_intent = _has_any(lowered, ("save", "write", "store", "export", "append", "document", "doc"))
 
         if _is_web_search_and_save(lowered) and "docs" in services and "sheets" in services:
             tasks = self._web_search_to_docs_and_sheets_tasks(text, lowered)

@@ -1,4 +1,3 @@
-import sys
 
 content = open('changelog_raw.txt', 'r', encoding='utf-8').read()
 lines = content.split('\n')

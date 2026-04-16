@@ -1,4 +1,3 @@
-import json
 from .logger import setup_framework_logger
 
 logger = setup_framework_logger("validator")

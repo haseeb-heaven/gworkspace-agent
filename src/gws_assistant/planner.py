@@ -8,7 +8,6 @@ import email.mime.application
 import email.mime.multipart
 import email.mime.text
 import json
-import logging
 import os
 import re
 import subprocess
@@ -157,21 +156,36 @@ class CommandPlanner:
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
 
-        if service_key == "drive":    return self._build_drive_command(action_key, params)
-        if service_key == "sheets":   return self._build_sheets_command(action_key, params)
-        if service_key == "gmail":    return self._build_gmail_command(action_key, params)
-        if service_key == "calendar": return self._build_calendar_command(action_key, params)
-        if service_key == "docs":     return self._build_docs_command(action_key, params)
-        if service_key == "slides":   return self._build_slides_command(action_key, params)
-        if service_key == "contacts": return self._build_contacts_command(action_key, params)
-        if service_key == "chat":     return self._build_chat_command(action_key, params)
-        if service_key == "meet":     return self._build_meet_command(action_key, params)
-        if service_key == "keep":     return self._build_keep_command(action_key, params)
-        if service_key == "search":   return self._build_search_command(action_key, params)
-        if service_key == "admin":    return self._build_admin_command(action_key, params)
-        if service_key == "forms":    return self._build_forms_command(action_key, params)
-        if service_key == "telegram": return self._build_telegram_command(action_key, params)
-        if service_key in ("code", "computation"): return [service_key, action_key, "internal"]
+        if service_key == "drive":
+            return self._build_drive_command(action_key, params)
+        if service_key == "sheets":
+            return self._build_sheets_command(action_key, params)
+        if service_key == "gmail":
+            return self._build_gmail_command(action_key, params)
+        if service_key == "calendar":
+            return self._build_calendar_command(action_key, params)
+        if service_key == "docs":
+            return self._build_docs_command(action_key, params)
+        if service_key == "slides":
+            return self._build_slides_command(action_key, params)
+        if service_key == "contacts":
+            return self._build_contacts_command(action_key, params)
+        if service_key == "chat":
+            return self._build_chat_command(action_key, params)
+        if service_key == "meet":
+            return self._build_meet_command(action_key, params)
+        if service_key == "keep":
+            return self._build_keep_command(action_key, params)
+        if service_key == "search":
+            return self._build_search_command(action_key, params)
+        if service_key == "admin":
+            return self._build_admin_command(action_key, params)
+        if service_key == "forms":
+            return self._build_forms_command(action_key, params)
+        if service_key == "telegram":
+            return self._build_telegram_command(action_key, params)
+        if service_key in ("code", "computation"):
+            return [service_key, action_key, "internal"]
         raise ValidationError(f"No command builder for service: {service_key}")
 
     # ------------------------------------------------------------------

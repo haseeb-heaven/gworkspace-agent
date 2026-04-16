@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import datetime
 import io
 import json
 import math
 import re
 import threading
+import time
 from typing import Any
 
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
@@ -32,8 +34,6 @@ _BANNED_PATTERNS = [
     r"__import__",
 ]
 
-import datetime
-import time
 
 # Safe stdlib modules that the LLM commonly needs for numeric/currency/date work.
 # These are pre-injected into the sandbox globals so LLM-generated `import X`
@@ -97,10 +97,14 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_getitem_"] = lambda obj, key: obj[key]
     safe_g["_write_"] = lambda obj: obj
     def _inplacevar(op, target, expr):
-        if op == '+=': return target + expr
-        if op == '-=': return target - expr
-        if op == '*=': return target * expr
-        if op == '/=': return target / expr
+        if op == '+=':
+            return target + expr
+        if op == '-=':
+            return target - expr
+        if op == '*=':
+            return target * expr
+        if op == '/=':
+            return target / expr
         return expr
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.

@@ -1,4 +1,3 @@
-import pytest
 import logging
 from src.gws_assistant.tools.code_execution import execute_generated_code
 

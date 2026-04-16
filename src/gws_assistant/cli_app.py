@@ -63,7 +63,6 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
     # langchain / transformers / numpy chain.
     from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem  # noqa: F401
     from .config import AppConfig
-    from .conversation import ConversationEngine
     from .execution import PlanExecutor
     from .gws_runner import GWSRunner
     from .langgraph_workflow import run_workflow
@@ -92,7 +91,6 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
         raise typer.Exit(code=1)
 
     planner = CommandPlanner()
-    engine = ConversationEngine(planner=planner, logger=logger)
     agent_system = WorkspaceAgentSystem(config=config, logger=logger)
     runner = GWSRunner(config.gws_binary_path, logger=logger, config=config)
     executor = PlanExecutor(planner=planner, runner=runner, logger=logger, config=config)
@@ -170,7 +168,6 @@ def run(
 
 def main() -> None:
     """Entry point for console scripts."""
-    import sys
     if sys.platform == "win32":
         import io
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

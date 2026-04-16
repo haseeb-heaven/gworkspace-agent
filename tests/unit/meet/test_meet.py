@@ -1,7 +1,4 @@
-import pytest
-import json
 from gws_assistant.planner import CommandPlanner
-from gws_assistant.exceptions import ValidationError
 
 class TestMeetUnit:
     planner = CommandPlanner()

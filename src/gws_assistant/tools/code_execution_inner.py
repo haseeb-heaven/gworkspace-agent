@@ -9,7 +9,6 @@ import base64
 import contextlib
 import io
 import json
-import os
 import sys
 
 try:
@@ -23,7 +22,6 @@ from RestrictedPython.PrintCollector import PrintCollector
 
 # Allowed modules in the sandbox
 import csv
-import io
 import math
 import random
 
@@ -48,6 +46,24 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["math"] = math
     sandbox_globals["random"] = random
     return sandbox_globals
+
+
+def set_memory_limit() -> None:
+    """Limit the memory usage of the process on systems that support it."""
+    if resource:
+        # Limit to 256MB
+        limit = 256 * 1024 * 1024
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+        except (ValueError, OSError):
+            pass
+
+
+def _trim_output(text: str, max_len: int = 1000) -> str:
+    """Trim a string to a maximum length."""
+    if len(text) > max_len:
+        return text[:max_len] + "... [output truncated]"
+    return text
 
 
 def run_code(code_b64: str) -> dict[str, object]:

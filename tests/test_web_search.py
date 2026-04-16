@@ -1,5 +1,4 @@
-import pytest
-from gws_assistant.tools.web_search import web_search_tool, summarize_results
+from gws_assistant.tools.web_search import summarize_results
 
 def test_web_search_tool_no_ddg(mocker):
     # Mock community import failure

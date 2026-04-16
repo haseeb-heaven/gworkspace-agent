@@ -4,18 +4,16 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any
 
 import gradio as gr
 
-from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
+from .agent_system import WorkspaceAgentSystem
 from .config import AppConfig
 from .execution import PlanExecutor
 from .gws_runner import GWSRunner
 from .logging_utils import setup_logging
 from .output_formatter import HumanReadableFormatter
 from .planner import CommandPlanner
-from .service_catalog import SERVICES
 
 
 @dataclass(slots=True)

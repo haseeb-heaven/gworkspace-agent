@@ -1,5 +1,3 @@
-import pytest
-import time
 from unittest.mock import MagicMock
 from gws_assistant.gws_runner import GWSRunner
 from gws_assistant.models import ExecutionResult

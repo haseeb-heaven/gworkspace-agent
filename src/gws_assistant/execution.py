@@ -1,6 +1,5 @@
 import re
 import json
-import base64
 import logging
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -365,16 +364,19 @@ class PlanExecutor:
                     if is_gmail_get:
                         context[f"gmail_{name}"] = h.get("value")
 
-            import base64
             def find_body(p):
                 b = p.get("body", {})
                 if b.get("data"):
-                    try: return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
-                    except: return ""
+                    try:
+                        import base64
+                        return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
+                    except Exception:
+                        return ""
                 if "parts" in p:
                     for part in p["parts"]:
                         res = find_body(part)
-                        if res: return res
+                        if res:
+                            return res
                 return ""
             body = find_body(payload)
             if body:
@@ -487,7 +489,7 @@ class PlanExecutor:
         from .models import PlanExecutionReport, TaskExecution
         executions = []
         context: dict = {}
-        results_map = context.setdefault("task_results", {})
+        context.setdefault("task_results", {})
 
         for task in plan.tasks:
             # Resolve task (includes range auto-fix and gmail artifact injection)

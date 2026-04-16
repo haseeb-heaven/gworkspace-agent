@@ -1,5 +1,4 @@
 import json
-import pytest
 import os
 from .base import get_executor, create_task
 
