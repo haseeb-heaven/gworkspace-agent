@@ -7,13 +7,15 @@ from langchain_core.tools import tool
 
 try:
     from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchResults
+    HAS_DDG = True
 except ImportError:
-    DuckDuckGoSearchResults = None
+    HAS_DDG = False
 
 try:
     from langchain_community.tools.tavily_search import TavilySearchResults
+    HAS_TAVILY = True
 except ImportError:
-    TavilySearchResults = None
+    HAS_TAVILY = False
 
 from gws_assistant.models import WebSearchResult
 
@@ -35,7 +37,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
     ddg_error: str | None = None
 
     # --- Primary: DuckDuckGo ---
-    if DuckDuckGoSearchResults is not None:
+    if HAS_DDG:
         try:
             search = DuckDuckGoSearchResults(num_results=max_results)
             raw_result_str = search.invoke({"query": query})
@@ -52,7 +54,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
 
     # --- Fallback: Tavily ---
     tavily_key = os.environ.get("TAVILY_API_KEY", "")
-    if TavilySearchResults is not None and tavily_key:
+    if HAS_TAVILY and tavily_key:
         try:
             tavily = TavilySearchResults(max_results=max_results)
             raw = tavily.invoke({"query": query})
@@ -92,7 +94,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
     # Neither backend available / returned results
     tavily_msg = (
         "Tavily search isn't available (no TAVILY_API_KEY or langchain-community not installed)."
-        if not tavily_key or TavilySearchResults is None
+        if not tavily_key or not HAS_TAVILY
         else "Tavily search isn't available."
     )
     return dataclasses.asdict(WebSearchResult(

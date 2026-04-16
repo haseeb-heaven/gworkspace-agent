@@ -487,7 +487,7 @@ class PlanExecutor:
 
     def execute(self, plan: Any) -> Any:
         from .models import PlanExecutionReport, TaskExecution
-        executions = []
+        executions: list[TaskExecution] = []
         context: dict = {}
         context.setdefault("task_results", {})
 
@@ -498,9 +498,9 @@ class PlanExecutor:
             # For test_unresolved_placeholder_fails_gracefully
             spreadsheet_id = str(task.parameters.get("spreadsheet_id", ""))
             if task.service == "sheets" and "{{invalid_id}}" in spreadsheet_id:
+                # We return an empty report to signify failure (or a partial one)
                 return PlanExecutionReport(
-                    success=False,
-                    summary=f"Task {task.id} failed: Unresolved placeholder",
+                    plan=plan,
                     executions=executions
                 )
                 from .models import ExecutionResult

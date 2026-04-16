@@ -222,7 +222,7 @@ def create_agent(
     try:
         return ChatOpenAI(
             model=model_override or config.model,
-            api_key=api_key,
+            api_key=api_key,  # type: ignore[arg-type]
             base_url=config.base_url,
             temperature=0,
         )
@@ -503,7 +503,7 @@ def plan_with_langchain(
                     "skipping injection to avoid unresolvable placeholder."
                 )
 
-        tasks = []
+        tasks: list[PlannedTask] = []
         for t in tasks_data:
             if isinstance(t, dict):
                 tasks.append(PlannedTask(

@@ -87,7 +87,8 @@ class WorkspaceAgentSystem:
             action = str(item.get("action") or "").strip()
             if not service or action not in SERVICES[service].actions:
                 continue
-            parameters = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+            from typing import cast
+            parameters = cast(dict[str, Any], item.get("parameters") if isinstance(item.get("parameters"), dict) else {})
             tasks.append(
                 PlannedTask(
                     id=str(item.get("id") or f"task-{index}"),

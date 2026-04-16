@@ -496,10 +496,9 @@ class CommandPlanner:
             elif start_time_raw:
                 parsed_time = _parse_time_to_hhmm(start_time_raw)
                 if parsed_time:
-                    h, m     = parsed_time
-                    dt_start = datetime(
-                        *[int(p) for p in start_date.split("-")], h, m
-                    )
+                    h, m = parsed_time
+                    y, month, day = [int(p) for p in start_date.split("-")]
+                    dt_start = datetime(y, month, day, h, m)
                     dt_end   = dt_start + timedelta(hours=1)
                     event_start = {"dateTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": time_zone}
                     event_end   = {"dateTime": dt_end.strftime("%Y-%m-%dT%H:%M:%S"),   "timeZone": time_zone}
@@ -558,7 +557,7 @@ class CommandPlanner:
                     "overrides":  [{"method": "popup", "minutes": reminder_minutes}],
                 }
 
-            params_dict = {"calendarId": "primary"}
+            params_dict: dict[str, Any] = {"calendarId": "primary"}
             if "conferenceData" in event_body:
                 params_dict["conferenceDataVersion"] = 1
 

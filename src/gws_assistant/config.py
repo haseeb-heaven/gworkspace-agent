@@ -40,7 +40,7 @@ class AppConfig:
         if provider == "openrouter":
             api_key = generic_key or openrouter_key or openai_key or None
             model = (os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
-            base_url = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
+            base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
         else:
             provider = "openai"
             api_key = generic_key or openai_key or None

@@ -404,7 +404,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if needs_web_search:
             return "web_search"
 
-        if plan_has_tasks:
+        if plan and plan_has_tasks:
             # Plan has tasks — check if it's a web-search-then-save workflow
             for task in plan.tasks:
                 params = task.parameters or {}

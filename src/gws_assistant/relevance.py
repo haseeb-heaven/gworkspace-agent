@@ -119,8 +119,10 @@ def filter_gmail_messages(
     scored: list[tuple[float, dict[str, Any]]] = []
     for msg in messages:
         parts: list[str] = [str(msg.get("snippet") or "")]
-        payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
-        headers = payload.get("headers") if isinstance(payload.get("headers"), list) else []
+        p_obj = msg.get("payload")
+        payload = p_obj if isinstance(p_obj, dict) else {}
+        h_obj = payload.get("headers")
+        headers = h_obj if isinstance(h_obj, list) else []
         for h in headers:
             if isinstance(h, dict) and h.get("name", "").lower() in ("subject", "from"):
                 parts.append(str(h.get("value") or ""))

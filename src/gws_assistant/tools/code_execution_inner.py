@@ -14,7 +14,7 @@ import sys
 try:
     import resource
 except ImportError:  # pragma: no cover - Windows
-    resource = None
+    resource = None  # type: ignore[assignment]
 
 # Allowed modules in the sandbox
 import csv
@@ -53,9 +53,9 @@ def set_memory_limit() -> None:
     """Limit the memory usage of the process on systems that support it."""
     if resource:
         # Limit to 256MB
-        limit = 256 * 1024 * 1024
+        limit_bytes = 256 * 1024 * 1024
         try:
-            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))  # type: ignore[attr-defined]
         except (ValueError, OSError):
             pass
 

@@ -11,8 +11,9 @@ from .service_catalog import SERVICES, normalize_service
 
 try:
     from openai import OpenAI
+    HAS_OPENAI_SDK = True
 except Exception:  # pragma: no cover
-    OpenAI = None  # type: ignore[assignment]
+    HAS_OPENAI_SDK = False
 
 
 class IntentParser:
@@ -27,7 +28,7 @@ class IntentParser:
         if not self.config.api_key:
             self.logger.warning("No API key configured, using heuristic intent parsing.")
             return None
-        if OpenAI is None:
+        if not HAS_OPENAI_SDK:
             self.logger.warning("OpenAI SDK import failed, using heuristic intent parsing.")
             return None
         try:
