@@ -166,6 +166,7 @@ class CommandPlanner:
         if service_key == "contacts": return self._build_contacts_command(action_key, params)
         if service_key == "chat":     return self._build_chat_command(action_key, params)
         if service_key == "meet":     return self._build_meet_command(action_key, params)
+        if service_key == "keep":     return self._build_keep_command(action_key, params)
         if service_key == "search":   return self._build_search_command(action_key, params)
         if service_key == "admin":    return self._build_admin_command(action_key, params)
         if service_key == "forms":    return self._build_forms_command(action_key, params)
@@ -620,6 +621,16 @@ class CommandPlanner:
         if action == "create_meeting":
             return ["meet", "spaces", "create"]
         raise ValidationError(f"Unsupported meet action: {action}")
+
+    def _build_keep_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_notes":
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            return ["keep", "notes", "list", "--params", json.dumps({"pageSize": page_size})]
+        if action == "create_note":
+            title = str(params.get("title") or "New Note").strip()
+            body = str(params.get("body") or "").strip()
+            return ["keep", "notes", "create", "--json", json.dumps({"title": title, "body": {"text": {"text": body}}}, ensure_ascii=True)]
+        raise ValidationError(f"Unsupported keep action: {action}")
 
     # ------------------------------------------------------------------
     # Admin & Forms

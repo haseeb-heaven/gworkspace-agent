@@ -334,6 +334,33 @@ SERVICES: dict[str, ServiceSpec] = {
             ),
         },
     ),
+    "keep": ServiceSpec(
+        key="keep",
+        label="Google Keep",
+        aliases=("keep", "notes", "keep notes"),
+        description="Manage Google Keep notes. Note: The API may have limited access in personal accounts; enterprise accounts are preferred.",
+        actions={
+            "list_notes": ActionSpec(
+                key="list_notes",
+                label="List notes",
+                description="List Google Keep notes. Returns: {notes: [{name, title, body}]}.",
+                keywords=("list", "show", "find", "notes", "keep"),
+                parameters=(
+                    ParameterSpec("page_size", "How many notes should I show?", "10", required=False),
+                ),
+            ),
+            "create_note": ActionSpec(
+                key="create_note",
+                label="Create note",
+                description="Create a new Google Keep note. Returns: {name, title, body}.",
+                keywords=("create", "new", "note", "keep"),
+                parameters=(
+                    ParameterSpec("title", "What should the note title be?", "My Note"),
+                    ParameterSpec("body", "Initial note content", "Hello world", required=False),
+                ),
+            ),
+        },
+    ),
     "search": ServiceSpec(
         key="search",
         label="Web Search",
