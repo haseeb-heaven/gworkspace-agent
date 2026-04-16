@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 
 from .models import AppConfigModel
 
-
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 OPENAI_DEFAULT_MODEL = "gpt-4.1-mini"
 OPENROUTER_DEFAULT_MODEL = "openai/gpt-4.1-mini"

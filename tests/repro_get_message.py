@@ -1,10 +1,12 @@
 import json
 import logging
 from pathlib import Path
+
 from gws_assistant.execution import PlanExecutor
 from gws_assistant.gws_runner import GWSRunner
 from gws_assistant.models import ExecutionResult, PlannedTask, RequestPlan
 from gws_assistant.planner import CommandPlanner
+
 
 class FakeRunner(GWSRunner):
     def __init__(self) -> None:
@@ -30,8 +32,8 @@ class FakeRunner(GWSRunner):
 def test_get_message_placeholder_resolution():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
-    
-    # Simulate a plan where message_id is NOT provided in parameters, 
+
+    # Simulate a plan where message_id is NOT provided in parameters,
     # so CommandPlanner.build_command will insert "{{message_id}}"
     plan = RequestPlan(
         raw_text="search and get",
@@ -40,15 +42,15 @@ def test_get_message_placeholder_resolution():
             PlannedTask(id="task-2", service="gmail", action="get_message", parameters={}),
         ],
     )
-    
+
     report = executor.execute(plan)
     assert report.success is True
-    
+
     # Check the second command (get_message)
     get_cmd = runner.commands[1]
     params_str = get_cmd[get_cmd.index("--params") + 1]
     params = json.loads(params_str)
-    
+
     # This is what we WANT: it should be "m1", not "{{message_id}}"
     assert params["id"] == "m1", f"Expected 'm1', but got '{params['id']}'"
 

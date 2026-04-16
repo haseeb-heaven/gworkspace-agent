@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from gws_assistant.exceptions import APIErrorType, classify_api_error
+from gws_assistant.langchain_agent import create_agent
 from gws_assistant.models import (
     AgentState,
     AppConfigModel,
@@ -22,7 +23,6 @@ from gws_assistant.models import (
 from gws_assistant.output_formatter import HumanReadableFormatter
 from gws_assistant.tools.code_execution import execute_generated_code
 from gws_assistant.tools.web_search import summarize_results, web_search_tool
-from gws_assistant.langchain_agent import create_agent
 
 _MAX_HISTORY = 10
 
@@ -146,7 +146,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         task_error: str | None = None
         for exp_task in expanded:
             resolved = executor._resolve_task(exp_task, context)
-            
+
             # Bug Fix: Ensure task is structurally valid AND all placeholders resolved
             try:
                 validate_planned_task(resolved)
@@ -162,17 +162,17 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             result = executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
-            
+
             # Store results in context for placeholder resolution
             # executor._resolve_template expects dict with keys like 'files', 'id' etc.
             # latest['output'] usually contains 'parsed_payload' which has the real data.
             results_map = context.setdefault("task_results", {})
             payload = latest["output"].get("parsed_payload") or latest["output"]
-            
+
             # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
             executor._update_context_from_result(payload, context, resolved)
 
-            # Always also store by sequential index (task-1, task-2, etc.) to 
+            # Always also store by sequential index (task-1, task-2, etc.) to
             # support LLMs that refer to tasks by their order regardless of name.
             seq_id = f"task-{idx+1}"
             results_map[seq_id] = payload

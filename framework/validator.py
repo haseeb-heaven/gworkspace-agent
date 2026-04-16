@@ -10,7 +10,7 @@ class OutputValidator:
             logger.error(f"Command failed with code {result.returncode}")
             logger.error(f"Stderr: {result.stderr}")
         return success
-        
+
     @staticmethod
     def validate_output_contains(result, expected_text: str) -> bool:
         contains = expected_text in result.stdout or expected_text in result.stderr

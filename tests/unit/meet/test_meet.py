@@ -1,5 +1,6 @@
 from gws_assistant.planner import CommandPlanner
 
+
 class TestMeetUnit:
     planner = CommandPlanner()
 

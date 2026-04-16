@@ -18,9 +18,9 @@ import threading
 import time
 from typing import Any
 
+from langchain_core.tools import tool
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.PrintCollector import PrintCollector
-from langchain_core.tools import tool
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
@@ -109,18 +109,18 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
     safe_g.update(_SAFE_MODULES)
-    
+
     # Pre-inject common datetime classes for AI robustness
     safe_g["datetime"]  = datetime.datetime
     safe_g["date"]      = datetime.date
     safe_g["timedelta"] = datetime.timedelta
     safe_g["now"]       = datetime.datetime.now()
-    
+
     # AI Robustness: Pre-inject common lowercase aliases often emitted by LLMs
     safe_g["true"]  = True
     safe_g["false"] = False
     safe_g["null"]  = None
-    
+
     return safe_g
 
 
@@ -153,7 +153,7 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         sanitized = _sanitize_llm_code(code)
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
-        
+
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)  # noqa: S102
@@ -161,7 +161,7 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         # Capture both _print_ (RestrictedPython internal) and direct stdout
         if "_print" in sandbox_globals:
             exec_result.stdout = sandbox_globals["_print"]()
-        
+
         buffer_val = output_buffer.getvalue()
         if buffer_val:
             exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
@@ -170,7 +170,7 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         # 1. Best case: user explicitly assigned to 'result'
         if "result" in sandbox_globals:
             exec_result.return_value = sandbox_globals["result"]
-        
+
         # 2. Next best: parse the last line of stdout as a Python literal
         elif exec_result.stdout:
             try:
@@ -179,12 +179,12 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
             except (SyntaxError, ValueError):
                 # Fallback if stdout is not a literal
                 exec_result.return_value = exec_result.stdout
-        
+
         # 3. Fallback: capture all variables from sandbox_globals
         else:
             def is_json_serializable(v):
                 return isinstance(v, (str, int, float, bool, list, dict, type(None)))
-            
+
             results_vars = {
                 k: v for k, v in sandbox_globals.items()
                 if not k.startswith("_") and k != "__builtins__" and not callable(v)

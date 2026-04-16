@@ -1,5 +1,7 @@
 import pytest
+
 from gws_assistant.planner import CommandPlanner
+
 
 class TestFormsUnit:
     planner = CommandPlanner()

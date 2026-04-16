@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .models import ActionSpec, ParameterSpec, ServiceSpec
 
-
 SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",

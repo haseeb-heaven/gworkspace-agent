@@ -22,6 +22,7 @@ jobs:
   lint-and-test:
     name: Lint and Mocked Tests
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest-cov ruff mypy
+          pip install -e .
 
       - name: Lint
         run: ruff check .
@@ -44,7 +46,12 @@ jobs:
         run: mypy src --ignore-missing-imports
 
       - name: Run mocked tests
-        run: pytest -q -m "not live_integration" --cov=src --cov-report=term --cov-fail-under=80
+        env:
+          PYTHONPATH: src
+          DEFAULT_RECIPIENT_EMAIL: bot@example.com
+          CI: "true"
+        run: |
+          pytest -v -m "not live_integration" --cov=src --cov-report=term --cov-fail-under=80
 
   live-integration:
     name: Live Integration Tests

@@ -16,11 +16,10 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
-from .exceptions import ValidationError, UnsupportedServiceError
+from .exceptions import UnsupportedServiceError, ValidationError
 from .gmail_query_builder import sanitize_gmail_query
 from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
-
 
 _UNSUPPORTED_STUB_SERVICES = frozenset({"analytics", "bigquery"})
 
@@ -264,7 +263,7 @@ class CommandPlanner:
             else:
                 # If no source_mime, respect requested_mime or default to PDF
                 mime_type = requested_mime or "application/pdf"
-            
+
             # If the user explicitly asks for media/download or it's already a PDF and they want it
             if mime_type == "media" or (source_mime == "application/pdf" and mime_type == "application/pdf"):
                  return [
@@ -292,7 +291,7 @@ class CommandPlanner:
                 "-o",
                 f"scratch/exports/download_{file_id}"
             ]
-        
+
         if action == "delete_file":
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
@@ -570,20 +569,20 @@ class CommandPlanner:
         if action == "delete_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
             event_id = self._required_text(params, "event_id")
-            return ["calendar", "events", "delete", "--params", 
+            return ["calendar", "events", "delete", "--params",
                     json.dumps({"calendarId": calendar_id, "eventId": event_id})]
 
         if action == "update_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
             event_id = self._required_text(params, "event_id")
-            
+
             # Build patch body
             patch_body = {}
             if params.get("summary"):
                 patch_body["summary"] = str(params.get("summary")).strip()
             if params.get("description"):
                 patch_body["description"] = str(params.get("description")).strip()
-            
+
             return ["calendar", "events", "patch",
                     "--params", json.dumps({"calendarId": calendar_id, "eventId": event_id}),
                     "--json",   json.dumps(patch_body, ensure_ascii=True)]
@@ -681,24 +680,24 @@ class CommandPlanner:
         if action == "log_activity":
             # Synthetic tool handled in execution.py
             return ["admin", "log_activity", "internal"]
-        
+
         if action == "list_activities":
             app_name = str(params.get("application_name") or "drive").strip()
             max_res  = self._safe_positive_int(params.get("max_results"), default=10)
-            return ["admin-reports", "activities", "list", 
+            return ["admin-reports", "activities", "list",
                     "--params", json.dumps({"userKey": "all", "applicationName": app_name, "maxResults": max_res})]
-        
+
         raise ValidationError(f"Unsupported admin action: {action}")
 
     def _build_forms_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "create_form":
             title = str(params.get("title") or "Untitled Form").strip()
             return ["forms", "forms", "create", "--json", json.dumps({"info": {"title": title}}, ensure_ascii=True)]
-        
+
         if action == "get_form":
             form_id = self._required_text(params, "form_id")
             return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
-        
+
         raise ValidationError(f"Unsupported forms action: {action}")
 
     # ------------------------------------------------------------------
@@ -712,14 +711,14 @@ class CommandPlanner:
             python_exe = r"D:\henv\Scripts\python.exe"
             if not os.path.exists(python_exe):
                 python_exe = "python"
-            
+
             # Calculate absolute path to the script relative to this file
             # src/gws_assistant/planner.py -> ../../.agent/skills/telegram-update/scripts/send_message.py
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
-            
+
             return [python_exe, script_path, message]
-            
+
         raise ValidationError(f"Unsupported telegram action: {action}")
 
     # ------------------------------------------------------------------

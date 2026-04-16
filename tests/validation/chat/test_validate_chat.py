@@ -1,5 +1,7 @@
 import pytest
+
 from framework.task_runner import TaskRunner
+
 
 @pytest.fixture
 def runner():

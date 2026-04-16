@@ -1,8 +1,8 @@
-import re
 import json
 import logging
-from datetime import datetime
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional
 
 _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
@@ -68,14 +68,14 @@ class PlanExecutor:
                                     if f.get("id") == f_id:
                                         task.parameters["source_mime"] = f.get("mimeType")
                                         break
-                
+
                 # Fallback to last_file_mime if still missing
                 if not task.parameters.get("source_mime") and context.get("last_file_mime"):
                     task.parameters["source_mime"] = context["last_file_mime"]
 
         # 3. Variable resolution
         task.parameters = self._resolve_placeholders(task.parameters, context)
-        
+
         # 4. Range auto-fix for Sheets (After resolution)
         rng_after = str(task.parameters.get("range") or "")
         if last_title and "Sheet1" in rng_after:
@@ -90,7 +90,7 @@ class PlanExecutor:
             s_id = str(task.parameters.get("spreadsheet_id") or "")
             if (not s_id or s_id.startswith("{{")) and context.get("last_spreadsheet_id"):
                 task.parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
-        
+
         if task.service == "docs":
             d_id = str(task.parameters.get("document_id") or "")
             if (not d_id or d_id.startswith("{{")) and context.get("last_document_id"):
@@ -126,9 +126,9 @@ class PlanExecutor:
                 "$last_code_stdout":        "last_code_stdout",
                 "$last_code_result":        "last_code_result",
             }
-            
+
             results_map = context.get("task_results", {})
-            
+
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
             if val in legacy_map and legacy_map[val] in context:
                 return context[legacy_map[val]]
@@ -145,7 +145,7 @@ class PlanExecutor:
                     path = potential_path
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
-            
+
             if path:
                 if path in context:
                     return context[path]
@@ -167,31 +167,31 @@ class PlanExecutor:
                 p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
                 if p.startswith("$"):
                     p = p[1:] # strip $ from $task-N
-                
+
                 if p in context:
                     res = context[p]
                 else:
                     res = self._get_value_by_path(results_map, p)
-                
+
                 if res is not None:
                     if use_repr_for_complex:
                         return repr(res)
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-                
+
                 # Safety: Only return _UNRESOLVED_MARKER for tokens that are obviously intended as placeholders
                 # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
                 # This prevents accidental corruption of JSON payloads containing single braces.
                 is_explicit = bool(match.group(1) or match.group(3))
                 is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map)))
-                
+
                 if is_explicit or is_task_token:
                     return _UNRESOLVED_MARKER
                 return match.group(0)
 
 
-            # 4. Partial string replacement with regex 
+            # 4. Partial string replacement with regex
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
             val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
             return val
@@ -213,7 +213,7 @@ class PlanExecutor:
     def _get_value_by_path(self, data: dict, path: str) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
         self.logger.info(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
-        
+
         # 1. Try exact match first
         if path in data:
             return data[path]
@@ -224,7 +224,7 @@ class PlanExecutor:
         # Split by dots, but handle index brackets as separate tokens.
         tokens = re.findall(r'[^.\[\]]+|\[\d+\]', path)
         curr: Any = data
-        
+
         for token in tokens:
             if token.startswith('['):
                 # Indexed access
@@ -237,7 +237,7 @@ class PlanExecutor:
             else:
                 # Key access
                 if isinstance(curr, dict):
-                    # Auto-unwrap: if current level is a dict and we have a list inside, 
+                    # Auto-unwrap: if current level is a dict and we have a list inside,
                     # and the next token is an index, use that list.
                     unwrapped = False
                     for list_key in ["files", "messages", "items", "events", "values", "threads"]:
@@ -257,11 +257,11 @@ class PlanExecutor:
                     curr = new_curr if new_curr else None
                 else:
                     return None
-            
+
             if curr is None:
                 self.logger.warning(f"Path resolution failed at '{token}': resolved to None.")
                 return None
-                
+
         return curr
 
     def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
@@ -275,18 +275,18 @@ class PlanExecutor:
             # Consistent mapping
             task_id = str(task.id)
             num = task_id.removeprefix("task-")
-            
+
             # Map the full task result object
             results_map[task_id] = data
             results_map[num] = data
             results_map[f"task-{num}"] = data
-            
+
             # Map individual fields (if they exist)
             for k, v in data.items():
                 results_map[f"{task_id}.{k}"] = v
                 results_map[f"{num}.{k}"] = v
                 results_map[f"task-{num}.{k}"] = v
-            
+
             # Special case: map 'id' specifically for easier path resolution
             if "id" in data:
                 results_map[f"{task_id}.id"] = data["id"]
@@ -306,7 +306,7 @@ class PlanExecutor:
             if first_id:
                 results_map[f"{task.id}.id"] = first_id
                 results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
-        
+
         if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
             first_id = data["messages"][0].get("id")
             if first_id:
@@ -330,7 +330,7 @@ class PlanExecutor:
             if "spreadsheetUrl" not in data:
                 data["spreadsheetUrl"] = f"https://docs.google.com/spreadsheets/d/{data['spreadsheetId']}/edit"
             context["last_spreadsheet_url"] = data["spreadsheetUrl"]
-            
+
             # Capture title for Sheet1 auto-fix
             title = data.get("properties", {}).get("title")
             if not title and task and task.service == "sheets" and task.action == "create_spreadsheet":
@@ -343,7 +343,7 @@ class PlanExecutor:
             if "documentUrl" not in data:
                 data["documentUrl"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
             context["last_document_url"] = data["documentUrl"]
-            
+
             # Capture document title
             doc_title = data.get("title")
             if doc_title:
@@ -353,7 +353,7 @@ class PlanExecutor:
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
         if is_gmail_get or "payload" in data:
             payload = data.get("payload", {})
-            
+
             # Extract headers into top-level keys for easy access (e.g. {task-2.from})
             headers = payload.get("headers", [])
             for h in headers:
@@ -393,9 +393,9 @@ class PlanExecutor:
                     context["gmail_message_body"] = m_id
                     context[f"message_id_from_task_{num}"] = m_id
                     context[f"thread_id_from_task_{num}"] = t_id
-                
+
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
-        
+
         if "files" in data:
             files = data["files"]
             if files and isinstance(files, list):
@@ -408,14 +408,14 @@ class PlanExecutor:
 
         if "values" in data and isinstance(data["values"], list):
             # Semantic extraction for tests
-            context[f"company_names_from_task_{task.id}"] = data["values"] 
-            
+            context[f"company_names_from_task_{task.id}"] = data["values"]
+
             # Robust key resolution: store 'values' in multiple formats
-            results_map[f"{task.id}.values"] = data["values"] 
+            results_map[f"{task.id}.values"] = data["values"]
             results_map[f"task-{task.id}.values"] = data["values"]
             results_map[f"{str(task.id).removeprefix('task-')}.values"] = data["values"]
             results_map["values"] = data["values"] # Direct alias for the most recent values
-            
+
             rows = data["values"]
             lines = [" | ".join(str(c) for c in row) for row in rows]
             context["sheet_email_body"] = "\n".join(lines)
@@ -423,8 +423,8 @@ class PlanExecutor:
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
         try:
-            from .tools.web_search import web_search_tool
             from .models import ExecutionResult
+            from .tools.web_search import web_search_tool
             query = task.parameters.get("query", "")
             result_data = web_search_tool.invoke({"query": query})
             results = result_data.get("results") or result_data.get("rows") or []
@@ -494,7 +494,7 @@ class PlanExecutor:
         for task in plan.tasks:
             # Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)
-            
+
             # For test_unresolved_placeholder_fails_gracefully
             spreadsheet_id = str(task.parameters.get("spreadsheet_id", ""))
             if task.service == "sheets" and "{{invalid_id}}" in spreadsheet_id:
@@ -523,26 +523,26 @@ class PlanExecutor:
     def _handle_code_execution_task(self, task: Any, context: dict) -> Any:
         """Execute a code execution task and return the result."""
         try:
-            from .tools.code_execution import execute_generated_code
             from .models import ExecutionResult
-            
+            from .tools.code_execution import execute_generated_code
+
             # Use code-safe resolution (use repr for dicts/lists)
             code = self._resolve_placeholders(task.parameters.get("code", ""), context, use_repr_for_complex=True)
-            
+
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
-            
+
             result = execute_generated_code(code, config=self.config)
-            
+
             # Store in context for future placeholders
             results_map = context.setdefault("task_results", {})
             results_map["code"] = result.get("output", {})
             results_map["computation"] = result.get("output", {})
-            
+
             # Extract stdout if present
             stdout = result.get("output", {}).get("stdout", "")
             context["last_code_stdout"] = stdout
-            
+
             return ExecutionResult(
                 success=result.get("success", False),
                 command=["code_execute"],
@@ -564,7 +564,7 @@ class PlanExecutor:
 
         # 2. Build the command using already-resolved parameters
         args = self.planner.build_command(task.service, task.action, task.parameters)
-        
+
         # 3. Final safety resolve for placeholders that planner might have added internally
         args = self._resolve_placeholders(args, context)
 
@@ -579,10 +579,10 @@ class PlanExecutor:
 
         if task.service == "search" and task.action == "web_search":
             return self._handle_web_search_task(task, context)
-        
+
         if task.service == "admin" and task.action == "log_activity":
             return self._handle_admin_task(task, context)
-        
+
         if task.service in ("code", "computation"):
             return self._handle_code_execution_task(task, context)
 
@@ -590,7 +590,7 @@ class PlanExecutor:
         if result.success and result.stdout:
             try:
                 data = json.loads(result.stdout)
-                
+
                 # Special Case: docs.create_document with initial content
                 if task.service == "docs" and task.action == "create_document":
                     content = task.parameters.get("content")

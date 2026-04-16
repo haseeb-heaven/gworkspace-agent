@@ -1,5 +1,7 @@
 import json
+
 from gws_assistant.planner import CommandPlanner
+
 
 class TestSearchUnit:
     planner = CommandPlanner()

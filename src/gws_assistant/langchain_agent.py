@@ -6,10 +6,10 @@ import re
 import time
 from typing import Any
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
-from .models import RequestPlan, PlannedTask, AppConfigModel
+from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
 
 _DEFAULT_CONFIDENCE = 0.9

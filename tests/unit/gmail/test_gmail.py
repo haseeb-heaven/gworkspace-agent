@@ -1,10 +1,14 @@
 from dotenv import load_dotenv
+
 load_dotenv()
-import os
-import pytest
 import json
-from gws_assistant.planner import CommandPlanner
+import os
+
+import pytest
+
 from gws_assistant.exceptions import ValidationError
+from gws_assistant.planner import CommandPlanner
+
 
 class TestGmailUnit:
     planner = CommandPlanner()

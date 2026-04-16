@@ -16,14 +16,15 @@ try:
 except ImportError:  # pragma: no cover - Windows
     resource = None
 
-from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
-from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
-from RestrictedPython.PrintCollector import PrintCollector
-
 # Allowed modules in the sandbox
 import csv
 import math
 import random
+
+from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
+from RestrictedPython.PrintCollector import PrintCollector
+
 
 def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals = safe_globals.copy()
@@ -39,7 +40,7 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_setattr_"] = guarded_setattr
     sandbox_globals["_write_"] = full_write_guard
     sandbox_globals["_print_"] = PrintCollector
-    
+
     # Whitelist allowed modules
     sandbox_globals["csv"] = csv
     sandbox_globals["io"] = io

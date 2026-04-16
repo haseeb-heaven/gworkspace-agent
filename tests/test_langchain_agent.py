@@ -1,8 +1,11 @@
-import pytest
 import logging
 from unittest.mock import MagicMock
+
+import pytest
+
+from gws_assistant.langchain_agent import create_agent, plan_with_langchain
 from gws_assistant.models import AppConfigModel
-from gws_assistant.langchain_agent import plan_with_langchain, create_agent
+
 
 @pytest.fixture
 def config_with_key(tmp_path):
@@ -35,12 +38,12 @@ def test_plan_with_langchain(mocker, config_with_key):
     logger = logging.getLogger("test")
     mock_model = MagicMock()
     mock_chain = MagicMock()
-    
+
     # Mock prompt | model.with_structured_output()
     mock_model.with_structured_output.return_value = mock_chain
     mocker.patch("gws_assistant.langchain_agent.create_agent", return_value=mock_model)
     mocker.patch("langchain_core.prompts.ChatPromptTemplate.from_messages", return_value=MagicMock(__or__=lambda self, other: mock_chain))
-    
+
     # Return a valid dict structure so is_valid_plan(result) passes.
     # Note: confidence 0.0 should be defaulted to 0.9.
     mock_plan_dict = {
@@ -51,7 +54,7 @@ def test_plan_with_langchain(mocker, config_with_key):
         "confidence": 0.0
     }
     mock_chain.invoke.return_value = mock_plan_dict
-    
+
     plan = plan_with_langchain("test request", config_with_key, logger)
     assert plan is not None
     assert plan.summary == "Test Output"

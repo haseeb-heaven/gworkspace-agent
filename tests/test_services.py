@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from dotenv import load_dotenv
+
 load_dotenv()
 import os
+
 """Comprehensive service CRUD and multi-service workflow tests.
 
 Tests cover real-world user scenarios across all supported services:
@@ -27,7 +30,6 @@ from gws_assistant.models import AppConfigModel, ExecutionResult, PlannedTask, R
 from gws_assistant.output_formatter import HumanReadableFormatter
 from gws_assistant.planner import CommandPlanner
 from gws_assistant.relevance import extract_keywords, filter_drive_files, score_item
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

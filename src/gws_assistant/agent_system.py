@@ -6,11 +6,9 @@ import logging
 import re
 from typing import Any
 
+from .langchain_agent import plan_with_langchain
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES, normalize_service
-
-from .langchain_agent import plan_with_langchain
-
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
 

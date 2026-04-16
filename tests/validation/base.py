@@ -5,11 +5,12 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from gws_assistant.execution import PlanExecutor
 from gws_assistant.config import AppConfig
-from gws_assistant.logging_utils import setup_logging
+from gws_assistant.execution import PlanExecutor
 from gws_assistant.gws_runner import GWSRunner
+from gws_assistant.logging_utils import setup_logging
 from gws_assistant.planner import CommandPlanner
+
 
 class SimplePlanner:
     def build_command(self, service, action, params):

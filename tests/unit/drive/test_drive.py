@@ -1,7 +1,10 @@
-import pytest
 import json
-from gws_assistant.planner import CommandPlanner
+
+import pytest
+
 from gws_assistant.exceptions import ValidationError
+from gws_assistant.planner import CommandPlanner
+
 
 class TestDriveUnit:
     planner = CommandPlanner()

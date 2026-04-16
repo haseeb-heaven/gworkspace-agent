@@ -4,8 +4,8 @@ import logging
 
 from gws_assistant.config import AppConfig
 from gws_assistant.conversation import ConversationEngine
-from gws_assistant.planner import CommandPlanner
 from gws_assistant.models import Intent
+from gws_assistant.planner import CommandPlanner
 
 
 def test_conversation_requires_service_clarification(monkeypatch):

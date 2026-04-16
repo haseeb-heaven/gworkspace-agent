@@ -1,14 +1,16 @@
 from __future__ import annotations
-from dotenv import load_dotenv
-load_dotenv()
-import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
 import base64
 import json
 import logging
-import pytest
-from types import SimpleNamespace
+import os
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from gws_assistant.execution import PlanExecutor
 from gws_assistant.gws_runner import GWSRunner
@@ -232,7 +234,7 @@ def test_execute_single_task(tmp_path):
     runner = FakeRunner()
     runner.commands = []
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger())
-    
+
     task = PlannedTask(id="1", service="gmail", action="list_messages", parameters={"q": "foo"}, reason="Test")
     result = executor.execute_single_task(task, {})
     assert result.success is True

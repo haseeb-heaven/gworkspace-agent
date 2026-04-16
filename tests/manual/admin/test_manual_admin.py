@@ -1,15 +1,16 @@
 import subprocess
+
 from dotenv import load_dotenv
+
 load_dotenv() # Load .env at module level
 import pytest
+
 
 def run_task(task_string):
     import os
     load_dotenv() # Ensure .env is loaded inside helper
     email = os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com')
     task_string = task_string.replace('user@example.com', email)
-    import os
-
     import os
 
     print(f"Running manual task: python gws_cli.py --task \"{task_string}\"")

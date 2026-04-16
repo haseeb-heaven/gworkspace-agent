@@ -1,11 +1,12 @@
 from gws_assistant.tools.web_search import summarize_results
 
+
 def test_web_search_tool_no_ddg(mocker):
     # Mock community import failure
     import gws_assistant.tools.web_search as ws
     mocker.patch.object(ws, 'DuckDuckGoSearchResults', None)
     mocker.patch.object(ws, 'TavilySearchResults', None)
-    
+
     result = ws.web_search_tool.invoke({"query": "test"})
     assert result["error"] is not None
     assert "DuckDuckGo search failed or returned no usable results." in result["error"]

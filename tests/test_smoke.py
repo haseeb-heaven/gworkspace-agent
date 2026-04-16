@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
-
 ROOT = Path(__file__).resolve().parents[1]
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 

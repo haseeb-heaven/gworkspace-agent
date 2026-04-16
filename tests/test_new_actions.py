@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 import json
+
 from gws_assistant.planner import CommandPlanner
+
 
 def test_build_calendar_delete_event():
     planner = CommandPlanner()

@@ -1,6 +1,9 @@
-import pytest
 import json
+
+import pytest
+
 from gws_assistant.planner import CommandPlanner
+
 
 class TestSlidesUnit:
     planner = CommandPlanner()
