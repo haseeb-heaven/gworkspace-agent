@@ -1,0 +1,111 @@
+name: GWorkspace Agent CI/CD
+
+on:
+  push:
+    branches: ["main", "master", "feature/gworkspace-automation"]
+  pull_request:
+    branches: ["main", "master", "feature/gworkspace-automation"]
+  workflow_dispatch:
+    inputs:
+      run_live_integration:
+        description: "Run live Google Workspace integration tests"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PROJECT_ID: gen-lang-client-0632693223
+  SERVICE: gworkspace-agent
+  REGION: us-central1
+
+jobs:
+  lint-and-test:
+    name: Lint and Mocked Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest-cov ruff mypy
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy src --ignore-missing-imports
+
+      - name: Run mocked tests
+        run: pytest -q -m "not live_integration" --cov=src --cov-report=term --cov-fail-under=80
+
+  live-integration:
+    name: Live Integration Tests
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_integration }}
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      GWS_BINARY_PATH: ${{ secrets.GWS_BINARY_PATH }}
+      LOG_LEVEL: INFO
+      RUN_LIVE_INTEGRATION: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run live tests
+        run: pytest -q -m live_integration
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: lint-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/feature/gworkspace-automation')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: Authorize Docker
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Build and Push Container
+        run: |
+          docker build -t "gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
+          docker push "gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
+
+      - name: Deploy to Cloud Run
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: '${{ env.SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: 'gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}'
+          flags: '--allow-unauthenticated --port=8080'
