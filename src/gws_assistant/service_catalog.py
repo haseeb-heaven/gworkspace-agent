@@ -8,7 +8,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",
         label="Google Drive",
-        aliases=("drive", "files", "google drive"),
+        aliases=("drive", "files", "google drive", "document", "documents"),
         description="Manage files and folders in Google Drive. Returns file metadata including id, name, mimeType, webViewLink.",
         actions={
             "list_files": ActionSpec(

@@ -126,10 +126,10 @@ class WorkspaceAgentSystem:
                     no_service_detected=True,
                     needs_web_search=True,
                 )
-            if any(kw in lowered for kw in ("calculate", "sum", "average", "compute")):
+            if any(kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "list of numbers", "math")):
                 return RequestPlan(
                     raw_text=text,
-                    summary="Computation intent detected — routing to code execution.",
+                    summary="Computation or data processing intent detected — routing to code execution.",
                     confidence=0.4,
                     no_service_detected=True,
                     needs_code_execution=True,
@@ -154,10 +154,25 @@ class WorkspaceAgentSystem:
 
         if _is_web_search_and_save(lowered) and "sheets" in services and "docs" not in services:
             tasks = self._web_search_to_sheets_tasks(text, lowered)
+            if "gmail" in services or _is_sheet_to_email_request(lowered):
+                recipient = _extract_email(text) or self.config.default_recipient_email
+                tasks.append(
+                    PlannedTask(
+                        id=f"task-{len(tasks) + 1}",
+                        service="gmail",
+                        action="send_message",
+                        parameters={
+                            "to_email": recipient,
+                            "subject": "Web Search Results",
+                            "body": "Hi,\n\nPlease find the search results here: $last_spreadsheet_url"
+                        },
+                        reason="Send the search results link via email."
+                    )
+                )
             return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search -> sheets.create_spreadsheet + sheets.append_values",
+                summary=f"Planned {len(tasks)} tasks: web search -> sheets.create_spreadsheet + sheets.append_values" + (" + gmail.send_message" if len(tasks) > 2 else ""),
                 confidence=0.65,
                 no_service_detected=False,
                 source="heuristic",
@@ -176,9 +191,26 @@ class WorkspaceAgentSystem:
 
         if "drive" in services and "sheets" in services and "gmail" in services:
             tasks = self._drive_to_sheets_email_tasks(text, lowered)
+        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered) and _has_any(lowered, ("save", "write", "export", "append", "convert")):
+             # Complex case: Gmail -> Sheets -> Email
+             tasks = self._gmail_to_sheets_tasks(text, lowered)
+             recipient = _extract_email(text) or self.config.default_recipient_email
+             tasks.append(
+                 PlannedTask(
+                     id=f"task-{len(tasks) + 1}",
+                     service="gmail",
+                     action="send_message",
+                     parameters={
+                         "to_email": recipient,
+                         "subject": "Processed Data",
+                         "body": "Hi,\n\nPlease find the spreadsheet here: $last_spreadsheet_url"
+                     },
+                     reason="Send the final spreadsheet link as requested."
+                 )
+             )
         elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
             tasks = self._sheet_to_email_tasks(text, lowered)
-        elif "gmail" in services and "sheets" in services and _has_any(lowered, ("save", "write", "export", "append")):
+        elif "gmail" in services and "sheets" in services and _has_any(lowered, ("save", "write", "export", "append", "convert")):
             tasks = self._gmail_to_sheets_tasks(text, lowered)
         elif services == ["gmail"]:
             tasks = self._gmail_read_tasks(lowered)
@@ -277,7 +309,7 @@ class WorkspaceAgentSystem:
                 id="task-2",
                 service="drive",
                 action="export_file",
-                parameters={"file_id": "{{task-1.output.id}}", "mime_type": "text/plain"},
+                parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
                 reason="Extract text content from the document."
             ),
             PlannedTask(
@@ -291,7 +323,7 @@ class WorkspaceAgentSystem:
                 id="task-4",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "{{task-3.output.spreadsheetId}}", "values": "{{task-2.output}}"},
+                parameters={"spreadsheet_id": "{{task-3.id}}", "values": "{{task-2.content}}"},
                 reason="Save extracted data to the new Sheet."
             ),
             PlannedTask(
@@ -301,7 +333,7 @@ class WorkspaceAgentSystem:
                 parameters={
                     "to_email": recipient,
                     "subject": "Processed Document Data",
-                    "body": "Hi,\n\nPlease find the spreadsheet here: {{task-3.output.spreadsheetUrl}}"
+                    "body": "Hi,\n\nPlease find the spreadsheet here: $last_spreadsheet_url"
                 },
                 reason="Send the results link to the user."
             )
@@ -428,6 +460,8 @@ class WorkspaceAgentSystem:
             parameters["body"] = f"Update regarding: {lowered[:100]}..."
         elif service == "telegram" and action == "send_message":
             parameters["message"] = f"Task update: {lowered[:50]}..."
+        elif service == "search" and action == "web_search":
+            parameters["query"] = _extract_search_topic(lowered) or lowered
         elif service == "calendar":
             if action == "create_event":
                 # Extract summary: "event called '...'" or "event '...'"
@@ -595,6 +629,7 @@ def _trim_follow_on_instruction(value: str) -> str:
         r"\s+and\s+save\b",
         r"\s+and\s+write\b",
         r"\s+and\s+export\b",
+        r"\s+and\s+convert\b",
         r"\s+into\s+google\s+sheets\b",
         r"\s+into\s+sheets\b",
         r"\s+to\s+google\s+sheets\b",
@@ -612,12 +647,15 @@ def _is_sheet_to_email_request(text: str) -> bool:
     send_terms = (
         "send it",
         "send this",
+        "send that",
         "send to",
+        "send me",
         "send email",
+        "email it",
+        "email this",
+        "email me",
         "create email",
         "compose email",
-        "email this",
-        "email it",
     )
     return any(term in text for term in send_terms)
 

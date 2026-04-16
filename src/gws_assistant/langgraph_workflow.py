@@ -52,7 +52,6 @@ _GWS_INTENT_KEYWORDS = (
     "calendar",
     "slides",
     "send",
-    "create",
     "extract data",
     "search emails",
     "job offer",
@@ -198,6 +197,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 if "drive_export_content" in latest["output"]:
                     content = latest["output"]["drive_export_content"]
                     context["drive_export_content"] = content
+                    context["drive_export_file"] = content
                     # Also put it in task_results so {task-N.content} works
                     results_map[t_id] = {"content": content}
                     if t_id.startswith("task-"):
@@ -374,7 +374,32 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback"})
             return {"context": context, "error": None}
 
-        llm_response = model.invoke(prompt)
+        try:
+            llm_response = model.invoke(prompt)
+        except Exception as exc:
+            logger.warning("LLM code generation failed: %s. Falling back to heuristics.", exc)
+            import re
+            numbers = re.findall(r"\b\d+\b", state["user_text"])
+            lowered = state["user_text"].lower()
+            if len(numbers) >= 2 and ("from" in lowered or "between" in lowered):
+                start, end = numbers[0], numbers[1]
+                rev = "True" if "reverse" in lowered or "descending" in lowered else "False"
+                generated = f"result = list(range({start}, {int(end)+1}))\nif {rev}: result.reverse()\nprint(result)"
+            else:
+                # Basic math extraction
+                extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
+                # Clean up multiple spaces or invalid sequences
+                cleaned = re.sub(r"\s+", " ", extracted).strip()
+                # If it still looks like multiple numbers, just pick the first or join with +
+                if " " in cleaned:
+                    cleaned = " + ".join(cleaned.split())
+                generated = f"result = {cleaned or '0'}\nprint(result)"
+            
+            context = dict(state.get("context", {}))
+            context["generated_code"] = generated
+            _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback_enhanced"})
+            return {"context": context, "error": None}
+
         content = getattr(llm_response, "content", str(llm_response))
         if not isinstance(content, str):
             content = str(content)
@@ -429,7 +454,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "web_search"
 
         if getattr(plan, "needs_code_execution", False) or any(
-            kw in text for kw in ("calculate", "compute", "sum", "average")
+            kw in text for kw in ("calculate", "compute", "sum", "average", "sort", "reverse", "math")
         ):
             return "generate_code"
 

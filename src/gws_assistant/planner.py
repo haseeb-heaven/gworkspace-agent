@@ -238,8 +238,21 @@ class CommandPlanner:
             source_mime    = str(params.get("source_mime") or "").strip()
 
             # 🔥 PRIMARY: use source_mime if available to determine best export format
-            # If it's a PDF or other non-Workspace file, use 'files get' with 'alt=media'
-            is_workspace_doc = source_mime.startswith("application/vnd.google-apps.")
+            # Only certain types support the 'export' endpoint.
+            # Folders, Shortcuts, Scripts, and regular files MUST use 'get' with 'alt=media'.
+            exportable_mimes = {
+                "application/vnd.google-apps.document",
+                "application/vnd.google-apps.spreadsheet",
+                "application/vnd.google-apps.presentation",
+                "application/vnd.google-apps.drawing"
+            }
+            is_workspace_doc = source_mime in exportable_mimes
+            if source_mime == "application/vnd.google-apps.folder":
+                 # Folders CANNOT be exported or downloaded as media.
+                 # Returning a ValidationError here helps the agent realize it picked a folder instead of a document.
+                 from gws_assistant.exceptions import ValidationError
+                 raise ValidationError(f"File '{file_id}' is a folder and cannot be read as document content. Please search specifically for documents or list folder contents.")
+
             if source_mime and not is_workspace_doc:
                  return [
                     "drive",

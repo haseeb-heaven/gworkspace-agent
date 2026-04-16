@@ -91,8 +91,43 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"].update(utility_builtins)
     safe_g["__builtins__"]["__import__"] = _restricted_import
     safe_g["__builtins__"]["sum"] = sum
-    safe_g["_print_"] = PrintCollector
+    safe_g["__builtins__"]["list"] = list
+    safe_g["__builtins__"]["dict"] = dict
+    safe_g["__builtins__"]["range"] = range
+    safe_g["__builtins__"]["int"] = int
+    safe_g["__builtins__"]["str"] = str
+    safe_g["__builtins__"]["float"] = float
+    safe_g["__builtins__"]["bool"] = bool
+    safe_g["__builtins__"]["len"] = len
+    safe_g["__builtins__"]["abs"] = abs
+    safe_g["__builtins__"]["min"] = min
+    safe_g["__builtins__"]["max"] = max
+    safe_g["__builtins__"]["round"] = round
+    safe_g["__builtins__"]["reversed"] = reversed
+    safe_g["__builtins__"]["sorted"] = sorted
+    safe_g["__builtins__"]["enumerate"] = enumerate
+    safe_g["__builtins__"]["zip"] = zip
+
+    # Use a custom print collector to capture output from print()
+    class RobustCollector:
+        def __init__(self):
+            self.buf = []
+        def __call__(self, arg=None):
+            if arg is not None:
+                self.buf.append(str(arg))
+                return self
+            return "\n".join(self.buf)
+        def write(self, text):
+            self.buf.append(text)
+        def _call_print(self, *args, **kwargs):
+            return self.__call__(*args, **kwargs)
+
+    collector = RobustCollector()
+    safe_g["_print_"] = collector
+    safe_g["_print_buffer_instance"] = collector # Keep reference for retrieval
+
     safe_g["_getattr_"] = getattr
+
     safe_g["_setattr_"] = setattr
     safe_g["_getiter_"] = iter
     safe_g["_getitem_"] = lambda obj, key: obj[key]
@@ -162,8 +197,10 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
             exec(byte_code, sandbox_globals)  # noqa: S102
 
         # Capture both _print_ (RestrictedPython internal) and direct stdout
-        if "_print" in sandbox_globals:
-            exec_result.stdout = sandbox_globals["_print"]()
+        if "_print_buffer_instance" in sandbox_globals:
+            collector = sandbox_globals["_print_buffer_instance"]
+            if callable(collector):
+                exec_result.stdout = collector()
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:

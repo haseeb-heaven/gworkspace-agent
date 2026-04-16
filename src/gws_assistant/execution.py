@@ -126,6 +126,8 @@ class PlanExecutor:
                 "$sheet_email_body":        "sheet_email_body",
                 "$last_code_stdout":        "last_code_stdout",
                 "$last_code_result":        "last_code_result",
+                "$drive_export_content":    "drive_export_content",
+                "$drive_export_file":       "drive_export_content",
             }
 
             results_map = context.get("task_results", {})
@@ -247,25 +249,28 @@ class PlanExecutor:
                 # Key access
                 if isinstance(curr, dict):
                     # Auto-unwrap: if current level is a dict and we have a list inside,
-                    # and the next token is an index, use that list.
-                    unwrapped = False
-                    for list_key in ["files", "messages", "items", "events", "values", "threads"]:
-                        if list_key in curr and isinstance(curr[list_key], list):
-                            curr = curr[list_key]
-                            unwrapped = True
-                            break
-                    if not unwrapped:
+                    # and the token is NOT a key in the dict, but exists in the list elements,
+                    # we can auto-unwrap.
+                    if token not in curr:
+                        for list_key in ["files", "messages", "items", "events", "values", "threads"]:
+                            if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
+                                # If the token is found in the first item of the list, unwrap to the list
+                                if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
+                                    curr = curr[list_key]
+                                    break
+                    
+                    if isinstance(curr, dict):
                         curr = curr.get(token)
-                elif isinstance(curr, list):
-                    # Auto-unwrap: if user asks for a key on a list, check common keys
-                    # in elements of the list if they are all dicts.
+                
+                # If curr became a list (via unwrap above or already a list), apply token to items
+                if isinstance(curr, list):
                     new_curr = []
                     for item in curr:
                         if isinstance(item, dict) and token in item:
                             new_curr.append(item[token])
                     curr = new_curr if new_curr else None
                 else:
-                    return None
+                    pass
 
             if curr is None:
                 self.logger.warning(f"Path resolution failed at '{token}': resolved to None.")
@@ -320,17 +325,25 @@ class PlanExecutor:
                 results_map["values"] = data["values"] # Direct alias for the most recent values
 
         # ID Aliasing: Promote the first item's ID to a stable 'task-N.id' key
-        if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
-            first_id = data["files"][0].get("id")
-            if first_id:
-                results_map[f"{task.id}.id"] = first_id
-                results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
+        if task:
+            if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
+                # OPTIMIZATION: Reorder files to put non-folders first.
+                # This ensures that indexed lookups like task-N[0] and task-N.id pick a usable file.
+                files = data["files"]
+                folders = [f for f in files if f.get("mimeType") == "application/vnd.google-apps.folder"]
+                non_folders = [f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"]
+                data["files"] = non_folders + folders
 
-        if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
-            first_id = data["messages"][0].get("id")
-            if first_id:
-                results_map[f"{task.id}.id"] = first_id
-                results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
+                first_id = data["files"][0].get("id")
+                if first_id:
+                    results_map[f"{task.id}.id"] = first_id
+                    results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
+
+            if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
+                first_id = data["messages"][0].get("id")
+                if first_id:
+                    results_map[f"{task.id}.id"] = first_id
+                    results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
 
         for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
             if id_field in data:
@@ -410,8 +423,11 @@ class PlanExecutor:
                     t_id = msgs[0].get("threadId", "")
                     context["message_id"] = m_id
                     context["gmail_message_body"] = m_id
-                    context[f"message_id_from_task_{num}"] = m_id
-                    context[f"thread_id_from_task_{num}"] = t_id
+                    if task:
+                        task_id = str(task.id)
+                        num = task_id.removeprefix("task-")
+                        context[f"message_id_from_task_{num}"] = m_id
+                        context[f"thread_id_from_task_{num}"] = t_id
 
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
 
@@ -424,6 +440,10 @@ class PlanExecutor:
                     # Also store in results map for {task-N.mimeType} access
                     if task and hasattr(task, "id") and task.id:
                         results_map[str(task.id)]["mimeType"] = files[0]["mimeType"]
+
+        if "drive_export_content" in data:
+            context["drive_export_content"] = data["drive_export_content"]
+            context["drive_export_file"] = data["drive_export_content"]
 
         if "values" in data and isinstance(data["values"], list):
             # Semantic extraction for tests
@@ -588,7 +608,11 @@ class PlanExecutor:
         task.parameters = self._resolve_placeholders(task.parameters, context)
 
         # 2. Build the command using already-resolved parameters
-        args = self.planner.build_command(task.service, task.action, task.parameters)
+        try:
+            args = self.planner.build_command(task.service, task.action, task.parameters)
+        except Exception as exc:
+            from .models import ExecutionResult
+            return ExecutionResult(success=False, command=[], error=str(exc))
 
         # 3. Final safety resolve for placeholders that planner might have added internally
         args = self._resolve_placeholders(args, context)

@@ -52,6 +52,7 @@ class PlannedTask:
     action: str
     parameters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+    _sequence_index: int = 0
 
 
 # ---------------------------------------------------------------------------
