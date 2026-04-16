@@ -53,3 +53,11 @@ def mocker():
         yield helper
     finally:
         helper.stopall()
+
+
+@pytest.fixture
+def default_email():
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    return os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com")

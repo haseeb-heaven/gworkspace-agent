@@ -142,7 +142,7 @@ class PlanExecutor:
             elif stripped.startswith("{") and stripped.endswith("}"):
                 # Single braces: only resolve if it looks like a task path (e.g. {task-1} or {create_doc})
                 potential_path = stripped[1:-1].strip()
-                if "task-" in potential_path.lower() or any(k in potential_path for k in results_map):
+                if "task-" in potential_path.lower() or potential_path in results_map:
                     path = potential_path
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
@@ -180,7 +180,16 @@ class PlanExecutor:
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-                return _UNRESOLVED_MARKER
+                
+                # Safety: Only return _UNRESOLVED_MARKER for tokens that are obviously intended as placeholders
+                # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
+                # This prevents accidental corruption of JSON payloads containing single braces.
+                is_explicit = bool(match.group(1) or match.group(3))
+                is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map)))
+                
+                if is_explicit or is_task_token:
+                    return _UNRESOLVED_MARKER
+                return match.group(0)
 
 
             # 4. Partial string replacement with regex 
@@ -375,9 +384,14 @@ class PlanExecutor:
         if "messages" in data:
             msgs = data["messages"]
             if msgs and isinstance(msgs, list):
-                m_id = msgs[0].get("id", "")
-                context["message_id"] = m_id
-                context["gmail_message_body"] = m_id
+                if len(msgs) > 0:
+                    m_id = msgs[0].get("id", "")
+                    t_id = msgs[0].get("threadId", "")
+                    context["message_id"] = m_id
+                    context["gmail_message_body"] = m_id
+                    context[f"message_id_from_task_{num}"] = m_id
+                    context[f"thread_id_from_task_{num}"] = t_id
+                
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
         
         if "files" in data:

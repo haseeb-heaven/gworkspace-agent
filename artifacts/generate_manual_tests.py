@@ -5,7 +5,7 @@ services = {
     "gmail": [
         "Search my inbox for the last 3 emails and log the output.",
         "Find an email about 'invoice' and save the snippet to a Google Sheet.",
-        "Search for 'urgent', save the top result to a document, and reply back to the sender via email using haseebmir.hm@gmail.com."
+        "Search for 'urgent', save the top result to a document, and reply back to the sender via email using user@example.com."
     ],
     "drive": [
         "Search my drive for files containing 'budget' and list the top 5 results.",
@@ -14,40 +14,40 @@ services = {
     ],
     "sheets": [
         "Create a Google Sheet called 'Systematic Testing Data'.",
-        "Read the data from my 'Systematic Testing Data' sheet and email it to haseebmir.hm@gmail.com"
+        "Read the data from my 'Systematic Testing Data' sheet and email it to user@example.com"
     ],
     "calendar": [
         "List my upcoming calendar events for the next week.",
-        "Create a calendar event for a meeting tomorrow at 10am with the subject 'GWS Validation Check', and invite haseebmir.hm@gmail.com"
+        "Create a calendar event for a meeting tomorrow at 10am with the subject 'GWS Validation Check', and invite user@example.com"
     ],
     "docs": [
         "Create a Google Doc called 'Investigation Report'.",
-        "Read the 'Investigation Report' Google Doc and send an email to haseebmir.hm@gmail.com with the contents."
+        "Read the 'Investigation Report' Google Doc and send an email to user@example.com with the contents."
     ],
     "slides": [
-        "Fetch my latest presentation and email the link to haseebmir.hm@gmail.com"
+        "Fetch my latest presentation and email the link to user@example.com"
     ],
     "contacts": [
-        "List my top 5 contacts and email them to haseebmir.hm@gmail.com"
+        "List my top 5 contacts and email them to user@example.com"
     ],
     "chat": [
         "Send a message 'Automation test' to my primary space.",
-        "List my spaces and email them to haseebmir.hm@gmail.com"
+        "List my spaces and email them to user@example.com"
     ],
     "meet": [
-        "Create a Google Meet conference and email the link to haseebmir.hm@gmail.com"
+        "Create a Google Meet conference and email the link to user@example.com"
     ],
     "search": [
-        "Web search for 'Agentic AI Google Workspace' and email the top results to haseebmir.hm@gmail.com"
+        "Web search for 'Agentic AI Google Workspace' and email the top results to user@example.com"
     ],
     "admin": [
-        "List 5 users in my workspace and email the list to haseebmir.hm@gmail.com"
+        "List 5 users in my workspace and email the list to user@example.com"
     ],
     "forms": [
         "Sync test data to Google Forms"
     ],
     "code": [
-        "Write a python script to calculate the first 10 fibonacci numbers, execute it, and email the results to haseebmir.hm@gmail.com"
+        "Write a python script to calculate the first 10 fibonacci numbers, execute it, and email the results to user@example.com"
     ]
 }
 

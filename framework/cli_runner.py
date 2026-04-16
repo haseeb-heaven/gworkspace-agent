@@ -12,7 +12,7 @@ class GWSCLIRunner:
     def run_command(self, args: list[str]) -> subprocess.CompletedProcess:
         cmd = [self.binary_path, self.script_path] + args
         logger.debug(f"Running command: {' '.join(cmd)}")
-        return subprocess.run(cmd, capture_output=True, text=True)
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     def run_task(self, task: str) -> subprocess.CompletedProcess:
         logger.info(f"Executing task: {task}")

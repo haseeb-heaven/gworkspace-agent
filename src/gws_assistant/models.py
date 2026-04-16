@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
-
-
 @dataclass(slots=True)
 class AppConfigModel:
     provider: str
@@ -30,6 +28,8 @@ class AppConfigModel:
     gws_timeout_seconds: int = 90
     gws_max_retries: int = 3
     max_context_snippet_len: int = 300
+    default_recipient_email: str = "user@example.com"
+
 
 
 @dataclass(slots=True)

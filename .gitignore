@@ -40,11 +40,12 @@ gcloud
 
 # .agent framework (Unignored to allow tracking)
 .agent/
-scratch
-scratch/*.py
+scratch/
+artifacts/
 .skill
 *.skill
-
+*.md
+!README.md
 
 # Re-ignore skills and other artifacts
 skills/

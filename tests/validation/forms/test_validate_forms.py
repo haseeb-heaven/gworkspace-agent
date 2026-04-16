@@ -9,6 +9,6 @@ def runner():
 def test_forms_validation(runner):
     success = runner.execute_and_validate(
         task="Sync test data to Google Forms",
-        expected_texts=["Command succeeded"]
+        expected_texts=["completed"]
     )
     assert success

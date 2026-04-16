@@ -269,7 +269,7 @@ class WorkspaceAgentSystem:
 
     def _drive_to_sheets_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(lowered)
-        recipient = _extract_email(text) or "haseebmir.hm@gmail.com"
+        recipient = _extract_email(text) or self.config.default_recipient_email
         tasks = [
             PlannedTask(
                 id="task-1",
@@ -427,6 +427,18 @@ class WorkspaceAgentSystem:
         elif service == "sheets" and action == "create_spreadsheet":
             topic = _extract_search_topic(lowered) or "Data"
             parameters["title"] = topic.title()
+        elif service == "telegram" and action == "send_message":
+            parameters["message"] = f"Task update: {lowered[:50]}..."
+        elif service == "calendar":
+            if action == "delete_event":
+                # Try to find a calendar ID in the text
+                cal_id = _extract_google_id(lowered)
+                if cal_id:
+                    parameters["event_id"] = cal_id
+            elif action == "update_event":
+                cal_id = _extract_google_id(lowered)
+                if cal_id:
+                    parameters["event_id"] = cal_id
         return PlannedTask(
             id=f"task-{index}",
             service=service,

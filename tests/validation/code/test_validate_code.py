@@ -6,9 +6,9 @@ def runner():
     return TaskRunner()
 
 @pytest.mark.live_integration
-def test_code_execution_validation(runner):
+def test_code_execution_validation(runner, default_email):
     success = runner.execute_and_validate(
-        task="Write a python script to calculate the first 10 fibonacci numbers, execute it, and email the results to haseebmir.hm@gmail.com",
-        expected_texts=["Command succeeded"]
+        task=f"Write a python script to calculate the first 10 fibonacci numbers, execute it, and email the results to {default_email}",
+        expected_texts=["completed"]
     )
     assert success

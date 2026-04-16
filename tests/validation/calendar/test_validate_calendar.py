@@ -6,9 +6,9 @@ def runner():
     return TaskRunner()
 
 @pytest.mark.live_integration
-def test_calendar_creation(runner):
+def test_calendar_creation(runner, default_email):
     success = runner.execute_and_validate(
-        task="Create a calendar event called 'Testing Framework' for tomorrow, and email the details to haseebmir.hm@gmail.com",
-        expected_texts=["Command succeeded"]
+        task=f"Create a calendar event called 'Testing Framework' for tomorrow, and email the details to {default_email}",
+        expected_texts=["completed"]
     )
     assert success

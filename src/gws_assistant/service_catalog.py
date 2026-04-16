@@ -192,6 +192,28 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
                 ),
             ),
+            "delete_event": ActionSpec(
+                key="delete_event",
+                label="Delete event",
+                description="Delete an event from a calendar by ID.",
+                keywords=("delete", "remove", "cancel", "trash"),
+                parameters=(
+                    ParameterSpec("event_id", "Enter the Calendar event ID", "icfdpe6lrg7jvtinujvd5h6qa4"),
+                    ParameterSpec("calendar_id", "Which calendar ID? (default: primary)", "primary", required=False),
+                ),
+            ),
+            "update_event": ActionSpec(
+                key="update_event",
+                label="Update event",
+                description="Update an existing calendar event. Only provided fields are changed.",
+                keywords=("update", "edit", "modify", "patch"),
+                parameters=(
+                    ParameterSpec("event_id", "Enter the Calendar event ID", "icfdpe6lrg7jvtinujvd5h6qa4"),
+                    ParameterSpec("summary", "New summary", "Updated Title", required=False),
+                    ParameterSpec("description", "New description", "Updated notes", required=False),
+                    ParameterSpec("calendar_id", "Which calendar ID? (default: primary)", "primary", required=False),
+                ),
+            ),
         },
     ),
     "docs": ServiceSpec(
@@ -471,6 +493,23 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("run", "execute", "calculate", "math", "compute"),
                 parameters=(
                     ParameterSpec("code", "Python code to execute", "x = 10 + 5; print(x)"),
+                ),
+            ),
+        },
+    ),
+    "telegram": ServiceSpec(
+        key="telegram",
+        label="Telegram Updates",
+        aliases=("telegram", "tg", "notify"),
+        description="Send progress updates to the user via Telegram.",
+        actions={
+            "send_message": ActionSpec(
+                key="send_message",
+                label="Send Telegram Message",
+                description="Send a text message to the user's Telegram chat.",
+                keywords=("send", "update", "notify", "telegram", "message"),
+                parameters=(
+                    ParameterSpec("message", "The update message to send", "Completed task X"),
                 ),
             ),
         },

@@ -14,7 +14,7 @@ def setup_framework_logger(name: str) -> logging.Logger:
     # File handler
     log_dir = Path("artifacts/logs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    fh = logging.FileHandler(log_dir / f"{name}.log")
+    fh = logging.FileHandler(log_dir / f"{name}.log", encoding="utf-8")
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     

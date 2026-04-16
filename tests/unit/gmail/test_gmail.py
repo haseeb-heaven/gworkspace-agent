@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+import os
 import pytest
 import json
 from gws_assistant.planner import CommandPlanner
@@ -21,7 +24,7 @@ class TestGmailUnit:
 
     def test_send_message_builds_raw_email(self):
         args = self.planner.build_command("gmail", "send_message", {
-            "to_email": "user@example.com",
+            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
             "subject": "Test Subject",
             "body": "Hello World",
         })
@@ -30,7 +33,7 @@ class TestGmailUnit:
         assert "raw" in body
         import base64
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
-        assert "To: user@example.com" in decoded
+        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com')}" in decoded
         assert "Subject: Test Subject" in decoded
         assert "Hello World" in decoded
 

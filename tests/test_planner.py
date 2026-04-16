@@ -1,4 +1,7 @@
 from __future__ import annotations
+from dotenv import load_dotenv
+load_dotenv()
+import os
 
 import pytest
 
@@ -45,7 +48,7 @@ def test_build_gmail_send_message_command():
     args = planner.build_command(
         "gmail",
         "send_message",
-        {"to_email": "user@example.com", "subject": "Hello", "body": "Test message"},
+        {"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"), "subject": "Hello", "body": "Test message"},
     )
     assert args[:4] == ["gmail", "users", "messages", "send"]
     assert "--json" in args

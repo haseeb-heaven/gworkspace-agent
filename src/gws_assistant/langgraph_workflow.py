@@ -443,7 +443,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if not decision:
             return "format_output"
         if decision.action == "continue":
-            return "update_context" if not state.get("error") else "format_output"
+            return "update_context"
         if decision.action == "retry":
             if state.get("context", {}).get("generated_code"):
                 return "generate_code"

@@ -1,4 +1,7 @@
 from __future__ import annotations
+from dotenv import load_dotenv
+load_dotenv()
+import os
 
 import base64
 import json
@@ -79,7 +82,7 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=["gws.exe", *args],
                 stdout=(
-                    '{"id":"m1","payload":{"headers":['
+                    '{"id":"m1", "snippet": "Job from DecoverAI", "payload":{"headers":['
                     '{"name":"From","value":"DecoverAI <jobs@decoverai.example>"},'
                     '{"name":"Subject","value":"Job offer"}]}}'
                 ),
@@ -190,7 +193,7 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": "user@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
+                parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"), "subject": "Sheet data", "body": "$sheet_email_body"},
             ),
         ],
     )
@@ -256,7 +259,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     )
 
     plan = RequestPlan(
-        raw_text="Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to haseebmir.hm@gmail.com",
+        raw_text="Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to user@example.com",
         tasks=[
             PlannedTask(id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}),
             PlannedTask(id="task-2", service="docs", action="create_document", parameters={"title": "Agentic Ai Frameworks"}),
@@ -273,7 +276,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 service="gmail",
                 action="send_message",
                 parameters={
-                    "to_email": "haseebmir.hm@gmail.com",
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
                     "subject": "Agentic Ai Frameworks summary",
                     "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
                 },
@@ -284,18 +287,19 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     report = executor.execute(plan)
     assert report.success is True
 
-    docs_update_cmd = runner.commands[2]
-    docs_payload = json.loads(docs_update_cmd[docs_update_cmd.index("--json") + 1])
+    docs_update_cmd = runner.commands[1]
+    idx = docs_update_cmd.index("--json")
+    docs_payload = json.loads(docs_update_cmd[idx + 1])
     inserted_text = docs_payload["requests"][0]["insertText"]["text"]
     assert "LangGraph" in inserted_text
     assert "CrewAI" in inserted_text
 
-    append_cmd = runner.commands[4]
+    append_cmd = runner.commands[3]
     sheet_payload = json.loads(append_cmd[append_cmd.index("--json") + 1])
     assert sheet_payload["values"][1][0] == "LangGraph"
     assert sheet_payload["values"][2][0] == "CrewAI"
 
-    send_cmd = runner.commands[5]
+    send_cmd = runner.commands[4]
     raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
     decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
     assert "https://docs.google.com/document/d/doc-1/edit" in decoded

@@ -1,3 +1,7 @@
+from __future__ import annotations
+from dotenv import load_dotenv
+load_dotenv()
+import os
 """Comprehensive service CRUD and multi-service workflow tests.
 
 Tests cover real-world user scenarios across all supported services:
@@ -8,7 +12,6 @@ Tests cover real-world user scenarios across all supported services:
 - Multi-service pipelines: Gmail→Sheets, Drive→Sheets→Email, etc.
 """
 
-from __future__ import annotations
 
 import json
 import logging
@@ -168,7 +171,7 @@ class TestPlannerGmail:
 
     def test_send_message_builds_raw_email(self):
         args = self.planner.build_command("gmail", "send_message", {
-            "to_email": "user@example.com",
+            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
             "subject": "Test Subject",
             "body": "Hello World",
         })
@@ -178,7 +181,7 @@ class TestPlannerGmail:
         # The raw field should be base64-encoded
         import base64
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
-        assert "To: user@example.com" in decoded
+        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com')}" in decoded
         assert "Subject: Test Subject" in decoded
         assert "Hello World" in decoded
 
@@ -236,9 +239,9 @@ class TestPlannerSheets:
             "spreadsheet_id": "s1",
             "range": "Sheet1!A1:Z500",
         })
-        params = json.loads(args[args.index("--params") + 1])
-        assert params["spreadsheetId"] == "s1"
-        assert params["range"] == "Sheet1!A1:Z500"
+        assert args[1] == "+read"
+        assert args[args.index("--spreadsheet") + 1] == "s1"
+        assert args[args.index("--range") + 1] == "Sheet1!A1:Z500"
 
 
 class TestPlannerCalendar:
@@ -290,7 +293,7 @@ class TestAgentPlanning:
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
         plan = agent.plan(
             "Search Google Sheets with ID: '1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo' "
-            "create email with this data to 'haseebmahr.hm@gmail.com' and send it"
+            "create email with this data to os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com') and send it"
         )
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("sheets", "get_values") in services
@@ -380,7 +383,7 @@ class TestExecutionPipelines:
             tasks=[
                 PlannedTask("task-1", "sheets", "get_values", {"spreadsheet_id": "s1", "range": "Sheet1!A1:B2"}),
                 PlannedTask("task-2", "gmail", "send_message", {
-                    "to_email": "user@example.com",
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
                     "subject": "Data Export",
                     "body": "$sheet_email_body",
                 }),
@@ -406,7 +409,7 @@ class TestExecutionPipelines:
                     "spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$drive_summary_values",
                 }),
                 PlannedTask("task-4", "gmail", "send_message", {
-                    "to_email": "haseebmir.hm@gmail.com", "subject": "AI Data Sheet", "body": "Sheet is ready",
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"), "subject": "AI Data Sheet", "body": "Sheet is ready",
                 }),
                 PlannedTask("task-5", "calendar", "create_event", {
                     "summary": "Review AI Data", "start_date": "2026-04-20",

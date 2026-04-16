@@ -170,6 +170,7 @@ class CommandPlanner:
         if service_key == "search":   return self._build_search_command(action_key, params)
         if service_key == "admin":    return self._build_admin_command(action_key, params)
         if service_key == "forms":    return self._build_forms_command(action_key, params)
+        if service_key == "telegram": return self._build_telegram_command(action_key, params)
         if service_key in ("code", "computation"): return [service_key, action_key, "internal"]
         raise ValidationError(f"No command builder for service: {service_key}")
 
@@ -552,6 +553,27 @@ class CommandPlanner:
                     "--params", json.dumps(params_dict),
                     "--json",   json.dumps(event_body, ensure_ascii=True)]
 
+        if action == "delete_event":
+            calendar_id = str(params.get("calendar_id") or "primary").strip()
+            event_id = self._required_text(params, "event_id")
+            return ["calendar", "events", "delete", "--params", 
+                    json.dumps({"calendarId": calendar_id, "eventId": event_id})]
+
+        if action == "update_event":
+            calendar_id = str(params.get("calendar_id") or "primary").strip()
+            event_id = self._required_text(params, "event_id")
+            
+            # Build patch body
+            patch_body = {}
+            if params.get("summary"):
+                patch_body["summary"] = str(params.get("summary")).strip()
+            if params.get("description"):
+                patch_body["description"] = str(params.get("description")).strip()
+            
+            return ["calendar", "events", "patch",
+                    "--params", json.dumps({"calendarId": calendar_id, "eventId": event_id}),
+                    "--json",   json.dumps(patch_body, ensure_ascii=True)]
+
         raise ValidationError(f"Unsupported calendar action: {action}")
 
     # ------------------------------------------------------------------
@@ -664,6 +686,27 @@ class CommandPlanner:
             return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
         
         raise ValidationError(f"Unsupported forms action: {action}")
+
+    # ------------------------------------------------------------------
+    # Telegram
+    # ------------------------------------------------------------------
+
+    def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "send_message":
+            message = self._required_text(params, "message")
+            # Use the python executable from henv if possible, otherwise just python
+            python_exe = r"D:\henv\Scripts\python.exe"
+            if not os.path.exists(python_exe):
+                python_exe = "python"
+            
+            # Calculate absolute path to the script relative to this file
+            # src/gws_assistant/planner.py -> ../../.agent/skills/telegram-update/scripts/send_message.py
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
+            
+            return [python_exe, script_path, message]
+            
+        raise ValidationError(f"Unsupported telegram action: {action}")
 
     # ------------------------------------------------------------------
     # Utilities

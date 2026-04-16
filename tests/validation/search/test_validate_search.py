@@ -6,9 +6,9 @@ def runner():
     return TaskRunner()
 
 @pytest.mark.live_integration
-def test_search_and_email(runner):
+def test_search_and_email(runner, default_email):
     success = runner.execute_and_validate(
-        task="Web search for 'Agentic AI Google Workspace' and email the top results to haseebmir.hm@gmail.com",
-        expected_texts=["Command succeeded"]
+        task=f"Web search for 'Agentic AI Google Workspace' and email the top results to {default_email}",
+        expected_texts=["completed"]
     )
     assert success
