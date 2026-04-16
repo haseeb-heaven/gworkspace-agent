@@ -313,24 +313,28 @@ class CommandPlanner:
 
         if action == "get_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = self._format_range(str(params.get("range") or "A1:Z500"))
-            return ["sheets", "spreadsheets", "values", "get", "--params",
-                    json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name})]
+            range_name = str(params.get("range") or "A1")
+            return [
+                "sheets", "+read",
+                "--spreadsheet", spreadsheet_id,
+                "--range", range_name,
+            ]
 
         if action == "append_values":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
-            range_name = params.get("range", "{{task-1.range}}") # Use placeholder if missing
-
-            # Default to 'A1' if range is still a placeholder or unresolved
-            if not range_name or range_name == "{{task-1.range}}" or str(range_name).startswith("___UNRESOLVED_PLACEHOLDER___"):
-                range_name = "A1"
+            range_name = self._format_range(str(params.get("range") or "A1"))
 
             values = params.get("values")
-            # Ensure 'values' is a list of lists, even if it's a single string or empty
+            # Ensure 'values' is a list of lists, even if it's a single string or flat list
             if isinstance(values, str):
-                values = [[values]]
-            elif not isinstance(values, list) or not values:
-                values = [["No values supplied"]]
+                values = [[values]]  # e.g. "hello" -> [["hello"]]
+            elif isinstance(values, list):
+                if values and not isinstance(values[0], list):
+                    values = [values] # e.g. ['a', 'b'] -> [['a', 'b']]
+                elif not values: # Handle empty list
+                    values = [["No values supplied"]]
+            else: # Handle non-string, non-list types (e.g., None, int, etc.)
+                values = [[str(values)]] # Wrap in list of lists
 
             return [
                 "sheets", "spreadsheets", "values", "append",
@@ -338,8 +342,8 @@ class CommandPlanner:
                 "--json",  json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}, ensure_ascii=True),
             ]
 
-
         raise ValidationError(f"Unsupported sheets action: {action}")
+
 
     # ------------------------------------------------------------------
     # Gmail
