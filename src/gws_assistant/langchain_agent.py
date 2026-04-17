@@ -29,16 +29,20 @@ _REQUEST_PLAN_SCHEMA = {
                         "id": {"type": "string"},
                         "service": {
                             "type": "string",
-                            "description": "Must be one of the exact service keys listed in the catalog (e.g. 'gmail', 'sheets', 'drive'). Never invent new service names.",
+                            "description": "The service key (e.g. 'gmail', 'sheets').",
                         },
                         "action": {
                             "type": "string",
-                            "description": "Must be one of the exact action keys for the given service (e.g. 'list_messages', 'send_message'). Never invent new action names.",
+                            "description": "The action key (e.g. 'send_message').",
                         },
-                        "parameters": {"type": "object"},
+                        "parameters": {
+                            "type": "object",
+                            "description": "Key-value pairs for the action. MUST include all required parameters from the catalog.",
+                            "additionalProperties": True
+                        },
                         "reason": {"type": "string"},
                     },
-                    "required": ["id", "service", "action"],
+                    "required": ["id", "service", "action", "parameters"],
                 },
             },
             "summary": {"type": "string"},
@@ -353,7 +357,10 @@ def plan_with_langchain(
         "STRICT RULES:\n"
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
         "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
-        "2. PYTHON CODE: in code.execute, write standard, valid Python. No dots at the start of lines, no markdown. "
+        "2. PARAMETERS: you MUST provide a 'parameters' object for EVERY task. "
+        "   Fill in all required fields (e.g. 'folder_name' for create_folder, 'q' for list_messages). "
+        "   If the user specifies a name, use it. If not, provide a sensible default.\n"
+        "3. PYTHON CODE: in code.execute, write standard, valid Python. No dots at the start of lines, no markdown. "
         "   Use standard Python syntax (True, False, None) — NOT lowercase true/false/null. "
         "   Do NOT use `return` at the top level — assign the final value to a variable named `result` "
         "   (e.g. `result = total`) or use `print()`. "
@@ -361,31 +368,38 @@ def plan_with_langchain(
         "3. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
         "   {{task-N.field}} (double braces), e.g. {{task-1.id}}.\n"
         "   If the output is a list, use {{task-N[0].field}}, e.g. {{task-1[0].id}}.\n"
-        "   NEVER use names like {{drive-list.id}} or {{task_1.id}}.\n"
-        "4. EMAIL DETAILS: always follow gmail.list_messages with gmail.get_message when "
+        "4. BULK OPERATIONS: To perform an action on ALL items from a previous search (e.g. 'move all files found'), "
+        "   simply use the placeholder for that task's ID (e.g. '{{task-1.id}}'). "
+        "   The system will automatically expand this into multiple tasks. "
+        "   Avoid writing complex Python loops for this unless you need to perform custom logic/filtering.\n"
+        "5. DRIVE QUERIES: Use the 'q' parameter for drive.list_files.\n"
+        "6. EMAIL DETAILS: always follow gmail.list_messages with gmail.get_message when "
         "   full content is needed. Pass 'q' to list_messages. Omit message_id in "
         "   get_message — the executor resolves it automatically.\n"
-        "5. EXPORTS: use drive.export_file to read Doc/Sheet content. "
+        "7. EXPORTS: use drive.export_file to read Doc/Sheet content. "
         "   Never use docs/sheets APIs for reading raw content.\n"
-        "6. WEB SEARCH: use search.web_search for external info ('top X', 'best Y'). "
+        "8. WEB SEARCH: use search.web_search for external info ('top X', 'best Y'). "
         "   Use $web_search_table_values for sheet cell values, $web_search_summary for doc content.\n"
         "   In code.execute, if you need web search results, MUST use $web_search_rows (a list of [title, link, snippet]). NEVER use {{task.rows}} or similar.\n"
-        "7. CALENDAR: use $calendar_events to loop through event lists in code.execute.\n"
-        "8. GMAIL: use $gmail_message_body_text if you need the decoded plain text of a message.\n"
-        "9. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
+        "9. DATA STRUCTURES: drive.list_files and gmail.list_messages return LISTS of objects. "
+        "   In code.execute, iterate over the list directly (e.g. `for f in task_results['task-1']:`). "
+        "   Do NOT expect a 'files' or 'messages' wrapper key.\n"
+        "10. CALENDAR: use $calendar_events to loop through event lists in code.execute.\n"
+        "11. GMAIL: use $gmail_message_body_text if you need the decoded plain text of a message.\n"
+        "12. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
         "   $last_code_stdout (text) in the next task's parameter. Never write 'PLACEHOLDER_AMOUNT'.\n"
-        "10. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
+        "13. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
         "   gmail.send_message with to_email set to the EXACT address in the request. "
         "   Choose the most appropriate body $placeholder from: "
         "   $last_code_stdout, $sheet_email_body, $gmail_summary_values, $web_search_markdown.\n"
-        "11. PIPELINE: for complex workflows prefer: "
+        "14. PIPELINE: for complex workflows prefer: "
         "   search.web_search -> code.execute -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message.\n"
-        "11. STRING QUOTING & HARDCODING: NEVER hardcode file contents or large text blocks into `code`! "
+        "15. STRING QUOTING & HARDCODING: NEVER hardcode file contents or large text blocks into `code`! "
         "    Always use placeholders (double braces syntax). The executor will automatically safely inject the value. "
         "    For small string literals, use standard Python quotes `\"value\"`.\n"
-        "12. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
+        "16. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
         "   never reuse 'Sheet1!A1' for different write targets.\n"
-        "13. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "
+        "17. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "
         "    between sequential tasks — you do not need to repeat them explicitly.\n"
         "14. DOUBLE VERIFICATION: for every document, sheet, or email created/edited, the LAST task "
         "    of that service group MUST be a 'read' or 'list' operation to verify the final data. "
@@ -452,6 +466,7 @@ def plan_with_langchain(
         )
         return None
 
+    logger.info("Raw plan_data from LLM: %s", plan_data)
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
         # Guard: some models return tasks=None instead of tasks=[]
@@ -515,11 +530,16 @@ def plan_with_langchain(
         tasks: list[PlannedTask] = []
         for t in tasks_data:
             if isinstance(t, dict):
+                params = t.get("parameters") or {}
+                # Bug Fix: If parameters is empty, harvest other keys that are not part of the task spec
+                if not params:
+                    params = {k: v for k, v in t.items() if k not in ("id", "service", "action", "parameters", "reason")}
+                
                 tasks.append(PlannedTask(
                     id=str(t.get("id", f"task-{len(tasks)+1}")),
                     service=str(t.get("service", "")),
                     action=str(t.get("action", "")),
-                    parameters=t.get("parameters") or {},
+                    parameters=params,
                     reason=str(t.get("reason", ""))
                 ))
         return RequestPlan(

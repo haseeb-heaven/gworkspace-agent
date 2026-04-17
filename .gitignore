@@ -43,6 +43,8 @@ scratch/
 artifacts/
 .skill
 *.skill
+skills/
+.gemini 
 
 # Files
 *.exe
@@ -56,6 +58,5 @@ artifacts/
 !README.md
 !framework/
 !tests/
-!skills/
 
 

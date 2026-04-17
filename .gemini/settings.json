@@ -1,8 +1,24 @@
 {
   "mcpServers": {
     "mem0": {
-      "command": "node node_modules/@mem0/mcp-server/dist/index.js",
-      "args": []
+      "command": "npx",
+      "args": [
+        "-y",
+        "--node-options=--max-old-space-size=4096",
+        "@mem0/mcp-server"
+      ]
+    },
+    "telegram-mcp": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "D:\\Code\\telegram-mcp",
+        "run",
+        "main.py"
+      ],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "REPLACED_BY_GEMINI_CLI_FOR_SECURITY"
+      }
     }
   }
 }

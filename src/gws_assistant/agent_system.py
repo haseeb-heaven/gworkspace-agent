@@ -67,29 +67,29 @@ class WorkspaceAgentSystem:
 
         # 1. Check for direct command override (e.g. service action key=value or starting with service key)
         # If the user provides explicit parameters or starts with a service name, prioritize heuristics.
-        service_prefixes = ("web_search", "drive", "gmail", "sheets", "docs", "calendar", "keep", "meet", "code", "computation", "telegram")
-        lowered = text.lower()
-        is_direct = any(lowered.startswith(p) for p in service_prefixes) or "=" in text or ":" in text
-        
-        if is_direct:
-            parser = IntentParser(self.config, self.logger)
-            intent = parser.parse(text, force_heuristic=True)
-            if intent.service and intent.action and not intent.needs_clarification:
-                task = PlannedTask(
-                    id="task-1",
-                    service=intent.service,
-                    action=intent.action,
-                    parameters=intent.parameters,
-                    reason=f"Direct command detected: {intent.service}.{intent.action}",
-                )
-                return RequestPlan(
-                    raw_text=text,
-                    tasks=[task],
-                    summary=f"Planned direct task: {intent.service}.{intent.action}",
-                    confidence=1.0,
-                    no_service_detected=False,
-                    source="direct_command",
-                )
+        # service_prefixes = ("web_search", "drive", "gmail", "sheets", "docs", "calendar", "keep", "meet", "code", "computation", "telegram")
+        # lowered = text.lower()
+        # is_direct = any(lowered.startswith(p) for p in service_prefixes) or "=" in text or ":" in text
+        # 
+        # if is_direct:
+        #     parser = IntentParser(self.config, self.logger)
+        #     intent = parser.parse(text, force_heuristic=True)
+        #     if intent.service and intent.action and not intent.needs_clarification:
+        #         task = PlannedTask(
+        #             id="task-1",
+        #             service=intent.service,
+        #             action=intent.action,
+        #             parameters=intent.parameters,
+        #             reason=f"Direct command detected: {intent.service}.{intent.action}",
+        #         )
+        #         return RequestPlan(
+        #             raw_text=text,
+        #             tasks=[task],
+        #             summary=f"Planned direct task: {intent.service}.{intent.action}",
+        #             confidence=1.0,
+        #             no_service_detected=False,
+        #             source="direct_command",
+        #         )
 
         # 2. Primary: LLM Planning
         if self._use_langchain:
@@ -127,16 +127,16 @@ class WorkspaceAgentSystem:
         # MULTI-TASK HEURISTICS (General Patterns)
         
         # Pattern A: Drive -> Gmail (Search & Email)
-        if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
-             tasks = self._drive_to_gmail_tasks(text, lowered)
-             return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
+        # if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
+        #      tasks = self._drive_to_gmail_tasks(text, lowered)
+        #      return RequestPlan(
+        #         raw_text=text,
+        #         tasks=tasks,
+        #         summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
+        #         confidence=0.7,
+        #         no_service_detected=False,
+        #         source="heuristic",
+        #     )
             
         # Pattern B: Gmail -> Sheets -> Email (Extraction)
         if "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):

@@ -691,6 +691,12 @@ class CommandPlanner:
         if value is not None and str(value).strip():
             return str(value).strip()
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
+        if "name" in key.lower(): variations.append("name")
+        if "id" in key.lower(): variations.append("id")
+        if "code" in key.lower(): variations.extend(["script", "python"])
+        if "text" in key.lower() or "body" in key.lower() or "content" in key.lower():
+            variations.extend(["text", "body", "content"])
+        
         for k, v in params.items():
             if k.lower().replace("_", "") in variations and v is not None and str(v).strip():
                 return str(v).strip()

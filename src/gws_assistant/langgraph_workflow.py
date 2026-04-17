@@ -342,6 +342,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 task = plan.tasks[idx]
                 if task.service in ("code", "computation"):
                     code = task.parameters.get("code")
+                    if not code:
+                        for k in ["script", "python", "content", "text", "body", "python_code"]:
+                            if k in task.parameters:
+                                code = task.parameters[k]
+                                break
 
         if not code:
             return {

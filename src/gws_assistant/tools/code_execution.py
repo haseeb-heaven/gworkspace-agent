@@ -185,7 +185,7 @@ def _validate_submitted_code(code: str) -> str | None:
     return None
 
 
-def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) -> None:
+def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult], extra_globals: dict | None = None) -> None:
     """Execute *code* inside RestrictedPython, storing a CodeExecutionResult in result_holder[0]."""
     exec_result = CodeExecutionResult(code=code)
     try:
@@ -194,6 +194,10 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         sanitized = _sanitize_llm_code(code)
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
+
+        # Inject extra context (e.g. task_results) into the sandbox globals
+        if extra_globals:
+            sandbox_globals.update(extra_globals)
 
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
@@ -286,7 +290,7 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
         )
 
 
-def execute_generated_code(code: str, config=None) -> StructuredToolResult:
+def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
     validation_error = _validate_submitted_code(code)
     if validation_error:
         return StructuredToolResult(
@@ -299,7 +303,7 @@ def execute_generated_code(code: str, config=None) -> StructuredToolResult:
         return _execute_e2b(code, config.e2b_api_key)
 
     result_holder: list[CodeExecutionResult] = []
-    thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder), daemon=True)
+    thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder, extra_globals), daemon=True)
     thread.start()
     thread.join(timeout=_TIMEOUT_SECONDS)
 

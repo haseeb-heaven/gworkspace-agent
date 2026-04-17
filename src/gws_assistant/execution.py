@@ -138,6 +138,11 @@ class PlanExecutor:
                  elif context.get("last_document_id"):
                      task.parameters["file_id"] = context["last_document_id"]
 
+        if task.service == "sheets" and task.action == "create_spreadsheet":
+            if not task.parameters.get("title"):
+                task.parameters["title"] = "GWS Agent Spreadsheet"
+                self.logger.info("Added default spreadsheet title: GWS Agent Spreadsheet")
+
         return task
 
     def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False) -> Any:
@@ -200,6 +205,13 @@ class PlanExecutor:
                 if path in context:
                     return context[path]
                 resolved = self._get_value_by_path(results_map, path)
+                
+                # Smart unwrap: if the resolved value is a dict with 'content', 
+                # and we are NOT in a code-execution context (where repr is used),
+                # promote the content.
+                if isinstance(resolved, dict) and "content" in resolved and not use_repr_for_complex:
+                    resolved = resolved["content"]
+
                 if resolved is not None:
                     return resolved
 
@@ -620,16 +632,23 @@ class PlanExecutor:
         i = 0
         while i < len(task_queue):
             task = task_queue[i]
+            self.logger.debug(f"DEBUG: Processing task {i}: {task.id} ({task.service}.{task.action})")
 
             # 1. Expand task if needed (e.g. multi-message get_message)
             expanded = self._expand_task(task, context)
+            self.logger.debug(f"DEBUG: Expanded task into {len(expanded)} tasks")
 
             # If expansion happened, replace the current task with expanded ones
-            if len(expanded) > 1 or expanded[0] is not task:
+            if len(expanded) > 1 or (len(expanded) == 1 and expanded[0] is not task):
                 # Insert expanded tasks into queue after current index
+                self.logger.debug(f"DEBUG: Replacing task {i} with expanded version")
                 task_queue[i:i+1] = expanded
                 # Re-fetch the first expanded task for this iteration
                 task = task_queue[i]
+            elif len(expanded) == 0:
+                self.logger.warning(f"DEBUG: Task {i} ({task.id}) expanded into ZERO tasks! Skipping.")
+                task_queue.pop(i)
+                continue
 
             # Store the 1-based sequence index
             task._sequence_index = i + 1
@@ -655,6 +674,8 @@ class PlanExecutor:
             executions.append(TaskExecution(task=task, result=result))
             if not result.success:
                 break
+            
+            i += 1
 
         report = PlanExecutionReport(plan=plan, executions=executions)
         
@@ -676,7 +697,15 @@ class PlanExecutor:
             from .tools.code_execution import execute_generated_code
 
             # Use code-safe resolution (use repr for dicts/lists)
-            code = self._resolve_placeholders(task.parameters.get("code", ""), context, use_repr_for_complex=True)
+            raw_code = task.parameters.get("code")
+            if not raw_code:
+                # Try variations
+                for k in ["script", "python", "content", "text", "body", "python_code"]:
+                    if k in task.parameters:
+                        raw_code = task.parameters[k]
+                        break
+            
+            code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
 
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
@@ -688,16 +717,50 @@ class PlanExecutor:
                     error="Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false)."
                 )
 
-            result = execute_generated_code(code, config=self.config)
+            # Inject task_results and other common context keys into extra_globals
+            common_keys = [
+                "last_export_file_content", "last_export_content", "last_file_content",
+                "drive_export_content", "last_spreadsheet_id", "last_spreadsheet_url",
+                "last_document_id", "last_document_url", "gmail_message_body"
+            ]
+            extra_globals = {"task_results": context.get("task_results", {})}
+            for ck in common_keys:
+                if ck in context:
+                    extra_globals[ck] = context[ck]
+
+            result = execute_generated_code(code, config=self.config, extra_globals=extra_globals)
 
             # Store in context for future placeholders
             results_map = context.setdefault("task_results", {})
             results_map["code"] = result.get("output", {})
             results_map["computation"] = result.get("output", {})
 
-            # Extract stdout if present
-            stdout = result.get("output", {}).get("stdout", "")
-            context["last_code_stdout"] = stdout
+            # Extract stdout and parsed value
+            output_data = result.get("output", {})
+            self.logger.debug(f"DEBUG: Code output_data keys: {list(output_data.keys())}")
+            self.logger.debug(f"DEBUG: Code parsed_value: {output_data.get('parsed_value')}")
+            stdout = output_data.get("stdout", "")
+            if output_data.get("parsed_value") is not None:
+                parsed = output_data["parsed_value"]
+                context["last_code_result"] = parsed
+                
+                # Promote parsed_value keys to results_map for easy placeholder access
+                if isinstance(parsed, dict):
+                    num = task.id.split("-")[-1] if "-" in task.id else task.id
+                    self.logger.debug(f"DEBUG: Promoting {len(parsed)} keys for task {num}")
+                    for k, v in parsed.items():
+                        results_map[f"task-{num}.{k}"] = v
+                        results_map[f"{num}.{k}"] = v
+                        # Also update the task's own entry in the map if it's a dict
+                        if isinstance(results_map.get(task.id), dict):
+                            results_map[task.id][k] = v
+                        # Fallback: add to global results_map if not conflicting
+                        if k not in results_map:
+                             self.logger.debug(f"DEBUG: Promoting key '{k}' to global results_map")
+                             results_map[k] = v
+                        # Fallback: add to global results_map if not conflicting
+                        if k not in results_map:
+                             results_map[k] = v
 
             return ExecutionResult(
                 success=result.get("success", False),
