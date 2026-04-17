@@ -215,7 +215,7 @@ class CommandPlanner:
                     request_params["q"] = f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
                 else:
                     request_params["q"] = sanitize_drive_query(raw_query)
-            return ["drive", "files", "list", "--params", json.dumps(request_params)]
+            return ["drive", "files", "list", "--params", json.dumps(request_params, ensure_ascii=True)]
 
         if action == "create_folder":
             folder_name = self._required_text(params, "folder_name")
@@ -394,7 +394,7 @@ class CommandPlanner:
             if raw_query:
                 # Fix #8 — sanitize Gmail query just like we sanitize Drive queries.
                 request_params["q"] = sanitize_gmail_query(raw_query)
-            return ["gmail", "users", "messages", "list", "--params", json.dumps(request_params)]
+            return ["gmail", "users", "messages", "list", "--params", json.dumps(request_params, ensure_ascii=True)]
 
         if action == "get_message":
             # Allow message_id to be missing or a placeholder during planning

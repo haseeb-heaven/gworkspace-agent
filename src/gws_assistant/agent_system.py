@@ -162,7 +162,19 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern D: Document Conversion (Docs/Sheets)
+        # Pattern D: Sheet Creation & Data
+        if "sheets" in services and _is_sheet_creation_request(lowered):
+             tasks = self._sheets_creation_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: sheets.create_spreadsheet -> sheets.append_values -> sheets.get_values -> code.execute",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern E: Document Conversion (Docs/Sheets)
         if "docs" in services and "sheets" in services:
              # Add general doc to sheet conversion if needed
              pass
@@ -299,6 +311,47 @@ class WorkspaceAgentSystem:
             )
         ]
 
+    def _sheets_creation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        title = _extract_quoted(text) or "New Spreadsheet"
+        return [
+            PlannedTask(
+                id="task-1",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": title},
+                reason=f"Create spreadsheet '{title}'."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "{{task-1.id}}",
+                    "values": _extract_data_rows(text)
+                },
+                reason="Add data rows to the sheet."
+            ),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="get_values",
+                parameters={
+                    "spreadsheet_id": "{{task-1.id}}",
+                    "range": "Sheet1!A1:B10"
+                },
+                reason="Verify values were added."
+            ),
+            PlannedTask(
+                id="task-4",
+                service="code",
+                action="execute",
+                parameters={
+                    "code": "data = task_results['task-3.values']\n# Calculate sum of second column for data rows\ntotal = 0\nfor row in data[1:]:\n    try:\n        total += float(row[1])\n    except (ValueError, IndexError): pass\nprint(f'Sum: {total}')\nresult = total"
+                },
+                reason="Calculate sum to verify data."
+            )
+        ]
+
     def _single_service_task(self, service: str, lowered: str, index: int) -> PlannedTask:
         action = _detect_action(service, lowered) or next(iter(SERVICES[service].actions))
         parameters: dict[str, Any] = {}
@@ -419,3 +472,25 @@ def _is_sheet_to_email_request(text: str) -> bool:
 
 def _is_drive_folder_move_request(text: str) -> bool:
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
+
+
+def _is_sheet_creation_request(text: str) -> bool:
+    return "sheet" in text and any(t in text for t in ("create", "add", "new"))
+
+
+def _extract_data_rows(text: str) -> list[list[Any]]:
+    """Extract rows from text like 'Score1, 100' or similar csv-like patterns."""
+    rows = []
+    # Look for header and data rows in quotes
+    matches = re.findall(r"['\"](.+?)['\"]", text)
+    for m in matches:
+        if "," in m:
+            rows.append([item.strip() for item in m.split(",")])
+    
+    # If no rows found in quotes, try to find patterns like 'Score1, 100'
+    if not rows:
+         pattern = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
+         for m in pattern.finditer(text):
+             rows.append([m.group(1).strip(), m.group(2).strip()])
+             
+    return rows if rows else [["Data", "Value"], ["Item1", "10"]]

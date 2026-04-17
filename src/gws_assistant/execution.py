@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -42,6 +43,11 @@ class PlanExecutor:
 
         if task.service == "gmail" and task.action == "get_message":
             msg_ids = resolved_params.get("message_id")
+            # If no message_id provided, but we have legacy $gmail_message_ids in context, use them!
+            if (not msg_ids or msg_ids == "{{message_id}}") and "gmail_message_ids" in context:
+                 msg_ids = context["gmail_message_ids"]
+                 self.logger.info(f"Auto-injected {len(msg_ids)} IDs from context for expansion.")
+
             if isinstance(msg_ids, list):
                 expanded = []
                 for i, m_id in enumerate(msg_ids):
@@ -186,7 +192,14 @@ class PlanExecutor:
 
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
             if val in legacy_map and legacy_map[val] in context:
-                return context[legacy_map[val]]
+                res = context[legacy_map[val]]
+                if res is None:
+                    return _UNRESOLVED_MARKER
+                # If we are in code context, we might want repr, but for expansion we want the raw list.
+                # Usually expansion happens before final resolution.
+                if use_repr_for_complex and isinstance(res, (dict, list)):
+                    return repr(res)
+                return res
 
             # 2. task tokens and semantic placeholders (type-preserving if full match)
             stripped = val.strip()
@@ -203,23 +216,26 @@ class PlanExecutor:
 
             if path:
                 if path in context:
-                    return context[path]
+                    res = context[path]
+                    return res if res is not None else _UNRESOLVED_MARKER
                 resolved = self._get_value_by_path(results_map, path)
                 
                 # Smart unwrap: if the resolved value is a dict with 'content', 
-                # and we are NOT in a code-execution context (where repr is used),
                 # promote the content.
-                if isinstance(resolved, dict) and "content" in resolved and not use_repr_for_complex:
+                if isinstance(resolved, dict) and "content" in resolved:
                     resolved = resolved["content"]
 
                 if resolved is not None:
                     return resolved
+                return _UNRESOLVED_MARKER
 
             # 3. Partial string replacement
             for placeholder, ctx_key in legacy_map.items():
                 if placeholder in val and ctx_key in context:
                     res = context[ctx_key]
-                    if use_repr_for_complex and isinstance(res, (dict, list)):
+                    if res is None:
+                        val = val.replace(placeholder, _UNRESOLVED_MARKER)
+                    elif use_repr_for_complex and isinstance(res, (dict, list)):
                         val = val.replace(placeholder, repr(res))
                     else:
                         val = val.replace(placeholder, str(res))
@@ -236,6 +252,11 @@ class PlanExecutor:
                     res = self._get_value_by_path(results_map, p)
 
                 if res is not None:
+                    # Smart unwrap: if the resolved value is a dict with 'content', 
+                    # promote the content.
+                    if isinstance(res, dict) and "content" in res:
+                        res = res["content"]
+
                     if use_repr_for_complex:
                         return repr(res)
                     elif isinstance(res, (dict, list)):
@@ -307,22 +328,27 @@ class PlanExecutor:
             else:
                 # Key access
                 if isinstance(curr, dict):
-                    # Auto-unwrap: if current level is a dict and we have a list inside,
-                    # and the token is NOT a key in the dict, but exists in the list elements,
-                    # we can auto-unwrap.
-                    if token not in curr:
+                    # Key access
+                    if token in curr:
+                        curr = curr[token]
+                    else:
+                        # Auto-unwrap: if current level is a dict and we have a list inside,
+                        # and the token is NOT a key in the dict, but exists in the list elements,
+                        # we can auto-unwrap.
                         for list_key in ["files", "messages", "items", "events", "values", "threads"]:
                             if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
                                 # If the token is found in the first item of the list, unwrap to the list
                                 if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
                                     curr = curr[list_key]
                                     break
+                        
+                        if isinstance(curr, dict):
+                            curr = curr.get(token)
 
-                    if isinstance(curr, dict):
-                        curr = curr.get(token)
-
-                # If curr became a list (via unwrap above or already a list), apply token to items
-                if isinstance(curr, list):
+                # If curr is a list, and we haven't consumed this token as a direct key, 
+                # map the token across the list elements.
+                # BUT only if we didn't just find it as a direct key in the previous block.
+                elif isinstance(curr, list):
                     new_curr = []
                     for item in curr:
                         if isinstance(item, dict) and token in item:
@@ -536,8 +562,10 @@ class PlanExecutor:
             context["last_export_file_content"] = val
             context["last_export_content"] = val
             context["last_file_content"] = val
-        elif "content" in data and task and task.action == "export_file":
+        elif "content" in data and task and task.service == "drive" and task.action in ("export_file", "get_file"):
             val = data["content"]
+            context["drive_export_content"] = val
+            context["drive_export_file"] = val
             context["last_export_file_content"] = val
             context["last_export_content"] = val
             context["last_file_content"] = val
@@ -739,6 +767,28 @@ class PlanExecutor:
             output_data = result.get("output", {})
             self.logger.debug(f"DEBUG: Code output_data keys: {list(output_data.keys())}")
             self.logger.debug(f"DEBUG: Code parsed_value: {output_data.get('parsed_value')}")
+            
+            # --- AUTO-WRITE TO FILE ---
+            # If the next task (or this task) suggests a file should be created, 
+            # and we have content in parsed_value or stdout, write it.
+            target_file = task.parameters.get("file_path")
+            if not target_file:
+                # Lookahead: if the next task is drive.upload_file, use its file_path
+                current_idx = getattr(task, "_sequence_index", 0) - 1
+                # Note: we need to find the task in the execution queue if possible,
+                # but for now we just check if any task in the original plan had this.
+                pass
+
+            if target_file and result.get("success"):
+                content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
+                if content_to_write:
+                    try:
+                        with open(target_file, "w", encoding="utf-8") as f:
+                            f.write(str(content_to_write))
+                        self.logger.info(f"Auto-wrote code output to {target_file}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
+
             stdout = output_data.get("stdout", "")
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
@@ -773,10 +823,42 @@ class PlanExecutor:
             from .models import ExecutionResult
             return ExecutionResult(success=False, command=["code_execute"], error=str(exc))
 
+    def _handle_telegram_task(self, task: Any, context: dict) -> Any:
+        """Execute a telegram send_message task."""
+        try:
+            from .models import ExecutionResult
+            import subprocess
+            
+            message = task.parameters.get("message", "")
+            python_exe = r"D:\henv\Scripts\python.exe"
+            if not os.path.exists(python_exe):
+                python_exe = "python"
+            
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
+            
+            # Run directly
+            result = subprocess.run([python_exe, script_path, message], capture_output=True, text=True, encoding="utf-8", errors="replace")
+            
+            return ExecutionResult(
+                success=result.returncode == 0,
+                command=[python_exe, script_path, message],
+                stdout=result.stdout,
+                stderr=result.stderr,
+                return_code=result.returncode,
+                output={"success": result.returncode == 0}
+            )
+        except Exception as exc:
+            from .models import ExecutionResult
+            return ExecutionResult(success=False, command=["telegram"], error=str(exc))
+
     def execute_single_task(self, task: Any, context: Any) -> Any:
         # Service-specific overrides or synthetic handling
         if task.service == "admin" and task.action == "log_activity":
              return self._handle_admin_task(task, context)
+
+        if task.service == "telegram":
+            return self._handle_telegram_task(task, context)
 
         # 1. Resolve placeholders in parameters FIRST (type-preserving)
         task.parameters = self._resolve_placeholders(task.parameters, context)
@@ -821,20 +903,36 @@ class PlanExecutor:
                         update_args = self.planner.build_command("docs", "batch_update", {"document_id": data["documentId"], "text": content})
                         self.runner.run(update_args)
 
-                if task.service == "drive" and task.action == "export_file":
-                    mime_type = task.parameters.get("mime_type", "")
+                if task.service == "drive" and task.action in ("export_file", "get_file"):
                     saved_file = data.get("saved_file")
-                    if saved_file and ("text/" in mime_type or "csv" in mime_type):
-                        try:
-                            with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
-                                content = f.read().lstrip('\ufeff')
-                                data["content"] = content # Ensure it is here!
-                                data["drive_export_content"] = content
-                        except Exception as e:
-                            logger.warning("Failed to read exported file %s: %s", saved_file, e)
+                    if saved_file:
+                        # Try to determine if it is readable as text
+                        # 1. Check if planner-defined mime_type suggests text
+                        # 2. Check if the saved file has a text-like extension
+                        # 3. Check data.get("mimeType") if available from the API response
+                        mime_type = str(task.parameters.get("mime_type") or data.get("mimeType") or "").lower()
+                        is_text = any(x in mime_type for x in ("text/", "csv", "json", "javascript", "xml"))
+                        if not is_text:
+                            ext = os.path.splitext(saved_file)[1].lower()
+                            is_text = ext in (".txt", ".csv", ".json", ".md", ".py", ".js", ".html")
+                        
+                        if is_text:
+                            try:
+                                with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
+                                    content = f.read().lstrip('\ufeff')
+                                    data["content"] = content
+                                    data["drive_export_content"] = content
+                            except Exception as e:
+                                logger.warning("Failed to read exported file %s: %s", saved_file, e)
                 result.output = data
             except Exception:
                 pass
+
+        if result.success and result.output:
+            # Synchronize stdout with any enrichments (like body extraction)
+            # so that HumanReadableFormatter can see the updated fields.
+            result.stdout = json.dumps(result.output)
+
         return result
 
 

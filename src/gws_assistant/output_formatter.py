@@ -79,6 +79,10 @@ class HumanReadableFormatter:
             return _format_slides(payload)
         if "documentId" in payload and ("title" in payload or "body" in payload):
             return _format_docs(payload)
+        if "drive_export_content" in payload:
+            return str(payload["drive_export_content"]).strip()
+        if "content" in payload and "saved_file" in payload:
+             return str(payload["content"]).strip()
         if "items" in payload and isinstance(payload.get("items"), list):
             return _format_calendar_items(payload)
         if "stdout" in payload and payload.get("stdout"):
@@ -136,6 +140,7 @@ def _format_gmail_list(payload: dict[str, Any]) -> str:
 def _format_gmail_message(payload: dict[str, Any]) -> str:
     headers = _gmail_headers(payload)
     snippet = str(payload.get("snippet") or "")
+    body = str(payload.get("body") or "")
     subject = headers.get("subject", "(no subject)")
     sender = headers.get("from", "(unknown sender)")
     date = headers.get("date", "")
@@ -145,7 +150,9 @@ def _format_gmail_message(payload: dict[str, Any]) -> str:
     ]
     if date:
         pieces.append(f"Date: {date}")
-    if snippet:
+    if body:
+        pieces.append(f"Body: {body}")
+    elif snippet:
         pieces.append(f"Snippet: {snippet}")
     return "\n".join(pieces)
 

@@ -52,11 +52,11 @@ SERVICES: dict[str, ServiceSpec] = {
             "export_file": ActionSpec(
                 key="export_file",
                 label="Export file",
-                description="Export a Google Workspace document (Doc/Sheet) to a given MIME type (e.g. text/plain, application/pdf). Use this — not Docs/Sheets APIs — for reading file content.",
-                keywords=("export", "download", "attach", "attachment", "pdf", "xlsx", "sheet", "doc"),
+                description="Read or download the content of a file. Use this for both Google Workspace documents (Doc/Sheet/Slide) and regular files (txt, csv, pdf) to retrieve their text or binary content.",
+                keywords=("export", "download", "read", "content", "text", "binary", "attachment"),
                 parameters=(
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
-                    ParameterSpec("mime_type", "Target export MIME type", "application/pdf", required=False),
+                    ParameterSpec("mime_type", "Target export MIME type (optional for regular files)", "text/plain", required=False),
                 ),
             ),
             "delete_file": ActionSpec(
@@ -178,10 +178,11 @@ SERVICES: dict[str, ServiceSpec] = {
             "list_events": ActionSpec(
                 key="list_events",
                 label="List events",
-                description="List upcoming calendar events ordered by start time. Returns: [{id, summary, start, end, location}].",
-                keywords=("list", "show", "events", "meetings"),
+                description="List or search calendar events. Returns: [{id, summary, start, end, location}].",
+                keywords=("list", "show", "events", "meetings", "search"),
                 parameters=(
                     ParameterSpec("calendar_id", "Which calendar ID should I use?", "primary", required=False),
+                    ParameterSpec("q", "Free-text search query (e.g. 'Sync')", "", required=False),
                 ),
             ),
             "create_event": ActionSpec(
@@ -401,7 +402,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "search": ServiceSpec(
         key="search",
         label="Web Search",
-        aliases=("search", "web", "google", "find"),
+        aliases=("search", "web", "find"),
         description="Search the web for external information not available in the user's Workspace. Use for 'top X', 'best Y', 'latest Z' queries.",
         actions={
             "web_search": ActionSpec(
@@ -481,6 +482,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("run", "execute", "python", "code", "sort", "calculate", "math", "compute"),
                 parameters=(
                     ParameterSpec("code", "Python code to execute", "sorted([3, 1, 2])"),
+                    ParameterSpec("file_path", "Optional: Local path to write the output to (e.g. 'data.txt')", "data.txt", required=False),
                 ),
             ),
         },
@@ -498,6 +500,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("run", "execute", "calculate", "math", "compute"),
                 parameters=(
                     ParameterSpec("code", "Python code to execute", "x = 10 + 5; print(x)"),
+                    ParameterSpec("file_path", "Optional: Local path to write the output to", "calc.txt", required=False),
                 ),
             ),
         },

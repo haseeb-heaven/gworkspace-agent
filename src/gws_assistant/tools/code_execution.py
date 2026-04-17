@@ -106,6 +106,8 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["sorted"] = sorted
     safe_g["__builtins__"]["enumerate"] = enumerate
     safe_g["__builtins__"]["zip"] = zip
+    safe_g["__builtins__"]["map"] = map
+    safe_g["__builtins__"]["filter"] = filter
 
     # Simple object that has a write method to satisfy RestrictedPython print()
     class SimpleCollector:
@@ -136,6 +138,7 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_getitem_"] = lambda obj, key: obj[key]
     safe_g["_write_"] = lambda obj: obj
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
+    safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     def _inplacevar(op, target, expr):
         if op == '+=':
             return target + expr

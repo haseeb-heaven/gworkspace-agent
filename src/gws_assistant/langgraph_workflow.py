@@ -169,28 +169,38 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             results_map = context.setdefault("task_results", {})
             payload = latest["output"].get("parsed_payload") or latest["output"]
 
+            # Fix: If payload contains 'messages' list, promote it so code.execute sees a list
+            # as expected by LLM for list_messages tasks.
+            if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
+                if len(payload["messages"]) > 0:
+                    storage_payload = payload["messages"]
+                else:
+                    storage_payload = payload
+            else:
+                storage_payload = payload
+
             # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
             executor._update_context_from_result(payload, context, resolved)
 
             # Always also store by sequential index (task-1, task-2, etc.) to
             # support LLMs that refer to tasks by their order regardless of name.
             seq_id = f"task-{idx+1}"
-            results_map[seq_id] = payload
-            results_map[str(idx+1)] = payload
-            results_map[f"t{idx+1}"] = payload
+            results_map[seq_id] = storage_payload
+            results_map[str(idx+1)] = storage_payload
+            results_map[f"t{idx+1}"] = storage_payload
 
             # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
             t_id = str(task.id)
             if t_id != seq_id:
-                results_map[t_id] = payload
+                results_map[t_id] = storage_payload
                 # Also store with numeric ID for {task-1...} vs {1...}
                 if t_id.startswith("task-"):
                     num = t_id.removeprefix("task-")
-                    results_map[num] = payload
-                    results_map[f"t{num}"] = payload
+                    results_map[num] = storage_payload
+                    results_map[f"t{num}"] = storage_payload
                 elif t_id.isdigit():
-                    results_map[f"task-{t_id}"] = payload
-                    results_map[f"t{t_id}"] = payload
+                    results_map[f"task-{t_id}"] = storage_payload
+                    results_map[f"t{t_id}"] = storage_payload
 
             if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
                 # Special handling: if we exported a file, its content (if text) is stored directly.
@@ -274,7 +284,16 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     def format_output_node(state: AgentState) -> dict[str, Any]:
         plan = state.get("plan")
         executions = state.get("executions", [])
+        context = state.get("context", {})
+        
         if plan and executions:
+            # Resolve placeholders in summary if any exist
+            if plan.summary and ("{" in plan.summary or "$" in plan.summary):
+                try:
+                    plan.summary = executor._resolve_placeholders(plan.summary, context)
+                except Exception as e:
+                    logger.warning(f"Failed to resolve placeholders in summary: {e}")
+
             report = formatter.format_report(
                 PlanExecutionReport(
                     plan=plan,
