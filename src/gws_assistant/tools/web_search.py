@@ -45,7 +45,8 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
             if raw_result_str:
                 snippets.append({"content": raw_result_str, "title": "Search Snippets"})
             if snippets:
-                return dataclasses.asdict(WebSearchResult(query=query, results=snippets))
+                summary = "\n".join([f"- {s.get('title')}: {s.get('content', '')[:300]}..." for s in snippets[:3]])
+                return dataclasses.asdict(WebSearchResult(query=query, results=snippets, summary=summary))
             ddg_error = "DuckDuckGo search failed or returned no usable results."
         except Exception as exc:
             ddg_error = f"DuckDuckGo search failed or returned no usable results. ({exc})"
@@ -84,7 +85,8 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
                 if isinstance(r, dict)
             ]
             if snippets:
-                return dataclasses.asdict(WebSearchResult(query=query, results=snippets))
+                summary = "\n".join([f"- {s.get('title')}: {s.get('content', '')[:300]}..." for s in snippets[:3]])
+                return dataclasses.asdict(WebSearchResult(query=query, results=snippets, summary=summary))
         except Exception as exc:
             return dataclasses.asdict(WebSearchResult(
                 query=query,

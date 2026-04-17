@@ -31,6 +31,7 @@ class AppConfigModel:
     gws_max_retries: int = 3
     max_context_snippet_len: int = 300
     default_recipient_email: str = "user@example.com"
+    mem0_api_key: str | None = None
 
 
 

@@ -44,7 +44,7 @@ class IntentParser:
             self.logger.exception("Failed to initialize LLM client: %s", exc)
             return None
 
-    def parse(self, user_text: str) -> Intent:
+    def parse(self, user_text: str, force_heuristic: bool = False) -> Intent:
         text = (user_text or "").strip()
         if not text:
             return Intent(
@@ -53,12 +53,15 @@ class IntentParser:
                 clarification_reason="Empty input received.",
             )
 
+        if force_heuristic:
+            return self.parse_heuristically(text)
+
         if self.client:
             llm_intent = self._parse_with_llm(text)
             if llm_intent is not None:
                 return llm_intent
 
-        return self._parse_with_heuristics(text)
+        return self.parse_heuristically(text)
 
     def _parse_with_llm(self, text: str) -> Intent | None:
         if not self.client:
@@ -106,9 +109,8 @@ class IntentParser:
             self.logger.warning("LLM parsing failed, using heuristic fallback: %s", exc)
             return None
 
-    def _parse_with_heuristics(self, text: str) -> Intent:
-        lowered = text.lower()
-        service = self._detect_service(lowered)
+    def parse_heuristically(self, text: str) -> Intent:
+        service = self._detect_service(text)
         action = self._detect_action(service, text) if service else None
 
         # IDs are case-sensitive, so we need original text
@@ -141,16 +143,19 @@ class IntentParser:
 
         all_aliases.sort(key=lambda x: len(x[0]), reverse=True)
 
-        detected_service = None
+        # High-signal word check first (whole word)
         for alias, service_key in all_aliases:
-            if alias in text:
-                detected_service = service_key
-                # If we detect 'docs', prioritize it immediately over 'drive'
-                if service_key == "docs":
-                    return "docs"
-                # Keep looking for more specific matches unless we found docs
+            pattern = re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE)
+            if pattern.search(text):
+                # If we detect a specific Workspace service, prioritize it over generic 'search'
+                if service_key != "search":
+                    return service_key
 
-        return detected_service
+        # Fallback to substring if no whole word match
+        for alias, service_key in all_aliases:
+            if alias.lower() in text.lower():
+                return service_key
+        return None
 
     def _detect_action(self, service: str | None, text: str) -> str | None:
         if not service or service not in SERVICES:
@@ -160,33 +165,45 @@ class IntentParser:
 
         # Priority 1: Strong verb match
         if service == "gmail":
-            if "send" in lowered or "compose" in lowered or "write" in lowered:
+            if any(kw in lowered for kw in ("send", "compose", "write", "share")):
                 return "send_message"
-            if "list" in lowered or "search" in lowered or "find" in lowered or "show" in lowered or "inbox" in lowered:
+            if any(kw in lowered for kw in ("list", "search", "find", "show", "inbox", "get")):
+                # If ID is present, it's a 'get', else 'list'
+                if re.search(r"([a-zA-Z0-9_-]{35,65})", text):
+                    return "get_message"
                 return "list_messages"
-            if "get" in lowered or "read" in lowered or "open" in lowered:
-                return "get_message"
 
         if service == "docs":
-            if "read" in lowered or "get" in lowered or "open" in lowered or "show" in lowered:
-                return "get_document"
-            if "create" in lowered or "new" in lowered:
+            if any(kw in lowered for kw in ("create", "new", "draft")):
                 return "create_document"
-            if "update" in lowered or "append" in lowered or "insert" in lowered or "write" in lowered:
+            if any(kw in lowered for kw in ("read", "get", "open", "show", "fetch")):
+                return "get_document"
+            if any(kw in lowered for kw in ("update", "append", "insert", "write", "add")):
                 return "batch_update"
 
+        if service == "sheets":
+            if any(kw in lowered for kw in ("create", "new")):
+                return "create_spreadsheet"
+            if any(kw in lowered for kw in ("append", "add", "save", "write", "insert", "rows")):
+                return "append_values"
+            if any(kw in lowered for kw in ("read", "fetch", "get", "show", "values", "data", "search")):
+                # Prefer get_values for data retrieval, but could be get_spreadsheet
+                if "id" in lowered and "spreadsheet" in lowered:
+                     return "get_spreadsheet"
+                return "get_values"
+
         if service == "drive":
-            if "list" in lowered or "search" in lowered or "find" in lowered or "show" in lowered:
+            if any(kw in lowered for kw in ("list", "search", "find", "show", "view", "files")):
                 return "list_files"
-            if "get" in lowered or "open" in lowered:
-                return "get_file"
-            if "upload" in lowered or "add" in lowered:
+            if any(kw in lowered for kw in ("upload", "add", "put")):
                 return "upload_file"
-            if "export" in lowered or "download" in lowered:
+            if any(kw in lowered for kw in ("get", "details", "open")):
+                return "get_file"
+            if any(kw in lowered for kw in ("export", "download", "attach", "attachment", "pdf", "csv")):
                 return "export_file"
-            if "delete" in lowered or "remove" in lowered:
+            if any(kw in lowered for kw in ("delete", "remove", "trash", "cancel")):
                 return "delete_file"
-            if "move" in lowered or "relocate" in lowered:
+            if any(kw in lowered for kw in ("move", "relocate", "transfer", "organize")):
                 return "move_file"
             if "folder" in lowered:
                 return "create_folder"
@@ -216,17 +233,26 @@ class IntentParser:
 
     def _extract_simple_parameters(self, text: str) -> dict[str, Any]:
         params: dict[str, Any] = {}
-
-        # 1. Look for explicit key=value pairs (highest priority)
-        kv_pairs = re.findall(r"([a-zA-Z0-9_-]+)=([a-zA-Z0-9_-]+)", text)
-        for k, v in kv_pairs:
+        lowered = text.lower()
+        
+        # 1a. Handle quoted values first (e.g. key="value with spaces")
+        quoted_kv = re.findall(r"([a-zA-Z0-9_-]+)=(['\"])(.+?)\2", text)
+        for k, quote, v in quoted_kv:
             params[k] = v
+            self.logger.debug(f"DEBUG: Found quoted KV: {k}={v}")
+                
+        # 1b. Handle unquoted values (e.g. key=value or key=$placeholder)
+        # We look for key= followed by non-whitespace characters
+        unquoted_kv = re.findall(r"([a-zA-Z0-9_-]+)=([^\s\"']+)", text)
+        for k, v in unquoted_kv:
+            if k not in params:
+                params[k] = v
+                self.logger.debug(f"DEBUG: Found unquoted KV: {k}={v}")
 
         # 2. Extract Google IDs (fallback for bare IDs)
         id_match = re.search(r"\b([a-zA-Z0-9_-]{35,65})\b", text)
         if id_match:
             doc_id = id_match.group(1)
-            # Only use if not already found via kv
             if "document_id" not in params:
                 params["document_id"] = doc_id
             if "spreadsheet_id" not in params:
@@ -236,32 +262,37 @@ class IntentParser:
             if "presentation_id" not in params:
                 params["presentation_id"] = doc_id
 
-        lowered = text.lower()
-
-        # 3. Extract Title (for Docs/Sheets)
+        # 3. Extract Search Query (Gmail / Drive)
+        query_match = re.search(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+['\"](.+?)['\"]", text, re.IGNORECASE)
+        if not query_match:
+            query_match = re.search(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+([a-zA-Z0-9 _.-]{3,60})", text, re.IGNORECASE)
+        
+        if query_match:
+            query = query_match.group(1).strip()
+            # Clean up
+            query = re.sub(r"^(my|all)\s+", "", query, flags=re.IGNORECASE)
+            query = re.sub(r"\s+in\s+(gmail|drive|google\s+docs?|sheets?)$", "", query, flags=re.IGNORECASE)
+            query = re.split(r"\s+(and|then|to|save|write|export|extract)\s+", query, flags=re.IGNORECASE)[0].strip()
+            
+            if query and query.lower() not in ("gmail", "drive", "file", "document", "spreadsheet", "sheet"):
+                params["q"] = query
+            
+        # 4. Extract Title (for Docs/Sheets)
         title_match = re.search(r"(?:titled|named|called)\s+['\"](.+?)['\"]", text)
         if not title_match:
             title_match = re.search(r"(?:titled|named|called)\s+([a-zA-Z0-9_-]+)", text)
         if title_match:
             params["title"] = title_match.group(1).strip()
-            self.logger.info("Found title: %s", params["title"])
 
-        # 4. Extract Values (for Sheets) - Look for [[...]] or list-like content
+        # 4. Extract Values (for Sheets)
         values_match = re.search(r"(\[\[.+?\]\])", text)
         if values_match:
              try:
                  params["values"] = json.loads(values_match.group(1).replace("'", '"'))
-                 self.logger.info("Found values array: %s", params["values"])
              except Exception:
                  params["values"] = values_match.group(1)
 
         # 5. Handle specific Gmail fields
-        digits = "".join(ch for ch in lowered if ch.isdigit())
-        if digits:
-            params["page_size"] = digits[:3]
-            params["max_results"] = digits[:3]
-
-        # Simple extraction for Gmail send_message
         if " to " in lowered:
             try:
                 to_part = lowered.split(" to ")[1].split()[0]
@@ -271,7 +302,6 @@ class IntentParser:
                 pass
 
         if "subject" in lowered:
-            # Look for quoted subject or just the rest of the string
             match = re.search(r"subject ['\"](.+?)['\"]", lowered)
             if match:
                 params["subject"] = match.group(1)

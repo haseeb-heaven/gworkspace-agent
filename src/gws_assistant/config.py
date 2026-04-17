@@ -27,7 +27,7 @@ class AppConfig:
     @staticmethod
     def from_env() -> AppConfigModel:
         env_file_path = Path(".env").expanduser().resolve()
-        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
+        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
 
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
@@ -73,6 +73,7 @@ class AppConfig:
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
         gws_max_retries     = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
         max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
+        mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
 
         return AppConfigModel(
             provider=provider,
@@ -97,6 +98,7 @@ class AppConfig:
             gws_max_retries=gws_max_retries,
             max_context_snippet_len=max_snippet_len,
             default_recipient_email=(os.getenv("DEFAULT_RECIPIENT_EMAIL") or "user@example.com").strip(),
+            mem0_api_key=mem0_api_key,
         )
 
 

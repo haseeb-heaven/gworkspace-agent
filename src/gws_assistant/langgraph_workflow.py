@@ -330,10 +330,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "last_result": StructuredToolResult(success=False, output={}, error=msg),
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
-        
+
         context = dict(state.get("context", {}))
         code = context.get("generated_code")
-        
+
         # Fallback: if no generated_code, check current task parameters
         if not code:
             plan = state.get("plan")
@@ -342,7 +342,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 task = plan.tasks[idx]
                 if task.service in ("code", "computation"):
                     code = task.parameters.get("code")
-        
+
         if not code:
             return {
                 "error": "Code execution requires generated_code in context or code parameter in task.",
@@ -375,7 +375,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         model = create_agent(config, logger)
         lowered = state["user_text"].lower()
         is_computation = any(kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers"))
-        
+
         if not model:
             if not config.use_heuristic_fallback or not is_computation:
                 msg = "Unable to generate code because no LLM is configured" if not model else "LLM failed"

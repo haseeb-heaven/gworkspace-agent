@@ -67,7 +67,9 @@ class HumanReadableFormatter:
             if url:
                 return f"Created {title} in Google Sheets: {url}"
             return f"Created {title} in Google Sheets. Spreadsheet ID: {payload.get('spreadsheetId')}"
-        if "labelIds" in payload and "id" in payload:
+        if "id" in payload and payload.get("mimeType") == "application/vnd.google-apps.folder":
+            return f"Created folder {payload.get('name')} with ID: {payload.get('id')}"
+        if "id" in payload and "labelIds" in payload:
             return f"Email sent successfully. Message ID: {payload.get('id')}"
         if "files" in payload:
             return _format_drive_files(payload)
@@ -81,6 +83,8 @@ class HumanReadableFormatter:
             return _format_calendar_items(payload)
         if "stdout" in payload and payload.get("stdout"):
             return str(payload.get("stdout")).strip()
+        if "summary" in payload and payload.get("summary"):
+            return str(payload.get("summary")).strip()
         return _compact_json_summary(payload)
 
 

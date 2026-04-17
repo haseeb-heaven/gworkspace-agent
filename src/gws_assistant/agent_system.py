@@ -8,23 +8,9 @@ from typing import Any
 
 from .langchain_agent import plan_with_langchain
 from .models import AppConfigModel, PlannedTask, RequestPlan
-from .service_catalog import SERVICES, normalize_service
+from .service_catalog import SERVICES
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
-
-_WEB_SEARCH_TRIGGERS = (
-    "find top",
-    "search for",
-    "look up",
-    "find best",
-    "find latest",
-    "what are the top",
-    "top 3",
-    "top 5",
-    "top 10",
-    "best ",
-    "list of",
-)
 
 
 class WorkspaceAgentSystem:
@@ -34,19 +20,36 @@ class WorkspaceAgentSystem:
         self.config = config
         self.logger = logger
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
+        from .memory import LongTermMemory
+        self.memory = LongTermMemory(config, logger)
 
     def plan(self, user_text: str) -> RequestPlan:
         from .intent_parser import IntentParser
         from .memory import recall_similar
 
+        # Local episodic memory
         past = recall_similar(user_text)
-        memory_hint = ""
+        
+        # Long-term semantic memory (Mem0)
+        semantic_memories = self.memory.search(user_text)
+        
+        memory_hint_parts = []
         if past:
-            self.logger.info("Memory: found %d similar past episodes", len(past))
-            memory_hint = "\n".join(
-                f"- Past: '{ep['goal'][:80]}' -> {ep['outcome']}"
+            self.logger.info("Local Memory: found %d similar past episodes", len(past))
+            memory_hint_parts.append("Recent similar interactions:\n" + "\n".join(
+                f"- Goal: '{ep['goal'][:80]}' -> Outcome: {ep['outcome']}"
                 for ep in past[:3]
-            )
+            ))
+            
+        if semantic_memories:
+            self.logger.info("Semantic Memory: found %d relevant memories", len(semantic_memories))
+            # Mem0 search results are usually list of dicts with 'memory' or 'text' key
+            memory_hint_parts.append("Known facts and preferences:\n" + "\n".join(
+                f"- {m.get('memory', m.get('text', str(m)))}"
+                for m in semantic_memories[:5]
+            ))
+
+        memory_hint = "\n\n".join(memory_hint_parts)
 
         text = (user_text or "").strip()
         if not text:
@@ -56,6 +59,33 @@ class WorkspaceAgentSystem:
                 no_service_detected=True,
             )
 
+        # 1. Check for direct command override (e.g. service action key=value or starting with service key)
+        # If the user provides explicit parameters or starts with a service name, prioritize heuristics.
+        service_prefixes = ("web_search", "drive", "gmail", "sheets", "docs", "calendar", "keep", "meet", "code", "computation", "telegram")
+        lowered = text.lower()
+        is_direct = any(lowered.startswith(p) for p in service_prefixes) or "=" in text or ":" in text
+        
+        if is_direct:
+            parser = IntentParser(self.config, self.logger)
+            intent = parser.parse(text, force_heuristic=True)
+            if intent.service and intent.action and not intent.needs_clarification:
+                task = PlannedTask(
+                    id="task-1",
+                    service=intent.service,
+                    action=intent.action,
+                    parameters=intent.parameters,
+                    reason=f"Direct command detected: {intent.service}.{intent.action}",
+                )
+                return RequestPlan(
+                    raw_text=text,
+                    tasks=[task],
+                    summary=f"Planned direct task: {intent.service}.{intent.action}",
+                    confidence=1.0,
+                    no_service_detected=False,
+                    source="direct_command",
+                )
+
+        # 2. Primary: LLM Planning
         if self._use_langchain:
             plan = plan_with_langchain(text, self.config, self.logger,
                                          memory_hint=memory_hint)
@@ -72,68 +102,8 @@ class WorkspaceAgentSystem:
                 no_service_detected=True,
             )
 
-        # Heuristic fallback
-        # 1. Try legacy complex heuristic (handles multi-task flows)
-        legacy_plan = self._plan_with_heuristics(text)
-        if not legacy_plan.no_service_detected:
-            return legacy_plan
-
-        # 2. Try simple IntentParser (good for single-task with parameters)
-        parser = IntentParser(self.config, self.logger)
-        intent = parser.parse(text)
-
-        if intent.service and intent.action and not intent.needs_clarification:
-            task = PlannedTask(
-                id="task-1",
-                service=intent.service,
-                action=intent.action,
-                parameters=intent.parameters,
-                reason=f"Heuristically detected {intent.service}.{intent.action}",
-            )
-            return RequestPlan(
-                raw_text=text,
-                tasks=[task],
-                summary=f"Planned 1 task via IntentParser: {intent.service}.{intent.action}",
-                confidence=intent.confidence,
-                no_service_detected=False,
-                source="intent_parser",
-            )
-
-        return legacy_plan
-
-    def _plan_from_payload(self, text: str, payload: dict[str, Any], source: str) -> RequestPlan:
-        tasks: list[PlannedTask] = []
-        for index, item in enumerate(payload.get("tasks") or [], start=1):
-            if not isinstance(item, dict):
-                continue
-            service = normalize_service(str(item.get("service") or ""))
-            action = str(item.get("action") or "").strip()
-            if not service or action not in SERVICES[service].actions:
-                continue
-            from typing import cast
-            parameters = cast(dict[str, Any], item.get("parameters") if isinstance(item.get("parameters"), dict) else {})
-            tasks.append(
-                PlannedTask(
-                    id=str(item.get("id") or f"task-{index}"),
-                    service=service,
-                    action=action,
-                    parameters=parameters,
-                    reason=str(item.get("reason") or "").strip(),
-                )
-            )
-
-        no_service_detected = bool(payload.get("no_service_detected"))
-        summary = str(payload.get("summary") or "").strip()
-        if no_service_detected:
-            summary = NO_SERVICE_MESSAGE
-        return RequestPlan(
-            raw_text=text,
-            tasks=tasks,
-            summary=summary,
-            confidence=float(payload.get("confidence") or 0.0),
-            no_service_detected=no_service_detected,
-            source=source,
-        )
+        # 3. Heuristic Fallback
+        return self._plan_with_heuristics(text)
 
     def _plan_with_heuristics(self, text: str) -> RequestPlan:
         lowered = text.lower()
@@ -141,22 +111,6 @@ class WorkspaceAgentSystem:
         self.logger.info(f"Heuristic planning: detected services {services}")
 
         if not services:
-            if _is_web_search_and_save(lowered):
-                return RequestPlan(
-                    raw_text=text,
-                    summary="Web search and save intent detected — routing to web search.",
-                    confidence=0.4,
-                    no_service_detected=True,
-                    needs_web_search=True,
-                )
-            if any(kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "list of numbers", "math")):
-                return RequestPlan(
-                    raw_text=text,
-                    summary="Computation or data processing intent detected — routing to code execution.",
-                    confidence=0.4,
-                    no_service_detected=True,
-                    needs_code_execution=True,
-                )
             return RequestPlan(
                 raw_text=text,
                 summary=NO_SERVICE_MESSAGE,
@@ -164,20 +118,12 @@ class WorkspaceAgentSystem:
                 no_service_detected=True,
             )
 
-        if _is_web_search_and_save(lowered) and "docs" in services and "sheets" in services:
-            tasks = self._web_search_to_docs_and_sheets_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search -> docs.create_document + sheets.create_spreadsheet + sheets.append_values",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
+        # MULTI-TASK HEURISTICS (General Patterns)
+        
+        # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
-            tasks = self._drive_to_gmail_tasks(text, lowered)
-            return RequestPlan(
+             tasks = self._drive_to_gmail_tasks(text, lowered)
+             return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
@@ -185,153 +131,52 @@ class WorkspaceAgentSystem:
                 no_service_detected=False,
                 source="heuristic",
             )
-
-        if _is_web_search_and_save(lowered) and "sheets" in services and "docs" not in services:
-            tasks = self._web_search_to_sheets_tasks(text, lowered)
-            if "gmail" in services or _is_sheet_to_email_request(lowered):
-                recipient = _extract_email(text) or self.config.default_recipient_email
-                tasks.append(
-                    PlannedTask(
-                        id=f"task-{len(tasks) + 1}",
-                        service="gmail",
-                        action="send_message",
-                        parameters={
-                            "to_email": recipient,
-                            "subject": "Web Search Results",
-                            "body": "Hi,\n\nPlease find the search results here: $last_spreadsheet_url"
-                        },
-                        reason="Send the search results link via email."
-                    )
-                )
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search -> sheets.create_spreadsheet + sheets.append_values" + (" + gmail.send_message" if len(tasks) > 2 else ""),
-                confidence=0.65,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        if _is_web_search_and_save(lowered) and "docs" in services and "sheets" not in services:
-            tasks = self._web_search_to_docs_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: web search -> docs.create_document",
-                confidence=0.65,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        if "drive" in services and "sheets" in services and "gmail" in services:
-            tasks = self._drive_to_sheets_email_tasks(text, lowered)
-        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered) and _has_any(lowered, ("save", "write", "export", "append", "convert", "extract", "sender", "email address", "name")):
-             # Complex case: Gmail -> Sheets -> Email
+            
+        # Pattern B: Gmail -> Sheets -> Email (Extraction)
+        if "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
              tasks = self._gmail_to_sheets_tasks(text, lowered)
-             recipient = _extract_email(text) or self.config.default_recipient_email
-             tasks.append(
-                 PlannedTask(
-                     id=f"task-{len(tasks) + 1}",
-                     service="gmail",
-                     action="send_message",
-                     parameters={
-                         "to_email": recipient,
-                         "subject": "Processed Data",
-                         "body": "Hi,\n\nPlease find the spreadsheet here: $last_spreadsheet_url"
-                     },
-                     reason="Send the final spreadsheet link as requested."
-                 )
-             )
-        elif "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
-            tasks = self._sheet_to_email_tasks(text, lowered)
-        elif "gmail" in services and "sheets" in services and _has_any(lowered, ("save", "write", "export", "append", "convert")):
-            tasks = self._gmail_to_sheets_tasks(text, lowered)
-        elif services == ["gmail"]:
-            tasks = self._gmail_read_tasks(lowered)
-        else:
-            tasks = [self._single_service_task(service, lowered, index) for index, service in enumerate(services, start=1)]
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern C: Drive Folder & Move
+        if "drive" in services and _is_drive_folder_move_request(lowered):
+             tasks = self._drive_folder_move_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: drive.create_folder -> drive.list_files -> drive.move_file",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern D: Document Conversion (Docs/Sheets)
+        if "docs" in services and "sheets" in services:
+             # Add general doc to sheet conversion if needed
+             pass
+
+        # Final Fallback: Single Task per Service
+        tasks = [self._single_service_task(service, lowered, index) for index, service in enumerate(services, start=1)]
 
         return RequestPlan(
             raw_text=text,
             tasks=tasks,
             summary=f"Planned {len(tasks)} task{'s' if len(tasks) != 1 else ''}: "
             + ", ".join(f"{task.service}.{task.action}" for task in tasks),
-            confidence=0.55,
+            confidence=0.4,
             no_service_detected=False,
         )
 
-    def _web_search_to_docs_and_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        topic = _extract_search_topic(lowered) or "Research Results"
-        title = topic.title()
-        return [
-            PlannedTask(
-                id="task-1",
-                service="docs",
-                action="create_document",
-                parameters={"title": title, "content": "$web_search_summary"},
-                reason="Create a Google Doc to store the research findings.",
-            ),
-            PlannedTask(
-                id="task-2",
-                service="sheets",
-                action="create_spreadsheet",
-                parameters={"title": title},
-                reason="Create a Google Sheet to store the structured data.",
-            ),
-            PlannedTask(
-                id="task-3",
-                service="sheets",
-                action="append_values",
-                parameters={
-                    "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "Sheet1!A1",
-                    "values": "$web_search_rows",
-                },
-                reason="Append the search results as rows in the spreadsheet.",
-            ),
-        ]
-
-    def _web_search_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        topic = _extract_search_topic(lowered) or "Research Results"
-        title = topic.title()
-        return [
-            PlannedTask(
-                id="task-1",
-                service="sheets",
-                action="create_spreadsheet",
-                parameters={"title": title},
-                reason="Create a Google Sheet for the search results.",
-            ),
-            PlannedTask(
-                id="task-2",
-                service="sheets",
-                action="append_values",
-                parameters={
-                    "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "Sheet1!A1",
-                    "values": "$web_search_rows",
-                },
-                reason="Append search results as rows.",
-            ),
-        ]
-
-    def _web_search_to_docs_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        topic = _extract_search_topic(lowered) or "Research Results"
-        title = topic.title()
-        return [
-            PlannedTask(
-                id="task-1",
-                service="docs",
-                action="create_document",
-                parameters={"title": title, "content": "$web_search_summary"},
-                reason="Create a Google Doc with the research findings.",
-            ),
-        ]
-
-    def _drive_to_sheets_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        query = _drive_query_from_text(lowered)
+    def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _drive_query_from_text(text)
         recipient = _extract_email(text) or self.config.default_recipient_email
-        tasks = [
+        return [
             PlannedTask(
                 id="task-1",
                 service="drive",
@@ -344,53 +189,7 @@ class WorkspaceAgentSystem:
                 service="drive",
                 action="export_file",
                 parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
-                reason="Extract text content from the document."
-            ),
-            PlannedTask(
-                id="task-3",
-                service="sheets",
-                action="create_spreadsheet",
-                parameters={"title": f"Data from {query}"},
-                reason="Prepare a new Sheet for the extracted data."
-            ),
-            PlannedTask(
-                id="task-4",
-                service="sheets",
-                action="append_values",
-                parameters={"spreadsheet_id": "{{task-3.id}}", "values": "{{task-2.content}}"},
-                reason="Save extracted data to the new Sheet."
-            ),
-            PlannedTask(
-                id="task-5",
-                service="gmail",
-                action="send_message",
-                parameters={
-                    "to_email": recipient,
-                    "subject": "Processed Document Data",
-                    "body": "Hi,\n\nPlease find the spreadsheet here: $last_spreadsheet_url"
-                },
-                reason="Send the results link to the user."
-            )
-        ]
-        return tasks
-
-    def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        query = _drive_query_from_text(lowered)
-        recipient = _extract_email(text) or self.config.default_recipient_email
-        return [
-            PlannedTask(
-                id="task-1",
-                service="drive",
-                action="list_files",
-                parameters={"q": query, "page_size": 1},
-                reason="Search for the requested document in Drive."
-            ),
-            PlannedTask(
-                id="task-2",
-                service="drive",
-                action="export_file",
-                parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
-                reason="Extract the document content for the email."
+                reason="Extract content for the email."
             ),
             PlannedTask(
                 id="task-3",
@@ -399,106 +198,105 @@ class WorkspaceAgentSystem:
                 parameters={
                     "to_email": recipient,
                     "subject": f"Document: {query}",
-                    "body": "Hi,\n\nPlease find the document content below:\n\n$last_export_file_content"
+                    "body": "Hi,\n\nPlease find the content below:\n\n$last_export_file_content"
                 },
-                reason="Send the document content via email as requested."
+                reason="Email the extracted content."
             )
         ]
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        query = _gmail_query_from_text(lowered)
-        max_results = _first_int(lowered) or 10
-        spreadsheet_id = _extract_google_id(text)
-        tasks = [
+        query = _gmail_query_from_text(text)
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        return [
             PlannedTask(
                 id="task-1",
                 service="gmail",
                 action="list_messages",
-                parameters={"q": query, "max_results": max_results},
-                reason="Search Gmail for relevant messages.",
+                parameters={"q": query, "max_results": 10},
+                reason="Search Gmail messages."
             ),
             PlannedTask(
                 id="task-2",
                 service="gmail",
                 action="get_message",
                 parameters={"message_id": "$gmail_message_ids"},
-                reason="Fetch full message details to extract sender names and email addresses.",
-            )
-        ]
-        
-        if spreadsheet_id:
-            target_spreadsheet = spreadsheet_id
-        else:
-            target_spreadsheet = "$last_spreadsheet_id"
-            tasks.append(
-                PlannedTask(
-                    id="task-3",
-                    service="sheets",
-                    action="create_spreadsheet",
-                    parameters={"title": _spreadsheet_title_from_query(query)},
-                    reason="Create a spreadsheet for the detailed results.",
-                )
-            )
-        tasks.append(
+                reason="Fetch full message details."
+            ),
             PlannedTask(
-                id=f"task-{len(tasks) + 1}",
+                id="task-3",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": f"Results: {query}"},
+                reason="Create spreadsheet for results."
+            ),
+            PlannedTask(
+                id="task-4",
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": target_spreadsheet,
+                    "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
-                    "values": "$gmail_details_values",
+                    "values": "$gmail_details_values"
                 },
-                reason="Save sender names and email addresses to the spreadsheet.",
+                reason="Save detailed results to Sheets."
+            ),
+            PlannedTask(
+                id="task-5",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Processed: {query}",
+                    "body": "Hi,\n\nPlease find the spreadsheet here: $last_spreadsheet_url"
+                },
+                reason="Email the final spreadsheet link."
             )
-        )
-        return tasks
+        ]
 
-    def _sheet_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        spreadsheet_id = _extract_google_id(text) or ""
-        recipient = _extract_email(text) or ""
-        subject = _email_subject_from_text(text) or "Spreadsheet data export"
+    def _drive_folder_move_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _drive_query_from_text(text)
+        folder_name = _extract_quoted(text) or "Organized Files"
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        
         return [
             PlannedTask(
                 id="task-1",
-                service="sheets",
-                action="get_values",
-                parameters={"spreadsheet_id": spreadsheet_id, "range": "Sheet1!A1:Z500"},
-                reason="Read the requested spreadsheet values first.",
+                service="drive",
+                action="create_folder",
+                parameters={"folder_name": folder_name},
+                reason=f"Create folder '{folder_name}'."
             ),
             PlannedTask(
                 id="task-2",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": 20},
+                reason=f"List files to move."
+            ),
+            PlannedTask(
+                id="task-3",
+                service="drive",
+                action="move_file",
+                parameters={"file_id": "$drive_file_ids", "folder_id": "{{task-1.id}}"},
+                reason="Move files into the folder."
+            ),
+            PlannedTask(
+                id="task-4",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": recipient, "subject": subject, "body": "$sheet_email_body"},
-                reason="Compose and send an email using spreadsheet data.",
-            ),
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Drive Files Organized",
+                    "body": f"Hi,\n\nFiles moved to '{folder_name}'. Link: $last_folder_url"
+                },
+                reason="Notify user."
+            )
         ]
-
-    def _gmail_read_tasks(self, lowered: str) -> list[PlannedTask]:
-        list_task = PlannedTask(
-            id="task-1",
-            service="gmail",
-            action="list_messages",
-            parameters={"q": _gmail_query_from_text(lowered), "max_results": _first_int(lowered) or 10},
-            reason="Find matching Gmail messages first.",
-        )
-        if _wants_email_details(lowered):
-            return [
-                list_task,
-                PlannedTask(
-                    id="task-2",
-                    service="gmail",
-                    action="get_message",
-                    parameters={"message_id": "$gmail_message_ids"},
-                    reason="Read message headers and snippets so the output is human-readable.",
-                ),
-            ]
-        return [list_task]
 
     def _single_service_task(self, service: str, lowered: str, index: int) -> PlannedTask:
         action = _detect_action(service, lowered) or next(iter(SERVICES[service].actions))
         parameters: dict[str, Any] = {}
+
         if service == "gmail" and action == "list_messages":
             parameters["q"] = _gmail_query_from_text(lowered)
             parameters["max_results"] = _first_int(lowered) or 10
@@ -507,77 +305,19 @@ class WorkspaceAgentSystem:
             drive_query = _drive_query_from_text(lowered)
             if drive_query:
                 parameters["q"] = drive_query
-        elif service == "contacts" and action == "list_contacts":
-            parameters["page_size"] = _first_int(lowered) or 10
-        elif service == "docs" and action == "create_document":
-            topic = _extract_search_topic(lowered) or "Document"
-            parameters["title"] = topic.title()
-            parameters["content"] = "$web_search_summary"
-        elif service == "sheets" and action == "create_spreadsheet":
-            topic = _extract_search_topic(lowered) or "Data"
-            parameters["title"] = topic.title()
         elif service == "gmail" and action == "send_message":
             parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
-            parameters["subject"] = _email_subject_from_text(lowered) or "GWorkspace Notification"
-            parameters["body"] = f"Update regarding: {lowered[:100]}..."
-        elif service == "telegram" and action == "send_message":
-            parameters["message"] = f"Task update: {lowered[:50]}..."
-        elif service == "search" and action == "web_search":
-            parameters["query"] = _extract_search_topic(lowered) or lowered
+            parameters["subject"] = "GWorkspace Notification"
+            parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service in ("code", "computation"):
-            # Extract data for sorting/processing
             list_match = re.search(r"(\[.+?\])", lowered)
             data_str = list_match.group(1) if list_match else "[]"
-            
             if "sort" in lowered:
-                # Basic sorting logic
-                rev = "True" if "expensive" in lowered or "descending" in lowered or "reverse" in lowered else "False"
-                # If it looks like a list of tuples (e.g. price sorting)
-                if "), (" in data_str:
-                    parameters["code"] = f"data = {data_str}\nresult = sorted(data, key=lambda x: x[1], reverse={rev})\nprint(result)"
-                else:
-                    parameters["code"] = f"data = {data_str}\nresult = sorted(data, reverse={rev})\nprint(result)"
-            elif "reverse" in lowered:
-                parameters["code"] = f"data = {data_str}\nresult = list(reversed(data))\nprint(result)"
+                rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
+                parameters["code"] = f"data = {data_str}\nresult = sorted(data, reverse={rev})\nprint(result)"
             else:
-                # Fallback: just echo or try to evaluate math
-                extracted = "".join(ch for ch in lowered if ch.isdigit() or ch in ".+-*/() ")
-                if extracted.strip():
-                    parameters["code"] = f"result = {extracted}\nprint(result)"
-                else:
-                    parameters["code"] = f"print('{lowered}')"
-        elif service == "calendar":
-            if action == "create_event":
-                # Extract summary: "event called '...'" or "event '...'"
-                summary_match = re.search(r"event\s+(?:called|named)?\s+['\"]([^'\"]+)['\"]", lowered)
-                if not summary_match:
-                    summary_match = re.search(r"event\s+(?:called|named)?\s+([a-zA-Z0-9 _.-]{3,60})", lowered)
+                parameters["code"] = f"print('{lowered}')"
 
-                if summary_match:
-                    parameters["summary"] = summary_match.group(1).strip()
-                else:
-                    parameters["summary"] = "New Event"
-
-                # Extract date: "tomorrow", "today", or "YYYY-MM-DD"
-                if "tomorrow" in lowered:
-                    parameters["start_date"] = "tomorrow"
-                elif "today" in lowered:
-                    parameters["start_date"] = "today"
-                else:
-                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", lowered)
-                    if date_match:
-                        parameters["start_date"] = date_match.group(1)
-                    else:
-                        parameters["start_date"] = "today"
-            elif action == "delete_event":
-                # Try to find a calendar ID in the text
-                cal_id = _extract_google_id(lowered)
-                if cal_id:
-                    parameters["event_id"] = cal_id
-            elif action == "update_event":
-                cal_id = _extract_google_id(lowered)
-                if cal_id:
-                    parameters["event_id"] = cal_id
         return PlannedTask(
             id=f"task-{index}",
             service=service,
@@ -590,16 +330,13 @@ class WorkspaceAgentSystem:
 def _detect_services_in_order(text: str) -> list[str]:
     hits: list[tuple[int, str]] = []
     for service_key, spec in SERVICES.items():
-        # Match only whole words to avoid 'docs' matching 'documents' (unless doc is an alias)
-        # and to avoid accidental substrings in long requests.
         terms = (service_key, *spec.aliases)
         for term in terms:
-            # Use regex for word boundary matching
             pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
             match = pattern.search(text)
             if match:
                 hits.append((match.start(), service_key))
-                break  # Found this service, move to next
+                break
     return [service for _, service in sorted(hits, key=lambda item: item[0])]
 
 
@@ -615,78 +352,25 @@ def _detect_action(service: str, text: str) -> str | None:
 
 
 def _gmail_query_from_text(text: str) -> str:
-    """Build a Gmail search query from the user request text.
-
-    Bug fix: previously returned an empty string for requests like
-    'search email about \"Your receipt from X\"' because the generic
-    keyword-after-preposition regex did not handle quoted subjects.
-    Now we first check for a quoted phrase and wrap it in subject:"...".
-    """
-    if "ticket" in text:
-        return "ticket OR tickets"
-    if "unread" in text:
-        return "is:unread"
-    # Try quoted phrase first — wrap in subject:"..." for precision.
     quoted = re.search(r'[\"\']([^\"\']{3,80})[\"\'\']', text)
-    if quoted:
-        phrase = quoted.group(1).strip()
-        return f'subject:"{phrase}"'
-    match = re.search(r"(?:about|for|matching|with)\s+([a-z0-9 _.-]{3,60})", text)
+    if quoted: return f'subject:"{quoted.group(1).strip()}"'
+    match = re.search(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
     if match:
-        return _trim_follow_on_instruction(match.group(1))
+        query = match.group(1).strip()
+        query = re.split(r"\s+(and|then|to|save|write|export|extract|move)\s+", query, flags=re.IGNORECASE)[0].strip()
+        return query
     return ""
 
 
 def _drive_query_from_text(text: str) -> str:
-    quoted = re.findall(r"""['"]([^'"]{2,80})['"]""", text)
-    if quoted:
-        parts = [f"fullText contains '{q.strip()}'" for q in quoted[:2]]
-        return " or ".join(parts)
-
-    match = re.search(r"(?:search|find|for|about)\s+([a-z0-9 _.-]{3,60})", text)
+    quoted = re.search(r'[\"\']([^\"\']{3,80})[\"\'\']', text)
+    if quoted: return f"fullText contains '{quoted.group(1).strip()}'"
+    match = re.search(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
     if match:
-        term = _trim_follow_on_instruction(match.group(1)).strip()
-        if term and len(term) > 2:
-            return f"fullText contains '{term}'"
+        query = match.group(1).strip()
+        query = re.split(r"\s+(and|then|to|save|write|export|extract|move)\s+", query, flags=re.IGNORECASE)[0].strip()
+        return f"fullText contains '{query}'"
     return ""
-
-
-def _extract_search_topic(text: str) -> str | None:
-    patterns = [
-        r"find\s+(?:top\s+\d+\s+)?(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|\s+and\s+export|$)",
-        r"search\s+(?:for\s+)?(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
-        r"top\s+\d+\s+(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
-        r"best\s+(.+?)(?:\s+and\s+save|\s+and\s+write|\s+and\s+store|$)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            topic = match.group(1).strip(" .")
-            topic = re.sub(
-                r"\s+(to\s+(google\s+)?(docs|sheets|documents|document|spreadsheet).*|and\s+(save|write|store).*)$",
-                "",
-                topic,
-                flags=re.IGNORECASE,
-            ).strip()
-            if len(topic) > 2:
-                return topic
-    return None
-
-
-def _is_web_search_and_save(text: str) -> bool:
-    has_search = any(trigger in text for trigger in _WEB_SEARCH_TRIGGERS)
-    has_save = _has_any(text, ("save", "write", "store", "export", "document", "doc", "sheet", "spreadsheet"))
-    return has_search and has_save
-
-
-def _spreadsheet_title_from_query(query: str) -> str:
-    suffix = query.replace(" OR ", " ").strip() or "Gmail"
-    return f"{suffix.title()} Search Results"
-
-
-def _extract_google_id(text: str) -> str | None:
-    match = re.search(r"\b([a-zA-Z0-9_-]{25,})\b", text)
-    return match.group(1) if match else None
 
 
 def _extract_email(text: str) -> str | None:
@@ -694,78 +378,26 @@ def _extract_email(text: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _email_subject_from_text(text: str) -> str | None:
-    quoted = re.search(r"subject\s*[:=]\s*['\"]([^'\"]+)['\"]", text, flags=re.IGNORECASE)
-    if quoted:
-        return quoted.group(1).strip()
-    return None
+def _extract_quoted(text: str) -> str | None:
+    match = re.search(r"['\"](.+?)['\"]", text)
+    return match.group(1) if match else None
 
 
 def _first_int(text: str) -> int | None:
     match = re.search(r"\b(\d{1,3})\b", text)
-    if not match:
-        return None
-    value = int(match.group(1))
-    return value if value > 0 else None
-
-
-def _has_any(text: str, terms: tuple[str, ...]) -> bool:
-    return any(term in text for term in terms)
-
-
-def _trim_follow_on_instruction(value: str) -> str:
-    cleaned = value.strip(" .")
-    stop_patterns = (
-        r"\s+and\s+save\b",
-        r"\s+and\s+write\b",
-        r"\s+and\s+export\b",
-        r"\s+and\s+convert\b",
-        r"\s+into\s+google\s+sheets\b",
-        r"\s+into\s+sheets\b",
-        r"\s+to\s+google\s+sheets\b",
-        r"\s+to\s+sheets\b",
-    )
-    for pattern in stop_patterns:
-        match = re.search(pattern, cleaned)
-        if match:
-            cleaned = cleaned[: match.start()].strip(" .")
-            break
-    return cleaned
+    if match:
+        val = int(match.group(1))
+        return val if val > 0 else None
+    return None
 
 
 def _is_drive_to_email_request(text: str) -> bool:
-    drive_terms = ("drive", "file", "document", "shibuz")
-    email_terms = ("email", "send", "mail")
-    has_drive = any(t in text for t in drive_terms)
-    has_email = any(t in text for t in email_terms)
-    return has_drive and has_email
+    return any(t in text for t in ("drive", "file", "document")) and any(t in text for t in ("email", "send", "mail"))
 
 
 def _is_sheet_to_email_request(text: str) -> bool:
-    send_terms = (
-        "send it",
-        "send this",
-        "send that",
-        "send to",
-        "send me",
-        "send email",
-        "email it",
-        "email this",
-        "email me",
-        "create email",
-        "compose email",
-    )
-    return any(term in text for term in send_terms)
+    return "sheet" in text and any(t in text for t in ("email", "send", "mail"))
 
 
-def _wants_email_details(text: str) -> bool:
-    terms = (
-        "list all",
-        "show all",
-        "view emails",
-        "read emails",
-        "received emails",
-        "emails from",
-        "show emails",
-    )
-    return any(term in text for term in terms)
+def _is_drive_folder_move_request(text: str) -> bool:
+    return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))

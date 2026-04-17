@@ -15,6 +15,12 @@ class PlanExecutor:
     runner: Any
     logger: Any = field(default_factory=lambda: logging.getLogger(__name__))
     config: Optional[Any] = None
+    _memory: Optional[Any] = None
+
+    def __post_init__(self):
+        if self.config:
+            from .memory import LongTermMemory
+            self._memory = LongTermMemory(self.config, self.logger)
 
     def _think(self, *args, **kwargs) -> str:
         return "Thought: Proceeding with planned task."
@@ -33,7 +39,7 @@ class PlanExecutor:
         # We use a copy to avoid mutating the original task before expansion
         import copy
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
-        
+
         if task.service == "gmail" and task.action == "get_message":
             msg_ids = resolved_params.get("message_id")
             if isinstance(msg_ids, list):
@@ -44,7 +50,18 @@ class PlanExecutor:
                     new_task.parameters["message_id"] = m_id
                     expanded.append(new_task)
                 return expanded
-                
+
+        if task.service == "drive" and task.action == "move_file":
+            file_ids = resolved_params.get("file_id")
+            if isinstance(file_ids, list):
+                expanded = []
+                for i, f_id in enumerate(file_ids):
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i+1}"
+                    new_task.parameters["file_id"] = f_id
+                    expanded.append(new_task)
+                return expanded
+
         return [task]
 
     def _resolve_task(self, task: Any, context: dict) -> Any:
@@ -115,14 +132,20 @@ class PlanExecutor:
 
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
-            if (not f_id or f_id.startswith("{{")) and context.get("last_document_id"):
-                 task.parameters["file_id"] = context["last_document_id"]
+            if (not f_id or f_id.startswith("{{")):
+                 if context.get("last_file_id"):
+                     task.parameters["file_id"] = context["last_file_id"]
+                 elif context.get("last_document_id"):
+                     task.parameters["file_id"] = context["last_document_id"]
 
         return task
 
     def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context."""
         if isinstance(val, str):
+            if "{" not in val and "$" not in val:
+                return val
+            
             logger.debug(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
             legacy_map = {
@@ -142,6 +165,9 @@ class PlanExecutor:
                 "$sheet_email_body":        "sheet_email_body",
                 "$gmail_message_ids":       "gmail_message_ids",
                 "$gmail_details_values":    "gmail_details_values",
+                "$drive_file_ids":          "drive_file_ids",
+                "$last_folder_id":          "last_folder_id",
+                "$last_folder_url":         "last_folder_url",
                 "$last_code_stdout":        "last_code_stdout",
                 "$last_code_result":        "last_code_result",
                 "$drive_export_content":    "drive_export_content",
@@ -443,7 +469,7 @@ class PlanExecutor:
             if body:
                 data["body"] = body
                 context["gmail_message_body_text"] = body
-            
+
             # Populate gmail_details_values for Sheets extraction
             sender = headers_dict.get("from", "Unknown")
             subject = headers_dict.get("subject", "No Subject")
@@ -476,12 +502,17 @@ class PlanExecutor:
         if "files" in data:
             files = data["files"]
             if files and isinstance(files, list):
+                context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
                 context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
                 if len(files) > 0 and "mimeType" in files[0]:
                     context["last_file_mime"] = files[0]["mimeType"]
                     # Also store in results map for {task-N.mimeType} access
                     if task and hasattr(task, "id") and task.id:
                         results_map[str(task.id)]["mimeType"] = files[0]["mimeType"]
+
+        if "id" in data and task and task.service == "drive" and task.action == "create_folder":
+            context["last_folder_id"] = data["id"]
+            context["last_folder_url"] = f"https://drive.google.com/drive/folders/{data['id']}"
 
         if "drive_export_content" in data:
             val = data["drive_export_content"]
@@ -586,10 +617,10 @@ class PlanExecutor:
         i = 0
         while i < len(task_queue):
             task = task_queue[i]
-            
+
             # 1. Expand task if needed (e.g. multi-message get_message)
             expanded = self._expand_task(task, context)
-            
+
             # If expansion happened, replace the current task with expanded ones
             if len(expanded) > 1 or expanded[0] is not task:
                 # Insert expanded tasks into queue after current index
@@ -622,7 +653,18 @@ class PlanExecutor:
             if not result.success:
                 break
 
-        return PlanExecutionReport(plan=plan, executions=executions)
+        report = PlanExecutionReport(plan=plan, executions=executions)
+        
+        # Save to long-term memory if successful
+        if report.success and self._memory:
+            try:
+                memory_text = f"User goal: {plan.raw_text}. Outcome: {plan.summary}"
+                self._memory.add(memory_text, metadata={"type": "task_completion", "timestamp": datetime.now().isoformat()})
+                self.logger.info("Saved task completion to long-term memory.")
+            except Exception as e:
+                self.logger.warning(f"Failed to save to long-term memory: {e}")
+
+        return report
 
     def _handle_code_execution_task(self, task: Any, context: dict) -> Any:
         """Execute a code execution task and return the result."""

@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+from .models import AppConfigModel
 
 MEMORY_FILE = Path.home() / ".gws_agent" / "memory.jsonl"
 
@@ -18,6 +22,69 @@ _STOP_WORDS: frozenset[str] = frozenset({
     "all", "some", "any", "can", "into", "up", "out", "use", "have",
     "has", "not", "no", "so", "if", "then", "about", "also",
 })
+
+
+class LongTermMemory:
+    """Long-term memory layer using Mem0 for semantic persistence."""
+
+    def __init__(self, config: AppConfigModel, logger: logging.Logger | None = None):
+        self.config = config
+        self.logger = logger or logging.getLogger(__name__)
+        self.client = None
+        
+        if config.mem0_api_key:
+            try:
+                from mem0 import MemoryClient
+                self.client = MemoryClient(api_key=config.mem0_api_key)
+                self.logger.info("Mem0 long-term memory client initialized (hosted).")
+            except ImportError:
+                self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Mem0 client: {e}")
+        else:
+            # Fallback to local Memory if no API key is provided
+            try:
+                from mem0 import Memory
+                self.client = Memory()
+                self.logger.info("Mem0 long-term memory client initialized (local).")
+            except ImportError:
+                self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize local Mem0 memory: {e}")
+
+    def add(self, data: str | list[dict[str, str]], user_id: str = "default_user", metadata: dict[str, Any] | None = None) -> None:
+        """Add a memory to Mem0."""
+        if not self.client:
+            return
+
+        try:
+            self.client.add(data, user_id=user_id, metadata=metadata)
+            self.logger.debug(f"Added memory to Mem0 for user {user_id}")
+        except Exception as e:
+            self.logger.error(f"Error adding memory to Mem0: {e}")
+
+    def search(self, query: str, user_id: str = "default_user", limit: int = 5) -> list[dict[str, Any]]:
+        """Search for relevant memories in Mem0."""
+        if not self.client:
+            return []
+
+        try:
+            results = self.client.search(query, user_id=user_id, limit=limit)
+            return results
+        except Exception as e:
+            self.logger.error(f"Error searching Mem0: {e}")
+            return []
+
+    def get_all(self, user_id: str = "default_user") -> list[dict[str, Any]]:
+        """Retrieve all memories for a user."""
+        if not self.client:
+            return []
+
+        try:
+            return self.client.get_all(user_id=user_id)
+        except Exception as e:
+            self.logger.error(f"Error getting all memories from Mem0: {e}")
+            return []
 
 
 def _tokenize(text: str) -> set[str]:
