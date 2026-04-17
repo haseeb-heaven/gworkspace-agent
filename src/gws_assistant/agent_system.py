@@ -42,11 +42,17 @@ class WorkspaceAgentSystem:
             ))
             
         if semantic_memories:
-            self.logger.info("Semantic Memory: found %d relevant memories", len(semantic_memories))
+            # Handle dictionary response from Mem0 v2
+            if isinstance(semantic_memories, dict):
+                memories_list = semantic_memories.get("results", [])
+            else:
+                memories_list = semantic_memories
+
+            self.logger.info("Semantic Memory: found %d relevant memories", len(memories_list))
             # Mem0 search results are usually list of dicts with 'memory' or 'text' key
             memory_hint_parts.append("Known facts and preferences:\n" + "\n".join(
                 f"- {m.get('memory', m.get('text', str(m)))}"
-                for m in semantic_memories[:5]
+                for m in memories_list[:5]
             ))
 
         memory_hint = "\n\n".join(memory_hint_parts)
@@ -305,6 +311,17 @@ class WorkspaceAgentSystem:
             drive_query = _drive_query_from_text(lowered)
             if drive_query:
                 parameters["q"] = drive_query
+            else:
+                # Fallback: try to find anything in quotes or after search/find
+                query = _extract_quoted(lowered)
+                if query:
+                    parameters["q"] = f"name contains '{query}'"
+        elif service == "docs" and action == "get_document":
+             query = _extract_quoted(lowered)
+             if query:
+                 # Docs don't have a direct search action in the same way as Drive,
+                 # so we usually need to list_files first.
+                 pass
         elif service == "gmail" and action == "send_message":
             parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
             parameters["subject"] = "GWorkspace Notification"
@@ -316,7 +333,8 @@ class WorkspaceAgentSystem:
                 rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
                 parameters["code"] = f"data = {data_str}\nresult = sorted(data, reverse={rev})\nprint(result)"
             else:
-                parameters["code"] = f"print('{lowered}')"
+                # Try to generate generic processing code for "convert to table" etc
+                parameters["code"] = f"# Processed data from previous steps\nprint('Processing task: {lowered}')"
 
         return PlannedTask(
             id=f"task-{index}",

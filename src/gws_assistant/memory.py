@@ -69,8 +69,14 @@ class LongTermMemory:
             return []
 
         try:
-            results = self.client.search(query, user_id=user_id, limit=limit)
-            return results
+            from mem0 import MemoryClient
+            if isinstance(self.client, MemoryClient):
+                # Use exact filter structure from documentation
+                filters = {"AND": [{"user_id": user_id}]}
+                return self.client.search(query, filters=filters, limit=limit)
+            else:
+                # Local client uses direct user_id
+                return self.client.search(query, user_id=user_id, limit=limit)
         except Exception as e:
             self.logger.error(f"Error searching Mem0: {e}")
             return []
@@ -81,7 +87,17 @@ class LongTermMemory:
             return []
 
         try:
-            return self.client.get_all(user_id=user_id)
+            from mem0 import MemoryClient
+            if isinstance(self.client, MemoryClient):
+                # Use exact filter structure from documentation
+                filters = {"AND": [{"user_id": user_id}]}
+                response = self.client.get_all(filters=filters)
+                if isinstance(response, dict) and "results" in response:
+                    return response["results"]
+                return response
+            else:
+                # Local client uses user_id="..."
+                return self.client.get_all(user_id=user_id)
         except Exception as e:
             self.logger.error(f"Error getting all memories from Mem0: {e}")
             return []

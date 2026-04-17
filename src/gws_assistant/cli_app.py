@@ -154,6 +154,7 @@ def run(
     save_output: Path | None = typer.Option(None, "--save-output", help="Append readable output to a file."),
     task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
     no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
+    send_telegram: str | None = typer.Option(None, "--send-telegram", help="Send a message to Telegram and exit."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     # resilient_parsing is True during --help rendering and shell-completion;
@@ -162,6 +163,10 @@ def run(
         return
     if setup:
         run_setup_wizard()
+        return
+    if send_telegram:
+        from .tools.telegram import send_telegram as st
+        st(send_telegram)
         return
     _run_application(save_output=save_output, task=task, no_langchain=no_langchain)
 

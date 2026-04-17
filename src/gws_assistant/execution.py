@@ -373,9 +373,11 @@ class PlanExecutor:
 
         # ID Aliasing: Promote the first item's ID to a stable 'task-N.id' key
         if task:
+            task_id = str(task.id)
+            num = task_id.removeprefix("task-")
+            
             if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
                 # OPTIMIZATION: Reorder files to put non-folders first.
-                # This ensures that indexed lookups like task-N[0] and task-N.id pick a usable file.
                 files = data["files"]
                 folders = [f for f in files if f.get("mimeType") == "application/vnd.google-apps.folder"]
                 non_folders = [f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"]
@@ -383,14 +385,15 @@ class PlanExecutor:
 
                 first_id = data["files"][0].get("id")
                 if first_id:
-                    results_map[f"{task.id}.id"] = first_id
-                    results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
+                    results_map[f"{task_id}.id"] = first_id
+                    results_map[f"{num}.id"] = first_id
+                    context["last_file_id"] = first_id
 
             if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")
                 if first_id:
-                    results_map[f"{task.id}.id"] = first_id
-                    results_map[f"{str(task.id).removeprefix('task-')}.id"] = first_id
+                    results_map[f"{task_id}.id"] = first_id
+                    results_map[f"{num}.id"] = first_id
 
         for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
             if id_field in data:

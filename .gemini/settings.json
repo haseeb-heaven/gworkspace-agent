@@ -1,13 +1,8 @@
 {
   "mcpServers": {
     "mem0": {
-      "command": "node",
-      "args": [
-        "node_modules/@mem0/mcp-server/dist/index.js"
-      ],
-      "env": {
-        "MEM0_API_KEY": "REPLACED_BY_GEMINI_CLI_FOR_SECURITY"
-      }
+      "command": "node node_modules/@mem0/mcp-server/dist/index.js",
+      "args": []
     }
   }
 }
