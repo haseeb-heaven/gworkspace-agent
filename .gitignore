@@ -1,7 +1,12 @@
 *.eml
 .gemini/settings.json
 
+# Dependencies
 node_modules/
+package.json
+package-lock.json
+
+# Python
 *.py[cod]
 *.pyo
 *.pyd
@@ -15,12 +20,18 @@ dist/
 .venv/
 venv/
 env/
+
+# Logs and Environment
 logs/
 *.log
 .env
 .env.local
+
+# IDEs
 .idea/
 .vscode/
+
+# System
 .DS_Store
 Thumbs.db
 google-cloud-sdk
@@ -32,15 +43,19 @@ scratch/
 artifacts/
 .skill
 *.skill
+
+# Files
 *.exe
 *.txt
 *.pdf
 *.docx
 *.xlsx
 *.pptx
+
+# Allowed
 !README.md
 !framework/
 !tests/
-skills/
-artifacts/
+!skills/
+
 
