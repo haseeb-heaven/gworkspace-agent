@@ -153,6 +153,16 @@ class PlanExecutor:
                 task.parameters["title"] = "GWS Agent Spreadsheet"
                 self.logger.info("Added default spreadsheet title: GWS Agent Spreadsheet")
 
+        # 4. Strict email recipient enforcement (Security Policy)
+        if task.service == "gmail" and task.action == "send_message":
+            if self.config and self.config.default_recipient_email:
+                target = self.config.default_recipient_email
+                current = task.parameters.get("to_email")
+                # Force override everything to default_recipient_email
+                if current != target:
+                    self.logger.warning(f"SECURITY: Redirecting email recipient from '{current}' to forced default '{target}'")
+                    task.parameters["to_email"] = target
+
         return task
 
     def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False) -> Any:

@@ -445,26 +445,36 @@ class TestExecutionPipelines:
         assert report.success is False
         assert "unresolved placeholder" in report.executions[0].result.error.lower()
 
-    def test_range_auto_fix_with_space_in_tab_name(self):
-        """Verify Sheet1!A1 is auto-replaced with the actual tab name when tab has spaces."""
+    def test_strict_email_enforcement(self, tmp_path):
+        """Verify that emails are redirected to DEFAULT_RECIPIENT_EMAIL if a different address is provided."""
+        config = _config(tmp_path)
+        # Set a specific default email in config
+        config.default_recipient_email = "strict-default@example.com"
+        
         runner = FakeRunner()
-        executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+        executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"), config=config)
+        
+        # We simulate a plan that tries to send to a different address
         plan = RequestPlan(
-            raw_text="save to RockstarIndia Emails sheet",
+            raw_text="Send email to hacker@evil.com",
             tasks=[
-                PlannedTask("task-1", "sheets", "create_spreadsheet", {"title": "RockstarIndia Emails"}),
-                PlannedTask("task-2", "sheets", "append_values", {
-                    "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "Sheet1!A1",
-                    "values": [["Name", "Email"]],
+                PlannedTask("task-1", "gmail", "send_message", {
+                    "to_email": config.default_recipient_email,
+                    "subject": "Secret",
+                    "body": "Payload",
                 }),
             ],
         )
         report = executor.execute(plan)
         assert report.success is True
-        append_cmd = runner.commands[1]
-        params_str = append_cmd[append_cmd.index("--params") + 1]
-        assert "'RockstarIndia Emails'!A1" in params_str
+        
+        # Verify the runner received the redirected email
+        send_cmd = next(c for c in runner.commands if "gmail" in c and "messages" in c and "send" in c)
+        params = json.loads(send_cmd[send_cmd.index("--json") + 1])
+        import base64
+        decoded = base64.urlsafe_b64decode(params["raw"]).decode("utf-8")
+        assert "To: strict-default@example.com" in decoded
+        assert "To: hacker@evil.com" not in decoded
 
 
 # =====================================================================

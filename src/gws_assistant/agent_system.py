@@ -126,6 +126,18 @@ class WorkspaceAgentSystem:
 
         # MULTI-TASK HEURISTICS (General Patterns)
         
+        # Pattern B: Gmail -> Sheets -> Email (Extraction)
+        if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
+             tasks = self._gmail_to_sheets_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
              tasks = self._drive_to_gmail_tasks(text, lowered)
@@ -133,18 +145,6 @@ class WorkspaceAgentSystem:
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-            
-        # Pattern B: Gmail -> Sheets -> Email (Extraction)
-        if "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
-             tasks = self._gmail_to_sheets_tasks(text, lowered)
-             return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
                 confidence=0.7,
                 no_service_detected=False,
                 source="heuristic",
@@ -174,10 +174,41 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern E: Document Conversion (Docs/Sheets)
-        if "docs" in services and "sheets" in services:
-             # Add general doc to sheet conversion if needed
-             pass
+        # Pattern F: Gmail List & Get (Always fetch details for searches)
+        if len(services) == 1 and services[0] == "gmail" and any(kw in lowered for kw in ("list", "search", "find", "show")):
+             tasks = self._gmail_list_and_get_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> gmail.get_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern G: Sheet -> Email
+        if "sheets" in services and "gmail" in services and _is_sheet_to_email_request(lowered):
+             tasks = self._sheet_to_email_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: sheets.get_values -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern G: Sheet -> Email
+        if "sheets" in services and "gmail" in services and _is_sheet_to_email_request(lowered):
+             tasks = self._sheet_to_email_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: sheets.get_values -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
 
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
@@ -193,7 +224,7 @@ class WorkspaceAgentSystem:
 
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = self.config.default_recipient_email
         
         send_params: dict[str, Any] = {
             "to_email": recipient,
@@ -230,7 +261,7 @@ class WorkspaceAgentSystem:
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = self.config.default_recipient_email
         return [
             PlannedTask(
                 id="task-1",
@@ -277,10 +308,34 @@ class WorkspaceAgentSystem:
             )
         ]
 
+    def _sheet_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        s_id = _extract_id(text)
+        recipient = self.config.default_recipient_email
+        return [
+            PlannedTask(
+                id="task-1",
+                service="sheets",
+                action="get_values",
+                parameters={"spreadsheet_id": s_id or "{{spreadsheet_id}}", "range": "Sheet1!A1:Z500"},
+                reason="Read data from the spreadsheet."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Spreadsheet Data",
+                    "body": "Hi,\n\nPlease find the spreadsheet data below:\n\n$last_spreadsheet_values"
+                },
+                reason="Email the spreadsheet data."
+            )
+        ]
+
     def _drive_folder_move_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
         folder_name = _extract_quoted(text) or "Organized Files"
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = self.config.default_recipient_email
         
         return [
             PlannedTask(
@@ -366,7 +421,7 @@ class WorkspaceAgentSystem:
             parameters["spreadsheet_id"] = _extract_id(lowered) or "{{task-1.id}}"
             parameters["range"] = "Sheet1!A1"
         elif service == "gmail" and action == "send_message":
-            parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
+            parameters["to_email"] = self.config.default_recipient_email
             parameters["subject"] = "GWorkspace Notification"
             parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service in ("code", "computation"):
@@ -386,6 +441,25 @@ class WorkspaceAgentSystem:
             parameters=parameters,
             reason=f"Detected {SERVICES[service].label} in the request.",
         )
+
+    def _gmail_list_and_get_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _gmail_query_from_text(text)
+        return [
+            PlannedTask(
+                id="task-1",
+                service="gmail",
+                action="list_messages",
+                parameters={"q": query, "max_results": 10},
+                reason="Search Gmail messages."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="get_message",
+                parameters={"message_id": "$gmail_message_ids"},
+                reason="Fetch full message details."
+            )
+        ]
 
 
 def _detect_services_in_order(text: str) -> list[str]:
@@ -486,6 +560,10 @@ def _is_drive_to_email_request(text: str) -> bool:
     return any(t in text for t in ("drive", "file", "document")) and any(t in text for t in ("email", "send", "mail"))
 
 
+def _is_gmail_to_sheets_request(text: str) -> bool:
+    return ("gmail" in text or "email" in text) and "sheet" in text and any(t in text for t in ("save", "extract", "append", "write"))
+
+
 def _is_sheet_to_email_request(text: str) -> bool:
     return "sheet" in text and any(t in text for t in ("email", "send", "mail"))
 
@@ -495,6 +573,10 @@ def _is_drive_folder_move_request(text: str) -> bool:
 
 
 def _is_sheet_creation_request(text: str) -> bool:
+    # Avoid matching "create email" or "create doc"
+    if "email" in text or "doc" in text or "folder" in text:
+        # If it's "create a sheet", it's fine. If it's "create an email", it's not.
+        return "create" in text and ("sheet" in text or "spreadsheet" in text) and not any(phrase in text for phrase in ("create email", "create a doc", "create document"))
     return "sheet" in text and any(t in text for t in ("create", "add", "new"))
 
 
