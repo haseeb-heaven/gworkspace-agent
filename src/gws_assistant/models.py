@@ -30,6 +30,7 @@ class AppConfigModel:
     e2b_api_key: str | None = None
     gws_timeout_seconds: int = 90
     gws_max_retries: int = 3
+    gws_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
     mem0_api_key: str | None = None

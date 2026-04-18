@@ -76,6 +76,9 @@ class AppConfig:
 
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
         gws_max_retries     = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
+        gws_api_keys_str = (os.getenv("GWS_API_KEYS") or "").strip()
+        gws_api_keys = [k.strip() for k in gws_api_keys_str.split(",") if k.strip()]
+        
         max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
 
@@ -104,6 +107,7 @@ class AppConfig:
             e2b_api_key=e2b_api_key,
             gws_timeout_seconds=gws_timeout_seconds,
             gws_max_retries=gws_max_retries,
+            gws_api_keys=gws_api_keys,
             max_context_snippet_len=max_snippet_len,
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,

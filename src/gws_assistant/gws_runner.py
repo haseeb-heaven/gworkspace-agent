@@ -61,6 +61,28 @@ class GWSRunner:
         self.gws_binary_path = gws_binary_path
         self.logger = logger
         self.config = config
+        self.current_key_index = 0
+
+    def rotate_key(self) -> None:
+        """Rotate to the next API key in the GWS_API_KEYS pool."""
+        if self.config and self.config.gws_api_keys:
+            keys = self.config.gws_api_keys
+        else:
+            keys = [k.strip() for k in os.getenv("GWS_API_KEYS", "").split(",") if k.strip()]
+        
+        if not keys:
+            self.logger.warning("GWS_API_KEYS not set or empty. Cannot rotate.")
+            return
+
+        # Find current key index if possible to stay in sync with environment
+        current_key = os.getenv("GWS_API_KEY")
+        if current_key in keys:
+            self.current_key_index = keys.index(current_key)
+
+        self.current_key_index = (self.current_key_index + 1) % len(keys)
+        new_key = keys[self.current_key_index]
+        os.environ["GWS_API_KEY"] = new_key
+        self.logger.info("Rotated to GWS API key index %d", self.current_key_index)
 
     def validate_binary(self) -> bool:
         exists = self.gws_binary_path.exists() and self.gws_binary_path.is_file()
@@ -152,7 +174,13 @@ class GWSRunner:
             # Only retry on transient errors
             # gws returns HTTP-like codes in some error messages or return codes.
             # We check return_code for 429 (Too Many Requests), 500 (Internal Server Error), 503 (Service Unavailable).
-            is_transient = last_result.return_code in (429, 500, 502, 503, 504)
+            if last_result.return_code == 429:
+                self.logger.warning("Rate limit (429) detected. Rotating API key and retrying...")
+                self.rotate_key()
+                is_transient = True
+            else:
+                is_transient = last_result.return_code in (500, 502, 503, 504)
+
             if not is_transient:
                 break
 
