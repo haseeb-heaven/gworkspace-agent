@@ -47,6 +47,7 @@ skills/
 .gemini 
 $params
 .git 
+docs/
 
 # Files
 *.exe

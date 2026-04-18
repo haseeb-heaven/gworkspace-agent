@@ -255,6 +255,16 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
                 ),
             ),
+            "get_event": ActionSpec(
+                key="get_event",
+                label="Get event details",
+                description="Fetch the details of a calendar event by ID. Returns: {id, summary, start, end, location}.",
+                keywords=("get", "details", "event", "open"),
+                parameters=(
+                    ParameterSpec("event_id", "Enter the Calendar event ID", "icfdpe6lrg7jvtinujvd5h6qa4"),
+                    ParameterSpec("calendar_id", "Which calendar ID? (default: primary)", "primary", required=False),
+                ),
+            ),
             "delete_event": ActionSpec(
                 key="delete_event",
                 label="Delete event",
@@ -457,6 +467,24 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("body", "Initial note content", "Hello world", required=False),
                 ),
             ),
+            "get_note": ActionSpec(
+                key="get_note",
+                label="Get note",
+                description="Get a specific Google Keep note by name. Returns: {name, title, body}.",
+                keywords=("get", "show", "read", "note", "keep"),
+                parameters=(
+                    ParameterSpec("name", "What is the note name (e.g. notes/...) to fetch?", "notes/123", required=True),
+                ),
+            ),
+            "delete_note": ActionSpec(
+                key="delete_note",
+                label="Delete note",
+                description="Delete a Google Keep note.",
+                keywords=("delete", "remove", "note", "keep"),
+                parameters=(
+                    ParameterSpec("name", "What is the note name (e.g. notes/...) to delete?", "notes/123", required=True),
+                ),
+            ),
         },
     ),
     "search": ServiceSpec(
@@ -539,6 +567,40 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("notes", "Optional task notes", "", required=False),
                     ParameterSpec("due", "Due date (RFC3339)", "", required=False),
                 ),
+            ),
+            "get_task": ActionSpec(
+                key="get_task",
+                label="Get task",
+                description="Returns the specified task. Returns: {id, title, status, updated, due, notes}.",
+                keywords=("get", "show", "read", "task", "todo"),
+                parameters=(
+                    ParameterSpec("task_id", "The ID of the task", "task-123"),
+                    ParameterSpec("tasklist", "Task list ID", "@default", required=False),
+                )
+            ),
+            "update_task": ActionSpec(
+                key="update_task",
+                label="Update task",
+                description="Updates an existing task. Returns: {id, title, status}.",
+                keywords=("update", "edit", "change", "modify", "task", "todo"),
+                parameters=(
+                    ParameterSpec("task_id", "The ID of the task", "task-123"),
+                    ParameterSpec("tasklist", "Task list ID", "@default", required=False),
+                    ParameterSpec("title", "New task title", "Buy organic milk", required=False),
+                    ParameterSpec("status", "Task status (needsAction, completed)", "completed", required=False),
+                    ParameterSpec("notes", "New task notes", "Get 2% milk", required=False),
+                    ParameterSpec("due", "Due date (RFC3339)", "2026-04-18T12:00:00Z", required=False),
+                )
+            ),
+            "delete_task": ActionSpec(
+                key="delete_task",
+                label="Delete task",
+                description="Deletes a task by ID. Returns: {id}.",
+                keywords=("delete", "remove", "trash", "task", "todo"),
+                parameters=(
+                    ParameterSpec("task_id", "The ID of the task", "task-123"),
+                    ParameterSpec("tasklist", "Task list ID", "@default", required=False),
+                )
             ),
         },
     ),

@@ -277,7 +277,6 @@ class CommandPlanner:
             if source_mime == "application/vnd.google-apps.folder":
                  # Folders CANNOT be exported or downloaded as media.
                  # Returning a ValidationError here helps the agent realize it picked a folder instead of a document.
-                 from gws_assistant.exceptions import ValidationError
                  raise ValidationError(f"File '{file_id}' is a folder and cannot be read as document content. Please search specifically for documents or list folder contents.")
 
             if source_mime and not is_workspace_doc:
@@ -602,6 +601,12 @@ class CommandPlanner:
                     "--params", json.dumps(params_dict),
                     "--json",   json.dumps(event_body, ensure_ascii=True)]
 
+        if action == "get_event":
+            calendar_id = str(params.get("calendar_id") or "primary").strip()
+            event_id = self._required_text(params, "event_id")
+            return ["calendar", "events", "get", "--params",
+                    json.dumps({"calendarId": calendar_id, "eventId": event_id})]
+
         if action == "delete_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
             event_id = self._required_text(params, "event_id")
@@ -713,6 +718,12 @@ class CommandPlanner:
             title = str(params.get("title") or "New Note").strip()
             body = str(params.get("body") or "").strip()
             return ["keep", "notes", "create", "--json", json.dumps({"title": title, "body": {"text": {"text": body}}}, ensure_ascii=True)]
+        if action == "get_note":
+            name = self._required_text(params, "name")
+            return ["keep", "notes", "get", "--params", json.dumps({"name": name})]
+        if action == "delete_note":
+            name = self._required_text(params, "name")
+            return ["keep", "notes", "delete", "--params", json.dumps({"name": name})]
         raise ValidationError(f"Unsupported keep action: {action}")
 
     def _build_admin_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -749,6 +760,19 @@ class CommandPlanner:
             if params.get("notes"): body["notes"] = str(params.get("notes"))
             if params.get("due"): body["due"] = str(params.get("due"))
             return ["tasks", "tasks", "insert", "--params", json.dumps({"tasklist": tl_id}), "--json", json.dumps(body, ensure_ascii=True)]
+        if action == "get_task":
+            tl_id = str(params.get("tasklist") or "@default").strip()
+            task_id = self._required_text(params, "task_id")
+            return ["tasks", "tasks", "get", "--params", json.dumps({"tasklist": tl_id, "task": task_id})]
+        if action == "update_task":
+            tl_id = str(params.get("tasklist") or "@default").strip()
+            task_id = self._required_text(params, "task_id")
+            body = {k: v for k, v in params.items() if k in ("title", "status", "notes", "due") and v is not None}
+            return ["tasks", "tasks", "update", "--params", json.dumps({"tasklist": tl_id, "task": task_id}), "--json", json.dumps(body)]
+        if action == "delete_task":
+            tl_id = str(params.get("tasklist") or "@default").strip()
+            task_id = self._required_text(params, "task_id")
+            return ["tasks", "tasks", "delete", "--params", json.dumps({"tasklist": tl_id, "task": task_id})]
         raise ValidationError(f"Unsupported tasks action: {action}")
 
     def _build_classroom_command(self, action: str, params: dict[str, Any]) -> list[str]:

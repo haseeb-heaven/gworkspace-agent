@@ -53,9 +53,9 @@ git commit -m "feat: enforce strict dynamic configuration and update pytest defa
 Add logic to `GWSRunner.run` to detect 429 errors and rotate keys from a list in `.env`.
 ```python
 def _rotate_key(self):
-    keys = os.getenv("GWS_API_KEYS", "").split(",")
+    keys = os.getenv("OPENROUTER_API_KEY", "").split(",")
     self.current_key_index = (self.current_key_index + 1) % len(keys)
-    os.environ["GWS_API_KEY"] = keys[self.current_key_index]
+    os.environ["OPENROUTER_API_KEY"] = keys[self.current_key_index]
 ```
 
 - [ ] **Step 2: Add exponential backoff**
