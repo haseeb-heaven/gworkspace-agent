@@ -291,25 +291,25 @@ def _invoke_with_backoff(
     Returns the raw plan_data dict on success, or None if all retries fail due
     to parse errors or invalid plans. Raises on persistent 429 or immediately on 404.
     """
-    model = create_agent(config, logger, model_override=model_name)
-    if not model:
-        return None
-
     for attempt in range(max_retries):
+        model = create_agent(config, logger, model_override=model_name)
+        if not model:
+            logger.warning("create_agent returned None for model '%s'", model_name)
+            return None
+            
         try:
             chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
             result = _safe_invoke_structured_output(chain, {"request": request_text}, logger)
 
-            # Validate plan — treat invalid plan same as None (retry).
             if result is not None and not is_valid_plan(result):
                 logger.info(
-                    "Model '%s': plan failed validation on attempt %d/%d — "
-                    "tasks contained unknown service/action keys. Raw: %s",
+                    "Model '%s': plan failed validation on attempt %d/%d. Raw: %s",
                     model_name, attempt + 1, max_retries, result,
                 )
                 result = None
 
             if result is not None:
+                logger.info("Model '%s' succeeded on attempt %d", model_name, attempt + 1)
                 return result
 
             if attempt < max_retries - 1:
@@ -324,15 +324,19 @@ def _invoke_with_backoff(
                 raise
             if _is_rate_limit_error(exc):
                 delay = _backoff_delay(attempt)
-                logger.info(
-                    "Model '%s' rate-limited (attempt %d/%d, HTTP 429). "
-                    "Backing off %.0fs before retry.",
-                    model_name, attempt + 1, max_retries, delay,
-                )
                 if attempt < max_retries - 1:
+                    logger.info(
+                        "Model '%s' rate-limited (attempt %d/%d, HTTP 429). "
+                        "Rotating API key and backing off %.0fs before retry.",
+                        model_name, attempt + 1, max_retries, delay,
+                    )
+                    config.rotate_api_key()
                     time.sleep(delay)
                     continue
-                raise
+                else:
+                    logger.info("Model '%s' rate-limited and retries exhausted.", model_name)
+                    raise
+            
             logger.error("Model '%s' planning failed: %s", model_name, exc)
             return None
 
@@ -355,14 +359,7 @@ def plan_with_langchain(
     """
     catalog_summary = _build_catalog_prompt()
 
-    # Bug D fix: _build_catalog_prompt() returns text that may contain '{' and '}'
-    # characters from ParameterSpec example values (e.g. JSON snippets, Python
-    # repr output like "{'key': 'val'}", or bracket-notation like 'sheets[]').
-    # LangChain's ChatPromptTemplate parses the system-prompt string for {variable}
-    # slots and raises ValueError / KeyError on any token it cannot match to an
-    # input variable.  We must quadruple-escape all braces to '{{{{' / '}}}}'
-    # so that the internal template retains '{{' / '}}', which are then emitted
-    # as literal '{' / '}' at render time.
+    # Bug D fix: quadruple-escape all braces to '{{{{' / '}}}}'
     catalog_summary_escaped = catalog_summary.replace("{", "{{{{").replace("}", "}}}}")
 
     system_prompt = (
@@ -374,68 +371,27 @@ def plan_with_langchain(
         f"CURRENT CONTEXT: Today is {datetime.date.today().isoformat()}\n\n"
         "STRICT RULES:\n"
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
-        "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
-        "2. PARAMETERS: for EACH task, you MUST check the 'params:' section of the catalog below. "
-        "   You MUST provide a 'parameters' object containing ALL 'required' parameters for that action. "
-        "   If the user specifies a value, use it. If not, provide a sensible default or use the 'example' provided.\n"
-        "3. PYTHON CODE: in code.execute, write standard, valid Python. No dots at the start of lines, no markdown. "
-        "   Use standard Python syntax (True, False, None) — NOT lowercase true/false/null. "
-        "   DO NOT use backslashes `\\` for line continuation at all; they cause SyntaxErrors. Use triple quotes for large strings.\n"
-        "   In code.execute, YOU MUST use the `task_results` dictionary to access prior data. "
-        "   Example: `msgs = task_results['task-1']`. "
-        "   You can also use 0-based numeric indices: `msgs = task_results[0]` is the first task.\n"
-        "   Crucially, `msgs` will be a LIST of dictionaries if the task was list_messages or an expansion. "
-        "   Example loop: `result = []; [result.append([m['from'], m['subject']]) for m in task_results[0]]`.\n"
-        "4. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
-        "   {{{{task-N.field}}}} (double braces), e.g. {{{{task-1.id}}}}.\n"
-        "   If the output is a list, use {{{{task-N[0].field}}}}, e.g. {{{{task-1[0].id}}}}.\n"
-        "   Only use {{{{task-N.field}}}} for simple SCALAR values. For lists, use code.execute.\n"
-        "5. BULK OPERATIONS: To perform an action on ALL items from a previous search (e.g. 'move all files found'), "
-        "   simply use the placeholder for that task's ID (e.g. '{{{{task-1.id}}}}'). "
-        "   The system will automatically expand this into multiple tasks. "
-        "   Avoid writing complex Python loops for this unless you need to perform custom logic/filtering.\n"
-        "6. DRIVE QUERIES: Use the 'q' parameter for drive.list_files.\n"
-        "7. EMAIL ACTIONS: `gmail.list_messages` and `gmail.get_message` MUST ONLY be used if the user explicitly "
-        "   asks to 'search emails', 'read emails', or 'check my inbox'. If the user just says 'send email', "
-        "   ONLY use `gmail.send_message`. `gmail.send_message` does NOT require `gmail.list_messages` to be run first. "
-        "   ONLY follow gmail.list_messages with gmail.get_message if the user explicitly "
-        "   needs to read the full body content of specific emails. Do NOT add get_message if the user "
-        "   just wants to list, count, or identify messages. Omit message_id in "
-        "   get_message — the executor resolves it automatically.\n"
-        "8. EXPORTS: use drive.export_file to read Doc/Sheet content. "
-        "   Never use docs/sheets APIs for reading raw content. 'file_id' is REQUIRED.\n"
-        "9. WEB SEARCH: ONLY use search.web_search if the user explicitly asks for a web search "
-        "   or if the information requested is external (e.g. 'latest news', 'top products', 'best frameworks'). "
-        "   NEVER include a web search for internal Workspace tasks like 'read my emails' or 'organize my drive'. "
-        "   Avoid 'just in case' searches.\n"
-        "10. DATA STRUCTURES: drive.list_files and gmail.list_messages return LISTS of objects. "
-        "   In code.execute, iterate over the list directly (e.g. `for f in task_results['task-1']:`). "
-        "   Do NOT expect a 'files' or 'messages' wrapper key.\n"
-        "11. CALENDAR: use $calendar_events to loop through event lists in code.execute.\n"
-        "12. GMAIL: use $gmail_message_body_text if you need the decoded plain text of a message.\n"
-        "13. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
-        "   $last_code_stdout (text) in the next task's parameter. Never write 'PLACEHOLDER_AMOUNT'.\n"
-        "14. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
-        "   gmail.send_message with to_email set to the EXACT address in the request. "
-        "   Choose the most appropriate body $placeholder from: "
-        "   $last_code_stdout, $sheet_email_body, $gmail_summary_values, $web_search_markdown.\n"
-        "15. PIPELINE: for complex workflows prefer: "
-        "   search.web_search -> code.execute -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message.\n"
-        "16. STRING QUOTING & HARDCODING: NEVER hardcode file contents or large text blocks into `code`! "
-        "    Always use placeholders (double braces syntax). The executor will automatically safely inject the value. "
-        "    For small string literals, use standard Python quotes `\"value\"`.\n"
-        "17. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
-        "   never reuse 'Sheet1!A1' for different write targets.\n"
-        "18. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "
-        "    between sequential tasks — you do not need to repeat them explicitly.\n"
-        "19. CURRENCY & SYMBOLS: When extracting currency, prices, or amounts with symbols "
-        "    (like ₹529.82 or $500) for use in `code.execute`, ALWAYS wrap them in string quotes "
-        "    (e.g., '₹ 529.82'). Do NOT write raw unquoted currencies in Python code as it causes SyntaxError.\n"
+        "2. PARAMETERS: provide a 'parameters' object containing ALL 'required' parameters. "
+        "3. PYTHON CODE: in code.execute, write standard, valid Python. "
+        "4. SEQUENTIAL PLAN: reference prior outputs with {{{{task-N.field}}}}. "
+        "5. BULK OPERATIONS: use placeholder for task ID to auto-expand. "
+        "6. DRIVE QUERIES: use 'q' parameter for drive.list_files. "
+        "7. EMAIL ACTIONS: use gmail.send_message for sending. "
+        "8. EXPORTS: use drive.export_file to read content. "
+        "9. WEB SEARCH: only use if explicitly requested or external info needed. "
+        "10. DATA STRUCTURES: drive.list_files and gmail.list_messages return LISTS. "
+        "11. CALENDAR: use $calendar_events for event lists. "
+        "12. GMAIL: use $gmail_message_body_text for decoded text. "
+        "13. CODE OUTPUT: use $last_code_result or $last_code_stdout. "
+        "14. SEND EMAIL: LAST task must be gmail.send_message. "
+        "15. PIPELINE: prefer complex multi-step workflows. "
+        "16. STRING QUOTING: use placeholders for large text. "
+        "17. MULTIPLE TABS: use distinct range names. "
+        "18. PARAMETER BINDING: auto-links IDs between tasks. "
+        "19. CURRENCY: wrap symbols in string quotes."
     )
 
-
     if memory_hint:
-        # Quadruple escape all braces in memory_hint so LangChain sees '{{'
         memory_hint_escaped = memory_hint.replace("{", "{{{{").replace("}", "}}}}")
         system_prompt = (
             "Relevant past task context:\n"
@@ -495,72 +451,26 @@ def plan_with_langchain(
         )
         return None
 
-    logger.info("Raw plan_data from LLM: %s", plan_data)
     if isinstance(plan_data, dict):
         tasks_data = plan_data.get("tasks")
-        # Guard: some models return tasks=None instead of tasks=[]
         if not isinstance(tasks_data, list):
-            logger.info(
-                "Structured output returned tasks=%r — treating as empty list.",
-                tasks_data,
-            )
             tasks_data = []
 
         explicit_email = _extract_explicit_email(text)
 
-        # Correct bad to_email values in existing send_message tasks.
+        # Basic cleanup of planned tasks
         for t in tasks_data:
-            if not isinstance(t, dict):
-                continue
+            if not isinstance(t, dict): continue
             if t.get("service") == "gmail" and t.get("action") == "send_message":
                 params = t.get("parameters") or {}
-                to_addr = str(params.get("to_email") or "").strip()
-                if explicit_email and (
-                    not to_addr
-                    or "@" not in to_addr
-                    or re.search(
-                        r"(noreply|no-reply|invoice|receipt|stripe|paypal|x\.com|twitter)",
-                        to_addr,
-                        re.IGNORECASE,
-                    )
-                ):
+                if explicit_email:
                     params["to_email"] = explicit_email
                     t["parameters"] = params
-                    logger.info("BugFixC: corrected to_email in planned task to '%s'", explicit_email)
-
-        # Inject fallback send task if the request requires it but LLM omitted it.
-        if _request_requires_send_email(text) and not _plan_has_send_task(tasks_data):
-            if explicit_email:
-                subject = _derive_email_subject(text)
-                body_placeholder = _derive_email_body_placeholder(tasks_data)
-                logger.info(
-                    "BugFix3: gmail.send_message missing from plan. "
-                    "Injecting fallback task to '%s' (subject='%s', body='%s').",
-                    explicit_email, subject, body_placeholder,
-                )
-                next_id = _derive_next_task_id(tasks_data)
-                tasks_data.append({
-                    "id": next_id,
-                    "service": "gmail",
-                    "action": "send_message",
-                    "parameters": {
-                        "to_email": explicit_email,
-                        "subject": subject,
-                        "body": body_placeholder,
-                    },
-                    "reason": "User explicitly requested sending an email — auto-injected by BugFix3.",
-                })
-            else:
-                logger.info(
-                    "BugFix3: send email intent detected but no explicit address found; "
-                    "skipping injection to avoid unresolvable placeholder."
-                )
 
         tasks: list[PlannedTask] = []
         for t in tasks_data:
             if isinstance(t, dict):
                 params = t.get("parameters") or {}
-                # Bug Fix: If parameters is empty, harvest other keys that are not part of the task spec
                 if not params:
                     params = {k: v for k, v in t.items() if k not in ("id", "service", "action", "parameters", "reason")}
                 

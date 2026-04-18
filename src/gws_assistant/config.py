@@ -75,10 +75,19 @@ class AppConfig:
         e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
 
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
-        gws_max_retries     = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
-        gws_api_keys_str = (os.getenv("GWS_API_KEYS") or "").strip()
-        gws_api_keys = [k.strip() for k in gws_api_keys_str.split(",") if k.strip()]
+        gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
         
+        # Support multiple API keys for rotation
+        openrouter_api_keys_list = [
+            os.getenv("OPENROUTER_API_KEY1"),
+            os.getenv("OPENROUTER_API_KEY2"),
+            os.getenv("OPENROUTER_API_KEY3"),
+            os.getenv("OPENROUTER_API_KEY"), # Default fallback
+        ]
+        openrouter_api_keys = [k.strip() for k in openrouter_api_keys_list if k and k.strip()]
+        if not openrouter_api_keys and api_key:
+            openrouter_api_keys = [api_key]
+
         max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
 
@@ -107,11 +116,12 @@ class AppConfig:
             e2b_api_key=e2b_api_key,
             gws_timeout_seconds=gws_timeout_seconds,
             gws_max_retries=gws_max_retries,
-            gws_api_keys=gws_api_keys,
+            openrouter_api_keys=openrouter_api_keys,
             max_context_snippet_len=max_snippet_len,
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
         )
+
 
 
 def _resolve_gws_binary_path(value: str) -> Path:

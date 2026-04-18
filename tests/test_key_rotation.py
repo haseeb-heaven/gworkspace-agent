@@ -3,8 +3,8 @@ import logging
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
-from src.gws_assistant.gws_runner import GWSRunner
 from src.gws_assistant.models import AppConfigModel
+from src.gws_assistant.intent_parser import IntentParser
 
 @pytest.fixture
 def mock_logger():
@@ -13,10 +13,10 @@ def mock_logger():
 @pytest.fixture
 def config():
     return AppConfigModel(
-        provider="openai",
-        model="gpt-4",
-        api_key="test_key",
-        base_url=None,
+        provider="openrouter",
+        model="google/gemini-2.0-flash-exp:free",
+        api_key="key1",
+        base_url="https://openrouter.ai/api/v1",
         timeout_seconds=30,
         gws_binary_path=Path("gws"),
         log_file_path=Path("logs/test.log"),
@@ -26,49 +26,45 @@ def config():
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
-        gws_max_retries=3
+        openrouter_api_keys=["key1", "key2", "key3"]
     )
 
-def test_key_rotation_on_429(mock_logger, config):
-    # Set up multiple keys
-    os.environ["GWS_API_KEYS"] = "key1,key2,key3"
+def test_rotate_api_key_method(config):
+    assert config.api_key == "key1"
     
-    runner = GWSRunner(gws_binary_path=Path("gws"), logger=mock_logger, config=config)
+    config.rotate_api_key()
+    assert config.api_key == "key2"
+    assert os.environ["OPENROUTER_API_KEY"] == "key2"
     
-    # We expect rotate_key to be called and change GWS_API_KEY in environment
-    # Initially we can set it to key1
-    os.environ["GWS_API_KEY"] = "key1"
+    config.rotate_api_key()
+    assert config.api_key == "key3"
+    assert os.environ["OPENROUTER_API_KEY"] == "key3"
     
-    with patch("subprocess.run") as mock_run:
-        # First call returns 429, second call returns 0
-        mock_run.side_effect = [
-            MagicMock(returncode=429, stdout="", stderr="Rate limit exceeded"),
-            MagicMock(returncode=0, stdout="Success", stderr="")
-        ]
-        
-        # We need to mock time.sleep to avoid waiting in tests
-        with patch("time.sleep"):
-            result = runner.run_with_retry(["some", "command"])
-            
-            assert result.success is True
-            assert result.stdout == "Success"
-            assert os.environ["GWS_API_KEY"] == "key2"
-            assert mock_run.call_count == 2
-            mock_logger.warning.assert_any_call(
-                "Rate limit (429) detected. Rotating API key and retrying..."
-            )
+    config.rotate_api_key()
+    assert config.api_key == "key1"
+    assert os.environ["OPENROUTER_API_KEY"] == "key1"
 
-def test_rotate_key_method(mock_logger, config):
-    os.environ["GWS_API_KEYS"] = "key1,key2,key3"
-    os.environ["GWS_API_KEY"] = "key1"
+@patch("openai.resources.chat.Completions.create")
+def test_intent_parser_rotates_on_429(mock_create, mock_logger, config):
+    # Mock rate limit error for first attempt, success for second
+    # In reality OpenAI SDK raises RateLimitError, but we check for "429" in msg in our code
+    mock_create.side_effect = [
+        Exception("Rate limit reached (429)"),
+        MagicMock(choices=[MagicMock(message=MagicMock(content='{"service": "gmail", "action": "send_message"}'))])
+    ]
     
-    runner = GWSRunner(gws_binary_path=Path("gws"), logger=mock_logger, config=config)
+    parser = IntentParser(config, mock_logger)
+    # Ensure client is using initial key
+    assert parser.client.api_key == "key1"
     
-    runner.rotate_key()
-    assert os.environ["GWS_API_KEY"] == "key2"
-    
-    runner.rotate_key()
-    assert os.environ["GWS_API_KEY"] == "key3"
-    
-    runner.rotate_key()
-    assert os.environ["GWS_API_KEY"] == "key1"
+    with patch("time.sleep"):
+        intent = parser.parse("send an email")
+        
+        assert intent.service == "gmail"
+        # Verify rotation happened: config key updated AND client re-initialized
+        assert config.api_key == "key2"
+        assert parser.client.api_key == "key2"
+        assert mock_create.call_count == 2
+        mock_logger.warning.assert_any_call(
+            "LLM rate limit detected in IntentParser. Rotating key and retrying in %ds...", 1
+        )

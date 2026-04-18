@@ -66,48 +66,64 @@ class IntentParser:
     def _parse_with_llm(self, text: str) -> Intent | None:
         if not self.client:
             return None
-        try:
-            services = ", ".join(sorted(SERVICES.keys()))
-            prompt = (
-                "Extract a structured intent for Google Workspace command execution. "
-                "Return valid JSON only with keys: service, action, parameters, confidence, needs_clarification, clarification_reason. "
-                f"service must be one of: {services}. "
-                "action should be snake_case and map to user request. "
-                "parameters must be an object. "
-                "If service is missing or unsupported, set needs_clarification=true."
-            )
-            completion = self.client.chat.completions.create(
-                model=self.config.model,
-                temperature=0,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": text},
-                ],
-            )
-            content = completion.choices[0].message.content or "{}"
-            data = json.loads(content)
-            service = normalize_service(str(data.get("service") or "").strip())
-            action = (str(data.get("action") or "").strip() or None)
-            parameters = data.get("parameters") if isinstance(data.get("parameters"), dict) else {}
-            confidence = float(data.get("confidence") or 0.0)
-            needs_clarification = bool(data.get("needs_clarification") or False)
-            reason = str(data.get("clarification_reason") or "").strip() or None
-            if not service:
-                needs_clarification = True
-                reason = reason or "Service was not recognized from your request."
-            return Intent(
-                raw_text=text,
-                service=service,
-                action=action,
-                parameters=parameters,
-                confidence=confidence,
-                needs_clarification=needs_clarification,
-                clarification_reason=reason,
-            )
-        except Exception as exc:
-            self.logger.warning("LLM parsing failed, using heuristic fallback: %s", exc)
-            return None
+        
+        max_retries = self.config.max_retries
+        for attempt in range(max_retries):
+            try:
+                services = ", ".join(sorted(SERVICES.keys()))
+                prompt = (
+                    "Extract a structured intent for Google Workspace command execution. "
+                    "Return valid JSON only with keys: service, action, parameters, confidence, needs_clarification, clarification_reason. "
+                    f"service must be one of: {services}. "
+                    "action should be snake_case and map to user request. "
+                    "parameters must be an object. "
+                    "If service is missing or unsupported, set needs_clarification=true."
+                )
+                completion = self.client.chat.completions.create(
+                    model=self.config.model,
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": text},
+                    ],
+                )
+                content = completion.choices[0].message.content or "{}"
+                data = json.loads(content)
+                service = normalize_service(str(data.get("service") or "").strip())
+                action = (str(data.get("action") or "").strip() or None)
+                parameters = data.get("parameters") if isinstance(data.get("parameters"), dict) else {}
+                confidence = float(data.get("confidence") or 0.0)
+                needs_clarification = bool(data.get("needs_clarification") or False)
+                reason = str(data.get("clarification_reason") or "").strip() or None
+                if not service:
+                    needs_clarification = True
+                    reason = reason or "Service was not recognized from your request."
+                return Intent(
+                    raw_text=text,
+                    service=service,
+                    action=action,
+                    parameters=parameters,
+                    confidence=confidence,
+                    needs_clarification=needs_clarification,
+                    clarification_reason=reason,
+                )
+            except Exception as exc:
+                msg = str(exc).lower()
+                is_rate_limit = "429" in msg or "rate limit" in msg or "quota" in msg
+                if is_rate_limit and attempt < max_retries - 1:
+                    import time
+                    delay = 2**attempt
+                    self.logger.warning("LLM rate limit detected in IntentParser. Rotating key and retrying in %ds...", delay)
+                    self.config.rotate_api_key()
+                    self.client = self._build_client() # Re-init client with new key
+                    time.sleep(delay)
+                    continue
+
+                self.logger.warning("LLM parsing failed, using heuristic fallback: %s", exc)
+                return None
+        return None
+
 
     def parse_heuristically(self, text: str) -> Intent:
         service = self._detect_service(text)
