@@ -48,8 +48,12 @@ class AppConfig:
             base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
-        gws_binary_value = os.getenv("GWS_BINARY_PATH", "gws")
+        
+        gws_binary_value = (os.getenv("GWS_BINARY_PATH") or "").strip()
+        if not gws_binary_value:
+            raise ValueError("GWS_BINARY_PATH must be set in .env")
         gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
+        
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / "gws_assistant.log"
@@ -75,6 +79,10 @@ class AppConfig:
         max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
 
+        default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
+        if not default_recipient_email:
+            raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
+
         return AppConfigModel(
             provider=provider,
             model=model,
@@ -97,7 +105,7 @@ class AppConfig:
             gws_timeout_seconds=gws_timeout_seconds,
             gws_max_retries=gws_max_retries,
             max_context_snippet_len=max_snippet_len,
-            default_recipient_email=(os.getenv("DEFAULT_RECIPIENT_EMAIL") or os.getenv("DEFAULT_RECIPIENT_EMAIL")).strip(),
+            default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
         )
 
