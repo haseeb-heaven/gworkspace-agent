@@ -35,6 +35,8 @@ class AppConfigModel:
     default_recipient_email: str = ""
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
     _current_key_idx: int = 0
 
     def rotate_api_key(self) -> str | None:

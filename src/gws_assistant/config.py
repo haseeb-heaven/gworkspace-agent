@@ -94,6 +94,8 @@ class AppConfig:
         max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
         mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
+        telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
+        telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
 
         return AppConfigModel(
             provider=provider,
@@ -121,6 +123,8 @@ class AppConfig:
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
             mem0_user_id=mem0_user_id,
+            telegram_bot_token=telegram_bot_token,
+            telegram_chat_id=telegram_chat_id,
         )
 
 

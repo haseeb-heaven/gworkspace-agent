@@ -17,3 +17,5 @@ pytest-mock>=3.14.0
 ddgs>=9.13.0
 e2b-code-interpreter>=0.1.0
 mem0>=0.3.2
+# Telegram Polling Bot
+python-telegram-bot>=21.0
