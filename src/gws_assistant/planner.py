@@ -184,8 +184,20 @@ class CommandPlanner:
             return self._build_forms_command(action_key, params)
         if service_key == "telegram":
             return self._build_telegram_command(action_key, params)
+        if service_key == "tasks":
+            return self._build_tasks_command(action_key, params)
+        if service_key == "classroom":
+            return self._build_classroom_command(action_key, params)
+        if service_key == "script":
+            return self._build_script_command(action_key, params)
+        if service_key == "events":
+            return self._build_events_command(action_key, params)
+        if service_key == "modelarmor":
+            return self._build_modelarmor_command(action_key, params)
         if service_key in ("code", "computation"):
             return [service_key, action_key, "internal"]
+        if service_key == "workflow":
+            return ["workflow", "list"] # Placeholder for internal workflow listing
         raise ValidationError(f"No command builder for service: {service_key}")
 
     # ------------------------------------------------------------------
@@ -670,6 +682,54 @@ class CommandPlanner:
             form_id = self._required_text(params, "form_id")
             return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
         raise ValidationError(f"Unsupported forms action: {action}")
+
+    def _build_tasks_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_tasklists":
+            max_res = self._safe_positive_int(params.get("max_results"), default=10)
+            return ["tasks", "tasklists", "list", "--params", json.dumps({"maxResults": max_res})]
+        if action == "list_tasks":
+            tl_id = str(params.get("tasklist") or "@default").strip()
+            show_comp = str(params.get("show_completed") or "true").strip().lower() == "true"
+            return ["tasks", "tasks", "list", "--params", json.dumps({"tasklist": tl_id, "showCompleted": show_comp})]
+        if action == "create_task":
+            title = self._required_text(params, "title")
+            tl_id = str(params.get("tasklist") or "@default").strip()
+            body = {"title": title}
+            if params.get("notes"): body["notes"] = str(params.get("notes"))
+            if params.get("due"): body["due"] = str(params.get("due"))
+            return ["tasks", "tasks", "insert", "--params", json.dumps({"tasklist": tl_id}), "--json", json.dumps(body, ensure_ascii=True)]
+        raise ValidationError(f"Unsupported tasks action: {action}")
+
+    def _build_classroom_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_courses":
+            ps = self._safe_positive_int(params.get("page_size"), default=10)
+            return ["classroom", "courses", "list", "--params", json.dumps({"pageSize": ps})]
+        if action == "get_course":
+            course_id = self._required_text(params, "id")
+            return ["classroom", "courses", "get", "--params", json.dumps({"id": course_id})]
+        raise ValidationError(f"Unsupported classroom action: {action}")
+
+    def _build_script_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_projects":
+            ps = self._safe_positive_int(params.get("page_size"), default=10)
+            return ["script", "projects", "list", "--params", json.dumps({"pageSize": ps})]
+        if action == "get_project":
+            sid = self._required_text(params, "script_id")
+            return ["script", "projects", "get", "--params", json.dumps({"scriptId": sid})]
+        raise ValidationError(f"Unsupported script action: {action}")
+
+    def _build_events_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "list_subscriptions":
+            ps = self._safe_positive_int(params.get("page_size"), default=10)
+            return ["events", "subscriptions", "list", "--params", json.dumps({"pageSize": ps})]
+        raise ValidationError(f"Unsupported events action: {action}")
+
+    def _build_modelarmor_command(self, action: str, params: dict[str, Any]) -> list[str]:
+        if action == "sanitize_text":
+            text = self._required_text(params, "text")
+            template = self._required_text(params, "template")
+            return ["modelarmor", "+sanitize-prompt", "--params", json.dumps({"template": template}), "--json", json.dumps({"text": text}, ensure_ascii=True)]
+        raise ValidationError(f"Unsupported modelarmor action: {action}")
 
     def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "send_message":

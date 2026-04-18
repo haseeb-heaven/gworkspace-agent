@@ -444,6 +444,97 @@ SERVICES: dict[str, ServiceSpec] = {
             ),
         },
     ),
+    "tasks": ServiceSpec(
+        key="tasks",
+        label="Google Tasks",
+        aliases=("tasks", "todo", "todo list", "task list"),
+        description="Manage task lists and tasks in Google Tasks.",
+        actions={
+            "list_tasklists": ActionSpec(
+                key="list_tasklists",
+                label="List task lists",
+                description="Returns all the authenticated user's task lists. Returns: {items: [{id, title, updated}]}.",
+                keywords=("list", "show", "tasklists", "task lists", "todo lists"),
+                parameters=(
+                    ParameterSpec("max_results", "Max results to return", "10", required=False),
+                ),
+            ),
+            "list_tasks": ActionSpec(
+                key="list_tasks",
+                label="List tasks",
+                description="Returns all tasks in the specified task list. Returns: {items: [{id, title, status, due}]}.",
+                keywords=("list", "show", "tasks", "todos"),
+                parameters=(
+                    ParameterSpec("tasklist", "Task list ID", "@default"),
+                    ParameterSpec("show_completed", "Show completed tasks?", "true", required=False),
+                ),
+            ),
+            "create_task": ActionSpec(
+                key="create_task",
+                label="Create task",
+                description="Creates a new task on the specified task list. Returns: {id, title, status}.",
+                keywords=("create", "new", "add", "task", "todo"),
+                parameters=(
+                    ParameterSpec("title", "Task title", "Buy milk"),
+                    ParameterSpec("tasklist", "Task list ID", "@default", required=False),
+                    ParameterSpec("notes", "Optional task notes", "", required=False),
+                    ParameterSpec("due", "Due date (RFC3339)", "", required=False),
+                ),
+            ),
+        },
+    ),
+    "classroom": ServiceSpec(
+        key="classroom",
+        label="Google Classroom",
+        aliases=("classroom", "class", "course", "courses"),
+        description="Manage classes, rosters, and invitations in Google Classroom.",
+        actions={
+            "list_courses": ActionSpec(
+                key="list_courses",
+                label="List courses",
+                description="Returns a list of courses that the requesting user is permitted to view. Returns: {courses: [{id, name, section, description}]}.",
+                keywords=("list", "show", "courses", "classes"),
+                parameters=(
+                    ParameterSpec("page_size", "Max results", "10", required=False),
+                ),
+            ),
+            "get_course": ActionSpec(
+                key="get_course",
+                label="Get course",
+                description="Returns a specific course by ID. Returns: {id, name, section, description, alternateLink}.",
+                keywords=("get", "details", "course", "class"),
+                parameters=(
+                    ParameterSpec("id", "Course ID", "12345678"),
+                ),
+            ),
+        },
+    ),
+    "script": ServiceSpec(
+        key="script",
+        label="Google Apps Script",
+        aliases=("script", "gas", "apps script"),
+        description="Manages and executes Google Apps Script projects.",
+        actions={
+            "list_projects": ActionSpec(
+                key="list_projects",
+                label="List projects",
+                description="List the Apps Script projects. Returns: {projects: [{scriptId, title, createTime, updateTime}]}.",
+                keywords=("list", "show", "projects", "scripts"),
+                parameters=(
+                    ParameterSpec("page_size", "Max results", "10", required=False),
+                ),
+            ),
+            "get_project": ActionSpec(
+                key="get_project",
+                label="Get project",
+                description="Get a specific Apps Script project by scriptId. Returns: {scriptId, title, createTime, updateTime}.",
+                keywords=("get", "details", "project", "script"),
+                parameters=(
+                    ParameterSpec("script_id", "Script project ID", "abc12345"),
+                ),
+            ),
+        },
+    ),
     "forms": ServiceSpec(
         key="forms",
         label="Google Forms",
@@ -519,6 +610,56 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("send", "update", "notify", "telegram", "message"),
                 parameters=(
                     ParameterSpec("message", "The update message to send", "Completed task X"),
+                ),
+            ),
+        },
+    ),
+    "workflow": ServiceSpec(
+        key="workflow",
+        label="GWorkspace Workflow",
+        aliases=("workflow", "wf", "pipeline"),
+        description="Cross-service productivity workflows managed by the agent.",
+        actions={
+            "list_workflows": ActionSpec(
+                key="list_workflows",
+                label="List workflows",
+                description="List available automation workflows. Returns: {workflows: [...]}.",
+                keywords=("list", "show", "workflows"),
+                parameters=(),
+            ),
+        },
+    ),
+    "events": ServiceSpec(
+        key="events",
+        label="Google Workspace Events",
+        aliases=("events", "subscriptions", "webhooks"),
+        description="Subscribe to events and manage change notifications across Google Workspace applications.",
+        actions={
+            "list_subscriptions": ActionSpec(
+                key="list_subscriptions",
+                label="List subscriptions",
+                description="Returns all subscriptions for the authenticated user. Returns: {subscriptions: [{name, targetResource, eventTypes}]}.",
+                keywords=("list", "show", "subscriptions", "events"),
+                parameters=(
+                    ParameterSpec("page_size", "Max results", "10", required=False),
+                ),
+            ),
+        },
+    ),
+    "modelarmor": ServiceSpec(
+        key="modelarmor",
+        label="Model Armor",
+        aliases=("modelarmor", "safety", "filter", "sanitize"),
+        description="Protect against risks like prompt injection and harmful content.",
+        actions={
+            "sanitize_text": ActionSpec(
+                key="sanitize_text",
+                label="Sanitize text",
+                description="Sanitize a block of text through a Model Armor template. Returns: {sanitizedText, findings: [...]}.",
+                keywords=("sanitize", "filter", "check", "safety", "clean"),
+                parameters=(
+                    ParameterSpec("text", "Text to sanitize", "User input here"),
+                    ParameterSpec("template", "Model Armor template path", "projects/..."),
                 ),
             ),
         },

@@ -72,8 +72,12 @@ class LongTermMemory:
                         filters = {"AND": [{"user_id": user_id}]}
                         return self.client.search(query=query, version="v2", filters=filters, limit=limit)
                 else:
-                        # Local/OSS client uses direct user_id
-                        return self.client.search(query, user_id=user_id, limit=limit)
+                        # Local/OSS client uses filters instead of direct user_id for some versions
+                        try:
+                            return self.client.search(query, filters={"user_id": user_id}, limit=limit)
+                        except Exception:
+                            # Fallback to direct user_id if filters not supported
+                            return self.client.search(query, user_id=user_id, limit=limit)
         except Exception as e:
                 self.logger.error(f"Error searching Mem0: {e}")
                 return []
@@ -93,8 +97,11 @@ class LongTermMemory:
                     return response["results"]
                 return response
             else:
-                # Local client uses user_id="..."
-                return self.client.get_all(user_id=user_id)
+                # Local client: try filters first, fallback to user_id="..."
+                try:
+                    return self.client.get_all(filters={"user_id": user_id})
+                except Exception:
+                    return self.client.get_all(user_id=user_id)
         except Exception as e:
             self.logger.error(f"Error getting all memories from Mem0: {e}")
             return []

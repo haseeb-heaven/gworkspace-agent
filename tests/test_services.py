@@ -148,6 +148,42 @@ class FakeRunner(GWSRunner):
                 command=["gws.exe", *args],
                 stdout='{"items":[{"id":"evt-1","summary":"Review","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
             )
+        if args[:2] == ["tasks", "tasklists"] and "list" in args:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"items":[{"id":"tl1","title":"My Tasks"}]}',
+            )
+        if args[:2] == ["tasks", "tasks"] and "list" in args:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"items":[{"id":"tk1","title":"Buy milk","status":"needsAction"}]}',
+            )
+        if args[:2] == ["classroom", "courses"] and "list" in args:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"courses":[{"id":"c1","name":"Math 101"}]}',
+            )
+        if args[:2] == ["script", "projects"] and "list" in args:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"projects":[{"scriptId":"s1","title":"AutoScript"}]}',
+            )
+        if args[:2] == ["events", "subscriptions"] and "list" in args:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"subscriptions":[{"name":"sub1","targetResource":"drive"}]}',
+            )
+        if args[0] == "modelarmor" and "+sanitize-prompt" in args:
+            return ExecutionResult(
+                success=True,
+                command=["gws.exe", *args],
+                stdout='{"sanitizedText":"safe text","findings":[]}',
+            )
         return ExecutionResult(success=True, command=["gws.exe", *args], stdout='{}')
 
 
@@ -272,6 +308,56 @@ class TestPlannerCalendar:
         args = self.planner.build_command("calendar", "list_events", {})
         params = json.loads(args[args.index("--params") + 1])
         assert params["calendarId"] == "primary"
+
+
+class TestPlannerTasks:
+    planner = CommandPlanner()
+
+    def test_list_tasklists(self):
+        args = self.planner.build_command("tasks", "list_tasklists", {})
+        assert args[:3] == ["tasks", "tasklists", "list"]
+
+    def test_create_task(self):
+        args = self.planner.build_command("tasks", "create_task", {"title": "Test Task", "notes": "Some notes"})
+        assert args[:3] == ["tasks", "tasks", "insert"]
+        body = json.loads(args[args.index("--json") + 1])
+        assert body["title"] == "Test Task"
+        assert body["notes"] == "Some notes"
+
+
+class TestPlannerClassroom:
+    planner = CommandPlanner()
+
+    def test_list_courses(self):
+        args = self.planner.build_command("classroom", "list_courses", {})
+        assert args[:3] == ["classroom", "courses", "list"]
+
+
+class TestPlannerScript:
+    planner = CommandPlanner()
+
+    def test_list_projects(self):
+        args = self.planner.build_command("script", "list_projects", {})
+        assert args[:3] == ["script", "projects", "list"]
+
+
+class TestPlannerEvents:
+    planner = CommandPlanner()
+
+    def test_list_subscriptions(self):
+        args = self.planner.build_command("events", "list_subscriptions", {})
+        assert args[:3] == ["events", "subscriptions", "list"]
+
+
+class TestPlannerModelArmor:
+    planner = CommandPlanner()
+
+    def test_sanitize_text(self):
+        args = self.planner.build_command("modelarmor", "sanitize_text", {"text": "hello", "template": "proj/tpl"})
+        assert args[0] == "modelarmor"
+        assert "+sanitize-prompt" in args
+        params = json.loads(args[args.index("--params") + 1])
+        assert params["template"] == "proj/tpl"
 
 
 # =====================================================================
@@ -475,6 +561,42 @@ class TestExecutionPipelines:
         decoded = base64.urlsafe_b64decode(params["raw"]).decode("utf-8")
         assert "To: strict-default@example.com" in decoded
         assert "To: hacker@evil.com" not in decoded
+
+    def test_empty_search_results_handled_gracefully(self):
+        """If Gmail or Drive returns no results, the pipeline should still succeed but do nothing."""
+        runner = FakeRunner()
+        # Override to return empty
+        def empty_run(args, timeout=90):
+            if "list" in args:
+                 return ExecutionResult(success=True, command=["gws"], stdout='{"messages":[], "files":[]}')
+            return ExecutionResult(success=True, command=["gws"], stdout='{}')
+        runner.run = empty_run
+        
+        executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+        plan = RequestPlan(
+            raw_text="Find non-existent emails and save to sheets",
+            tasks=[
+                PlannedTask("t1", "gmail", "list_messages", {"q": "xyz789"}),
+                PlannedTask("t2", "sheets", "append_values", {"spreadsheet_id": "s1", "values": "$gmail_summary_values"}),
+            ],
+        )
+        report = executor.execute(plan)
+        assert report.success is True
+        # The append task should have received an empty list or empty summary
+        
+    def test_large_payload_append(self):
+        """Verify that appending 100 rows works without crashing."""
+        runner = FakeRunner()
+        executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+        large_values = [["Col A", "Col B"]] + [[f"R{i}", f"V{i}"] for i in range(100)]
+        plan = RequestPlan(
+            raw_text="save large data",
+            tasks=[
+                PlannedTask("t1", "sheets", "append_values", {"spreadsheet_id": "s1", "values": large_values}),
+            ],
+        )
+        report = executor.execute(plan)
+        assert report.success is True
 
 
 # =====================================================================
