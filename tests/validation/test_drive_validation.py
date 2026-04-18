@@ -5,8 +5,6 @@ from .base import create_task, get_executor
 
 
 def test_drive_validation():
-    # Set keyring backend to file to avoid Secure Storage errors in headless/CLI environments
-    os.environ["GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND"] = "file"
 
     executor = get_executor()
     if not executor.runner.validate_binary():

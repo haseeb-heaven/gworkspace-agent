@@ -29,7 +29,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=["gws.exe", *args],
-                stdout='{"messages":[{"id":"m1","threadId":"t1"}],"resultSizeEstimate":1}',
+                stdout='{"messages":[{"id":"m1","threadId":"t1"}, {"id":"m2","threadId":"t2"}],"resultSizeEstimate":2}',
             )
         if args[:3] == ["sheets", "spreadsheets", "create"]:
             import json as _json
@@ -80,13 +80,24 @@ class FakeRunner(GWSRunner):
                 stdout='{"documentId":"doc-1","replies":[]}',
             )
         if args[:4] == ["gmail", "users", "messages", "get"]:
+            import json as _json
+            msg_id = "m1"
+            # Extract ID from params if possible
+            for i, arg in enumerate(args):
+                if arg == "--params":
+                    try:
+                        p_data = _json.loads(args[i+1])
+                        msg_id = p_data.get("id") or p_data.get("messageId") or msg_id
+                    except: pass
+            
+            subject = f"Job offer {msg_id}"
             return ExecutionResult(
                 success=True,
                 command=["gws.exe", *args],
                 stdout=(
-                    '{"id":"m1", "snippet": "Job from DecoverAI", "payload":{"headers":['
-                    '{"name":"From","value":"DecoverAI <jobs@decoverai.example>"},'
-                    '{"name":"Subject","value":"Job offer"}]}}'
+                    f'{{"id":"{msg_id}", "snippet": "Job from DecoverAI", "payload":{{"headers":['
+                    f'{{"name":"From","value":"DecoverAI <jobs@decoverai.example>"}},'
+                    f'{{"name":"Subject","value":"{subject}"}}]}}}}'
                 ),
             )
         if args[:4] == ["gmail", "users", "messages", "send"]:
@@ -174,9 +185,19 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
     )
     report = executor.execute(plan)
     assert report.success is True
-    assert runner.commands[1][:4] == ["gmail", "users", "messages", "get"]
-    assert '"id": "m1"' in runner.commands[1][runner.commands[1].index("--params") + 1]
-    assert "DecoverAI" in runner.commands[3][runner.commands[3].index("--json") + 1]
+    
+    # commands: 0:list, 1:get(m1), 2:get(m2), 3:create_sheet, 4:append_values
+    # Check if get_message was called correctly
+    get_cmds = [c for c in runner.commands if c[:4] == ["gmail", "users", "messages", "get"]]
+    assert len(get_cmds) == 2
+    assert '"id": "m1"' in get_cmds[0][get_cmds[0].index("--params") + 1]
+    assert '"id": "m2"' in get_cmds[1][get_cmds[1].index("--params") + 1]
+
+    # Check if append_values was called with resolved data
+    append_cmds = [c for c in runner.commands if c[:3] == ["sheets", "spreadsheets", "values"]]
+    assert len(append_cmds) == 1
+    # Resolved company names from both messages should be present
+    assert "DecoverAI" in append_cmds[0][append_cmds[0].index("--json") + 1]
 
 
 def test_executor_builds_email_body_from_sheet_values():
@@ -306,3 +327,42 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
     assert "https://docs.google.com/document/d/doc-1/edit" in decoded
     assert "https://example.test/sheet" in decoded
+
+def test_gmail_details_accumulation():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    plan = RequestPlan(
+        raw_text="extract jobs",
+        tasks=[
+            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 2}),
+            # task-1 will expand into task-1-1 and task-1-2 in some future logic, 
+            # but currently expand_task handles specific actions.
+            # Let's simulate expansion by providing get_message with a list.
+            PlannedTask(id="task-2", service="gmail", action="get_message", parameters={"message_id": "{{message_id_from_task_1}}"}),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "s1",
+                    "range": "Sheet1!A1",
+                    "values": "$gmail_details_values",
+                },
+            ),
+        ],
+    )
+    report = executor.execute(plan)
+    assert report.success is True
+    
+    # Task 1: list_messages
+    # Task 2 expanded into 2-1 and 2-2
+    # Task 3: append_values
+    
+    # Check that gmail_details_values in task-3 contains TWO rows
+    append_task = report.executions[-1].task
+    values = append_task.parameters["values"]
+    assert isinstance(values, list)
+    # We expect 2 rows from the 2 get_message tasks
+    assert len(values) == 2
+    assert values[0][1] == "Job offer m1"
+    assert values[1][1] == "Job offer m2"

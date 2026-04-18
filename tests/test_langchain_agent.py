@@ -48,11 +48,12 @@ def test_plan_with_langchain(mocker, config_with_key):
     # Note: confidence 0.0 should be defaulted to 0.9.
     mock_plan_dict = {
         "tasks": [
-            {"id": "task-1", "service": "gmail", "action": "send_message", "parameters": {"to_email": "haseeb@example.com"}}
+            {"id": "task-1", "service": "gmail", "action": "send_message", "parameters": {"to_email": "haseeb@example.com", "subject": "Test Subject", "body": "Test Body"}}
         ],
         "summary": "Test Output",
         "confidence": 0.0
     }
+    
     mock_chain.invoke.return_value = mock_plan_dict
 
     plan = plan_with_langchain("test request", config_with_key, logger)
