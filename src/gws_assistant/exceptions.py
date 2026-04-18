@@ -33,7 +33,7 @@ _ERROR_PATTERNS: list[tuple[re.Pattern, APIErrorType]] = [
 def classify_api_error(stderr: str, stdout: str) -> APIErrorType:
     """Classify a failed API call into an APIErrorType.
 
-    Checks stderr first (where gws.exe writes error messages), then stdout
+    Checks stderr first (where the Workspace CLI writes error messages), then stdout
     (where the raw JSON error body is printed).
     """
     combined = f"{stderr or ''}\n{stdout or ''}"

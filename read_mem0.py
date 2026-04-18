@@ -1,5 +1,4 @@
 import sys
-import os
 from pathlib import Path
 import logging
 
@@ -13,16 +12,16 @@ def main():
     # Setup minimal logging
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger("read_mem0")
-    
+
     config = AppConfig.from_env()
     memory = LongTermMemory(config, logger=logger)
-    
-    users = ["default_user", "mem0-mcp-user"]
-    
+
+    users = [config.mem0_user_id or "mem0-mcp-user"]
+
     for user in users:
         print(f"\n--- Retrieving Memories for: {user} ---")
         results = memory.get_all(user_id=user)
-        
+
         if not results:
             print("No memories found.")
         else:

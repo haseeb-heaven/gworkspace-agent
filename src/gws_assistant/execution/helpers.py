@@ -1,7 +1,5 @@
 import json
 import logging
-import os
-import sys
 from datetime import datetime
 from typing import Any
 
@@ -79,6 +77,7 @@ class HelpersMixin:
                         break
             
             code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
+            logger.info("Executing generated code:\n%s", code)
 
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
@@ -179,24 +178,19 @@ class HelpersMixin:
         """Execute a telegram send_message task."""
         try:
             from gws_assistant.models import ExecutionResult
-            import subprocess
-            
+            from gws_assistant.tools.telegram import redact_sensitive, send_telegram
+
             message = task.parameters.get("message", "")
-            python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
-            
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
-            
-            # Run directly
-            result = subprocess.run([python_exe, script_path, message], capture_output=True, text=True, encoding="utf-8", errors="replace")
-            
+            message = self._resolve_placeholders(message, context)
+            sent = send_telegram(str(message), context=context)
+
             return ExecutionResult(
-                success=result.returncode == 0,
-                command=[python_exe, script_path, message],
-                stdout=result.stdout,
-                stderr=result.stderr,
-                return_code=result.returncode,
-                output={"success": result.returncode == 0}
+                success=sent,
+                command=["telegram", "send_message"],
+                stdout=redact_sensitive(message),
+                stderr="" if sent else "Telegram send failed.",
+                return_code=0 if sent else 1,
+                output={"success": sent}
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult

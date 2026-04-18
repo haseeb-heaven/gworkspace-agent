@@ -17,10 +17,10 @@ def verifier(runner):
 
 @pytest.mark.live_integration
 class TestFullCRUD:
-    \"\"\"
+    """
     End-to-end CRUD tests with Triple Verification.
     Requires real GWS credentials and binary.
-    \"\"\"
+    """
 
     def test_docs_crud_lifecycle(self, runner, verifier):
         # 1. Create

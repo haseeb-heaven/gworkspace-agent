@@ -70,7 +70,7 @@ def create_interface() -> gr.Blocks:
             request = gr.Textbox(
                 label="Request",
                 lines=4,
-                placeholder="Example: List all emails from assistant@glider.ai and show details",
+                placeholder="Example: List recent Gmail messages and show details",
             )
         with gr.Row():
             run_button = gr.Button("Run")

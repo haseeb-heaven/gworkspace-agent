@@ -51,6 +51,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         max_retries=3,
         langchain_enabled=True,
         use_heuristic_fallback=True,
+        default_recipient_email=os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
     )
 
 
@@ -121,6 +122,12 @@ class FakeRunner(GWSRunner):
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"range":"Sheet1!A1:B2","values":[["Name","Role"],["Alice","Engineer"]]}',
             )
+        if args[:3] == ["sheets", "spreadsheets", "get"]:
+            return ExecutionResult(
+                success=True,
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
+                stdout='{"spreadsheetId":"sheet-1","properties":{"title":"Verified Sheet"}}',
+            )
         if args[:3] == ["drive", "files", "list"]:
             return ExecutionResult(
                 success=True,
@@ -147,6 +154,12 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"items":[{"id":"evt-1","summary":"Review","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
+            )
+        if args[:3] == ["calendar", "events", "get"]:
+            return ExecutionResult(
+                success=True,
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
+                stdout='{"id":"evt-1","summary":"Review AI Data","start":{"date":"2026-04-20"},"end":{"date":"2026-04-20"}}',
             )
         if args[:2] == ["tasks", "tasklists"] and "list" in args:
             return ExecutionResult(
@@ -435,7 +448,7 @@ class TestExecutionPipelines:
         report = executor.execute(plan)
         assert report.success is True
         # Verify range was auto-fixed from Sheet1!A1 to 'Job Offers'!A1
-        append_cmd = runner.commands[2]
+        append_cmd = next(cmd for cmd in runner.commands if cmd[:4] == ["sheets", "spreadsheets", "values", "append"])
         params_str = append_cmd[append_cmd.index("--params") + 1]
         assert "'Job Offers'!A1" in params_str
 
@@ -458,7 +471,7 @@ class TestExecutionPipelines:
         report = executor.execute(plan)
         assert report.success is True
         # The drive data should contain the Agentic AI file (relevance-filtered)
-        append_cmd = runner.commands[2]
+        append_cmd = next(cmd for cmd in runner.commands if cmd[:4] == ["sheets", "spreadsheets", "values", "append"])
         json_str = append_cmd[append_cmd.index("--json") + 1]
         assert "Agentic AI - Builders" in json_str
 

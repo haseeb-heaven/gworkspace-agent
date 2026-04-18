@@ -138,6 +138,7 @@ def mock_react(mocker):
     mocker.patch("gws_assistant.execution.PlanExecutor._think", return_value="Thought: Proceeding with planned task.")
     mocker.patch("gws_assistant.execution.PlanExecutor._should_replan", return_value=False)
     mocker.patch("gws_assistant.execution.PlanExecutor._verify_artifact_content", return_value=None)
+    mocker.patch("gws_assistant.execution.PlanExecutor.verify_resource", return_value=True)
 
 
 def test_executor_resolves_gmail_to_sheet_placeholders():

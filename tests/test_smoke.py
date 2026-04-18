@@ -45,9 +45,19 @@ def test_cli_module_help_smoke():
     assert "--setup" in output
 
 
-@pytest.mark.skipif(not (ROOT / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")).exists(), reason="Bundled gws.exe is not present")
 def test_gws_binary_help_smoke():
-    result = _run_command([str(ROOT / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), "--help"])
+    configured = os.getenv("GWS_BINARY_PATH")
+    if not configured:
+        pytest.skip("GWS_BINARY_PATH is not configured")
+    binary_path = Path(configured).expanduser()
+    if not binary_path.is_absolute():
+        binary_path = ROOT / binary_path
+    if not binary_path.exists():
+        pytest.skip("Configured Workspace CLI binary is not present")
+    try:
+        result = _run_command([str(binary_path), "--help"])
+    except OSError as exc:
+        pytest.skip(f"Configured Workspace CLI binary could not run: {exc}")
     output = f"{result.stdout}\n{result.stderr}"
     assert result.returncode == 0
     assert "Google Workspace CLI" in output
@@ -74,7 +84,7 @@ def test_openrouter_chat_completion_smoke():
         or env_file.get("OPENROUTER_SMOKE_MODEL")
         or os.getenv("OPENROUTER_MODEL")
         or env_file.get("OPENROUTER_MODEL")
-        or "openai/gpt-4.1-mini"
+        or "openrouter/free"
     )
     base_url = (
         os.getenv("OPENROUTER_BASE_URL")

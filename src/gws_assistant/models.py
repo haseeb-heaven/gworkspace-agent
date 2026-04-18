@@ -34,6 +34,7 @@ class AppConfigModel:
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
     mem0_api_key: str | None = None
+    mem0_user_id: str | None = None
     _current_key_idx: int = 0
 
     def rotate_api_key(self) -> str | None:

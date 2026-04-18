@@ -11,8 +11,7 @@ from dotenv import load_dotenv
 from .models import AppConfigModel
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-OPENAI_DEFAULT_MODEL = "gpt-4.1-mini"
-OPENROUTER_DEFAULT_MODEL = "openai/gpt-4.1-mini"
+OPENROUTER_DEFAULT_MODEL = "openrouter/free"
 
 
 def _to_bool(value: str | None, default: bool) -> bool:
@@ -29,30 +28,32 @@ class AppConfig:
         env_file_path = Path(".env").expanduser().resolve()
         load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
 
-        provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
-        openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-        openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
-        generic_key = (os.getenv("LLM_API_KEY") or "").strip()
-
-        if not provider:
-            provider = "openrouter" if openrouter_key else "openai"
-
-        if provider == "openrouter":
-            api_key = generic_key or openrouter_key or openai_key or None
-            model = (os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
-            base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
-        else:
-            provider = "openai"
-            api_key = generic_key or openai_key or None
-            model = (os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or OPENAI_DEFAULT_MODEL).strip()
-            base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
-
-        timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
-        
         gws_binary_value = (os.getenv("GWS_BINARY_PATH") or "").strip()
         if not gws_binary_value:
             raise ValueError("GWS_BINARY_PATH must be set in .env")
         gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
+
+        default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
+        if not default_recipient_email:
+            raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
+
+        provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+        openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        generic_key = (os.getenv("LLM_API_KEY") or "").strip()
+
+        if not provider:
+            provider = "openrouter"
+
+        if provider != "openrouter":
+            raise ValueError("Only OpenRouter free models are supported. Set LLM_PROVIDER=openrouter.")
+
+        api_key = generic_key or openrouter_key or None
+        model = (os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
+        if model != "openrouter/free" and not model.endswith(":free"):
+            raise ValueError("OpenRouter model must be a free model ending with ':free' or equal to 'openrouter/free'.")
+        base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
+
+        timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
         
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -77,23 +78,22 @@ class AppConfig:
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
         gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
         
-        # Support multiple API keys for rotation
-        openrouter_api_keys_list = [
-            os.getenv("OPENROUTER_API_KEY1"),
-            os.getenv("OPENROUTER_API_KEY2"),
-            os.getenv("OPENROUTER_API_KEY3"),
-            os.getenv("OPENROUTER_API_KEY"), # Default fallback
-        ]
-        openrouter_api_keys = [k.strip() for k in openrouter_api_keys_list if k and k.strip()]
+        # Support multiple API keys for rotation (only for openrouter)
+        openrouter_api_keys = []
+        if provider == "openrouter":
+            openrouter_api_keys_list = [
+                os.getenv("OPENROUTER_API_KEY1"),
+                os.getenv("OPENROUTER_API_KEY2"),
+                os.getenv("OPENROUTER_API_KEY3"),
+                os.getenv("OPENROUTER_API_KEY"), # Default fallback
+            ]
+            openrouter_api_keys = [k.strip() for k in openrouter_api_keys_list if k and k.strip()]
         if not openrouter_api_keys and api_key:
             openrouter_api_keys = [api_key]
 
         max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
-
-        default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
-        if not default_recipient_email:
-            raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
+        mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
 
         return AppConfigModel(
             provider=provider,
@@ -120,6 +120,7 @@ class AppConfig:
             max_context_snippet_len=max_snippet_len,
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
+            mem0_user_id=mem0_user_id,
         )
 
 

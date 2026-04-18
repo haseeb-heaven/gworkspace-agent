@@ -36,11 +36,12 @@ class WorkspaceAgentSystem:
         memory_hint_parts = []
         if past:
             self.logger.info("Local Memory: found %d similar past episodes", len(past))
-            memory_hint_parts.append("Recent similar interactions:\n" + "\n".join(
+            interactions = "\n".join([
                 f"- Goal: '{ep['goal'][:80]}' -> Outcome: {ep['outcome']}"
                 for ep in past[:3]
-            ))
-            
+            ])
+            memory_hint_parts.append(f"Recent similar interactions:\n{interactions}")
+
         if semantic_memories:
             # Handle dictionary response from Mem0 v2
             if isinstance(semantic_memories, dict):
@@ -48,14 +49,18 @@ class WorkspaceAgentSystem:
             else:
                 memories_list = semantic_memories
 
-            self.logger.info("Semantic Memory: found %d relevant memories", len(memories_list))
-            # Mem0 search results are usually list of dicts with 'memory' or 'text' key
-            memory_hint_parts.append("Known facts and preferences:\n" + "\n".join(
-                f"- {m.get('memory', m.get('text', str(m)))}"
-                for m in memories_list[:5]
-            ))
+            if memories_list:
+                self.logger.info("Semantic Memory: found %d relevant memories", len(memories_list))
+                # Mem0 search results are usually list of dicts with 'memory' or 'text' key
+                facts = "\n".join([
+                    f"- {m.get('memory', m.get('text', str(m)))}"
+                    for m in memories_list[:5]
+                ])
+                memory_hint_parts.append(f"Known facts and preferences:\n{facts}")
 
-        memory_hint = "\n\n".join(memory_hint_parts)
+        memory_hint = ""
+        for part in memory_hint_parts:
+            memory_hint += part + "\n\n"
 
         text = (user_text or "").strip()
         if not text:
@@ -198,18 +203,6 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern G: Sheet -> Email
-        if "sheets" in services and "gmail" in services and _is_sheet_to_email_request(lowered):
-             tasks = self._sheet_to_email_tasks(text, lowered)
-             return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: sheets.get_values -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
 
@@ -229,7 +222,11 @@ class WorkspaceAgentSystem:
         send_params: dict[str, Any] = {
             "to_email": recipient,
             "subject": f"Document: {query}",
-            "body": "Hi,\n\nPlease find the content below:\n\n$last_export_file_content"
+            "body": """Hi,
+
+Please find the content below:
+
+$last_export_file_content"""
         }
         
         if "attach" in lowered:
@@ -302,7 +299,9 @@ class WorkspaceAgentSystem:
                 parameters={
                     "to_email": recipient,
                     "subject": f"Processed: {query}",
-                    "body": "Hi,\n\nPlease find the spreadsheet here: $last_spreadsheet_url"
+                    "body": """Hi,
+
+Please find the spreadsheet here: $last_spreadsheet_url"""
                 },
                 reason="Email the final spreadsheet link."
             )
@@ -326,7 +325,11 @@ class WorkspaceAgentSystem:
                 parameters={
                     "to_email": recipient,
                     "subject": "Spreadsheet Data",
-                    "body": "Hi,\n\nPlease find the spreadsheet data below:\n\n$last_spreadsheet_values"
+                    "body": """Hi,
+
+Please find the spreadsheet data below:
+
+$last_spreadsheet_values"""
                 },
                 reason="Email the spreadsheet data."
             )
@@ -366,7 +369,9 @@ class WorkspaceAgentSystem:
                 parameters={
                     "to_email": recipient,
                     "subject": "Drive Files Organized",
-                    "body": f"Hi,\n\nFiles moved to '{folder_name}'. Link: $last_folder_url"
+                    "body": f"""Hi,
+
+Files moved to '{folder_name}'. Link: $last_folder_url"""
                 },
                 reason="Notify user."
             )
@@ -429,10 +434,13 @@ class WorkspaceAgentSystem:
             data_str = list_match.group(1) if list_match else "[]"
             if "sort" in lowered:
                 rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
-                parameters["code"] = f"data = {data_str}\nresult = sorted(data, reverse={rev})\nprint(result)"
+                parameters["code"] = f"""data = {data_str}
+result = sorted(data, reverse={rev})
+print(result)"""
             else:
                 # Try to generate generic processing code for "convert to table" etc
-                parameters["code"] = f"# Processed data from previous steps\nprint('Processing task: {lowered}')"
+                parameters["code"] = f"""# Processed data from previous steps
+print('Processing task: {lowered}')"""
 
         return PlannedTask(
             id=f"task-{index}",
@@ -509,9 +517,14 @@ def _detect_action(service: str, text: str) -> str | None:
 
 
 def _gmail_query_from_text(text: str) -> str:
-    quoted = re.search(r'[\"\']([^\"\']{3,80})[\"\'\']', text)
-    if quoted: return f'subject:"{quoted.group(1).strip()}"'
-    match = re.search(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
+    quoted = re.search(r'["\']([^"\']{3,80})["\']', text)
+    if quoted: 
+        q = quoted.group(1).strip()
+        # If the user says "subject:...", keep it. Otherwise, just use the keywords.
+        if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
+            return q
+        return q
+    match = re.search(r"(?:about|for|matching|with|named|search|find|search gmail for)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
     if match:
         query = match.group(1).strip()
         query = re.split(r"\s+(and|then|to|save|write|export|extract|move)\s+", query, flags=re.IGNORECASE)[0].strip()
@@ -520,7 +533,7 @@ def _gmail_query_from_text(text: str) -> str:
 
 
 def _drive_query_from_text(text: str) -> str:
-    quoted = re.search(r'[\"\']([^\"\']{3,80})[\"\'\']', text)
+    quoted = re.search(r'["\']([^"\']{3,80})["\']', text)
     if quoted: return f"fullText contains '{quoted.group(1).strip()}'"
     match = re.search(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
     if match:
@@ -544,7 +557,7 @@ def _extract_email(text: str) -> str | None:
 
 
 def _extract_quoted(text: str) -> str | None:
-    match = re.search(r"['\"](.+?)['\"]", text)
+    match = re.search(r'["\'](.+?)["\']', text)
     return match.group(1) if match else None
 
 

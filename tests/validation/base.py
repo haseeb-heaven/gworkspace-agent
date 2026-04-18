@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
@@ -17,7 +19,10 @@ class SimplePlanner:
         return CommandPlanner().build_command(service, action, params)
 
 def get_executor():
-    config = AppConfig.from_env()
+    try:
+        config = AppConfig.from_env()
+    except ValueError as exc:
+        pytest.skip(f"Workspace validation environment is not configured: {exc}")
     logger = setup_logging(config)
     # Correct path to gws binary in project root
     gws_path = Path(os.getenv('GWS_BINARY_PATH', 'gws'))

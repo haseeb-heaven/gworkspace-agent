@@ -215,7 +215,8 @@ class ResolverMixin:
 
                 # 2. If we resolved to a list, but we are a single-token placeholder 
                 # (e.g. {{task-1.id}}), pick the first item.
-                if isinstance(resolved, list) and resolved:
+                singular_suffixes = ['.id', '.name', '.url', '.title', '.email', '.spreadsheet_id', '.document_id']
+                if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     resolved = resolved[0]
 

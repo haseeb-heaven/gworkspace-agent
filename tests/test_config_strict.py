@@ -6,6 +6,11 @@ from gws_assistant.config import AppConfig
 def mock_load_dotenv(monkeypatch):
     import gws_assistant.config
     monkeypatch.setattr(gws_assistant.config, "load_dotenv", lambda **kwargs: None)
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
 
 def test_config_raises_value_error_if_recipient_email_missing(monkeypatch):
     """Test that ValueError is raised if DEFAULT_RECIPIENT_EMAIL is missing."""

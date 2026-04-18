@@ -50,60 +50,109 @@ class LongTermMemory:
             except Exception as e:
                 self.logger.error(f"Failed to initialize local Mem0 memory: {e}")
 
-    def add(self, data: str | list[dict[str, str]], user_id: str = "default_user", metadata: dict[str, Any] | None = None) -> None:
+    def _default_user_id(self, user_id: str | None = None) -> str:
+        return user_id or self.config.mem0_user_id or "default_user"
+
+    def add(self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None) -> None:
         """Add a memory to Mem0."""
         if not self.client:
             return
 
+        resolved_user_id = self._default_user_id(user_id)
         try:
-            self.client.add(data, user_id=user_id, metadata=metadata)
-            self.logger.debug(f"Added memory to Mem0 for user {user_id}")
+            self.client.add(data, user_id=resolved_user_id, metadata=metadata)
+            self.logger.debug(f"Added memory to Mem0 for user {resolved_user_id}")
         except Exception as e:
             self.logger.error(f"Error adding memory to Mem0: {e}")
 
-    def search(self, query: str, user_id: str = "mem0-mcp-user", limit: int = 5) -> list[dict[str, Any]]:
+    def add_bug_fix(
+        self,
+        *,
+        bug_id: str,
+        service: str,
+        root_cause: str,
+        applied_fix: str,
+        retry_count: int,
+        affected_task: str,
+        user_id: str | None = None,
+    ) -> None:
+        """Persist a bug-fix learning with traceable metadata."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        metadata = {
+            "type": "bug_fix",
+            "bug_id": bug_id,
+            "service": service,
+            "root_cause": root_cause,
+            "applied_fix": applied_fix,
+            "retry_count": retry_count,
+            "affected_task": affected_task,
+            "timestamp": timestamp,
+        }
+        text = (
+            f"Bug {bug_id} in {service}: root cause: {root_cause}. "
+            f"Resolution: {applied_fix}. Affected task: {affected_task}. "
+            f"Retries before fix: {retry_count}."
+        )
+        self.add(text, user_id=user_id, metadata=metadata)
+
+    @staticmethod
+    def _build_filters(user_id: str) -> dict[str, Any]:
+        """Build the Mem0 filter shape accepted by the hosted client."""
+        return {"user_id": user_id}
+
+    def search(self, query: str, user_id: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         """Search for relevant memories in Mem0."""
         if not self.client:
                 return []
 
+        resolved_user_id = self._default_user_id(user_id)
         try:
                 if isinstance(self.client, MemoryClient):
-                        # Use documented v2 filter structure
-                        filters = {"AND": [{"user_id": user_id}]}
+                        # Hosted Mem0 expects direct filters with v2 for user-scoped reads.
+                        filters = self._build_filters(resolved_user_id)
                         return self.client.search(query=query, version="v2", filters=filters, limit=limit)
                 else:
                         # Local/OSS client uses filters instead of direct user_id for some versions
                         try:
-                            return self.client.search(query, filters={"user_id": user_id}, limit=limit)
+                            return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
                         except Exception:
-                            # Fallback to direct user_id if filters not supported
-                            return self.client.search(query, user_id=user_id, limit=limit)
+                            # Fallback to filters if direct user_id not supported
+                            return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
         except Exception as e:
-                self.logger.error(f"Error searching Mem0: {e}")
+                msg = str(e)
+                if "429" in msg or "quota" in msg.lower():
+                    self.logger.warning("Mem0 rate limit or quota exceeded. Skipping long-term memory search.")
+                else:
+                    self.logger.error(f"Error searching Mem0: {e}")
                 return []
 
-    def get_all(self, user_id: str = "default_user") -> list[dict[str, Any]]:
+    def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
         """Retrieve all memories for a user."""
         if not self.client:
             return []
 
+        resolved_user_id = self._default_user_id(user_id)
         try:
             from mem0 import MemoryClient
             if isinstance(self.client, MemoryClient):
-                # Use exact filter structure from documentation
-                filters = {"AND": [{"user_id": user_id}]}
-                response = self.client.get_all(filters=filters)
+                # Hosted Mem0 expects direct filters with v2 for user-scoped reads.
+                filters = self._build_filters(resolved_user_id)
+                response = self.client.get_all(version="v2", filters=filters)
                 if isinstance(response, dict) and "results" in response:
                     return response["results"]
                 return response
             else:
                 # Local client: try filters first, fallback to user_id="..."
                 try:
-                    return self.client.get_all(filters={"user_id": user_id})
+                    return self.client.get_all(filters={"user_id": resolved_user_id})
                 except Exception:
-                    return self.client.get_all(user_id=user_id)
+                    return self.client.get_all(user_id=resolved_user_id)
         except Exception as e:
-            self.logger.error(f"Error getting all memories from Mem0: {e}")
+            msg = str(e)
+            if "429" in msg or "quota" in msg.lower():
+                self.logger.warning("Mem0 rate limit or quota exceeded. Skipping long-term memory retrieval.")
+            else:
+                self.logger.error(f"Error getting all memories from Mem0: {e}")
             return []
 
 

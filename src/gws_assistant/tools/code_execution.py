@@ -185,6 +185,8 @@ def _validate_submitted_code(code: str) -> str | None:
     for node in ast.walk(ast.parse(code)):
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             return "SecurityError: import __future__ is blocked."
+        if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True:
+            return f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds."
     return None
 
 

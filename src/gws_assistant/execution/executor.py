@@ -174,7 +174,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             result.stdout = json.dumps(result.output)
 
             # Triple-check verification for creations to ensure consistency
-            creation_actions = ("create_spreadsheet", "create_document", "create_file", "insert_event", "create_task", "create_note")
+            creation_actions = ("create_spreadsheet", "create_document", "create_file", "create_event", "create_task", "create_note")
             if task.action in creation_actions:
                 resource_id = (
                     result.output.get("spreadsheetId") or 
