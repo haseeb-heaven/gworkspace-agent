@@ -245,6 +245,19 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "id,name,mimeType,webViewLink"})]
 
+        if action == "create_file":
+            name = self._required_text(params, "name")
+            mime_type = str(params.get("mime_type") or "application/vnd.google-apps.document").strip()
+            folder_id = str(params.get("folder_id") or "").strip()
+            
+            payload = {"name": name, "mimeType": mime_type}
+            if folder_id:
+                payload["parents"] = [folder_id]
+                
+            return ["drive", "files", "create", 
+                    "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}),
+                    "--json", json.dumps(payload, ensure_ascii=True)]
+
         if action == "export_file":
             file_id = self._required_text(params, "file_id")
 
@@ -326,6 +339,22 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "delete", "--params", json.dumps({"fileId": file_id})]
 
+        if action == "update_file_metadata":
+            file_id = self._required_text(params, "file_id")
+            name = str(params.get("name") or "").strip()
+            description = str(params.get("description") or "").strip()
+            
+            payload = {}
+            if name: payload["name"] = name
+            if description: payload["description"] = description
+            
+            if not payload:
+                raise ValidationError("At least one metadata field (name or description) must be provided.")
+                
+            return ["drive", "files", "update",
+                    "--params", json.dumps({"fileId": file_id, "fields": "id,name,description"}),
+                    "--json", json.dumps(payload, ensure_ascii=True)]
+
         if action == "move_file":
             file_id = self._required_text(params, "file_id")
             folder_id = self._required_text(params, "folder_id")
@@ -393,6 +422,18 @@ class CommandPlanner:
                 "--json",  json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}, ensure_ascii=True),
             ]
 
+        if action == "delete_spreadsheet":
+            spreadsheet_id = self._required_text(params, "spreadsheet_id")
+            return ["drive", "files", "delete", "--params", json.dumps({"fileId": spreadsheet_id})]
+
+        if action == "clear_values":
+            spreadsheet_id = self._required_text(params, "spreadsheet_id")
+            range_name = self._format_range(str(params.get("range") or "A1"))
+            return [
+                "sheets", "spreadsheets", "values", "clear",
+                "--params", json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name}, ensure_ascii=True),
+            ]
+
         raise ValidationError(f"Unsupported sheets action: {action}")
 
 
@@ -418,6 +459,16 @@ class CommandPlanner:
             # Allow message_id to be missing or a placeholder during planning
             message_id = params.get("message_id") or "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params",
+                    json.dumps({"userId": "me", "id": message_id})]
+
+        if action == "trash_message":
+            message_id = self._required_text(params, "message_id")
+            return ["gmail", "users", "messages", "trash", "--params",
+                    json.dumps({"userId": "me", "id": message_id})]
+
+        if action == "delete_message":
+            message_id = self._required_text(params, "message_id")
+            return ["gmail", "users", "messages", "delete", "--params",
                     json.dumps({"userId": "me", "id": message_id})]
 
         if action == "send_message":

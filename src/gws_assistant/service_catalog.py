@@ -49,6 +49,17 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
                 ),
             ),
+            "create_file": ActionSpec(
+                key="create_file",
+                label="Create file",
+                description="Create a new file in Google Drive. Returns: {id, name, mimeType}.",
+                keywords=("create", "new", "file"),
+                parameters=(
+                    ParameterSpec("name", "What should the file be named?", "New Document"),
+                    ParameterSpec("mime_type", "Optional: MIME type (e.g. application/vnd.google-apps.document)", "application/vnd.google-apps.document", required=False),
+                    ParameterSpec("folder_id", "Optional: Parent folder ID", "1AbCd...", required=False),
+                ),
+            ),
             "export_file": ActionSpec(
                 key="export_file",
                 label="Export file",
@@ -66,6 +77,17 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("delete", "remove", "trash"),
                 parameters=(
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
+                ),
+            ),
+            "update_file_metadata": ActionSpec(
+                key="update_file_metadata",
+                label="Update file metadata",
+                description="Update an existing file's name or description.",
+                keywords=("update", "rename", "edit", "metadata"),
+                parameters=(
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
+                    ParameterSpec("name", "New name for the file", "Updated Name", required=False),
+                    ParameterSpec("description", "New description for the file", "Updated Description", required=False),
                 ),
             ),
             "move_file": ActionSpec(
@@ -126,6 +148,25 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("values", "Enter rows to append", "value", required=False),
                 ),
             ),
+            "delete_spreadsheet": ActionSpec(
+                key="delete_spreadsheet",
+                label="Delete spreadsheet",
+                description="Delete a spreadsheet by ID. This actually deletes the file from Google Drive.",
+                keywords=("delete", "remove", "trash", "spreadsheet"),
+                parameters=(
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                ),
+            ),
+            "clear_values": ActionSpec(
+                key="clear_values",
+                label="Clear values",
+                description="Clear all values from a spreadsheet range.",
+                keywords=("clear", "empty", "delete values", "reset", "wipe"),
+                parameters=(
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                    ParameterSpec("range", "Enter the range to clear", "Sheet1!A1:Z100"),
+                ),
+            ),
         },
     ),
     "gmail": ServiceSpec(
@@ -153,6 +194,24 @@ SERVICES: dict[str, ServiceSpec] = {
                 negative_keywords=("send", "list", "search"),
                 parameters=(
                     ParameterSpec("message_id", "Enter message ID (or omit — auto-resolved from list_messages)", "18c5a4fbe123", required=False),
+                ),
+            ),
+            "trash_message": ActionSpec(
+                key="trash_message",
+                label="Trash message",
+                description="Move a Gmail message to the trash by id.",
+                keywords=("trash", "remove", "delete"),
+                parameters=(
+                    ParameterSpec("message_id", "Enter message ID", "18c5a4fbe123"),
+                ),
+            ),
+            "delete_message": ActionSpec(
+                key="delete_message",
+                label="Delete message permanently",
+                description="Permanently delete a Gmail message by id. Irreversible.",
+                keywords=("delete", "permanently", "remove"),
+                parameters=(
+                    ParameterSpec("message_id", "Enter message ID", "18c5a4fbe123"),
                 ),
             ),
             "send_message": ActionSpec(
