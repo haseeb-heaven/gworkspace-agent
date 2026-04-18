@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
+from mem0 import MemoryClient
 from .models import AppConfigModel
 
 MEMORY_FILE = Path.home() / ".gws_agent" / "memory.jsonl"
@@ -31,10 +31,8 @@ class LongTermMemory:
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.client = None
-        
         if config.mem0_api_key:
             try:
-                from mem0 import MemoryClient
                 self.client = MemoryClient(api_key=config.mem0_api_key)
                 self.logger.info("Mem0 long-term memory client initialized (hosted).")
             except ImportError:
@@ -63,23 +61,22 @@ class LongTermMemory:
         except Exception as e:
             self.logger.error(f"Error adding memory to Mem0: {e}")
 
-    def search(self, query: str, user_id: str = "default_user", limit: int = 5) -> list[dict[str, Any]]:
+    def search(self, query: str, user_id: str = "mem0-mcp-user", limit: int = 5) -> list[dict[str, Any]]:
         """Search for relevant memories in Mem0."""
         if not self.client:
-            return []
+                return []
 
         try:
-            from mem0 import MemoryClient
-            if isinstance(self.client, MemoryClient):
-                # Use exact filter structure from documentation
-                filters = {"AND": [{"user_id": user_id}]}
-                return self.client.search(query, filters=filters, limit=limit)
-            else:
-                # Local client uses direct user_id
-                return self.client.search(query, user_id=user_id, limit=limit)
+                if isinstance(self.client, MemoryClient):
+                        # Use documented v2 filter structure
+                        filters = {"AND": [{"user_id": user_id}]}
+                        return self.client.search(query=query, version="v2", filters=filters, limit=limit)
+                else:
+                        # Local/OSS client uses direct user_id
+                        return self.client.search(query, user_id=user_id, limit=limit)
         except Exception as e:
-            self.logger.error(f"Error searching Mem0: {e}")
-            return []
+                self.logger.error(f"Error searching Mem0: {e}")
+                return []
 
     def get_all(self, user_id: str = "default_user") -> list[dict[str, Any]]:
         """Retrieve all memories for a user."""

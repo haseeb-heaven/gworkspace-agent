@@ -294,6 +294,7 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    code = re.sub(r'\\\s*$', '', code, flags=re.MULTILINE)
     validation_error = _validate_submitted_code(code)
     if validation_error:
         return StructuredToolResult(

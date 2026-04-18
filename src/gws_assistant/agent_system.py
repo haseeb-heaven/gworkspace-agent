@@ -127,16 +127,16 @@ class WorkspaceAgentSystem:
         # MULTI-TASK HEURISTICS (General Patterns)
         
         # Pattern A: Drive -> Gmail (Search & Email)
-        # if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
-        #      tasks = self._drive_to_gmail_tasks(text, lowered)
-        #      return RequestPlan(
-        #         raw_text=text,
-        #         tasks=tasks,
-        #         summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
-        #         confidence=0.7,
-        #         no_service_detected=False,
-        #         source="heuristic",
-        #     )
+        if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
+             tasks = self._drive_to_gmail_tasks(text, lowered)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
             
         # Pattern B: Gmail -> Sheets -> Email (Extraction)
         if "gmail" in services and "sheets" in services and _is_sheet_to_email_request(lowered):
@@ -180,7 +180,7 @@ class WorkspaceAgentSystem:
              pass
 
         # Final Fallback: Single Task per Service
-        tasks = [self._single_service_task(service, lowered, index) for index, service in enumerate(services, start=1)]
+        tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
 
         return RequestPlan(
             raw_text=text,
@@ -194,6 +194,16 @@ class WorkspaceAgentSystem:
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
         recipient = _extract_email(text) or self.config.default_recipient_email
+        
+        send_params: dict[str, Any] = {
+            "to_email": recipient,
+            "subject": f"Document: {query}",
+            "body": "Hi,\n\nPlease find the content below:\n\n$last_export_file_content"
+        }
+        
+        if "attach" in lowered:
+            send_params["attachments"] = ["{{task-1.id}}"]
+
         return [
             PlannedTask(
                 id="task-1",
@@ -213,11 +223,7 @@ class WorkspaceAgentSystem:
                 id="task-3",
                 service="gmail",
                 action="send_message",
-                parameters={
-                    "to_email": recipient,
-                    "subject": f"Document: {query}",
-                    "body": "Hi,\n\nPlease find the content below:\n\n$last_export_file_content"
-                },
+                parameters=send_params,
                 reason="Email the extracted content."
             )
         ]
@@ -330,25 +336,6 @@ class WorkspaceAgentSystem:
                     "values": _extract_data_rows(text)
                 },
                 reason="Add data rows to the sheet."
-            ),
-            PlannedTask(
-                id="task-3",
-                service="sheets",
-                action="get_values",
-                parameters={
-                    "spreadsheet_id": "{{task-1.id}}",
-                    "range": "Sheet1!A1:B10"
-                },
-                reason="Verify values were added."
-            ),
-            PlannedTask(
-                id="task-4",
-                service="code",
-                action="execute",
-                parameters={
-                    "code": "data = task_results['task-3.values']\n# Calculate sum of second column for data rows\ntotal = 0\nfor row in data[1:]:\n    try:\n        total += float(row[1])\n    except (ValueError, IndexError): pass\nprint(f'Sum: {total}')\nresult = total"
-                },
-                reason="Calculate sum to verify data."
             )
         ]
 
@@ -369,12 +356,15 @@ class WorkspaceAgentSystem:
                 query = _extract_quoted(lowered)
                 if query:
                     parameters["q"] = f"name contains '{query}'"
+        elif service == "drive" and action == "export_file":
+            parameters["file_id"] = _extract_id(lowered) or "{{task-1.id}}"
+        elif service == "search" and action == "web_search":
+            parameters["query"] = lowered
         elif service == "docs" and action == "get_document":
-             query = _extract_quoted(lowered)
-             if query:
-                 # Docs don't have a direct search action in the same way as Drive,
-                 # so we usually need to list_files first.
-                 pass
+            parameters["document_id"] = _extract_id(lowered) or "{{task-1.id}}"
+        elif service == "sheets" and action == "get_values":
+            parameters["spreadsheet_id"] = _extract_id(lowered) or "{{task-1.id}}"
+            parameters["range"] = "Sheet1!A1"
         elif service == "gmail" and action == "send_message":
             parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
             parameters["subject"] = "GWorkspace Notification"
@@ -408,17 +398,39 @@ def _detect_services_in_order(text: str) -> list[str]:
             if match:
                 hits.append((match.start(), service_key))
                 break
-    return [service for _, service in sorted(hits, key=lambda item: item[0])]
+    
+    found_services = [service for _, service in sorted(hits, key=lambda item: item[0])]
+    
+    # Priority Fix: If we detected both a workspace service and generic 'search',
+    # and they are at the same position or search is just a keyword, prioritize the workspace service.
+    if "search" in found_services and len(found_services) > 1:
+        # If any other service exists, we likely want that service's search, not web search
+        found_services = [s for s in found_services if s != "search"]
+        
+    return found_services
 
 
 def _detect_action(service: str, text: str) -> str | None:
     best_action = None
     best_score = 0
+    lowered = text.lower()
+    
     for action_key, action_spec in SERVICES[service].actions.items():
-        score = sum(1 for keyword in action_spec.keywords if keyword in text)
+        # Check negative keywords first - if any exist, this action is disqualified
+        neg_hit = False
+        if hasattr(action_spec, "negative_keywords") and action_spec.negative_keywords:
+            for nk in action_spec.negative_keywords:
+                if nk in lowered:
+                    neg_hit = True
+                    break
+        if neg_hit:
+            continue
+
+        score = sum(1 for keyword in action_spec.keywords if keyword in lowered)
         if score > best_score:
             best_score = score
             best_action = action_key
+            
     return best_action
 
 
@@ -442,6 +454,14 @@ def _drive_query_from_text(text: str) -> str:
         query = re.split(r"\s+(and|then|to|save|write|export|extract|move)\s+", query, flags=re.IGNORECASE)[0].strip()
         return f"fullText contains '{query}'"
     return ""
+
+
+def _extract_id(text: str) -> str | None:
+    """Extract a Google Workspace ID (alphanumeric string with underscores/dashes) from text."""
+    # Look for common ID pattern: ~44 characters, alphanumeric, includes - and _
+    # Often found after 'ID:', 'id ', or in quotes.
+    match = re.search(r"\b([a-zA-Z0-9_-]{25,})\b", text)
+    return match.group(1) if match else None
 
 
 def _extract_email(text: str) -> str | None:

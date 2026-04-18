@@ -303,9 +303,9 @@ class TestAgentPlanning:
         assert plan.tasks[-1].parameters.get("to_email") == "user@example.com"
 
     def test_list_emails_from_specific_person(self, tmp_path):
-        """User: 'List all emails i received from amrita.priyadarshini@rockstarindia.com person'"""
+        """User: 'List all emails i received from user.boss@gmail.com person'"""
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
-        plan = agent.plan("List all emails i received from 'amrita.priyadarshini@rockstarindia.com' person")
+        plan = agent.plan("List all emails i received from 'user.boss@gmail.com' person")
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("gmail", "list_messages") in services
         assert ("gmail", "get_message") in services

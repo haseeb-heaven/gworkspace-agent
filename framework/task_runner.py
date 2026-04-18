@@ -1,5 +1,5 @@
 import time
-
+import sys
 import pytest
 
 from .cli_runner import GWSCLIRunner
@@ -10,7 +10,7 @@ logger = setup_framework_logger("task_runner")
 
 class TaskRunner:
     def __init__(self):
-        self.runner = GWSCLIRunner()
+        self.runner = GWSCLIRunner(binary_path=sys.executable)
         self.validator = OutputValidator()
 
     def execute_and_validate(self, task: str, expected_texts: list[str]) -> bool:

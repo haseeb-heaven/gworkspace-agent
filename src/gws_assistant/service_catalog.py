@@ -8,14 +8,14 @@ SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",
         label="Google Drive",
-        aliases=("drive", "files", "google drive", "document", "documents"),
+        aliases=("drive", "files", "google drive", "document", "documents", "file"),
         description="Manage files and folders in Google Drive. Returns file metadata including id, name, mimeType, webViewLink.",
         actions={
             "list_files": ActionSpec(
                 key="list_files",
                 label="List files",
                 description="List or search files in Drive. Returns: [{id, name, mimeType, modifiedTime, webViewLink}]. Use id for subsequent get_file or export_file calls.",
-                keywords=("list files", "show files", "view files", "search files", "find files"),
+                keywords=("list", "files", "show", "view", "search", "find"),
                 parameters=(
                     ParameterSpec("page_size", "How many files should I show?", "10", required=False),
                     ParameterSpec("q", "Drive search query (e.g. name contains 'report')", "", required=False),
@@ -91,6 +91,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Create spreadsheet",
                 description="Create a new Google Sheets spreadsheet. Returns: {spreadsheetId, spreadsheetUrl, title}. Use spreadsheetId in subsequent append_values or get_values calls.",
                 keywords=("create", "new", "sheet", "spreadsheet"),
+                negative_keywords=("read", "get", "search", "fetch", "find"),
                 parameters=(
                     ParameterSpec("title", "What should the spreadsheet title be?", "Quarterly Budget"),
                 ),
@@ -159,7 +160,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Send email",
                 description="Send an email from the authenticated account. 'body' can be a $placeholder (e.g. $sheet_email_body, $last_code_stdout, $web_search_markdown) resolved at runtime.",
                 keywords=("send", "compose", "mail", "email", "share"),
-                negative_keywords=("list", "search", "find", "inbox"),
+                negative_keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
                     ParameterSpec("to_email", "Recipient email address", "person@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),

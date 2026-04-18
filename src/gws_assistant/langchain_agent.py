@@ -151,22 +151,21 @@ def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
 
 
 def is_valid_plan(plan_data: Any) -> bool:
-    """Validate that every task in the LLM plan has a known service and action.
+    """Validate that every task in the LLM plan has a known service and action,
+    and that all required parameters are present.
 
     Returns False (invalid) if:
     - plan_data is not a dict
     - 'tasks' is missing, None, or not a list
     - any task has a service/action not present in the catalog
-
-    A plan with zero tasks is considered invalid because it means the LLM
-    returned an empty response — the heuristic planner should handle it.
+    - any task is missing a REQUIRED parameter from the catalog
     """
     if not isinstance(plan_data, dict):
         return False
     tasks = plan_data.get("tasks")
     if not isinstance(tasks, list) or len(tasks) == 0:
-        # Empty tasks list from LLM means it couldn't plan — let heuristics try.
         return False
+
     for t in tasks:
         if not isinstance(t, dict):
             return False
@@ -176,15 +175,33 @@ def is_valid_plan(plan_data: Any) -> bool:
         if service not in SERVICES:
             return False
 
-        # Support both 'action' and 'service.action' formats.
         if "." in action:
             prefix, actual_action = action.split(".", 1)
             if prefix.lower() == service:
                 action = actual_action
-                t["action"] = action  # Update the task in-place for subsequent use
+                t["action"] = action
 
-        if action not in SERVICES[service].actions:
+        action_spec = SERVICES[service].actions.get(action)
+        if not action_spec:
             return False
+
+        # Validate required parameters.
+        # We check both the 'parameters' dict and the task root (LLM often flattens).
+        provided_keys = set((t.get("parameters") or {}).keys())
+        provided_keys.update(k for k in t.keys() if k not in ("id", "service", "action", "parameters", "reason"))
+
+        for p_spec in action_spec.parameters:
+            if p_spec.required:
+                # Check for exact match or common case/underscore variations.
+                norm_p_name = p_spec.name.lower().replace("_", "")
+                found = False
+                for k in provided_keys:
+                    if k.lower().replace("_", "") == norm_p_name:
+                        found = True
+                        break
+                if not found:
+                    logging.info("Plan invalid: task %s.%s missing required parameter '%s'", service, action, p_spec.name)
+                    return False
     return True
 
 
@@ -343,9 +360,10 @@ def plan_with_langchain(
     # repr output like "{'key': 'val'}", or bracket-notation like 'sheets[]').
     # LangChain's ChatPromptTemplate parses the system-prompt string for {variable}
     # slots and raises ValueError / KeyError on any token it cannot match to an
-    # input variable.  Escaping all braces to '{{' / '}}' is the standard
-    # LangChain convention — doubled braces are emitted as literals at render time.
-    catalog_summary_escaped = catalog_summary.replace("{", "{{").replace("}", "}}")
+    # input variable.  We must quadruple-escape all braces to '{{{{' / '}}}}'
+    # so that the internal template retains '{{' / '}}', which are then emitted
+    # as literal '{' / '}' at render time.
+    catalog_summary_escaped = catalog_summary.replace("{", "{{{{").replace("}", "}}}}")
 
     system_prompt = (
         "You are an expert Google Workspace automation planner. "
@@ -357,61 +375,72 @@ def plan_with_langchain(
         "STRICT RULES:\n"
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
         "   NEVER invent names like 'gmail_reader', 'code_executor', or 'search_web'.\n"
-        "2. PARAMETERS: you MUST provide a 'parameters' object for EVERY task. "
-        "   Fill in all required fields (e.g. 'folder_name' for create_folder, 'q' for list_messages). "
-        "   If the user specifies a name, use it. If not, provide a sensible default.\n"
+        "2. PARAMETERS: for EACH task, you MUST check the 'params:' section of the catalog below. "
+        "   You MUST provide a 'parameters' object containing ALL 'required' parameters for that action. "
+        "   If the user specifies a value, use it. If not, provide a sensible default or use the 'example' provided.\n"
         "3. PYTHON CODE: in code.execute, write standard, valid Python. No dots at the start of lines, no markdown. "
         "   Use standard Python syntax (True, False, None) — NOT lowercase true/false/null. "
-        "   Do NOT use `return` at the top level — assign the final value to a variable named `result` "
-        "   (e.g. `result = total`) or use `print()`. "
-        "   'datetime', 'time', 'math', 're', 'json' are pre-imported. Do NOT write `import` statements.\n"
-        "3. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
-        "   {{task-N.field}} (double braces), e.g. {{task-1.id}}.\n"
-        "   If the output is a list, use {{task-N[0].field}}, e.g. {{task-1[0].id}}.\n"
-        "4. BULK OPERATIONS: To perform an action on ALL items from a previous search (e.g. 'move all files found'), "
-        "   simply use the placeholder for that task's ID (e.g. '{{task-1.id}}'). "
+        "   DO NOT use backslashes `\\` for line continuation at all; they cause SyntaxErrors. Use triple quotes for large strings.\n"
+        "   In code.execute, YOU MUST use the `task_results` dictionary to access prior data. "
+        "   Example: `msgs = task_results['task-1']`. "
+        "   You can also use 0-based numeric indices: `msgs = task_results[0]` is the first task.\n"
+        "   Crucially, `msgs` will be a LIST of dictionaries if the task was list_messages or an expansion. "
+        "   Example loop: `result = []; [result.append([m['from'], m['subject']]) for m in task_results[0]]`.\n"
+        "4. SEQUENTIAL PLAN: tasks execute in order. Reference prior outputs with "
+        "   {{{{task-N.field}}}} (double braces), e.g. {{{{task-1.id}}}}.\n"
+        "   If the output is a list, use {{{{task-N[0].field}}}}, e.g. {{{{task-1[0].id}}}}.\n"
+        "   Only use {{{{task-N.field}}}} for simple SCALAR values. For lists, use code.execute.\n"
+        "5. BULK OPERATIONS: To perform an action on ALL items from a previous search (e.g. 'move all files found'), "
+        "   simply use the placeholder for that task's ID (e.g. '{{{{task-1.id}}}}'). "
         "   The system will automatically expand this into multiple tasks. "
         "   Avoid writing complex Python loops for this unless you need to perform custom logic/filtering.\n"
-        "5. DRIVE QUERIES: Use the 'q' parameter for drive.list_files.\n"
-        "6. EMAIL DETAILS: always follow gmail.list_messages with gmail.get_message when "
-        "   full content is needed. Pass 'q' to list_messages. Omit message_id in "
+        "6. DRIVE QUERIES: Use the 'q' parameter for drive.list_files.\n"
+        "7. EMAIL ACTIONS: `gmail.list_messages` and `gmail.get_message` MUST ONLY be used if the user explicitly "
+        "   asks to 'search emails', 'read emails', or 'check my inbox'. If the user just says 'send email', "
+        "   ONLY use `gmail.send_message`. `gmail.send_message` does NOT require `gmail.list_messages` to be run first. "
+        "   ONLY follow gmail.list_messages with gmail.get_message if the user explicitly "
+        "   needs to read the full body content of specific emails. Do NOT add get_message if the user "
+        "   just wants to list, count, or identify messages. Omit message_id in "
         "   get_message — the executor resolves it automatically.\n"
-        "7. EXPORTS: use drive.export_file to read Doc/Sheet content. "
-        "   Never use docs/sheets APIs for reading raw content.\n"
-        "8. WEB SEARCH: use search.web_search for external info ('top X', 'best Y'). "
-        "   Use $web_search_table_values for sheet cell values, $web_search_summary for doc content.\n"
-        "   In code.execute, if you need web search results, MUST use $web_search_rows (a list of [title, link, snippet]). NEVER use {{task.rows}} or similar.\n"
-        "9. DATA STRUCTURES: drive.list_files and gmail.list_messages return LISTS of objects. "
+        "8. EXPORTS: use drive.export_file to read Doc/Sheet content. "
+        "   Never use docs/sheets APIs for reading raw content. 'file_id' is REQUIRED.\n"
+        "9. WEB SEARCH: ONLY use search.web_search if the user explicitly asks for a web search "
+        "   or if the information requested is external (e.g. 'latest news', 'top products', 'best frameworks'). "
+        "   NEVER include a web search for internal Workspace tasks like 'read my emails' or 'organize my drive'. "
+        "   Avoid 'just in case' searches.\n"
+        "10. DATA STRUCTURES: drive.list_files and gmail.list_messages return LISTS of objects. "
         "   In code.execute, iterate over the list directly (e.g. `for f in task_results['task-1']:`). "
         "   Do NOT expect a 'files' or 'messages' wrapper key.\n"
-        "10. CALENDAR: use $calendar_events to loop through event lists in code.execute.\n"
-        "11. GMAIL: use $gmail_message_body_text if you need the decoded plain text of a message.\n"
-        "12. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
+        "11. CALENDAR: use $calendar_events to loop through event lists in code.execute.\n"
+        "12. GMAIL: use $gmail_message_body_text if you need the decoded plain text of a message.\n"
+        "13. CODE OUTPUT: after a code task, use $last_code_result (scalar) or "
         "   $last_code_stdout (text) in the next task's parameter. Never write 'PLACEHOLDER_AMOUNT'.\n"
-        "13. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
+        "14. SEND EMAIL: if the user requests sending email, the LAST task MUST be "
         "   gmail.send_message with to_email set to the EXACT address in the request. "
         "   Choose the most appropriate body $placeholder from: "
         "   $last_code_stdout, $sheet_email_body, $gmail_summary_values, $web_search_markdown.\n"
-        "14. PIPELINE: for complex workflows prefer: "
+        "15. PIPELINE: for complex workflows prefer: "
         "   search.web_search -> code.execute -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message.\n"
-        "15. STRING QUOTING & HARDCODING: NEVER hardcode file contents or large text blocks into `code`! "
+        "16. STRING QUOTING & HARDCODING: NEVER hardcode file contents or large text blocks into `code`! "
         "    Always use placeholders (double braces syntax). The executor will automatically safely inject the value. "
         "    For small string literals, use standard Python quotes `\"value\"`.\n"
-        "16. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
+        "17. MULTIPLE TABS: use distinct range names (e.g. 'Tab1!A1', 'Tab2!A1') — "
         "   never reuse 'Sheet1!A1' for different write targets.\n"
-        "17. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "
+        "18. PARAMETER BINDING: the executor auto-links id, spreadsheet_id, document_id "
         "    between sequential tasks — you do not need to repeat them explicitly.\n"
-        "14. DOUBLE VERIFICATION: for every document, sheet, or email created/edited, the LAST task "
-        "    of that service group MUST be a 'read' or 'list' operation to verify the final data. "
-        "    Example: sheets.get_values after sheets.append_values.\n"
-
+        "19. CURRENCY & SYMBOLS: When extracting currency, prices, or amounts with symbols "
+        "    (like ₹529.82 or $500) for use in `code.execute`, ALWAYS wrap them in string quotes "
+        "    (e.g., '₹ 529.82'). Do NOT write raw unquoted currencies in Python code as it causes SyntaxError.\n"
     )
 
+
     if memory_hint:
+        # Quadruple escape all braces in memory_hint so LangChain sees '{{'
+        memory_hint_escaped = memory_hint.replace("{", "{{{{").replace("}", "}}}}")
         system_prompt = (
             "Relevant past task context:\n"
-            f"{memory_hint}\n\n"
-            f"{system_prompt}"
+            + memory_hint_escaped + "\n\n"
+            + system_prompt
         )
 
     prompt = ChatPromptTemplate.from_messages([

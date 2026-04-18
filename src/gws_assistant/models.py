@@ -86,7 +86,7 @@ def validate_planned_task(task: "PlannedTask") -> None:
         )
     # Detect obviously unresolved placeholder values that should have been
     # caught by _resolve_task but slipped through.
-    _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_")
+    _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_", "___UNRESOLVED_PLACEHOLDER___")
     for key, val in task.parameters.items():
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:

@@ -20,7 +20,7 @@ def get_executor():
     config = AppConfig.from_env()
     logger = setup_logging(config)
     # Correct path to gws binary in project root
-    gws_path = os.path.getenv('GWS_BINARY_PATH', 'gws')
+    gws_path = Path(os.getenv('GWS_BINARY_PATH', 'gws'))
     runner = GWSRunner(gws_binary_path=gws_path, logger=logger, config=config)
     return PlanExecutor(planner=SimplePlanner(), runner=runner, config=config)
 

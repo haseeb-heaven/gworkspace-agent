@@ -6,7 +6,7 @@ from .logger import setup_framework_logger
 logger = setup_framework_logger("cli_runner")
 
 class GWSCLIRunner:
-    def __init__(self, binary_path: str = "D:/henv/Scripts/python.exe"):
+    def __init__(self, binary_path: str):
         self.binary_path = binary_path
         self.script_path = str(Path("gws_cli.py").resolve())
 

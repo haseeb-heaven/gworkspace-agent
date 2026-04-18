@@ -310,7 +310,11 @@ class PlanExecutor:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
-        # 1. Split path into tokens, handling dots and brackets
+        # 1. Try exact match first
+        if path in data:
+            return data[path]
+
+        # 2. Split path into tokens, handling dots and brackets
         tokens = re.findall(r'[^.\[\]]+|\[\d+\]', path)
         if not tokens:
             return None
@@ -629,12 +633,18 @@ class PlanExecutor:
                 if first_id:
                     results_map[f"{task_id}.id"] = first_id
                     results_map[f"{num}.id"] = first_id
+                    results_map[f"task-{num}.id"] = first_id
+                    results_map[f"{seq_num}.id"] = first_id
+                    results_map[f"task-{seq_num}.id"] = first_id
             
             if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")
                 if first_id:
                     results_map[f"{task_id}.id"] = first_id
                     results_map[f"{num}.id"] = first_id
+                    results_map[f"task-{num}.id"] = first_id
+                    results_map[f"{seq_num}.id"] = first_id
+                    results_map[f"task-{seq_num}.id"] = first_id
 
         if "values" in data and isinstance(data["values"], list):
              results_map["values"] = data["values"] # Direct alias for the most recent values

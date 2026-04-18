@@ -8,7 +8,7 @@ from gws_assistant.agent_system import WorkspaceAgentSystem
 from gws_assistant.config import AppConfig
 
 logger = logging.getLogger("test")
-config = AppConfig()
+config = AppConfig.from_env()
 config.use_heuristic_fallback = True
 config.langchain_enabled = False # force heuristic
 

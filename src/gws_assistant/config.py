@@ -27,7 +27,7 @@ class AppConfig:
     @staticmethod
     def from_env() -> AppConfigModel:
         env_file_path = Path(".env").expanduser().resolve()
-        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
+        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
 
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
