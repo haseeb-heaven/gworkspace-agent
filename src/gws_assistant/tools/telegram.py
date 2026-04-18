@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import logging
@@ -26,10 +27,10 @@ def send_telegram(message, context=None):
     try:
         from gws_assistant.config import AppConfig
         from gws_assistant.memory import LongTermMemory
-        
+
         config = AppConfig.from_env()
         memory = LongTermMemory(config)
-        
+
         memories = memory.search(message)
         if memories:
             memory_context = "\n\n--- Relevant Context ---\n" + "\n".join(
@@ -39,7 +40,12 @@ def send_telegram(message, context=None):
     except Exception as e:
         logger.debug(f"Could not enrich Telegram message with memory: {e}")
 
-    client_path = r"C:\Users\hasee\.gemini\extensions\telegram\src\client.py"
+    client_path = os.getenv(
+        "TELEGRAM_CLIENT_PATH",
+        os.path.join(
+            os.path.expanduser("~"), ".gemini", "extensions", "telegram", "src", "client.py"
+        ),
+    )
 
     payload = {
         "chat_id": chat_id,
@@ -47,9 +53,9 @@ def send_telegram(message, context=None):
     }
 
     try:
-        # Use D:\henv\Scripts\python.exe as requested in memories
+        python_exe = os.getenv("PYTHON_EXE") or sys.executable or shutil.which("python") or "python"
         process = subprocess.Popen(
-            [r"D:\henv\Scripts\python.exe", client_path, "send_message"],
+            [python_exe, client_path, "send_message"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

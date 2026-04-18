@@ -23,7 +23,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         max_retries=3,
         langchain_enabled=True,
         use_heuristic_fallback=True,
-        default_recipient_email="haseebmir.hm@gmail.com"
+        default_recipient_email="user@example.com"
     )
 
 

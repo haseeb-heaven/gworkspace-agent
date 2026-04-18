@@ -19,8 +19,8 @@ console = Console()
 def discover_gws_binary() -> Path | None:
     """Find a local, npm/global, or PATH-provided gws executable."""
     candidates = [
-        Path.cwd() / "gws.exe",
         Path.cwd() / "gws",
+        Path.cwd() / "gws.exe",
     ]
     for executable in ("gws", "gws.exe", "google-workspace-cli"):
         discovered = shutil.which(executable)
@@ -45,7 +45,7 @@ def run_setup_wizard(env_file_path: Path | None = None) -> Path:
     else:
         console.print("[yellow]No gws CLI binary was detected automatically.[/yellow]")
 
-    default_binary = existing.get("GWS_BINARY_PATH") or str(detected_binary or Path.cwd() / "gws.exe")
+    default_binary = existing.get("GWS_BINARY_PATH") or str(detected_binary or Path.cwd() / "gws")
     gws_binary_path = Prompt.ask("Path to gws CLI binary", default=default_binary)
     if not gws_binary_path:
         raise RuntimeError("Setup cancelled before gws binary path was saved.")

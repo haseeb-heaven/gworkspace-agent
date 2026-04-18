@@ -48,7 +48,7 @@ class AppConfig:
             base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
-        gws_binary_value = os.getenv("GWS_BINARY_PATH", "gws.exe")
+        gws_binary_value = os.getenv("GWS_BINARY_PATH", "gws")
         gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)

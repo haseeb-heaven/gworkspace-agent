@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -36,37 +37,40 @@ class PlanExecutor:
         """Expand a single task into a list of executable tasks.
         Example: gmail.get_message with message_id=['id1', 'id2']
         """
-        # 1. Resolve placeholders in parameters FIRST to see if we have a list
-        # We use a copy to avoid mutating the original task before expansion
+        # Resolve placeholders in parameters FIRST to see if we have a list
         import copy
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
 
         if task.service == "gmail" and task.action == "get_message":
             msg_ids = resolved_params.get("message_id")
             # If no message_id provided, but we have legacy $gmail_message_ids in context, use them!
-            if (not msg_ids or msg_ids == "{{message_id}}") and "gmail_message_ids" in context:
+            if (not msg_ids or msg_ids == "{{message_id}}" or msg_ids == _UNRESOLVED_MARKER) and "gmail_message_ids" in context:
                  msg_ids = context["gmail_message_ids"]
                  self.logger.info(f"Auto-injected {len(msg_ids)} IDs from context for expansion.")
 
-            if isinstance(msg_ids, list):
+            if isinstance(msg_ids, list) and msg_ids:
                 expanded = []
                 for i, m_id in enumerate(msg_ids):
+                    if not m_id or not isinstance(m_id, str) or m_id == _UNRESOLVED_MARKER:
+                        continue
                     new_task = copy.deepcopy(task)
                     new_task.id = f"{task.id}-{i+1}"
                     new_task.parameters["message_id"] = m_id
                     expanded.append(new_task)
-                return expanded
+                return expanded if expanded else [task]
 
         if task.service == "drive" and task.action == "move_file":
             file_ids = resolved_params.get("file_id")
-            if isinstance(file_ids, list):
+            if isinstance(file_ids, list) and file_ids:
                 expanded = []
                 for i, f_id in enumerate(file_ids):
+                    if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
+                        continue
                     new_task = copy.deepcopy(task)
                     new_task.id = f"{task.id}-{i+1}"
                     new_task.parameters["file_id"] = f_id
                     expanded.append(new_task)
-                return expanded
+                return expanded if expanded else [task]
 
         return [task]
 
@@ -194,7 +198,7 @@ class PlanExecutor:
             if val in legacy_map and legacy_map[val] in context:
                 res = context[legacy_map[val]]
                 if res is None:
-                    return _UNRESOLVED_MARKER
+                    return ""
                 # If we are in code context, we might want repr, but for expansion we want the raw list.
                 # Usually expansion happens before final resolution.
                 if use_repr_for_complex and isinstance(res, (dict, list)):
@@ -220,10 +224,16 @@ class PlanExecutor:
                     return res if res is not None else _UNRESOLVED_MARKER
                 resolved = self._get_value_by_path(results_map, path)
                 
-                # Smart unwrap: if the resolved value is a dict with 'content', 
-                # promote the content.
+                # Smart unwrap: 
+                # 1. If the resolved value is a dict with 'content', promote the content.
                 if isinstance(resolved, dict) and "content" in resolved:
                     resolved = resolved["content"]
+
+                # 2. If we resolved to a list, but we are a single-token placeholder 
+                # (e.g. {{task-1.id}}), pick the first item.
+                if isinstance(resolved, list) and resolved:
+                    self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
+                    resolved = resolved[0]
 
                 if resolved is not None:
                     return resolved
@@ -246,9 +256,8 @@ class PlanExecutor:
                 if p.startswith("$"):
                     p = p[1:] # strip $ from $task-N
 
-                if p in context:
-                    res = context[p]
-                else:
+                res = context.get(p)
+                if res is None:
                     res = self._get_value_by_path(results_map, p)
 
                 if res is not None:
@@ -262,6 +271,10 @@ class PlanExecutor:
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
+                
+                # If we explicitly found a None value in context, return empty string
+                if res is None and p in context:
+                    return ""
 
                 # Safety: Only return _UNRESOLVED_MARKER for tokens that are obviously intended as placeholders
                 # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
@@ -297,68 +310,51 @@ class PlanExecutor:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
-        # 1. Try exact match first
-        if path in data:
-            return data[path]
-
-        # 2. Iterative resolution
-        # Support both dot-notation and indexed access.
-        # Example: "task-2.sheets[0].title"
-        # Split by dots, but handle index brackets as separate tokens.
+        # 1. Split path into tokens, handling dots and brackets
         tokens = re.findall(r'[^.\[\]]+|\[\d+\]', path)
+        if not tokens:
+            return None
+
         curr: Any = data
-
-        for token in tokens:
+        for i, token in enumerate(tokens):
             if token.startswith('['):
-                # Indexed access
                 index = int(token[1:-1])
-
                 # Auto-unwrap if dict contains a known list key
                 if isinstance(curr, dict):
                     for list_key in ["files", "messages", "items", "events", "values", "threads"]:
                         if list_key in curr and isinstance(curr[list_key], list):
                             curr = curr[list_key]
                             break
-
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
                 else:
-                    self.logger.warning(f"Path resolution failed at '{token}': index {index} out of range or not a list.")
                     return None
             else:
                 # Key access
                 if isinstance(curr, dict):
-                    # Key access
                     if token in curr:
                         curr = curr[token]
                     else:
                         # Auto-unwrap: if current level is a dict and we have a list inside,
-                        # and the token is NOT a key in the dict, but exists in the list elements,
-                        # we can auto-unwrap.
+                        # and the token exists in the list elements, we can auto-unwrap.
+                        unwrapped = False
                         for list_key in ["files", "messages", "items", "events", "values", "threads"]:
                             if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
-                                # If the token is found in the first item of the list, unwrap to the list
                                 if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
-                                    curr = curr[list_key]
+                                    curr = [item.get(token) for item in curr[list_key]]
+                                    unwrapped = True
                                     break
-                        
-                        if isinstance(curr, dict):
-                            curr = curr.get(token)
-
-                # If curr is a list, and we haven't consumed this token as a direct key, 
-                # map the token across the list elements.
-                # BUT only if we didn't just find it as a direct key in the previous block.
+                        if not unwrapped:
+                            curr = None
                 elif isinstance(curr, list):
-                    new_curr = []
-                    for item in curr:
-                        if isinstance(item, dict) and token in item:
-                            new_curr.append(item[token])
-                    curr = new_curr if new_curr else None
+                    # Map the token across the list elements
+                    curr = [item.get(token) if isinstance(item, dict) else None for item in curr]
+                    # Filter out None if some items don't have it? 
+                    # Usually we want to keep the list structure.
                 else:
-                    pass
+                    return None
 
             if curr is None:
-                self.logger.warning(f"Path resolution failed at '{token}': resolved to None.")
                 return None
 
         return curr
@@ -367,71 +363,6 @@ class PlanExecutor:
         """Extract known artifact keys from a task result and store in context."""
         if not isinstance(data, dict):
             return
-
-        # 1. results_map storage for {task-N} resolution
-        results_map = context.setdefault("task_results", {})
-        if task and hasattr(task, "id") and task.id:
-            # Consistent mapping
-            task_id = str(task.id)
-            num = task_id.removeprefix("task-")
-            seq_num = str(getattr(task, "_sequence_index", num))
-            action_name = str(task.action)
-
-            # Map the full task result object
-            results_map[task_id] = data
-            results_map[num] = data
-            results_map[f"task-{num}"] = data
-            results_map[seq_num] = data
-            results_map[f"task-{seq_num}"] = data
-            results_map[action_name] = data
-
-            # Map individual fields (if they exist)
-            for k, v in data.items():
-                results_map[f"{task_id}.{k}"] = v
-                results_map[f"{num}.{k}"] = v
-                results_map[f"task-{num}.{k}"] = v
-                results_map[f"{seq_num}.{k}"] = v
-                results_map[f"task-{seq_num}.{k}"] = v
-                results_map[f"{action_name}.{k}"] = v
-
-            # Special case: map 'id' specifically for easier path resolution
-            if "id" in data:
-                results_map[f"{task_id}.id"] = data["id"]
-                results_map[f"{num}.id"] = data["id"]
-                results_map[f"task-{num}.id"] = data["id"]
-                results_map[f"{seq_num}.id"] = data["id"]
-                results_map[f"task-{seq_num}.id"] = data["id"]
-
-            # Semantic/Legacy extraction for tests
-            if data.get("snippet") and "DecoverAI" in data["snippet"]:
-                context[f"company_names_from_task_{num}"] = [["DecoverAI"]]
-            if "values" in data and isinstance(data["values"], list):
-                context[f"company_names_from_task_{num}"] = data["values"]
-                results_map["values"] = data["values"] # Direct alias for the most recent values
-
-        # ID Aliasing: Promote the first item's ID to a stable 'task-N.id' key
-        if task:
-            task_id = str(task.id)
-            num = task_id.removeprefix("task-")
-            
-            if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
-                # OPTIMIZATION: Reorder files to put non-folders first.
-                files = data["files"]
-                folders = [f for f in files if f.get("mimeType") == "application/vnd.google-apps.folder"]
-                non_folders = [f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"]
-                data["files"] = non_folders + folders
-
-                first_id = data["files"][0].get("id")
-                if first_id:
-                    results_map[f"{task_id}.id"] = first_id
-                    results_map[f"{num}.id"] = first_id
-                    context["last_file_id"] = first_id
-
-            if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
-                first_id = data["messages"][0].get("id")
-                if first_id:
-                    results_map[f"{task_id}.id"] = first_id
-                    results_map[f"{num}.id"] = first_id
 
         for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
             if id_field in data:
@@ -479,7 +410,7 @@ class PlanExecutor:
             headers_dict = {}
             if isinstance(headers, list):
                 for h in headers:
-                    name = h.get("name", "").lower()
+                    name = str(h.get("name", "")).lower()
                     if name:
                         headers_dict[name] = h.get("value")
             else:
@@ -514,12 +445,18 @@ class PlanExecutor:
             # Populate gmail_details_values for Sheets extraction
             sender = headers_dict.get("from", "Unknown")
             subject = headers_dict.get("subject", "No Subject")
-            # We want to build a cumulative list if this is part of an expansion
-            details_list = context.setdefault("gmail_details_values", [])
+            date_val = headers_dict.get("date", "Unknown Date")
+            
             # Extract just email from "Name <email@example.com>"
             email_match = re.search(r"<(.+?)>", str(sender))
             email_addr = email_match.group(1) if email_match else sender
-            details_list.append([sender, email_addr, subject])
+            
+            row = [sender, subject, date_val, email_addr]
+            data["row"] = row # For {task-N.row} access
+
+            # We want to build a cumulative list if this is part of an expansion
+            details_list = context.setdefault("gmail_details_values", [])
+            details_list.append(row)
 
         if "messages" in data:
             msgs = data["messages"]
@@ -537,23 +474,35 @@ class PlanExecutor:
 
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
-                # Reset details for fresh extraction
-                context["gmail_details_values"] = []
+                
+                if task:
+                    task_id = str(task.id)
+                    num = task_id.removeprefix("task-")
+                    # If we found multiple messages, store the LIST of IDs so expansion can trigger
+                    context[f"message_id_from_task_{num}"] = context["gmail_message_ids"]
+                    context[f"thread_id_from_task_{num}"] = [m.get("threadId") for m in msgs]
+
+                # Reset details for fresh extraction ONLY if it's empty to allow for cumulative append in expanded tasks
+                if not context.get("gmail_details_values"):
+                    context["gmail_details_values"] = []
 
         if "files" in data:
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
                 context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
-                if len(files) > 0 and "mimeType" in files[0]:
-                    context["last_file_mime"] = files[0]["mimeType"]
-                    # Also store in results map for {task-N.mimeType} access
-                    if task and hasattr(task, "id") and task.id:
-                        results_map[str(task.id)]["mimeType"] = files[0]["mimeType"]
+                if len(files) > 0:
+                    if "mimeType" in files[0]:
+                        context["last_file_mime"] = files[0]["mimeType"]
+                    if "webViewLink" in files[0]:
+                        context["last_file_url"] = files[0]["webViewLink"]
 
         if "id" in data and task and task.service == "drive" and task.action == "create_folder":
             context["last_folder_id"] = data["id"]
-            context["last_folder_url"] = f"https://drive.google.com/drive/folders/{data['id']}"
+            url = data.get("webViewLink") or f"https://drive.google.com/drive/folders/{data['id']}"
+            context["last_folder_url"] = url
+            data["webViewLink"] = url # Ensure it's in the data for {task-N.webViewLink}
+
 
         if "drive_export_content" in data:
             val = data["drive_export_content"]
@@ -571,18 +520,124 @@ class PlanExecutor:
             context["last_file_content"] = val
 
         if "values" in data and isinstance(data["values"], list):
-            # Semantic extraction for tests
-            context[f"company_names_from_task_{task.id}"] = data["values"]
-
-            # Robust key resolution: store 'values' in multiple formats
-            results_map[f"{task.id}.values"] = data["values"]
-            results_map[f"task-{task.id}.values"] = data["values"]
-            results_map[f"{str(task.id).removeprefix('task-')}.values"] = data["values"]
-            results_map["values"] = data["values"] # Direct alias for the most recent values
-
             rows = data["values"]
+            
+            # Semantic extraction for tests - handle aggregation for all expanded tasks
+            if task:
+                 task_id = str(task.id)
+                 # Extract base ID (e.g. '2' from 'task-2-1' or 'task-2')
+                 m = re.match(r"(?:task-)?(\d+)", task_id)
+                 if m:
+                     base_num = m.group(1)
+                     key = f"company_names_from_task_{base_num}"
+                     if "-" in task_id: # it's a subtask or task-N
+                         current = context.setdefault(key, [])
+                         if isinstance(current, list):
+                             # Avoid double-wrapping if already a list of rows
+                             if rows and isinstance(rows[0], list):
+                                 current.extend(rows)
+                             else:
+                                 current.append(rows)
+                     else:
+                         context[key] = rows
+
             lines = [" | ".join(str(c) for c in row) for row in rows]
             context["sheet_email_body"] = "\n".join(lines)
+
+        # ------------------------------------------------------------------
+        # FINAL: Store everything in results_map for {task-N} resolution
+        # ------------------------------------------------------------------
+        results_map = context.setdefault("task_results", {})
+        if task and hasattr(task, "id") and task.id:
+            task_id = str(task.id)
+            num = task_id.removeprefix("task-")
+            seq_num = str(getattr(task, "_sequence_index", num))
+            action_name = str(task.action)
+
+            # Map the full task result object (now enriched with IDs, URLs, headers, etc.)
+            results_map[task_id] = data
+            results_map[num] = data
+            results_map[f"task-{num}"] = data
+            results_map[seq_num] = data
+            results_map[f"task-{seq_num}"] = data
+            results_map[action_name] = data
+
+            # If this is a subtask (e.g. task-2-1), also append to the base task's list (e.g. task-2)
+            is_subtask = False
+            if "-" in task_id:
+                # Extract base ID (e.g. 'task-2' from 'task-2-1')
+                m = re.match(r"(task-\d+)-\d+", task_id)
+                if m:
+                    b_id = m.group(1)
+                    is_subtask = True
+                    # Initialize list if not already present or if it's currently a dict (from a different task)
+                    if b_id not in results_map or not isinstance(results_map[b_id], list):
+                        results_map[b_id] = []
+                    
+                    results_map[b_id].append(data)
+                    self.logger.debug(f"DEBUG: Appended result to base task list '{b_id}' (size: {len(results_map[b_id])})")
+                    
+                    # Also map the numeric base ID (e.g. '2' from 'task-2-1')
+                    b_num = b_id.removeprefix("task-")
+                    results_map[b_num] = results_map[b_id]
+                    results_map[f"task-{b_num}"] = results_map[b_id]
+                    
+                    # Map semantic keys like company_names_from_task_2
+                    # If this subtask produced a 'values' or 'row', ensure it's in the base list
+                    if "values" in data and isinstance(data["values"], list):
+                         key = f"company_names_from_task_{b_num}"
+                         current = context.setdefault(key, [])
+                         if isinstance(current, list):
+                             rows = data["values"]
+                             if rows and isinstance(rows[0], list): current.extend(rows)
+                             else: current.append(rows)
+                    elif "row" in data:
+                         key = f"company_names_from_task_{b_num}"
+                         current = context.setdefault(key, [])
+                         if isinstance(current, list): current.append(data["row"])
+
+            # Map individual fields (if they exist)
+            for k, v in data.items():
+                results_map[f"{task_id}.{k}"] = v
+                # ONLY map N.key and task-N.key if this is NOT an expansion subtask,
+                # or if it's the first subtask (to provide some default).
+                # Actually, if it's a subtask, we want task-N.key to be a list if possible? 
+                # For now, let's keep it simple: subtasks don't overwrite task-N.key 
+                # unless they are the primary ID.
+                if not is_subtask:
+                    results_map[f"{num}.{k}"] = v
+                    results_map[f"task-{num}.{k}"] = v
+                
+                results_map[f"{seq_num}.{k}"] = v
+                results_map[f"task-{seq_num}.{k}"] = v
+                results_map[f"{action_name}.{k}"] = v
+
+            # Special case: promote first item's ID for files/messages
+            if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
+                # Bug 1 Fix: Pick first non-folder ID if possible
+                files = data["files"]
+                first_id = files[0].get("id")
+                
+                # If the first item is a folder, try to find a document
+                if files[0].get("mimeType") == "application/vnd.google-apps.folder":
+                    for f in files:
+                        if f.get("mimeType") != "application/vnd.google-apps.folder":
+                            first_id = f.get("id")
+                            self.logger.info(f"DEBUG: Skipping folder '{files[0].get('id')}' for document ID '{first_id}'")
+                            break
+
+                if first_id:
+                    results_map[f"{task_id}.id"] = first_id
+                    results_map[f"{num}.id"] = first_id
+            
+            if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
+                first_id = data["messages"][0].get("id")
+                if first_id:
+                    results_map[f"{task_id}.id"] = first_id
+                    results_map[f"{num}.id"] = first_id
+
+        if "values" in data and isinstance(data["values"], list):
+             results_map["values"] = data["values"] # Direct alias for the most recent values
 
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
@@ -660,16 +715,13 @@ class PlanExecutor:
         i = 0
         while i < len(task_queue):
             task = task_queue[i]
-            self.logger.debug(f"DEBUG: Processing task {i}: {task.id} ({task.service}.{task.action})")
 
             # 1. Expand task if needed (e.g. multi-message get_message)
             expanded = self._expand_task(task, context)
-            self.logger.debug(f"DEBUG: Expanded task into {len(expanded)} tasks")
 
             # If expansion happened, replace the current task with expanded ones
             if len(expanded) > 1 or (len(expanded) == 1 and expanded[0] is not task):
                 # Insert expanded tasks into queue after current index
-                self.logger.debug(f"DEBUG: Replacing task {i} with expanded version")
                 task_queue[i:i+1] = expanded
                 # Re-fetch the first expanded task for this iteration
                 task = task_queue[i]
@@ -746,15 +798,39 @@ class PlanExecutor:
                 )
 
             # Inject task_results and other common context keys into extra_globals
-            common_keys = [
-                "last_export_file_content", "last_export_content", "last_file_content",
-                "drive_export_content", "last_spreadsheet_id", "last_spreadsheet_url",
-                "last_document_id", "last_document_url", "gmail_message_body"
-            ]
-            extra_globals = {"task_results": context.get("task_results", {})}
-            for ck in common_keys:
-                if ck in context:
-                    extra_globals[ck] = context[ck]
+            task_results = context.get("task_results", {})
+            
+            # Robustness: if LLM uses task_results[0] instead of task_results['task-1']
+            # we inject integer keys pointing to the same data (0-based and 1-based).
+            results_with_numeric = task_results.copy()
+            for key, val in task_results.items():
+                if key.startswith("task-"):
+                    try:
+                        num = int(key.split("-")[1])
+                        results_with_numeric[num] = val     # 1-based
+                        results_with_numeric[num - 1] = val # 0-based
+                    except (ValueError, IndexError):
+                        pass
+
+            extra_globals = {
+                "task_results": results_with_numeric,
+                "any": any,
+                "all": all,
+                "sum": sum,
+                "min": min,
+                "max": max,
+                "len": len,
+                "list": list,
+                "dict": dict,
+                "set": set,
+                "str": str,
+                "int": int,
+                "float": float,
+                "bool": bool,
+                "round": round,
+                "enumerate": enumerate,
+                "zip": zip,
+            }
 
             result = execute_generated_code(code, config=self.config, extra_globals=extra_globals)
 
@@ -804,13 +880,6 @@ class PlanExecutor:
                         # Also update the task's own entry in the map if it's a dict
                         if isinstance(results_map.get(task.id), dict):
                             results_map[task.id][k] = v
-                        # Fallback: add to global results_map if not conflicting
-                        if k not in results_map:
-                             self.logger.debug(f"DEBUG: Promoting key '{k}' to global results_map")
-                             results_map[k] = v
-                        # Fallback: add to global results_map if not conflicting
-                        if k not in results_map:
-                             results_map[k] = v
 
             return ExecutionResult(
                 success=result.get("success", False),
@@ -830,9 +899,7 @@ class PlanExecutor:
             import subprocess
             
             message = task.parameters.get("message", "")
-            python_exe = r"D:\henv\Scripts\python.exe"
-            if not os.path.exists(python_exe):
-                python_exe = "python"
+            python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
@@ -916,14 +983,18 @@ class PlanExecutor:
                             ext = os.path.splitext(saved_file)[1].lower()
                             is_text = ext in (".txt", ".csv", ".json", ".md", ".py", ".js", ".html")
                         
+                        file_content = None
                         if is_text:
                             try:
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
-                                    content = f.read().lstrip('\ufeff')
-                                    data["content"] = content
-                                    data["drive_export_content"] = content
+                                    file_content = f.read().lstrip('\ufeff')
                             except Exception as e:
                                 logger.warning("Failed to read exported file %s: %s", saved_file, e)
+                        
+                        # Always set content, fallback to path if binary or read failed
+                        final_content = file_content if file_content is not None else f"[File: {saved_file}]"
+                        data["content"] = final_content
+                        data["drive_export_content"] = final_content
                 result.output = data
             except Exception:
                 pass

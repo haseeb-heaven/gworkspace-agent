@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -210,8 +211,9 @@ class CommandPlanner:
                 "fields": "files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName,emailAddress)),nextPageToken",
             }
             if raw_query:
-                # If the query specifically mentions 'document' and 'name', prioritize Google Docs mimeType.
-                if "document" in raw_query.lower() and "name" in raw_query.lower():
+                # If the query looks like a document search, prioritize Google Docs mimeType.
+                lowered = raw_query.lower()
+                if any(kw in lowered for kw in ("document", "doc", "12th", "class")) and "mimetype" not in lowered:
                     request_params["q"] = f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
                 else:
                     request_params["q"] = sanitize_drive_query(raw_query)
@@ -219,17 +221,17 @@ class CommandPlanner:
 
         if action == "create_folder":
             folder_name = self._required_text(params, "folder_name")
-            return ["drive", "files", "create", "--json",
+            return ["drive", "files", "create", "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}), "--json",
                     json.dumps({"mimeType": "application/vnd.google-apps.folder", "name": folder_name}, ensure_ascii=True)]
 
         if action == "upload_file":
             file_path = self._required_text(params, "file_path")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
-            return ["drive", "files", "create", "--upload", file_path, "--json", json.dumps({"name": name}, ensure_ascii=True)]
+            return ["drive", "files", "create", "--upload", file_path, "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}), "--json", json.dumps({"name": name}, ensure_ascii=True)]
 
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
-            return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id})]
+            return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "id,name,mimeType,webViewLink"})]
 
         if action == "export_file":
             file_id = self._required_text(params, "file_id")
@@ -268,11 +270,14 @@ class CommandPlanner:
                 ]
 
             if source_mime == "application/vnd.google-apps.document":
-                mime_type = requested_mime or "application/pdf"
+                mime_type = requested_mime or "text/plain"
             elif source_mime == "application/vnd.google-apps.spreadsheet":
-                mime_type = requested_mime or "text/csv"
+                if not requested_mime or requested_mime == "text/plain":
+                    mime_type = "text/csv"
+                else:
+                    mime_type = requested_mime
             elif source_mime == "application/vnd.google-apps.presentation":
-                mime_type = "application/pdf"
+                mime_type = requested_mime or "application/pdf"
             else:
                 # If no source_mime, respect requested_mime or default to PDF
                 mime_type = requested_mime or "application/pdf"
@@ -367,7 +372,8 @@ class CommandPlanner:
                 elif not values: # Handle empty list
                     values = [["No values supplied"]]
             else: # Handle non-string, non-list types (e.g., None, int, etc.)
-                values = [[str(values)]] # Wrap in list of lists
+                val_str = "" if values is None else str(values)
+                values = [[val_str]] # Wrap in list of lists
 
             return [
                 "sheets", "spreadsheets", "values", "append",
@@ -668,9 +674,7 @@ class CommandPlanner:
     def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "send_message":
             message = self._required_text(params, "message")
-            python_exe = r"D:\henv\Scripts\python.exe"
-            if not os.path.exists(python_exe):
-                python_exe = "python"
+            python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
             return [python_exe, script_path, message]
@@ -735,7 +739,7 @@ class CommandPlanner:
     def _export_drive_file_to_temp(file_id: str) -> str | None:
         try:
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
-            gws_exe = os.environ.get("GWS_EXE") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "gws.exe")
+            gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
             for mime_type, ext in [("application/pdf", ".pdf"), ("text/csv", ".csv")]:
                 file_path = os.path.join(tmp_dir, f"{file_id}{ext}")
                 result = subprocess.run([gws_exe, "drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type}), "-o", file_path], capture_output=True, timeout=30)
