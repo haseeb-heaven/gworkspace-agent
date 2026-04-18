@@ -173,4 +173,18 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             # Synchronize stdout with any enrichments (like body extraction)
             result.stdout = json.dumps(result.output)
 
+            # Triple-check verification for creations to ensure consistency
+            creation_actions = ("create_spreadsheet", "create_document", "create_file", "insert_event")
+            if task.action in creation_actions:
+                resource_id = (
+                    result.output.get("spreadsheetId") or 
+                    result.output.get("documentId") or 
+                    result.output.get("id")
+                )
+                if resource_id:
+                    if not self.verify_resource(task.service, resource_id):
+                        result.success = False
+                        result.error = f"Consistency check failed: could not verify {task.service} resource {resource_id} after creation."
+                        result.stdout = json.dumps({"error": result.error})
+
         return result
