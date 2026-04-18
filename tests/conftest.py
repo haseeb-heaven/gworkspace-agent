@@ -61,7 +61,7 @@ def default_email():
 
     from dotenv import load_dotenv
     load_dotenv()
-    return os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com")
+    return os.getenv("DEFAULT_RECIPIENT_EMAIL")
 
 
 def pytest_collection_modifyitems(config, items):

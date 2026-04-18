@@ -21,7 +21,7 @@ def test_live_workspace_sheet_and_email_flow():
     if not recipient:
         pytest.skip("LIVE_TEST_RECIPIENT_EMAIL is required for live email verification.")
 
-    gws_binary = Path((os.getenv("GWS_BINARY_PATH") or "gws.exe")).expanduser()
+    gws_binary = Path((os.getenv("GWS_BINARY_PATH") or os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"))).expanduser()
     if not gws_binary.exists():
         pytest.skip("GWS_BINARY_PATH does not exist for live integration run.")
 

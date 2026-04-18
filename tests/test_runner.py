@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import logging
 import subprocess
@@ -9,14 +10,14 @@ from gws_assistant.gws_runner import GWSRunner
 
 
 def test_runner_validate_binary(tmp_path):
-    binary = tmp_path / "gws.exe"
+    binary = tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")
     binary.write_text("binary")
     runner = GWSRunner(binary, logging.getLogger("test"))
     assert runner.validate_binary() is True
 
 
 def test_runner_success(monkeypatch, tmp_path):
-    binary = tmp_path / "gws.exe"
+    binary = tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")
     binary.write_text("binary")
     runner = GWSRunner(binary, logging.getLogger("test"))
 

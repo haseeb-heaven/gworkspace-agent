@@ -1,6 +1,7 @@
 """Shared data models."""
 
 from __future__ import annotations
+import os
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +31,7 @@ class AppConfigModel:
     gws_timeout_seconds: int = 90
     gws_max_retries: int = 3
     max_context_snippet_len: int = 300
-    default_recipient_email: str = "user@example.com"
+    default_recipient_email: str = os.getenv("DEFAULT_RECIPIENT_EMAIL")
     mem0_api_key: str | None = None
 
 

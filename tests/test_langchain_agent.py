@@ -1,3 +1,4 @@
+import os
 import logging
 from unittest.mock import MagicMock
 
@@ -15,7 +16,7 @@ def config_with_key(tmp_path):
         api_key="sk-test",
         base_url=None,
         timeout_seconds=30,
-        gws_binary_path=tmp_path / "gws.exe",
+        gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
         log_file_path=tmp_path / "assistant.log",
         log_level="INFO",
         verbose=True,
@@ -29,7 +30,7 @@ def test_create_agent_no_key(tmp_path):
     logger = logging.getLogger("test")
     config = AppConfigModel(
         provider="openai", model="gpt-4.1-mini", api_key=None, base_url=None, timeout_seconds=30,
-        gws_binary_path=tmp_path/"gws.exe", log_file_path=tmp_path/"l.log", log_level="INFO",
+        gws_binary_path=tmp_path/os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), log_file_path=tmp_path/"l.log", log_level="INFO",
         verbose=True, env_file_path=tmp_path/".env", setup_complete=True, max_retries=3, langchain_enabled=True
     )
     assert create_agent(config, logger) is None

@@ -20,9 +20,9 @@ def discover_gws_binary() -> Path | None:
     """Find a local, npm/global, or PATH-provided gws executable."""
     candidates = [
         Path.cwd() / "gws",
-        Path.cwd() / "gws.exe",
+        Path.cwd() / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
     ]
-    for executable in ("gws", "gws.exe", "google-workspace-cli"):
+    for executable in ("gws", os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), "google-workspace-cli"):
         discovered = shutil.which(executable)
         if discovered:
             candidates.append(Path(discovered))

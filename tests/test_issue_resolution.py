@@ -1,3 +1,4 @@
+import os
 import logging
 import pytest
 from pathlib import Path
@@ -8,7 +9,7 @@ from gws_assistant.gws_runner import GWSRunner
 
 class MockRunner(GWSRunner):
     def __init__(self):
-        super().__init__(Path("gws.exe"), logging.getLogger("test"))
+        super().__init__(Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test"))
         self.commands = []
         self.responses = {}
 

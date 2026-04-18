@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import logging
 from pathlib import Path
@@ -14,7 +15,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         api_key=None,
         base_url=None,
         timeout_seconds=30,
-        gws_binary_path=tmp_path / "gws.exe",
+        gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
         log_file_path=tmp_path / "assistant.log",
         log_level="INFO",
         verbose=True,
@@ -23,7 +24,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         max_retries=3,
         langchain_enabled=True,
         use_heuristic_fallback=True,
-        default_recipient_email="user@example.com"
+        default_recipient_email=os.getenv("DEFAULT_RECIPIENT_EMAIL")
     )
 
 

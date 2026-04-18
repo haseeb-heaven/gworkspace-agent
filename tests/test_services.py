@@ -42,7 +42,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         api_key=None,
         base_url=None,
         timeout_seconds=30,
-        gws_binary_path=tmp_path / "gws.exe",
+        gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
         log_file_path=tmp_path / "assistant.log",
         log_level="INFO",
         verbose=True,
@@ -58,7 +58,7 @@ class FakeRunner(GWSRunner):
     """Mock runner that returns realistic API payloads for all services."""
 
     def __init__(self) -> None:
-        super().__init__(Path("gws.exe"), logging.getLogger("test"))
+        super().__init__(Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test"))
         self.commands: list[list[str]] = []
 
     def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
@@ -66,14 +66,14 @@ class FakeRunner(GWSRunner):
         if args[:4] == ["gmail", "users", "messages", "list"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"messages":[{"id":"m1","threadId":"t1"},{"id":"m2","threadId":"t2"}],"resultSizeEstimate":2}',
             )
         if args[:4] == ["gmail", "users", "messages", "get"]:
             msg_id = json.loads(args[args.index("--params") + 1]).get("id", "m1")
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=json.dumps({
                     "id": msg_id,
                     "snippet": "We are hiring for a senior role",
@@ -87,7 +87,7 @@ class FakeRunner(GWSRunner):
         if args[:4] == ["gmail", "users", "messages", "send"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"id":"sent-1","labelIds":["SENT"]}',
             )
         if args[:3] == ["sheets", "spreadsheets", "create"]:
@@ -101,7 +101,7 @@ class FakeRunner(GWSRunner):
                     pass
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=json.dumps({
                     "spreadsheetId": "sheet-1",
                     "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1/edit",
@@ -112,19 +112,19 @@ class FakeRunner(GWSRunner):
         if args[:4] == ["sheets", "spreadsheets", "values", "append"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"updates":{"updatedRows":2,"updatedCells":6,"updatedRange":"TestTab!A1:C2"}}',
             )
         if args[:4] == ["sheets", "spreadsheets", "values", "get"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"range":"Sheet1!A1:B2","values":[["Name","Role"],["Alice","Engineer"]]}',
             )
         if args[:3] == ["drive", "files", "list"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=json.dumps({"files": [
                     {"id": "d1", "name": "Agentic AI - Builders", "mimeType": "application/vnd.google-apps.document", "webViewLink": "https://docs.google.com/document/d/test123/edit"},
                     {"id": "d2", "name": "weapon_244.qvm", "mimeType": "application/octet-stream", "webViewLink": "https://drive.google.com/file/d/xxx"},
@@ -133,58 +133,58 @@ class FakeRunner(GWSRunner):
         if args[:3] == ["drive", "files", "create"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"id":"folder-1","name":"Test Folder","mimeType":"application/vnd.google-apps.folder"}',
             )
         if args[:3] == ["calendar", "events", "insert"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"id":"evt-1","created":"2026-04-11","summary":"Test","htmlLink":"https://calendar.google.com/event?id=evt-1"}',
             )
         if args[:3] == ["calendar", "events", "list"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"items":[{"id":"evt-1","summary":"Review","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
             )
         if args[:2] == ["tasks", "tasklists"] and "list" in args:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"items":[{"id":"tl1","title":"My Tasks"}]}',
             )
         if args[:2] == ["tasks", "tasks"] and "list" in args:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"items":[{"id":"tk1","title":"Buy milk","status":"needsAction"}]}',
             )
         if args[:2] == ["classroom", "courses"] and "list" in args:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"courses":[{"id":"c1","name":"Math 101"}]}',
             )
         if args[:2] == ["script", "projects"] and "list" in args:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"projects":[{"scriptId":"s1","title":"AutoScript"}]}',
             )
         if args[:2] == ["events", "subscriptions"] and "list" in args:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"subscriptions":[{"name":"sub1","targetResource":"drive"}]}',
             )
         if args[0] == "modelarmor" and "+sanitize-prompt" in args:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"sanitizedText":"safe text","findings":[]}',
             )
-        return ExecutionResult(success=True, command=["gws.exe", *args], stdout='{}')
+        return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
 
 
 # =====================================================================
@@ -209,7 +209,7 @@ class TestPlannerGmail:
 
     def test_send_message_builds_raw_email(self):
         args = self.planner.build_command("gmail", "send_message", {
-            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
+            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
             "subject": "Test Subject",
             "body": "Hello World",
         })
@@ -219,7 +219,7 @@ class TestPlannerGmail:
         # The raw field should be base64-encoded
         import base64
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
-        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com')}" in decoded
+        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL')}" in decoded
         assert "Subject: Test Subject" in decoded
         assert "Hello World" in decoded
 
@@ -381,12 +381,12 @@ class TestAgentPlanning:
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
         plan = agent.plan(
             "Search Google Sheets with ID: '1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo' "
-            "create email with this data to 'user@example.com' and send it"
+            f"create email with this data to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} and send it"
         )
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("sheets", "get_values") in services
         assert ("gmail", "send_message") in services
-        assert plan.tasks[-1].parameters.get("to_email") == "user@example.com"
+        assert plan.tasks[-1].parameters.get("to_email") == os.getenv("DEFAULT_RECIPIENT_EMAIL")
 
     def test_list_emails_from_specific_person(self, tmp_path):
         """User: 'List all emails i received from user.boss@gmail.com person'"""
@@ -471,7 +471,7 @@ class TestExecutionPipelines:
             tasks=[
                 PlannedTask("task-1", "sheets", "get_values", {"spreadsheet_id": "s1", "range": "Sheet1!A1:B2"}),
                 PlannedTask("task-2", "gmail", "send_message", {
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
                     "subject": "Data Export",
                     "body": "$sheet_email_body",
                 }),
@@ -497,7 +497,7 @@ class TestExecutionPipelines:
                     "spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$drive_summary_values",
                 }),
                 PlannedTask("task-4", "gmail", "send_message", {
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"), "subject": "AI Data Sheet", "body": "Sheet is ready",
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"), "subject": "AI Data Sheet", "body": "Sheet is ready",
                 }),
                 PlannedTask("task-5", "calendar", "create_event", {
                     "summary": "Review AI Data", "start_date": "2026-04-20",
@@ -648,7 +648,7 @@ class TestOutputFormatter:
 
     def test_drive_folder_creation(self):
         result = ExecutionResult(
-            success=True, command=["gws.exe"],
+            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"id":"f1","kind":"drive#file","mimeType":"application/vnd.google-apps.folder","name":"Test"}',
         )
         output = self.formatter.format_execution_result(result)
@@ -656,7 +656,7 @@ class TestOutputFormatter:
 
     def test_calendar_event_list(self):
         result = ExecutionResult(
-            success=True, command=["gws.exe"],
+            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"items":[{"id":"e1","summary":"Team Sync","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
         )
         output = self.formatter.format_execution_result(result)
@@ -665,7 +665,7 @@ class TestOutputFormatter:
 
     def test_spreadsheet_creation_shows_url(self):
         result = ExecutionResult(
-            success=True, command=["gws.exe"],
+            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"spreadsheetId":"s1","spreadsheetUrl":"https://docs.google.com/spreadsheets/d/s1/edit","properties":{"title":"Budget"}}',
         )
         output = self.formatter.format_execution_result(result)
@@ -674,7 +674,7 @@ class TestOutputFormatter:
 
     def test_gmail_list_shows_count(self):
         result = ExecutionResult(
-            success=True, command=["gws.exe"],
+            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"messages":[{"id":"m1"},{"id":"m2"}],"resultSizeEstimate":201}',
         )
         output = self.formatter.format_execution_result(result)
@@ -682,7 +682,7 @@ class TestOutputFormatter:
 
     def test_error_result_shows_stderr(self):
         result = ExecutionResult(
-            success=False, command=["gws.exe"],
+            success=False, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stderr="error[api]: Unable to parse range: Sheet1!A1",
         )
         output = self.formatter.format_execution_result(result)

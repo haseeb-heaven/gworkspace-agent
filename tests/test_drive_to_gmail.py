@@ -21,12 +21,12 @@ def test_drive_to_gmail_workflow():
     workflow = DriveToGmailWorkflow(drive_service=mock_drive, gmail_service=mock_gmail)
 
     # Act
-    result = workflow.execute(query="Shibuz", email=os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"))
+    result = workflow.execute(query="Shibuz", email=os.getenv("DEFAULT_RECIPIENT_EMAIL"))
 
     # Assert
     assert result is True
     mock_gmail.send_email.assert_called_with(
-        to=os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
+        to=os.getenv("DEFAULT_RECIPIENT_EMAIL"),
         subject="Document: Shibuz",
         body="Content of Shibuz"
     )

@@ -97,7 +97,7 @@ class AppConfig:
             gws_timeout_seconds=gws_timeout_seconds,
             gws_max_retries=gws_max_retries,
             max_context_snippet_len=max_snippet_len,
-            default_recipient_email=(os.getenv("DEFAULT_RECIPIENT_EMAIL") or "user@example.com").strip(),
+            default_recipient_email=(os.getenv("DEFAULT_RECIPIENT_EMAIL") or os.getenv("DEFAULT_RECIPIENT_EMAIL")).strip(),
             mem0_api_key=mem0_api_key,
         )
 

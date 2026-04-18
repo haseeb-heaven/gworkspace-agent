@@ -1,3 +1,4 @@
+import os
 import logging
 from unittest.mock import MagicMock
 
@@ -15,7 +16,7 @@ def config(tmp_path):
         api_key="sk-test",
         base_url=None,
         timeout_seconds=30,
-        gws_binary_path=tmp_path / "gws.exe",
+        gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
         log_file_path=tmp_path / "l.log",
         log_level="INFO",
         verbose=True,

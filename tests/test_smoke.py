@@ -45,9 +45,9 @@ def test_cli_module_help_smoke():
     assert "--setup" in output
 
 
-@pytest.mark.skipif(not (ROOT / "gws.exe").exists(), reason="Bundled gws.exe is not present")
+@pytest.mark.skipif(not (ROOT / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")).exists(), reason="Bundled gws.exe is not present")
 def test_gws_binary_help_smoke():
-    result = _run_command([str(ROOT / "gws.exe"), "--help"])
+    result = _run_command([str(ROOT / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), "--help"])
     output = f"{result.stdout}\n{result.stderr}"
     assert result.returncode == 0
     assert "Google Workspace CLI" in output

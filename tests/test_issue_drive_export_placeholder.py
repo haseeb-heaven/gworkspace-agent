@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import json
 import logging
 from pathlib import Path
@@ -10,7 +11,7 @@ from gws_assistant.planner import CommandPlanner
 
 class FakeRunner(GWSRunner):
     def __init__(self) -> None:
-        super().__init__(Path("gws.exe"), logging.getLogger("test"))
+        super().__init__(Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test"))
         self.commands: list[list[str]] = []
 
     def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
@@ -19,22 +20,22 @@ class FakeRunner(GWSRunner):
             # Mock a successful export with text content
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=json.dumps({"saved_file": "scratch/exports/download_f1", "mimeType": "text/plain"}),
             )
         if args[:3] == ["drive", "files", "get"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=json.dumps({"saved_file": "scratch/exports/download_f1", "mimeType": "text/plain"}),
             )
         if args[:4] == ["gmail", "users", "messages", "send"]:
             return ExecutionResult(
                 success=True,
-                command=["gws.exe", *args],
+                command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"id":"sent-1"}',
             )
-        return ExecutionResult(success=True, command=["gws.exe", *args], stdout='{}')
+        return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
 
 @pytest.fixture
 def mock_export_file(tmp_path, mocker):
@@ -68,7 +69,7 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": "user@example.com", "subject": "Export", "body": "Content: $drive_export_file"}
+                parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"), "subject": "Export", "body": "Content: $drive_export_file"}
             ),
         ],
     )

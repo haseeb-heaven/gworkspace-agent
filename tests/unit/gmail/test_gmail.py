@@ -28,7 +28,7 @@ class TestGmailUnit:
 
     def test_send_message_builds_raw_email(self):
         args = self.planner.build_command("gmail", "send_message", {
-            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL", "user@example.com"),
+            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
             "subject": "Test Subject",
             "body": "Hello World",
         })
@@ -37,7 +37,7 @@ class TestGmailUnit:
         assert "raw" in body
         import base64
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
-        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL', 'user@example.com')}" in decoded
+        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL')}" in decoded
         assert "Subject: Test Subject" in decoded
         assert "Hello World" in decoded
 
