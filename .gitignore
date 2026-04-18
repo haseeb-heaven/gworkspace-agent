@@ -45,6 +45,8 @@ artifacts/
 *.skill
 skills/
 .gemini 
+$params
+.git 
 
 # Files
 *.exe
