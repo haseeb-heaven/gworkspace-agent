@@ -81,6 +81,17 @@ _DRIVE_FILE_REF_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EMAIL_BRACKETS_RE = re.compile(r"<([^>]+@[^>]+)>")
+_TASK_PREFIX_RE    = re.compile(r"^(task-|t-|t)")
+_BARE_INDEX_RE     = re.compile(r"^\[(\d+)\]$")
+_KEY_INDEX_RE      = re.compile(r"^([\w]+)\[([\\d\\*]+)\]$")
+_HTML_TAG_RE       = re.compile(r"<[^>]+>")
+_MULTISPACE_RE     = re.compile(r"[ \t]{2,}")
+_MULTINEWLINE_RE   = re.compile(r"\n{3,}")
+
+_PLACEHOLDER_BRACED_RE = re.compile(r"\{(task-\d+|t\d+|t-\d+|\d+)\.[\w\.\[\]\*]+\}")
+_PLACEHOLDER_BARE_RE   = re.compile(r"\b(task-\d+|t\d+|t-\d+|\d+)\.[A-Za-z_][\w\.]*\b")
+
 _SENDER_FIELD_ALIASES: dict[str, tuple[str, str]] = {
     "sendername":   ("from", "name"),
     "sender.name":  ("from", "name"),
@@ -1013,7 +1024,7 @@ def _resolve_dot_sender_refs(
             # so downstream tasks receive a blank value rather than literal template text.
             return ""
         try:
-            task_num_str = re.sub(r"^(task-|t-|t)", "", step_id_raw)
+            task_num_str = _TASK_PREFIX_RE.sub("", step_id_raw)
             step_num = int(task_num_str)
             msg_idx  = max(0, step_num - 2)
         except (ValueError, AttributeError):
@@ -1028,7 +1039,7 @@ def _resolve_dot_sender_refs(
                 if not raw:
                     return ""
                 if extract_mode == "email":
-                    addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
+                    addr_m = _EMAIL_BRACKETS_RE.search(raw)
                     return addr_m.group(1).strip() if addr_m else raw.strip()
                 return raw.split("<", 1)[0].strip().strip('"')
             if header_key == "snippet":
@@ -1130,7 +1141,7 @@ def _extract_wildcard_rows(
         if not raw:
             continue
         if field_lower in ("senderemail", "sender_email", "email"):
-            addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
+            addr_m = _EMAIL_BRACKETS_RE.search(raw)
             raw    = addr_m.group(1).strip() if addr_m else raw.strip()
         elif field_lower in ("sendername", "sender_name", "name"):
             raw = raw.split("<", 1)[0].strip().strip('"')
@@ -1165,7 +1176,7 @@ def _resolve_headers_dot_refs(
             logger.warning("Pass0c: no gmail_messages for ref %s", m.group(0))
             return m.group(0)
         try:
-            task_num_str = re.sub(r"^(task-|t-|t)", "", step_id_raw)
+            task_num_str = _TASK_PREFIX_RE.sub("", step_id_raw)
             step_num = int(task_num_str)
             msg_idx  = max(0, step_num - 2)
         except (ValueError, AttributeError):
@@ -1179,7 +1190,7 @@ def _resolve_headers_dot_refs(
             if extract_mode == "name":
                 return raw.split("<", 1)[0].strip().strip('"')
             if extract_mode == "email":
-                addr_m = re.search(r"<([^>]+@[^>]+)>", raw)
+                addr_m = _EMAIL_BRACKETS_RE.search(raw)
                 return addr_m.group(1).strip() if addr_m else raw.strip()
             return raw
 
@@ -1236,7 +1247,7 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
         results     = context.get("task_results", {})
 
         # Normalize task id
-        task_num = re.sub(r"^(task-|t-|t)", "", task_id_raw)
+        task_num = _TASK_PREFIX_RE.sub("", task_id_raw)
 
         current = (
             results.get(task_id_raw)
@@ -1255,13 +1266,13 @@ def _resolve_template(value: Any, context: dict[str, Any], logger: logging.Logge
         for raw_part in key_path.split("."):
 
             # ✅ FIX 1: bare [0]
-            m = re.match(r"^\[(\d+)\]$", raw_part)
+            m = _BARE_INDEX_RE.match(raw_part)
             if m:
                 segments.append((m.group(1), "idx"))
                 continue
 
             # key[index]
-            m = re.match(r"^([\w]+)\[([\\d\\*]+)\]$", raw_part)
+            m = _KEY_INDEX_RE.match(raw_part)
             if m:
                 segments.append((m.group(1), None))
                 segments.append((m.group(2), "idx"))
@@ -1510,7 +1521,7 @@ def _resolve_bare_step_id_params(params: Any, context: dict[str, Any]) -> Any:
     results     = context.get("task_results", {})
 
     # Flexible lookup: normalize "task-5", "t5", "t-5" all to "5"
-    task_num    = re.sub(r"^(task-|t-|t)", "", step_id_raw)
+    task_num    = _TASK_PREFIX_RE.sub("", step_id_raw)
     payload     = results.get(step_id_raw) or results.get(task_num) or results.get(f"task-{task_num}")
 
     if not isinstance(payload, dict):
@@ -1694,7 +1705,7 @@ def _resolve_to_email_from_context(context: dict[str, Any]) -> str:
             continue
         headers  = _gmail_headers(message)
         from_val = headers.get("from", "")
-        addr_m   = re.search(r"<([^>]+@[^>]+)>", from_val)
+        addr_m   = _EMAIL_BRACKETS_RE.search(from_val)
         addr     = addr_m.group(1).strip() if addr_m else from_val.strip()
         if "@" not in addr:
             continue
@@ -1777,7 +1788,7 @@ def _extract_company_candidates(from_value: str, subject: str, body_text: str) -
 def _strip_html(text: str) -> str:
     """Remove HTML tags and decode common HTML entities from decoded email body text."""
     # Remove HTML tags
-    text = re.sub(r"<[^>]+>", " ", text)
+    text = _HTML_TAG_RE.sub(" ", text)
     # Decode common HTML entities
     entities = {
         "&amp;": "&", "&lt;": "<", "&gt;": ">",
@@ -1787,8 +1798,8 @@ def _strip_html(text: str) -> str:
     for entity, replacement in entities.items():
         text = text.replace(entity, replacement)
     # Collapse excessive whitespace
-    text = re.sub(r"[ \t]{2,}", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = _MULTISPACE_RE.sub(" ", text)
+    text = _MULTINEWLINE_RE.sub("\n\n", text)
     return text.strip()
 
 
@@ -1869,8 +1880,8 @@ def _is_placeholder(value: str) -> bool:
     ):
         return True
     return bool(
-        re.search(r"\{(task-\d+|t\d+|t-\d+|\d+)\.[\w\.\[\]\*]+\}", stripped)
-        or re.search(r"\b(task-\d+|t\d+|t-\d+|\d+)\.[A-Za-z_][\w\.]*\b", stripped)
+        _PLACEHOLDER_BRACED_RE.search(stripped)
+        or _PLACEHOLDER_BARE_RE.search(stripped)
     )
 
 
