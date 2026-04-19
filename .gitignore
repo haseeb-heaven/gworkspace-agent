@@ -1,5 +1,7 @@
 *.eml
 .gemini/settings.json
+.json 
+.jsonl
 
 # Dependencies
 node_modules/
@@ -61,5 +63,4 @@ docs/
 !README.md
 !framework/
 !tests/
-run_live_scenarios.py
 
