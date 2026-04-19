@@ -578,4 +578,12 @@ class VerificationEngine:
         e = extract_date(end)
         if not s or not e:
             return True
-        return str(e) >= str(s)
+        try:
+            from datetime import datetime
+            s_str = str(s).replace("Z", "+00:00")
+            e_str = str(e).replace("Z", "+00:00")
+            s_dt = datetime.fromisoformat(s_str)
+            e_dt = datetime.fromisoformat(e_str)
+            return e_dt > s_dt
+        except (TypeError, ValueError):
+            return False
