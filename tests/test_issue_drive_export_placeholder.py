@@ -38,7 +38,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"id":"sent-1234567890", "labelIds": ["SENT"]}',
+                stdout='{"id":"sent-1"}',
             )
         return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
 
