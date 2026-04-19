@@ -1,9 +1,12 @@
 import json
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
-from gws_assistant.planner import CommandPlanner
+
 from gws_assistant.execution.executor import PlanExecutor
-from gws_assistant.models import RequestPlan, PlannedTask, ExecutionResult
+from gws_assistant.models import ExecutionResult, PlannedTask
+from gws_assistant.planner import CommandPlanner
+
 
 class TestTasksCRUD:
     @pytest.fixture
@@ -37,7 +40,7 @@ class TestTasksCRUD:
 
     def test_tasks_lifecycle_execution(self, executor, runner):
         create_task = PlannedTask(id="t1", service="tasks", action="create_task", parameters={"title": "Test Task"})
-        
+
         runner.run.side_effect = [
             # Create call
             ExecutionResult(success=True, command=[], stdout=json.dumps({"id": "task123", "title": "Test Task"})),
@@ -46,7 +49,7 @@ class TestTasksCRUD:
             ExecutionResult(success=True, command=[], stdout=json.dumps({"id": "task123"})),
             ExecutionResult(success=True, command=[], stdout=json.dumps({"id": "task123"})),
         ]
-        
+
         result = executor.execute_single_task(create_task, {})
         assert result.success
         assert result.output["id"] == "task123"

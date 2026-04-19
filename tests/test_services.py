@@ -549,10 +549,10 @@ class TestExecutionPipelines:
         config = _config(tmp_path)
         # Set a specific default email in config
         config.default_recipient_email = "strict-default@example.com"
-        
+
         runner = FakeRunner()
         executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"), config=config)
-        
+
         # We simulate a plan that tries to send to a different address
         plan = RequestPlan(
             raw_text="Send email to hacker@evil.com",
@@ -566,7 +566,7 @@ class TestExecutionPipelines:
         )
         report = executor.execute(plan)
         assert report.success is True
-        
+
         # Verify the runner received the redirected email
         send_cmd = next(c for c in runner.commands if "gmail" in c and "messages" in c and "send" in c)
         params = json.loads(send_cmd[send_cmd.index("--json") + 1])
@@ -584,7 +584,7 @@ class TestExecutionPipelines:
                  return ExecutionResult(success=True, command=["gws"], stdout='{"messages":[], "files":[]}')
             return ExecutionResult(success=True, command=["gws"], stdout='{}')
         runner.run = empty_run
-        
+
         executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
         plan = RequestPlan(
             raw_text="Find non-existent emails and save to sheets",
@@ -596,7 +596,7 @@ class TestExecutionPipelines:
         report = executor.execute(plan)
         assert report.success is True
         # The append task should have received an empty list or empty summary
-        
+
     def test_large_payload_append(self):
         """Verify that appending 100 rows works without crashing."""
         runner = FakeRunner()

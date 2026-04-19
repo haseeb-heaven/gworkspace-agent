@@ -1,5 +1,7 @@
 import pytest
+
 from gws_assistant.verification_engine import VerificationEngine, VerificationError
+
 
 # CATEGORY 1: PLACEHOLDER DETECTION & GENERAL
 def test_placeholder_detection():

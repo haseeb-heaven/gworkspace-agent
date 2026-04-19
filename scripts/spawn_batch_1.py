@@ -1,5 +1,5 @@
-import subprocess
 import os
+import subprocess
 import sys
 import time
 
@@ -19,27 +19,27 @@ TASKS = [
 def spawn_subagent(index, task):
     print(f"Spawning agent {index} for task: {task[:50]}...")
     python_exe = os.environ.get("PYTHON_EXE") or sys.executable
-    
+
     full_task = f"""
 TASK: {task}
-MANDATORY VERIFICATION: 
+MANDATORY VERIFICATION:
 1. Run the task using gws_cli.py.
 2. Use scripts/verify_gws_data.py to TRIPLE-CHECK the results (Sheet, Doc, or Gmail).
 3. If verification fails, fix the issue and retry.
 4. Send progress updates to Telegram using .agent/skills/telegram-update/scripts/send_message.py.
 5. Provide a final verification report in the output.
 """
-    
+
     cmd = [
         python_exe, ".agent/skills/superpowers-workflow/scripts/spawn_subagent.py",
         "--skill", "python-automation",
         "--task", full_task
     ]
-    
+
     # Increase Node.js memory limit for the subagent
     env = os.environ.copy()
     env["NODE_OPTIONS"] = "--max-old-space-size=4096"
-    
+
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
 
 def main():
@@ -52,7 +52,7 @@ def main():
             p = spawn_subagent(i + j, task)
             processes.append(p)
             time.sleep(5) # Space them out more
-            
+
         print(f"Waiting for sub-batch {i//batch_size + 1} to complete...")
         for j, p in enumerate(processes):
             stdout, stderr = p.communicate()

@@ -1,5 +1,4 @@
 import json
-import os
 
 from .base import create_task, get_executor
 

@@ -1,11 +1,9 @@
-import os
-import subprocess
-import threading
-import time
-import json
 import logging
+import os
 import shutil
+import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
@@ -26,7 +24,7 @@ class TaskRunner:
         self.max_retries = max_retries
         self.attempt_count = 0
         self.status = "IDLE"
-        
+
         # Components for execute_and_validate
         self.runner = GWSCLIRunner(binary_path=sys.executable)
         self.validator = OutputValidator()
@@ -58,20 +56,20 @@ class TaskRunner:
         self.status = "RUNNING"
         self.attempt_count += 1
         logger.info(f"Runner {self.agent_id} starting tests for {self.service} (Attempt {self.attempt_count}/{self.max_retries})")
-        
+
         # Use shutil.which to find pytest executable
-        pytest_exe = shutil.which("pytest") or "pytest"
-        
+        _pytest_exe = shutil.which("pytest") or "pytest"
+
         try:
             # Set up environment with src in PYTHONPATH
             env = os.environ.copy()
             env["PYTHONPATH"] = "src" + os.pathsep + env.get("PYTHONPATH", "")
-            
+
             # Use sys.executable to run pytest module to ensure same environment
             cmd = [sys.executable, "-m", "pytest", "-v", "-m", self.service]
-            
+
             process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == 'nt')
-            
+
             if process.returncode == 0:
                 self.status = "PASSED"
                 logger.info(f"Runner {self.agent_id} ({self.service}) PASSED")
@@ -95,14 +93,14 @@ class TaskRunner:
 
 def run_multi_agent_test(services: list[str], agents_per_service: int = 10):
     logger.info(f"🚀 Starting Multi-Agent Testing: {len(services)} services, {agents_per_service} runners each.")
-    
+
     os.makedirs("artifacts", exist_ok=True)
-    
+
     runners = []
     for service in services:
         for i in range(agents_per_service):
             runners.append(TaskRunner(i, service))
-            
+
     with ThreadPoolExecutor(max_workers=len(runners)) as executor:
         futures = [executor.submit(runner.run_tests) for runner in runners]
         for future in as_completed(futures):

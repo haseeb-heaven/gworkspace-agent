@@ -1,6 +1,6 @@
-import re
 import logging
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -479,7 +479,6 @@ class VerificationEngine:
             if not isinstance(attachments, list):
                 attachments = [attachments]
             if len(attachments) > 0 and isinstance(result, dict):
-                found = False
                 parts = []
 
                 if "payload" in result and isinstance(result["payload"], dict):

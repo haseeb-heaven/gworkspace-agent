@@ -3,9 +3,10 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+
+from gws_assistant.execution import SearchToSheetsWorkflow
 from gws_assistant.planner import CommandPlanner
 from gws_assistant.tools.web_search import summarize_results, web_search_tool
-from gws_assistant.execution import SearchToSheetsWorkflow
 
 
 class TestSearchUnit:

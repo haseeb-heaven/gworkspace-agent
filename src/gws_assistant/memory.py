@@ -6,7 +6,9 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
 from mem0 import MemoryClient
+
 from .models import AppConfigModel
 
 MEMORY_FILE = Path.home() / ".gws_agent" / "memory.jsonl"
