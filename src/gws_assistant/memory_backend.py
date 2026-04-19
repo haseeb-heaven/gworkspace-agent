@@ -27,6 +27,10 @@ class MemoryBackend(ABC):
     def search(self, query: str, user_id: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         pass
 
+    @abstractmethod
+    def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
+        pass
+
     def add_bug_fix(
         self,
         *,
@@ -83,8 +87,6 @@ class LocalMemory(MemoryBackend):
         return {w for w in text.lower().split() if w not in self._stop_words and len(w) > 1}
 
     def save_episode(self, goal: str, tasks: list[dict], outcome: str) -> None:
-        import portalocker
-
         self.memory_file.parent.mkdir(parents=True, exist_ok=True)
         episode = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -93,11 +95,9 @@ class LocalMemory(MemoryBackend):
             "outcome": outcome,
         }
 
-        lock_file = self.memory_file.with_suffix(".jsonl.lock")
-        with portalocker.Lock(lock_file, timeout=5):
-            with open(self.memory_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(episode) + "\n")
-            self._prune_if_needed()
+        with open(self.memory_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(episode) + "\n")
+        self._prune_if_needed()
 
     def recall_similar(self, goal: str, max_results: int = 3) -> list[dict]:
         if not self.memory_file.exists():
@@ -136,6 +136,9 @@ class LocalMemory(MemoryBackend):
         pass  # Semantic memory not supported in pure LocalMemory
 
     def search(self, query: str, user_id: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
+        return []
+
+    def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
         return []
 
 
@@ -202,6 +205,33 @@ class Mem0Memory(LocalMemory):
                 self.logger.warning("Mem0 rate limit or quota exceeded. Skipping long-term memory search.")
             else:
                 self.logger.error(f"Error searching Mem0: {e}")
+            return []
+
+    def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
+        """Retrieve all memories for a user."""
+        if not self.client:
+            return []
+
+        resolved_user_id = self._default_user_id(user_id)
+        try:
+            from mem0 import MemoryClient
+            if isinstance(self.client, MemoryClient):
+                filters = self._build_filters(resolved_user_id)
+                response = self.client.get_all(version="v2", filters=filters)
+                if isinstance(response, dict) and "results" in response:
+                    return response["results"]
+                return response
+            else:
+                try:
+                    return self.client.get_all(filters={"user_id": resolved_user_id})
+                except Exception:
+                    return self.client.get_all(user_id=resolved_user_id)
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg or "quota" in msg.lower():
+                self.logger.warning("Mem0 rate limit or quota exceeded. Skipping long-term memory retrieval.")
+            else:
+                self.logger.error(f"Error getting all memories from Mem0: {e}")
             return []
 
 

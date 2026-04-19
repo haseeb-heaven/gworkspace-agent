@@ -5,7 +5,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from gws_assistant.memory import LongTermMemory
+from gws_assistant.memory_backend import get_memory_backend
 
 from gws_assistant.config import AppConfig
 
@@ -16,7 +16,7 @@ def main():
     logger = logging.getLogger("read_mem0")
 
     config = AppConfig.from_env()
-    memory = LongTermMemory(config, logger=logger)
+    memory = get_memory_backend(config, logger=logger)
 
     users = [config.mem0_user_id or "mem0-mcp-user"]
 
