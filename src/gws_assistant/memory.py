@@ -28,6 +28,7 @@ _STOP_WORDS: frozenset[str] = frozenset({
 
 
 
+import uuid
 
 # Maximum number of local memories to keep
 _MAX_LOCAL_MEMORIES = 1000
@@ -35,6 +36,7 @@ _MAX_LOCAL_MEMORIES = 1000
 class LocalJSONMemory:
     """A purely offline, JSONL-based memory system to replace local Mem0 without transformers."""
 
+    
     def __init__(self, storage_path: str = ".gemini/memories.jsonl"):
         self.storage_path = Path(storage_path)
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,6 +44,7 @@ class LocalJSONMemory:
         if not self.storage_path.exists():
             self.storage_path.write_text("", encoding="utf-8")
 
+            
     def _read_all(self) -> list[dict]:
         memories = []
         if not self.storage_path.exists():
@@ -98,11 +101,13 @@ class LocalJSONMemory:
         if filters and "user_id" in filters:
             uid = filters["user_id"]
 
+            
         memories = self.get_all(user_id=uid)
         query_words = _tokenize(query)
         if not query_words:
             return memories[-limit:]
 
+            
         scored = []
         for mem in memories:
             mem_words = _tokenize(mem.get("memory", ""))
@@ -111,6 +116,7 @@ class LocalJSONMemory:
                 score = intersection / len(query_words | mem_words)
                 scored.append((score, mem))
 
+                
         scored.sort(key=lambda x: x[0], reverse=True)
         return [m for _, m in scored[:limit]]
 
@@ -124,6 +130,7 @@ class LocalJSONMemory:
                 updated_mem = m
                 break
 
+                
         if updated_mem:
             self._write_all(memories)
             return {"id": memory_id, "memory": updated_mem["memory"], "event": "updated"}
@@ -134,6 +141,7 @@ class LocalJSONMemory:
         initial_len = len(memories)
         memories = [m for m in memories if m["id"] != memory_id]
 
+        
         if len(memories) < initial_len:
             self._write_all(memories)
             return {"id": memory_id, "event": "deleted"}
