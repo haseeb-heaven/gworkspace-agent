@@ -39,7 +39,7 @@ class AppConfig:
 
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
-        generic_key = (os.getenv("LLM_API_KEY") or "").strip()
+        generic_key = (os.getenv("OPENAI_API_KEY") or "").strip()
 
         if not provider:
             provider = "openrouter"
@@ -91,7 +91,7 @@ class AppConfig:
         if not openrouter_api_keys and api_key:
             openrouter_api_keys = [api_key]
 
-        max_snippet_len    = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
+        max_snippet_len = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
         mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
 

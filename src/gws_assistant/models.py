@@ -40,7 +40,7 @@ class AppConfigModel:
     def rotate_api_key(self) -> str | None:
         if not self.openrouter_api_keys:
             return self.api_key
-        
+
         self._current_key_idx = (self._current_key_idx + 1) % len(self.openrouter_api_keys)
         new_key = self.openrouter_api_keys[self._current_key_idx]
         self.api_key = new_key
