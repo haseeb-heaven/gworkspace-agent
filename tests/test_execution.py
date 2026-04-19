@@ -45,7 +45,7 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=_json.dumps({
-                    "spreadsheetId": "sheet-1",
+                    "spreadsheetId": "sheet-1234567890",
                     "spreadsheetUrl": "https://example.test/sheet",
                     "properties": {"title": title},
                     "sheets": [{"properties": {"title": title}}],
@@ -154,7 +154,7 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                    parameters={"spreadsheet_id": "sheet-1234567", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
             ),
         ],
     )
@@ -178,7 +178,7 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "sheet-1234567",
+                    "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": "{{company_names_from_task_2}}",
                 },
@@ -242,7 +242,7 @@ def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "sheet-1234567",
+                    "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
                     "values": [["$gmail_message_body"]],
                 },
@@ -294,7 +294,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 id="task-5",
                 service="sheets",
                 action="append_values",
-                    parameters={"spreadsheet_id": "sheet-1234567", "range": "Sheet1!A1", "values": "$web_search_table_values"},
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$web_search_table_values"},
             ),
             PlannedTask(
                 id="task-6",

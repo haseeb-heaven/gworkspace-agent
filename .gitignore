@@ -1,6 +1,6 @@
 *.eml
 .gemini/settings.json
-.json 
+.json
 .jsonl
 
 # Dependencies

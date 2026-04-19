@@ -66,7 +66,7 @@ class TestKeepCRUD:
         # Execute create
         result = executor.execute_single_task(create_task, {})
         assert result.success
-        assert result.output["name"] == "notes/created123"
+        assert result.output["name"] == "notes/created12345678"
         # Verify Triple-Check was called (1 create + 3 get)
         assert runner.run.call_count == 4
 
