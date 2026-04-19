@@ -9,16 +9,17 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import datetime
 import io
 import json
 import math
 import re
 import threading
+import time
 from typing import Any
 
-from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
-from RestrictedPython.PrintCollector import PrintCollector
 from langchain_core.tools import tool
+from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
@@ -32,13 +33,16 @@ _BANNED_PATTERNS = [
     r"__import__",
 ]
 
-# Safe stdlib modules that the LLM commonly needs for numeric/currency work.
+
+# Safe stdlib modules that the LLM commonly needs for numeric/currency/date work.
 # These are pre-injected into the sandbox globals so LLM-generated `import X`
 # statements can be stripped without breaking the computation.
 _SAFE_MODULES: dict[str, Any] = {
     "math": math,
     "re": re,
     "json": json,
+    "datetime": datetime,
+    "time": time,
 }
 
 
@@ -85,26 +89,89 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"] = safe_builtins.copy()
     safe_g["__builtins__"].update(utility_builtins)
     safe_g["__builtins__"]["__import__"] = _restricted_import
-    safe_g["_print_"] = PrintCollector
+    safe_g["__builtins__"]["sum"] = sum
+    safe_g["__builtins__"]["list"] = list
+    safe_g["__builtins__"]["dict"] = dict
+    safe_g["__builtins__"]["range"] = range
+    safe_g["__builtins__"]["int"] = int
+    safe_g["__builtins__"]["str"] = str
+    safe_g["__builtins__"]["float"] = float
+    safe_g["__builtins__"]["bool"] = bool
+    safe_g["__builtins__"]["len"] = len
+    safe_g["__builtins__"]["abs"] = abs
+    safe_g["__builtins__"]["min"] = min
+    safe_g["__builtins__"]["max"] = max
+    safe_g["__builtins__"]["round"] = round
+    safe_g["__builtins__"]["reversed"] = reversed
+    safe_g["__builtins__"]["sorted"] = sorted
+    safe_g["__builtins__"]["enumerate"] = enumerate
+    safe_g["__builtins__"]["zip"] = zip
+    safe_g["__builtins__"]["map"] = map
+    safe_g["__builtins__"]["filter"] = filter
+
+    # Simple object that has a write method to satisfy RestrictedPython print()
+    class SimpleCollector:
+        def __init__(self, _getattr_=None):
+            self.txt = []
+            self._getattr_ = _getattr_
+        def write(self, text):
+            self.txt.append(text)
+        def __call__(self):
+            return "".join(self.txt).strip()
+        def _call_print(self, *args, **kwargs):
+            import builtins
+            if kwargs.get("file", None) is None:
+                kwargs["file"] = self
+            builtins.print(*args, **kwargs)
+
+    collector = SimpleCollector()
+    def _print_factory(_getattr_=None):
+        collector._getattr_ = _getattr_
+        return collector
+
+    safe_g["_print_"] = _print_factory
+    safe_g["_print_buffer_instance"] = collector
+
     safe_g["_getattr_"] = getattr
     safe_g["_setattr_"] = setattr
     safe_g["_getiter_"] = iter
     safe_g["_getitem_"] = lambda obj, key: obj[key]
     safe_g["_write_"] = lambda obj: obj
+    safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
+    safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     def _inplacevar(op, target, expr):
-        if op == '+=': return target + expr
-        if op == '-=': return target - expr
-        if op == '*=': return target * expr
-        if op == '/=': return target / expr
+        if op == '+=':
+            return target + expr
+        if op == '-=':
+            return target - expr
+        if op == '*=':
+            return target * expr
+        if op == '/=':
+            return target / expr
         return expr
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
     safe_g.update(_SAFE_MODULES)
+
+    # Pre-inject common datetime classes for AI robustness
+    safe_g["datetime"]  = datetime.datetime
+    safe_g["date"]      = datetime.date
+    safe_g["timedelta"] = datetime.timedelta
+    safe_g["now"]       = datetime.datetime.now()
+
+    # AI Robustness: Pre-inject common lowercase aliases often emitted by LLMs
+    safe_g["true"]  = True
+    safe_g["false"] = False
+    safe_g["null"]  = None
+    safe_g["quote"] = lambda x: json.dumps(x, ensure_ascii=True)
+
     return safe_g
 
 
-def _restricted_import(*_: Any, **__: Any) -> None:
-    raise ImportError("Imports are disabled inside the code sandbox.")
+def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name in _SAFE_MODULES:
+        return _SAFE_MODULES[name]
+    raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
 
 
 def _validate_submitted_code(code: str) -> str | None:
@@ -118,10 +185,12 @@ def _validate_submitted_code(code: str) -> str | None:
     for node in ast.walk(ast.parse(code)):
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             return "SecurityError: import __future__ is blocked."
+        if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True:
+            return f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds."
     return None
 
 
-def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) -> None:
+def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult], extra_globals: dict | None = None) -> None:
     """Execute *code* inside RestrictedPython, storing a CodeExecutionResult in result_holder[0]."""
     exec_result = CodeExecutionResult(code=code)
     try:
@@ -130,26 +199,51 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult]) 
         sanitized = _sanitize_llm_code(code)
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
+
+        # Inject extra context (e.g. task_results) into the sandbox globals
+        if extra_globals:
+            sandbox_globals.update(extra_globals)
+
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)  # noqa: S102
 
-        if "_print" in sandbox_globals:
-            exec_result.stdout = sandbox_globals["_print"]()
+        # Capture both _print_ (RestrictedPython internal) and direct stdout
+        if "_print_buffer_instance" in sandbox_globals:
+            collector = sandbox_globals["_print_buffer_instance"]
+            if callable(collector):
+                exec_result.stdout = str(collector())
+
         buffer_val = output_buffer.getvalue()
         if buffer_val:
             exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
 
-        # Capture all variables from sandbox_globals except builtins/internals
-        results_vars = {
-            k: v for k, v in sandbox_globals.items()
-            if not k.startswith("_") and k != "__builtins__" and not callable(v)
-            and k not in _SAFE_MODULES
-        }
+        # --- PARSE RETURN VALUE ---
+        # 1. Best case: user explicitly assigned to 'result'
         if "result" in sandbox_globals:
             exec_result.return_value = sandbox_globals["result"]
+
+        # 2. Next best: parse the last line of stdout as a Python literal
+        elif exec_result.stdout:
+            try:
+                last_line = exec_result.stdout.strip().splitlines()[-1]
+                exec_result.return_value = ast.literal_eval(last_line)
+            except (SyntaxError, ValueError):
+                # Fallback if stdout is not a literal
+                exec_result.return_value = exec_result.stdout
+
+        # 3. Fallback: capture all variables from sandbox_globals
         else:
+            def is_json_serializable(v):
+                return isinstance(v, (str, int, float, bool, list, dict, type(None)))
+
+            results_vars = {
+                k: v for k, v in sandbox_globals.items()
+                if not k.startswith("_") and k != "__builtins__" and not callable(v)
+                and k not in _SAFE_MODULES and is_json_serializable(v)
+            }
             exec_result.return_value = results_vars
+
         exec_result.success = True
     except Exception as exc:
         exec_result.success = False
@@ -201,7 +295,8 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
         )
 
 
-def execute_generated_code(code: str, config=None) -> StructuredToolResult:
+def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    code = re.sub(r'\\\s*$', '', code, flags=re.MULTILINE)
     validation_error = _validate_submitted_code(code)
     if validation_error:
         return StructuredToolResult(
@@ -214,7 +309,7 @@ def execute_generated_code(code: str, config=None) -> StructuredToolResult:
         return _execute_e2b(code, config.e2b_api_key)
 
     result_holder: list[CodeExecutionResult] = []
-    thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder), daemon=True)
+    thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder, extra_globals), daemon=True)
     thread.start()
     thread.join(timeout=_TIMEOUT_SECONDS)
 
@@ -239,7 +334,11 @@ def code_execution_tool_with_config(config, logger: Any):
     """Factory to create a config-aware code execution tool for LangChain."""
     @tool
     def code_execution_tool(code: str) -> dict[str, Any]:
-        """Execute Python in a restricted sandbox or cloud (E2B) with normalized results."""
+        """Execute Python in a restricted sandbox or cloud (E2B) with normalized results.
+
+        CRITICAL: Use the pre-injected 'quote(value)' helper for all strings to avoid syntax errors
+        with nested quotes or special characters. Example: name = quote("O'Reilly")
+        """
         structured = execute_generated_code(code, config=config)
         output = structured["output"] if isinstance(structured["output"], dict) else {}
         return {

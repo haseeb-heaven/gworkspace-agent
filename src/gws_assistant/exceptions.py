@@ -26,14 +26,14 @@ _ERROR_PATTERNS: list[tuple[re.Pattern, APIErrorType]] = [
     (re.compile(r"401|403|unauthorized|forbidden|invalid_grant|authError", re.IGNORECASE), APIErrorType.AUTH),
     (re.compile(r"429|rateLimitExceeded|userRateLimitExceeded|quota",      re.IGNORECASE), APIErrorType.RATE_LIMIT),
     (re.compile(r"5\d\d|backendError|internalError|Service Unavailable",   re.IGNORECASE), APIErrorType.SERVER),
-    (re.compile(r"404|notFound|not found",                                  re.IGNORECASE), APIErrorType.NOT_FOUND),
+    (re.compile(r"404|410|notFound|not found|deleted",                      re.IGNORECASE), APIErrorType.NOT_FOUND),
 ]
 
 
 def classify_api_error(stderr: str, stdout: str) -> APIErrorType:
     """Classify a failed API call into an APIErrorType.
 
-    Checks stderr first (where gws.exe writes error messages), then stdout
+    Checks stderr first (where the Workspace CLI writes error messages), then stdout
     (where the raw JSON error body is printed).
     """
     combined = f"{stderr or ''}\n{stdout or ''}"

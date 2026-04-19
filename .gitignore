@@ -1,40 +1,67 @@
-# Python cache
-__pycache__/
+*.eml
+.gemini/settings.json
+*.json 
+*.jsonl
+
+# Dependencies
+node_modules/
+package.json
+package-lock.json
+
+# Python
 *.py[cod]
 *.pyo
 *.pyd
-
-# Build and packaging
+__pycache__/
 build/
 dist/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# Virtual environments
 .venv/
 venv/
 env/
 
-# Logs and runtime files
+# Logs and Environment
 logs/
+scratch/logs
 *.log
-
-# Environment files
 .env
 .env.local
 
-# IDE and OS files
+# IDEs
 .idea/
 .vscode/
+
+# System
 .DS_Store
 Thumbs.db
+google-cloud-sdk
+.config
+.gemini
+gcloud
+.agent/
+scratch/
+artifacts/
+.skill
+*.skill
+skills/
+.gemini 
+$params
+.git 
+docs/
 
+# Files
 *.exe
 *.txt
 *.pdf
 *.docx
 *.xlsx
 *.pptx
-*.eml
+
+# Allowed
+!README.md
+!framework/
+!tests/
+

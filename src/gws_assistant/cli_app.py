@@ -63,7 +63,6 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
     # langchain / transformers / numpy chain.
     from .agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem  # noqa: F401
     from .config import AppConfig
-    from .conversation import ConversationEngine
     from .execution import PlanExecutor
     from .gws_runner import GWSRunner
     from .langgraph_workflow import run_workflow
@@ -92,7 +91,6 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
         raise typer.Exit(code=1)
 
     planner = CommandPlanner()
-    engine = ConversationEngine(planner=planner, logger=logger)
     agent_system = WorkspaceAgentSystem(config=config, logger=logger)
     runner = GWSRunner(config.gws_binary_path, logger=logger, config=config)
     executor = PlanExecutor(planner=planner, runner=runner, logger=logger, config=config)
@@ -156,6 +154,7 @@ def run(
     save_output: Path | None = typer.Option(None, "--save-output", help="Append readable output to a file."),
     task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
     no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
+    send_telegram: str | None = typer.Option(None, "--send-telegram", help="Send a message to Telegram and exit."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     # resilient_parsing is True during --help rendering and shell-completion;
@@ -165,11 +164,19 @@ def run(
     if setup:
         run_setup_wizard()
         return
+    if send_telegram:
+        from .tools.telegram import send_telegram as st
+        st(send_telegram)
+        return
     _run_application(save_output=save_output, task=task, no_langchain=no_langchain)
 
 
 def main() -> None:
     """Entry point for console scripts."""
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     app()
 
 

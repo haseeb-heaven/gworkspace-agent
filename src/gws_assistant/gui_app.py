@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import tkinter.messagebox as messagebox
 from typing import Any
 

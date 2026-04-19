@@ -147,33 +147,34 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
             remainder = dq.group(1).strip()
 
         # NEW FIX — strip LLM-generated name=/name: prefix BEFORE the
-        # _DRIVE_OPS_RE check fires.  Without this, 'name' in the remainder
-        # trips _DRIVE_OPS_RE and the value gets double-wrapped:
-        #   name='CcaaS - AI Product'
-        #   → _DRIVE_OPS_RE matches 'name'
-        #   → _is_valid_clause() fails
-        #   → wraps to: name contains 'name=\'CcaaS - AI Product\''  ← CORRUPT
-        # With this fix the value is extracted cleanly first:
-        #   name='CcaaS - AI Product' → remainder = 'CcaaS - AI Product'
-        #   → _DRIVE_OPS_RE: no match → name contains 'CcaaS - AI Product' ✓
+        # _DRIVE_OPS_RE check fires.
         name_eq = _NAME_EQ_RE.match(remainder)
         if name_eq:
             remainder = name_eq.group(1).strip().strip("'\"")
 
+        # Fix: if it's already an operator clause but missing quotes, fix the quotes
+        # to avoid it being re-wrapped in name contains.
+        op_match = re.match(r"^(name|fullText)\s+contains\s+['\"]?(.+?)['\"]?$", remainder, re.IGNORECASE)
+        if op_match:
+             field, val = op_match.group(1), op_match.group(2).strip()
+             text_clauses.append(f"{field} contains '{_escape(val)}'")
+             remainder = ""
+
         # Fix #5 — if remainder has no Drive operator it is bare text.
-        if not _DRIVE_OPS_RE.search(remainder):
-            safe = _escape(remainder.strip("\"' "))
-            if safe:
-                text_clauses.append(f"name contains '{safe}'")
-        else:
-            # Remainder already has an operator — validate and keep.
-            if _is_valid_clause(remainder):
-                text_clauses.append(remainder)
-            else:
-                # Fix #6 — avoid re-wrapping an already-operator clause.
+        if remainder:
+            if not _DRIVE_OPS_RE.search(remainder):
                 safe = _escape(remainder.strip("\"' "))
                 if safe:
                     text_clauses.append(f"name contains '{safe}'")
+            else:
+                # Remainder already has an operator — validate and keep.
+                if _is_valid_clause(remainder):
+                    text_clauses.append(remainder)
+                else:
+                    # Fix #6 — avoid re-wrapping an already-operator clause.
+                    safe = _escape(remainder.strip("\"' "))
+                    if safe:
+                        text_clauses.append(f"name contains '{safe}'")
 
     return text_clauses + mime_clauses
 

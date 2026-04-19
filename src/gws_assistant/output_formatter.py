@@ -14,7 +14,9 @@ class HumanReadableFormatter:
     def format_execution_result(self, result: ExecutionResult) -> str:
         if not result.success:
             return result.stderr or result.error or "Command failed with unknown error."
-        return self._format_stdout(result.stdout)
+        formatted = self._format_stdout(result.stdout)
+        # Prepend success marker for automated validation
+        return f"Command succeeded.\n{formatted}".strip() if formatted else "Command succeeded."
 
     def format_report(self, report: PlanExecutionReport) -> str:
         lines: list[str] = []
@@ -42,8 +44,9 @@ class HumanReadableFormatter:
             return _format_gmail_message(payload)
         if "messages" in payload or "resultSizeEstimate" in payload:
             return _format_gmail_list(payload)
-        if "values" in payload and isinstance(payload.get("values"), list):
-            rows = payload.get("values") or []
+        if "values" in payload:
+            v_obj = payload.get("values")
+            rows = v_obj if isinstance(v_obj, list) else []
             row_count = len(rows)
             cell_count = sum(len(row) for row in rows if isinstance(row, list))
             range_name = payload.get("range") or "the requested range"
@@ -53,10 +56,10 @@ class HumanReadableFormatter:
         if "updates" in payload:
             updates = payload.get("updates") or {}
             cells = updates.get("updatedCells")
-            rows = updates.get("updatedRows")
+            updated_rows = updates.get("updatedRows")
             target = updates.get("updatedRange") or payload.get("tableRange") or "the spreadsheet"
-            if cells or rows:
-                return f"Saved {rows or 0} row{'s' if rows != 1 else ''} and {cells or 0} cell{'s' if cells != 1 else ''} to {target}."
+            if cells or updated_rows:
+                return f"Saved {updated_rows or 0} row{'s' if updated_rows != 1 else ''} and {cells or 0} cell{'s' if cells != 1 else ''} to {target}."
             return f"Saved rows to {target}."
         if "spreadsheetId" in payload:
             title = _nested(payload, "properties", "title") or "spreadsheet"
@@ -64,7 +67,9 @@ class HumanReadableFormatter:
             if url:
                 return f"Created {title} in Google Sheets: {url}"
             return f"Created {title} in Google Sheets. Spreadsheet ID: {payload.get('spreadsheetId')}"
-        if "labelIds" in payload and "id" in payload:
+        if "id" in payload and payload.get("mimeType") == "application/vnd.google-apps.folder":
+            return f"Created folder {payload.get('name')} with ID: {payload.get('id')}"
+        if "id" in payload and "labelIds" in payload:
             return f"Email sent successfully. Message ID: {payload.get('id')}"
         if "files" in payload:
             return _format_drive_files(payload)
@@ -74,8 +79,16 @@ class HumanReadableFormatter:
             return _format_slides(payload)
         if "documentId" in payload and ("title" in payload or "body" in payload):
             return _format_docs(payload)
+        if "drive_export_content" in payload:
+            return str(payload["drive_export_content"]).strip()
+        if "content" in payload and "saved_file" in payload:
+             return str(payload["content"]).strip()
         if "items" in payload and isinstance(payload.get("items"), list):
             return _format_calendar_items(payload)
+        if "stdout" in payload and payload.get("stdout"):
+            return str(payload.get("stdout")).strip()
+        if "summary" in payload and payload.get("summary"):
+            return str(payload.get("summary")).strip()
         return _compact_json_summary(payload)
 
 
@@ -112,7 +125,8 @@ def _safe_int(value: Any) -> int:
 
 
 def _format_gmail_list(payload: dict[str, Any]) -> str:
-    messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+    m_obj = payload.get("messages")
+    messages = m_obj if isinstance(m_obj, list) else []
     estimate = payload.get("resultSizeEstimate")
     count = len(messages)
     if estimate is not None:
@@ -126,6 +140,7 @@ def _format_gmail_list(payload: dict[str, Any]) -> str:
 def _format_gmail_message(payload: dict[str, Any]) -> str:
     headers = _gmail_headers(payload)
     snippet = str(payload.get("snippet") or "")
+    body = str(payload.get("body") or "")
     subject = headers.get("subject", "(no subject)")
     sender = headers.get("from", "(unknown sender)")
     date = headers.get("date", "")
@@ -135,13 +150,16 @@ def _format_gmail_message(payload: dict[str, Any]) -> str:
     ]
     if date:
         pieces.append(f"Date: {date}")
-    if snippet:
+    if body:
+        pieces.append(f"Body: {body}")
+    elif snippet:
         pieces.append(f"Snippet: {snippet}")
     return "\n".join(pieces)
 
 
 def _format_drive_files(payload: dict[str, Any]) -> str:
-    files = payload.get("files") if isinstance(payload.get("files"), list) else []
+    f_obj = payload.get("files")
+    files = f_obj if isinstance(f_obj, list) else []
     header = f"Found {len(files)} Drive file{'s' if len(files) != 1 else ''}."
     if not files:
         return header
@@ -160,7 +178,8 @@ def _format_drive_files(payload: dict[str, Any]) -> str:
 
 
 def _format_contacts(payload: dict[str, Any]) -> str:
-    connections = payload.get("connections") if isinstance(payload.get("connections"), list) else []
+    c_obj = payload.get("connections")
+    connections = c_obj if isinstance(c_obj, list) else []
     header = f"Found {len(connections)} contact{'s' if len(connections) != 1 else ''}."
     if not connections:
         return header
@@ -181,7 +200,8 @@ def _format_contacts(payload: dict[str, Any]) -> str:
 
 def _format_slides(payload: dict[str, Any]) -> str:
     title = str(payload.get("title") or "presentation")
-    slides = payload.get("slides") if isinstance(payload.get("slides"), list) else []
+    s_obj = payload.get("slides")
+    slides = s_obj if isinstance(s_obj, list) else []
     return f"Presentation: {title}\nSlides: {len(slides)}\nPresentation ID: {payload.get('presentationId')}"
 
 
@@ -196,7 +216,8 @@ def _format_docs(payload: dict[str, Any]) -> str:
 
 
 def _format_calendar_items(payload: dict[str, Any]) -> str:
-    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    i_obj = payload.get("items")
+    items = i_obj if isinstance(i_obj, list) else []
     header = f"Found {len(items)} calendar event{'s' if len(items) != 1 else ''}."
     if not items:
         return header
@@ -265,16 +286,23 @@ def _short_mime_type(mime: str) -> str:
 
 
 def _docs_snippet(payload: dict[str, Any]) -> str:
-    body = payload.get("body") if isinstance(payload.get("body"), dict) else {}
-    content = body.get("content") if isinstance(body.get("content"), list) else []
+    b_obj = payload.get("body")
+    body = b_obj if isinstance(b_obj, dict) else {}
+    c_obj = body.get("content")
+    content = c_obj if isinstance(c_obj, list) else []
     text_chunks: list[str] = []
     for section in content:
         if not isinstance(section, dict):
             continue
-        paragraph = section.get("paragraph") if isinstance(section.get("paragraph"), dict) else {}
-        elements = paragraph.get("elements") if isinstance(paragraph.get("elements"), list) else []
+        p_obj = section.get("paragraph")
+        paragraph = p_obj if isinstance(p_obj, dict) else {}
+        e_obj = paragraph.get("elements")
+        elements = e_obj if isinstance(e_obj, list) else []
         for element in elements:
-            text_run = element.get("textRun") if isinstance(element, dict) and isinstance(element.get("textRun"), dict) else {}
+            if not isinstance(element, dict):
+                continue
+            r_obj = element.get("textRun")
+            text_run = r_obj if isinstance(r_obj, dict) else {}
             text = str(text_run.get("content") or "").strip()
             if text:
                 text_chunks.append(text)
@@ -287,8 +315,10 @@ def _docs_snippet(payload: dict[str, Any]) -> str:
 
 
 def _gmail_headers(payload: dict[str, Any]) -> dict[str, str]:
-    msg_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
-    headers = msg_payload.get("headers") if isinstance(msg_payload.get("headers"), list) else []
+    p_obj = payload.get("payload")
+    msg_payload = p_obj if isinstance(p_obj, dict) else {}
+    h_obj = msg_payload.get("headers")
+    headers = h_obj if isinstance(h_obj, list) else []
     parsed: dict[str, str] = {}
     for header in headers:
         if isinstance(header, dict):

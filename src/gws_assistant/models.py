@@ -1,6 +1,7 @@
 """Shared data models."""
 
 from __future__ import annotations
+import os
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,7 +30,31 @@ class AppConfigModel:
     e2b_api_key: str | None = None
     gws_timeout_seconds: int = 90
     gws_max_retries: int = 3
+    openrouter_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
+    default_recipient_email: str = ""
+    mem0_api_key: str | None = None
+    mem0_user_id: str | None = None
+    mem0_host: str | None = None
+    # NOTE: Must NOT use a leading underscore here.
+    # @dataclass(slots=True) does not persist mutations to underscore-prefixed
+    # fields between method calls — the slot write is silently dropped, causing
+    # rotate_api_key() to always read index 0 and always jump to index 1.
+    current_key_idx: int = 0
+
+    def rotate_api_key(self) -> str | None:
+        if not self.openrouter_api_keys:
+            return self.api_key
+
+        self.current_key_idx = (self.current_key_idx + 1) % len(self.openrouter_api_keys)
+        new_key = self.openrouter_api_keys[self.current_key_idx]
+        self.api_key = new_key
+        # Sync with environment so LangChain/OpenAI clients pick it up
+        os.environ["OPENROUTER_API_KEY"] = new_key
+        os.environ["OPENAI_API_KEY"] = new_key
+        return new_key
+
+
 
 
 @dataclass(slots=True)
@@ -50,6 +75,8 @@ class PlannedTask:
     action: str
     parameters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+    # NOTE: Same slots=True rule applies — no leading underscore.
+    sequence_index: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +90,7 @@ def validate_planned_task(task: "PlannedTask") -> None:
     """Validate that a PlannedTask is structurally sound before execution.
 
     Raises ValidationError with a clear message if anything is wrong.
-    This is the planner→executor contract enforcement point.
+    This is the planner->executor contract enforcement point.
     """
     if not task.id or not str(task.id).strip():
         raise ValidationError("PlannedTask.id is empty or missing.")
@@ -82,7 +109,7 @@ def validate_planned_task(task: "PlannedTask") -> None:
         )
     # Detect obviously unresolved placeholder values that should have been
     # caught by _resolve_task but slipped through.
-    _STUB_PATTERNS = ("{{task", "{task-", "$gmail_message_ids", "PLACEHOLDER_")
+    _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_", "___UNRESOLVED_PLACEHOLDER___")
     for key, val in task.parameters.items():
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
@@ -118,6 +145,7 @@ class ActionSpec:
     key: str
     label: str
     keywords: tuple[str, ...]
+    negative_keywords: tuple[str, ...] = ()
     parameters: tuple[ParameterSpec, ...] = ()
     description: str = ""
 

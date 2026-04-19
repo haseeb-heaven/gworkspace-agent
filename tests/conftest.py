@@ -53,3 +53,46 @@ def mocker():
         yield helper
     finally:
         helper.stopall()
+
+
+@pytest.fixture
+def default_email():
+    import os
+
+    from dotenv import load_dotenv
+    load_dotenv()
+    return os.getenv("DEFAULT_RECIPIENT_EMAIL")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Automatically mark tests based on their directory and filename."""
+    for item in items:
+        # Get path relative to tests directory
+        rel_path = str(item.fspath).replace("\\", "/")
+        
+        # Mark manual tests
+        if "tests/manual" in rel_path:
+            item.add_marker(pytest.mark.manual)
+        
+        # Service mapping
+        services = {
+            "gmail": pytest.mark.gmail,
+            "docs": pytest.mark.docs,
+            "sheets": pytest.mark.sheets,
+            "drive": pytest.mark.drive,
+            "calendar": pytest.mark.calendar,
+            "tasks": pytest.mark.tasks,
+            "classroom": pytest.mark.classroom,
+            "keep": pytest.mark.keep,
+            "forms": pytest.mark.forms,
+            "slides": pytest.mark.slides,
+            "contacts": pytest.mark.contacts,
+            "admin": pytest.mark.admin,
+            "script": pytest.mark.script,
+            "model_armor": pytest.mark.modelarmor,
+            "events": pytest.mark.events,
+        }
+        
+        for name, marker in services.items():
+            if f"/{name}" in rel_path or f"_{name}" in rel_path:
+                item.add_marker(marker)

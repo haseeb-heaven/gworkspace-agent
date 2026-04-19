@@ -9,36 +9,21 @@ import base64
 import contextlib
 import io
 import json
-import os
 import sys
 
 try:
     import resource
 except ImportError:  # pragma: no cover - Windows
-    resource = None
+    resource = None  # type: ignore[assignment]
+
+# Allowed modules in the sandbox
+import csv
+import math
+import random
 
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
-
-
-MAX_OUTPUT = max(int(os.getenv("CODE_EXECUTION_MAX_OUTPUT", "8192")), 256)
-MAX_MEMORY = max(int(os.getenv("CODE_EXECUTION_MEMORY_MB", "64")), 16) * 1024 * 1024
-
-
-def _trim_output(text: str) -> str:
-    if len(text) <= MAX_OUTPUT:
-        return text
-    return text[:MAX_OUTPUT] + "\n...(TRUNCATED)"
-
-
-def set_memory_limit() -> None:
-    if resource is None or not hasattr(resource, "RLIMIT_AS"):
-        return
-    try:
-        resource.setrlimit(resource.RLIMIT_AS, (MAX_MEMORY, MAX_MEMORY))
-    except (ValueError, OSError):
-        pass
 
 
 def get_sandbox_globals() -> dict[str, object]:
@@ -55,9 +40,31 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_setattr_"] = guarded_setattr
     sandbox_globals["_write_"] = full_write_guard
     sandbox_globals["_print_"] = PrintCollector
-    sandbox_globals["math"] = utility_builtins.get("math")
-    sandbox_globals["random"] = utility_builtins.get("random")
+
+    # Whitelist allowed modules
+    sandbox_globals["csv"] = csv
+    sandbox_globals["io"] = io
+    sandbox_globals["math"] = math
+    sandbox_globals["random"] = random
     return sandbox_globals
+
+
+def set_memory_limit() -> None:
+    """Limit the memory usage of the process on systems that support it."""
+    if resource:
+        # Limit to 256MB
+        limit_bytes = 256 * 1024 * 1024
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))  # type: ignore[attr-defined]
+        except (ValueError, OSError):
+            pass
+
+
+def _trim_output(text: str, max_len: int = 1000) -> str:
+    """Trim a string to a maximum length."""
+    if len(text) > max_len:
+        return text[:max_len] + "... [output truncated]"
+    return text
 
 
 def run_code(code_b64: str) -> dict[str, object]:
