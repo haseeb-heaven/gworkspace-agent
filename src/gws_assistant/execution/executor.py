@@ -23,8 +23,8 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
     def __post_init__(self):
         if self.config:
-            from gws_assistant.memory import LongTermMemory
-            self._memory = LongTermMemory(self.config, self.logger)
+            from gws_assistant.memory_backend import get_memory_backend
+            self._memory = get_memory_backend(self.config, self.logger)
 
     def execute(self, plan: Any) -> Any:
         from gws_assistant.models import PlanExecutionReport, TaskExecution
@@ -53,7 +53,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 continue
 
             # Store the 1-based sequence index
-            task._sequence_index = i + 1
+            task.sequence_index = i + 1
 
             # 2. Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)

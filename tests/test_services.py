@@ -222,7 +222,7 @@ class TestPlannerGmail:
 
     def test_send_message_builds_raw_email(self):
         args = self.planner.build_command("gmail", "send_message", {
-            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
+            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
             "subject": "Test Subject",
             "body": "Hello World",
         })
@@ -232,7 +232,7 @@ class TestPlannerGmail:
         # The raw field should be base64-encoded
         import base64
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
-        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL')}" in decoded
+        assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL') or 'recipient@example.test'}" in decoded
         assert "Subject: Test Subject" in decoded
         assert "Hello World" in decoded
 
@@ -392,14 +392,15 @@ class TestAgentPlanning:
     def test_sheets_to_email_with_id(self, tmp_path):
         """User: 'Search Google Sheets with ID: ... create email with this data to ... and send it.'"""
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+        email = os.getenv('DEFAULT_RECIPIENT_EMAIL') or 'recipient@example.test'
         plan = agent.plan(
             "Search Google Sheets with ID: '1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo' "
-            f"create email with this data to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} and send it"
+            f"create email with this data to {email} and send it"
         )
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("sheets", "get_values") in services
         assert ("gmail", "send_message") in services
-        assert plan.tasks[-1].parameters.get("to_email") == os.getenv("DEFAULT_RECIPIENT_EMAIL")
+        assert plan.tasks[-1].parameters.get("to_email") == email
 
     def test_list_emails_from_specific_person(self, tmp_path):
         """User: 'List all emails i received from user.boss@gmail.com person'"""
@@ -484,7 +485,7 @@ class TestExecutionPipelines:
             tasks=[
                 PlannedTask("task-1", "sheets", "get_values", {"spreadsheet_id": "s1", "range": "Sheet1!A1:B2"}),
                 PlannedTask("task-2", "gmail", "send_message", {
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
                     "subject": "Data Export",
                     "body": "$sheet_email_body",
                 }),
@@ -510,7 +511,7 @@ class TestExecutionPipelines:
                     "spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$drive_summary_values",
                 }),
                 PlannedTask("task-4", "gmail", "send_message", {
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"), "subject": "AI Data Sheet", "body": "Sheet is ready",
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test", "subject": "AI Data Sheet", "body": "Sheet is ready",
                 }),
                 PlannedTask("task-5", "calendar", "create_event", {
                     "summary": "Review AI Data", "start_date": "2026-04-20",

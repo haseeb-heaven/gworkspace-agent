@@ -86,7 +86,7 @@ def test_triple_verifier_checks_calendar_event_with_expected_fields():
 
 
 def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
-    from gws_assistant.memory import LongTermMemory
+    from gws_assistant.memory_backend import get_memory_backend
     from gws_assistant.models import AppConfigModel
 
     config = AppConfigModel(
@@ -106,7 +106,7 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
         mem0_user_id="agent-user",
     )
 
-    memory = LongTermMemory(config)
+    memory = get_memory_backend(config)
     calls: list[dict] = []
     memory.client = type("Client", (), {"add": lambda self, data, user_id, metadata=None: calls.append({"data": data, "user_id": user_id, "metadata": metadata})})()
 

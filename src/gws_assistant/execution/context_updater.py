@@ -194,7 +194,7 @@ class ContextUpdaterMixin:
         if task and hasattr(task, "id") and task.id:
             task_id = str(task.id)
             num = task_id.removeprefix("task-")
-            seq_num = str(getattr(task, "_sequence_index", num))
+            seq_num = str(getattr(task, "sequence_index", num))
             action_name = str(task.action)
 
             # Map the full task result object (now enriched with IDs, URLs, headers, etc.)
@@ -204,6 +204,11 @@ class ContextUpdaterMixin:
             results_map[seq_num] = data
             results_map[f"task-{seq_num}"] = data
             results_map[action_name] = data
+
+            # Map under 'output' for placeholders like {{task-1.output.spreadsheetId}}
+            if "output" not in data:
+                # Do not self-reference dictionary as it causes RecursionError in _resolve_placeholders
+                data["output"] = {k: v for k, v in data.items() if k != "output"}
 
             # If this is a subtask (e.g. task-2-1), also append to the base task's list (e.g. task-2)
             is_subtask = False

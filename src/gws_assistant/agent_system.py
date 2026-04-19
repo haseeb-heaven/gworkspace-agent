@@ -20,15 +20,14 @@ class WorkspaceAgentSystem:
         self.config = config
         self.logger = logger
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
-        from .memory import LongTermMemory
-        self.memory = LongTermMemory(config, logger)
+        from .memory_backend import get_memory_backend
+        self.memory = get_memory_backend(config, logger)
 
     def plan(self, user_text: str) -> RequestPlan:
         from .intent_parser import IntentParser
-        from .memory import recall_similar
 
         # Local episodic memory
-        past = recall_similar(user_text)
+        past = self.memory.recall_similar(user_text)
         
         # Long-term semantic memory (Mem0)
         semantic_memories = self.memory.search(user_text)

@@ -217,7 +217,7 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"), "subject": "Sheet data", "body": "$sheet_email_body"},
+                    parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
             ),
         ],
     )
@@ -300,7 +300,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 service="gmail",
                 action="send_message",
                 parameters={
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
                     "subject": "Agentic Ai Frameworks summary",
                     "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
                 },

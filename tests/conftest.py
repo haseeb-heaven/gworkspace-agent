@@ -59,9 +59,12 @@ def mocker():
 def default_email():
     import os
 
-    from dotenv import load_dotenv
-    load_dotenv()
-    return os.getenv("DEFAULT_RECIPIENT_EMAIL")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+    return os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com"
 
 
 def pytest_collection_modifyitems(config, items):
