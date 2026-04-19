@@ -300,3 +300,5 @@ class ContextUpdaterMixin:
 
         if "values" in data and isinstance(data["values"], list):
              results_map["values"] = data["values"] # Direct alias for the most recent values
+
+             results_map["values"] = data["values"] # Direct alias for the most recent values

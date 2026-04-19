@@ -138,6 +138,7 @@ class LocalMemory(MemoryBackend):
     def search(self, query: str, user_id: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         return []
 
+
     def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
         return []
 
