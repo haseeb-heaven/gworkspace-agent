@@ -71,13 +71,13 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=_json.dumps({"documentId": "doc-1", "title": title}),
+                stdout=_json.dumps({"documentId": "doc-12345678", "title": title}),
             )
         if args[:3] == ["docs", "documents", "batchUpdate"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"documentId":"doc-1","replies":[]}',
+                stdout='{"documentId":"doc-12345678","replies":[]}',
             )
         if args[:4] == ["gmail", "users", "messages", "get"]:
             import json as _json
@@ -153,7 +153,7 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+                    parameters={"spreadsheet_id": "sheet-1234567", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
             ),
         ],
     )
@@ -177,7 +177,7 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "spreadsheet_id": "sheet-1234567",
                     "range": "Sheet1!A1",
                     "values": "{{company_names_from_task_2}}",
                 },
@@ -211,7 +211,7 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-1",
                 service="sheets",
                 action="get_values",
-                parameters={"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
+                    parameters={"spreadsheet_id": "sheet-1234567", "range": "Sheet1!A1:B2"},
             ),
             PlannedTask(
                 id="task-2",
@@ -241,7 +241,7 @@ def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "spreadsheet_id": "sheet-1234567",
                     "range": "Sheet1!A1",
                     "values": [["$gmail_message_body"]],
                 },
@@ -293,7 +293,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 id="task-5",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$web_search_table_values"},
+                    parameters={"spreadsheet_id": "sheet-1234567", "range": "Sheet1!A1", "values": "$web_search_table_values"},
             ),
             PlannedTask(
                 id="task-6",
@@ -326,7 +326,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     send_cmd = runner.commands[4]
     raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
     decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
-    assert "https://docs.google.com/document/d/doc-1/edit" in decoded
+    assert "https://docs.google.com/document/d/doc-12345678/edit" in decoded
     assert "https://example.test/sheet" in decoded
 
 def test_gmail_details_accumulation():
@@ -345,7 +345,7 @@ def test_gmail_details_accumulation():
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "s1",
+                        "spreadsheet_id": "s1-12345678",
                     "range": "Sheet1!A1",
                     "values": "$gmail_details_values",
                 },

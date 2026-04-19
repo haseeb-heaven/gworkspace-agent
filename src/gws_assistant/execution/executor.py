@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from gws_assistant.verification_engine import VerificationEngine, VerificationError
 from .resolver import ResolverMixin, _UNRESOLVED_MARKER
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
@@ -53,7 +54,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 continue
 
             # Store the 1-based sequence index
-            task._sequence_index = i + 1
+            task.sequence_index = i + 1
 
             # 2. Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)
@@ -170,6 +171,16 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 pass
 
         if result.success and result.output:
+            try:
+                VerificationEngine.verify(task.action, task.parameters, result.output)
+            except VerificationError as e:
+                if e.severity == "ERROR":
+                    from gws_assistant.exceptions import VerificationError as ExistingVerificationError
+                    logger.error(f"Verification engine caught an error: {e}")
+                    raise ExistingVerificationError(str(e))
+                else:
+                    logger.warning(f"Verification engine warning: {e}")
+
             # Synchronize stdout with any enrichments (like body extraction)
             result.stdout = json.dumps(result.output)
 
