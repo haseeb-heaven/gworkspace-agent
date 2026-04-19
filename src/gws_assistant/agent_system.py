@@ -7,6 +7,20 @@ import re
 from typing import Any
 
 from .langchain_agent import plan_with_langchain
+
+RE_CODE_LIST = re.compile(r"(\[.+?\])")
+RE_GMAIL_QUERY_QUOTED = re.compile(r'["\']([^"\']{3,80})["\']')
+RE_GMAIL_QUERY_MATCH = re.compile(r"(?:about|for|matching|with|named|search|find|search gmail for)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE)
+RE_GMAIL_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
+RE_DRIVE_QUERY_QUOTED = re.compile(r'["\']([^"\']{3,80})["\']')
+RE_DRIVE_QUERY_MATCH = re.compile(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE)
+RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
+RE_EXTRACT_ID = re.compile(r"\b([a-zA-Z0-9_-]{25,})\b")
+RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
+RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
+RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
+RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](.+?)['\"]")
+RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
 
@@ -430,7 +444,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url"""
             parameters["subject"] = "GWorkspace Notification"
             parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service in ("code", "computation"):
-            list_match = re.search(r"(\[.+?\])", lowered)
+            list_match = RE_CODE_LIST.search(lowered)
             data_str = list_match.group(1) if list_match else "[]"
             if "sort" in lowered:
                 rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
@@ -517,28 +531,28 @@ def _detect_action(service: str, text: str) -> str | None:
 
 
 def _gmail_query_from_text(text: str) -> str:
-    quoted = re.search(r'["\']([^"\']{3,80})["\']', text)
+    quoted = RE_GMAIL_QUERY_QUOTED.search(text)
     if quoted: 
         q = quoted.group(1).strip()
         # If the user says "subject:...", keep it. Otherwise, just use the keywords.
         if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
             return q
         return q
-    match = re.search(r"(?:about|for|matching|with|named|search|find|search gmail for)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
+    match = RE_GMAIL_QUERY_MATCH.search(text)
     if match:
         query = match.group(1).strip()
-        query = re.split(r"\s+(and|then|to|save|write|export|extract|move)\s+", query, flags=re.IGNORECASE)[0].strip()
+        query = RE_GMAIL_QUERY_SPLIT.split(query)[0].strip()
         return query
     return ""
 
 
 def _drive_query_from_text(text: str) -> str:
-    quoted = re.search(r'["\']([^"\']{3,80})["\']', text)
+    quoted = RE_DRIVE_QUERY_QUOTED.search(text)
     if quoted: return f"fullText contains '{quoted.group(1).strip()}'"
-    match = re.search(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
+    match = RE_DRIVE_QUERY_MATCH.search(text)
     if match:
         query = match.group(1).strip()
-        query = re.split(r"\s+(and|then|to|save|write|export|extract|move)\s+", query, flags=re.IGNORECASE)[0].strip()
+        query = RE_DRIVE_QUERY_SPLIT.split(query)[0].strip()
         return f"fullText contains '{query}'"
     return ""
 
@@ -547,22 +561,22 @@ def _extract_id(text: str) -> str | None:
     """Extract a Google Workspace ID (alphanumeric string with underscores/dashes) from text."""
     # Look for common ID pattern: ~44 characters, alphanumeric, includes - and _
     # Often found after 'ID:', 'id ', or in quotes.
-    match = re.search(r"\b([a-zA-Z0-9_-]{25,})\b", text)
+    match = RE_EXTRACT_ID.search(text)
     return match.group(1) if match else None
 
 
 def _extract_email(text: str) -> str | None:
-    match = re.search(r"\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b", text)
+    match = RE_EXTRACT_EMAIL.search(text)
     return match.group(1) if match else None
 
 
 def _extract_quoted(text: str) -> str | None:
-    match = re.search(r'["\'](.+?)["\']', text)
+    match = RE_EXTRACT_QUOTED.search(text)
     return match.group(1) if match else None
 
 
 def _first_int(text: str) -> int | None:
-    match = re.search(r"\b(\d{1,3})\b", text)
+    match = RE_FIRST_INT.search(text)
     if match:
         val = int(match.group(1))
         return val if val > 0 else None
@@ -597,15 +611,14 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
     """Extract rows from text like 'Score1, 100' or similar csv-like patterns."""
     rows = []
     # Look for header and data rows in quotes
-    matches = re.findall(r"['\"](.+?)['\"]", text)
+    matches = RE_EXTRACT_DATA_ROWS.findall(text)
     for m in matches:
         if "," in m:
             rows.append([item.strip() for item in m.split(",")])
     
     # If no rows found in quotes, try to find patterns like 'Score1, 100'
     if not rows:
-         pattern = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
-         for m in pattern.finditer(text):
+         for m in RE_EXTRACT_DATA_PATTERN.finditer(text):
              rows.append([m.group(1).strip(), m.group(2).strip()])
              
     return rows if rows else [["Data", "Value"], ["Item1", "10"]]
