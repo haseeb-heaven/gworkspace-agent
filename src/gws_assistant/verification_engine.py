@@ -146,7 +146,7 @@ class VerificationEngine:
         # CATEGORY 3 - GOOGLE DRIVE / DOCUMENT
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if "create" in tool_name or "copy" in tool_name:
-                title = params.get("title") or params.get("name")
+                title = params.get("title") or params.get("name") or params.get("folder_name")
                 if not title or cls._is_placeholder(str(title)) or len(str(title).strip()) < 1:
                     raise VerificationError(tool_name, "Document title required", "title")
 
