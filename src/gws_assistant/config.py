@@ -39,7 +39,7 @@ class AppConfig:
 
         provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
         openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
-        generic_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        generic_key = (os.getenv("LLM_API_KEY") or "").strip()
 
         if not provider:
             provider = "openrouter"
