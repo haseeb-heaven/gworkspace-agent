@@ -25,8 +25,8 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=args,
                 stdout=json.dumps({
-                    "spreadsheetId": "sheet-123",
-                    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-123/edit",
+                    "spreadsheetId": "sheet-1234567890",
+                    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1234567890/edit",
                     "title": "Test Sheet"
                 })
             )
@@ -36,7 +36,7 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=args,
                 stdout=json.dumps({
-                    "spreadsheetId": "sheet-123",
+                    "spreadsheetId": "sheet-1234567890",
                     "title": "Test Sheet"
                 })
             )
@@ -59,7 +59,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=args,
-                stdout=json.dumps({"spreadsheetId": "sheet-123", "clearedRange": "Sheet1!A1:Z100"})
+                stdout=json.dumps({"spreadsheetId": "sheet-1234567890", "clearedRange": "Sheet1!A1:Z100"})
             )
 
         if args[:3] == ["drive", "files", "delete"]:
@@ -113,5 +113,5 @@ def test_sheets_lifecycle_crud():
     assert runner.commands[4][:3] == ["drive", "files", "delete"]
 
     # Verify spreadsheet_id was resolved correctly for clear and delete
-    assert '"spreadsheetId": "sheet-123"' in runner.commands[3][runner.commands[3].index("--params") + 1]
-    assert '"fileId": "sheet-123"' in runner.commands[4][runner.commands[4].index("--params") + 1]
+    assert '"spreadsheetId": "sheet-1234567890"' in runner.commands[3][runner.commands[3].index("--params") + 1]
+    assert '"fileId": "sheet-1234567890"' in runner.commands[4][runner.commands[4].index("--params") + 1]
