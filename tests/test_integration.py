@@ -1,15 +1,15 @@
-import json
 import logging
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from gws_assistant.models import AppConfigModel
+
 from gws_assistant.agent_system import WorkspaceAgentSystem
 from gws_assistant.execution.executor import PlanExecutor
 from gws_assistant.langgraph_workflow import run_workflow
-
+from gws_assistant.models import AppConfigModel
 from tests.fakes.fake_google_workspace import FakeGoogleWorkspace
+
 
 @pytest.fixture
 def config():
@@ -60,7 +60,7 @@ def test_flow1_gmail_search_only(config, logger):
     assert len(calls) >= 1
     list_call = next((c for c in calls if c["service"] == "gmail" and c["action"] == "list_messages"), None)
     assert list_call is not None
-    q = list_call["params"].get("q", "")
+    list_call["params"].get("q", "")
 
     # In heuristic parsing, "unread emails" -> max_results=5, but query might be empty if the quote parsing didn't pick up "unread"
     # we just want to know that list_messages was called correctly
@@ -73,7 +73,7 @@ def test_flow2_gmail_to_sheets(config, logger):
 
     calls = fake_gws.call_log
     services = [c["service"] for c in calls]
-    actions = [c["action"] for c in calls]
+    [c["action"] for c in calls]
 
     assert "gmail" in services
     assert "sheets" in services
@@ -95,10 +95,10 @@ def test_flow3_web_search_to_docs(mock_web_search, config, logger):
     }
     fake_gws = FakeGoogleWorkspace()
 
-    system = WorkspaceAgentSystem(config, logger)
+    WorkspaceAgentSystem(config, logger)
     from gws_assistant.planner import CommandPlanner
     executor = PlanExecutor(planner=CommandPlanner(), runner=fake_gws, logger=logger, config=config)
-    from gws_assistant.models import RequestPlan, PlannedTask
+    from gws_assistant.models import PlannedTask, RequestPlan
 
     plan = RequestPlan(
         raw_text="find top 5 Python frameworks and save to Google Docs",
@@ -146,10 +146,10 @@ def test_flow5_placeholder_resolution(config, logger):
     fake_gws = FakeGoogleWorkspace()
 
     from gws_assistant.planner import CommandPlanner
-    system = WorkspaceAgentSystem(config, logger)
+    WorkspaceAgentSystem(config, logger)
     executor = PlanExecutor(planner=CommandPlanner(), runner=fake_gws, logger=logger, config=config)
 
-    from gws_assistant.models import RequestPlan, PlannedTask
+    from gws_assistant.models import PlannedTask, RequestPlan
     plan = RequestPlan(
         raw_text="placeholder test",
         tasks=[
@@ -183,21 +183,20 @@ def test_flow6_reflection_retry_on_failure(config, logger):
     # It should retry upon transient error
     run_integration_test("create a sheet named RetryTest", config, logger, fake_gws)
 
-    calls = fake_gws.call_log
     assert fake_gws.call_count >= 2
     # The first call failed, second should succeed, meaning it got retried
 
 def test_flow7_memory_recall_affects_planning(config, logger, tmp_path):
     config.memory_dir = tmp_path
 
-    fake_gws = FakeGoogleWorkspace()
+    FakeGoogleWorkspace()
     system = WorkspaceAgentSystem(config, logger)
 
     # Save an episode
     system.memory.save_episode("send email to boss", [{"id": "t1"}], "success")
 
     # Call planner with similar query
-    plan = system.plan("send email to boss about project")
+    system.plan("send email to boss about project")
 
     # Verify memory was recalled and passed in the prompt or hint
     # Depending on how langchain_agent uses it, we check if memory was retrieved

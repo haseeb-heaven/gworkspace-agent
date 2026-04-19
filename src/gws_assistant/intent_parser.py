@@ -66,7 +66,7 @@ class IntentParser:
     def _parse_with_llm(self, text: str) -> Intent | None:
         if not self.client:
             return None
-        
+
         max_retries = self.config.max_retries
         for attempt in range(max_retries):
             try:
@@ -250,13 +250,13 @@ class IntentParser:
     def _extract_simple_parameters(self, text: str) -> dict[str, Any]:
         params: dict[str, Any] = {}
         lowered = text.lower()
-        
+
         # 1a. Handle quoted values first (e.g. key="value with spaces")
         quoted_kv = re.findall(r"([a-zA-Z0-9_-]+)=(['\"])(.+?)\2", text)
         for k, quote, v in quoted_kv:
             params[k] = v
             self.logger.debug(f"DEBUG: Found quoted KV: {k}={v}")
-                
+
         # 1b. Handle unquoted values (e.g. key=value or key=$placeholder)
         # We look for key= followed by non-whitespace characters
         unquoted_kv = re.findall(r"([a-zA-Z0-9_-]+)=([^\s\"']+)", text)
@@ -282,17 +282,17 @@ class IntentParser:
         query_match = re.search(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+['\"](.+?)['\"]", text, re.IGNORECASE)
         if not query_match:
             query_match = re.search(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+([a-zA-Z0-9 _.-]{3,60})", text, re.IGNORECASE)
-        
+
         if query_match:
             query = query_match.group(1).strip()
             # Clean up
             query = re.sub(r"^(my|all)\s+", "", query, flags=re.IGNORECASE)
             query = re.sub(r"\s+in\s+(gmail|drive|google\s+docs?|sheets?)$", "", query, flags=re.IGNORECASE)
             query = re.split(r"\s+(and|then|to|save|write|export|extract)\s+", query, flags=re.IGNORECASE)[0].strip()
-            
+
             if query and query.lower() not in ("gmail", "drive", "file", "document", "spreadsheet", "sheet"):
                 params["q"] = query
-            
+
         # 4. Extract Title (for Docs/Sheets)
         title_match = re.search(r"(?:titled|named|called)\s+['\"](.+?)['\"]", text)
         if not title_match:

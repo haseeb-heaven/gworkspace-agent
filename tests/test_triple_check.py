@@ -1,10 +1,13 @@
-import os
-import pytest
 import json
-from pathlib import Path
-from gws_assistant.gws_runner import GWSRunner
-from gws_assistant.execution.verifier import TripleVerifier
 import logging
+import os
+from pathlib import Path
+
+import pytest
+
+from gws_assistant.execution.verifier import TripleVerifier
+from gws_assistant.gws_runner import GWSRunner
+
 
 @pytest.fixture
 def runner():
@@ -29,14 +32,14 @@ class TestFullCRUD:
         res = runner.run(create_args)
         assert res.success, f"Failed to create doc: {res.stderr}"
         doc_id = json.loads(res.stdout)["documentId"]
-        
+
         try:
             # 2. Verify (Read)
             assert verifier.verify_resource("docs", doc_id, {"title": title})
-            
+
             # 3. Update (if applicable via CLI, e.g. batchUpdate)
             # For now just verify we can re-read it.
-            
+
         finally:
             # 4. Delete (Drive API)
             del_args = ["drive", "files", "delete", "--params", json.dumps({"fileId": doc_id})]
@@ -49,13 +52,13 @@ class TestFullCRUD:
         res = runner.run(create_args)
         assert res.success
         sheet_id = json.loads(res.stdout)["spreadsheetId"]
-        
+
         try:
             # 2. Verify
             # Note: properties title might be nested, verifier currently does flat check
             # We can extend verifier or just check ID existence
             assert verifier.verify_resource("sheets", sheet_id, {})
-            
+
         finally:
             # 3. Delete
             del_args = ["drive", "files", "delete", "--params", json.dumps({"fileId": sheet_id})]
@@ -68,11 +71,11 @@ class TestFullCRUD:
         res = runner.run(create_args)
         assert res.success
         folder_id = json.loads(res.stdout)["id"]
-        
+
         try:
             # 2. Verify
             assert verifier.verify_resource("drive", folder_id, {"name": name})
-            
+
         finally:
             # 3. Delete
             del_args = ["drive", "files", "delete", "--params", json.dumps({"fileId": folder_id})]

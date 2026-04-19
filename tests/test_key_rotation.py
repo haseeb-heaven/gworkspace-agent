@@ -1,10 +1,13 @@
-import os
 import logging
+import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
-from src.gws_assistant.models import AppConfigModel
+
 from src.gws_assistant.intent_parser import IntentParser
+from src.gws_assistant.models import AppConfigModel
+
 
 @pytest.fixture
 def mock_logger():
@@ -31,15 +34,15 @@ def config():
 
 def test_rotate_api_key_method(config):
     assert config.api_key == "key1"
-    
+
     config.rotate_api_key()
     assert config.api_key == "key2"
     assert os.environ["OPENROUTER_API_KEY"] == "key2"
-    
+
     config.rotate_api_key()
     assert config.api_key == "key3"
     assert os.environ["OPENROUTER_API_KEY"] == "key3"
-    
+
     config.rotate_api_key()
     assert config.api_key == "key1"
     assert os.environ["OPENROUTER_API_KEY"] == "key1"
@@ -52,14 +55,14 @@ def test_intent_parser_rotates_on_429(mock_create, mock_logger, config):
         Exception("Rate limit reached (429)"),
         MagicMock(choices=[MagicMock(message=MagicMock(content='{"service": "gmail", "action": "send_message"}'))])
     ]
-    
+
     parser = IntentParser(config, mock_logger)
     # Ensure client is using initial key
     assert parser.client.api_key == "key1"
-    
+
     with patch("time.sleep"):
         intent = parser.parse("send an email")
-        
+
         assert intent.service == "gmail"
         # Verify rotation happened: config key updated AND client re-initialized
         assert config.api_key == "key2"

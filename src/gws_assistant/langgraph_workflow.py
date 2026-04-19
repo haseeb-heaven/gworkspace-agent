@@ -285,7 +285,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         plan = state.get("plan")
         executions = state.get("executions", [])
         context = state.get("context", {})
-        
+
         if plan and executions:
             # Resolve placeholders in summary if any exist
             if plan.summary and ("{" in plan.summary or "$" in plan.summary):

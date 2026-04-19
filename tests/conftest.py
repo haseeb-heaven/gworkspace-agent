@@ -78,11 +78,11 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         # Get path relative to tests directory
         rel_path = str(item.fspath).replace("\\", "/")
-        
+
         # Mark manual tests
         if "tests/manual" in rel_path:
             item.add_marker(pytest.mark.manual)
-        
+
         # Service mapping
         services = {
             "gmail": pytest.mark.gmail,
@@ -101,7 +101,7 @@ def pytest_collection_modifyitems(config, items):
             "model_armor": pytest.mark.modelarmor,
             "events": pytest.mark.events,
         }
-        
+
         for name, marker in services.items():
             if f"/{name}" in rel_path or f"_{name}" in rel_path:
                 item.add_marker(marker)

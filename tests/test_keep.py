@@ -1,9 +1,11 @@
-from gws_assistant.planner import CommandPlanner
 import json
+
+from gws_assistant.planner import CommandPlanner
+
 
 class TestPlannerKeep:
     planner = CommandPlanner()
-    
+
     def test_create_note(self):
         args = self.planner.build_command("keep", "create_note", {"title": "Test Note", "body": "Keep content"})
         assert args[:3] == ["keep", "notes", "create"]

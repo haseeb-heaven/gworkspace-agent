@@ -75,7 +75,7 @@ class HelpersMixin:
                     if k in task.parameters:
                         raw_code = task.parameters[k]
                         break
-            
+
             code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
             logger.info("Executing generated code:\n%s", code)
 
@@ -91,7 +91,7 @@ class HelpersMixin:
 
             # Inject task_results and other common context keys into extra_globals
             task_results = context.get("task_results", {})
-            
+
             # Robustness: if LLM uses task_results[0] instead of task_results['task-1']
             # we inject integer keys pointing to the same data (0-based and 1-based).
             results_with_numeric = task_results.copy()
@@ -133,9 +133,9 @@ class HelpersMixin:
 
             # Extract stdout and parsed value
             output_data = result.get("output", {})
-            
+
             # --- AUTO-WRITE TO FILE ---
-            # If the next task (or this task) suggests a file should be created, 
+            # If the next task (or this task) suggests a file should be created,
             # and we have content in parsed_value or stdout, write it.
             target_file = task.parameters.get("file_path")
             if target_file and result.get("success"):
@@ -148,11 +148,11 @@ class HelpersMixin:
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
-            stdout = output_data.get("stdout", "")
+            output_data.get("stdout", "")
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
                 context["last_code_result"] = parsed
-                
+
                 # Promote parsed_value keys to results_map for easy placeholder access
                 if isinstance(parsed, dict):
                     num = task.id.split("-")[-1] if "-" in task.id else task.id

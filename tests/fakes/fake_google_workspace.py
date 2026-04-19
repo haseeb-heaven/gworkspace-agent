@@ -5,6 +5,7 @@ from typing import Any
 from gws_assistant.gws_runner import GWSRunner
 from gws_assistant.models import ExecutionResult
 
+
 class FakeGoogleWorkspace(GWSRunner):
     def __init__(self, should_fail_on_first_call=False):
         # We don't actually need a binary path, but we provide a fake one to satisfy the base class

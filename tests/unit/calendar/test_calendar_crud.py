@@ -1,7 +1,10 @@
 import json
+
 import pytest
-from gws_assistant.planner import CommandPlanner
+
 from gws_assistant.exceptions import ValidationError
+from gws_assistant.planner import CommandPlanner
+
 
 class TestCalendarCRUD:
     planner = CommandPlanner()
@@ -15,7 +18,7 @@ class TestCalendarCRUD:
         }
         args = self.planner.build_command("calendar", "create_event", params)
         assert args[0:3] == ["calendar", "events", "insert"]
-        
+
         # Verify JSON body
         json_idx = args.index("--json")
         body = json.loads(args[json_idx + 1])
@@ -31,7 +34,7 @@ class TestCalendarCRUD:
         }
         args = self.planner.build_command("calendar", "get_event", params)
         assert args[0:3] == ["calendar", "events", "get"]
-        
+
         # Verify params
         params_idx = args.index("--params")
         p = json.loads(args[params_idx + 1])
@@ -46,7 +49,7 @@ class TestCalendarCRUD:
         }
         args = self.planner.build_command("calendar", "update_event", params)
         assert args[0:3] == ["calendar", "events", "patch"]
-        
+
         # Verify JSON body
         json_idx = args.index("--json")
         body = json.loads(args[json_idx + 1])
@@ -59,7 +62,7 @@ class TestCalendarCRUD:
         }
         args = self.planner.build_command("calendar", "delete_event", params)
         assert args[0:3] == ["calendar", "events", "delete"]
-        
+
         # Verify params
         params_idx = args.index("--params")
         p = json.loads(args[params_idx + 1])

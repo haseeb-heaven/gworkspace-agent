@@ -1,19 +1,18 @@
 
-import sys
-import os
 import logging
-from pathlib import Path
+import os
+import sys
 
 # Add src to path
 sys.path.append(os.path.join(os.getcwd(), "src"))
 
 from gws_assistant.execution import PlanExecutor
-from gws_assistant.models import PlannedTask, RequestPlan
+
 
 def test_none_resolution():
     logging.basicConfig(level=logging.DEBUG)
     executor = PlanExecutor(planner=None, runner=None)
-    
+
     context = {
         "task_results": {
             "task-1": {"id": None, "value": "foo"},
@@ -21,15 +20,15 @@ def test_none_resolution():
         },
         "last_code_result": None
     }
-    
+
     # Case 1: Resolved value is None
     res1 = executor._resolve_placeholders("{task-1.id}", context)
     print(f"Case 1 (None value): {{task-1.id}} -> {res1}")
-    
+
     # Case 2: Resolved value is string "None"
     res2 = executor._resolve_placeholders("{task-2.content}", context)
     print(f"Case 2 (String 'None'): {{task-2.content}} -> {res2}")
-    
+
     # Case 3: Unresolved placeholder
     res3 = executor._resolve_placeholders("{task-99.id}", context)
     print(f"Case 3 (Unresolved): {{task-99.id}} -> {res3}")
