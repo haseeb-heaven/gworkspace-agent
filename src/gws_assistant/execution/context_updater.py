@@ -237,12 +237,15 @@ class ContextUpdaterMixin:
                          current = context.setdefault(key, [])
                          if isinstance(current, list):
                              rows = data["values"]
-                             if rows and isinstance(rows[0], list): current.extend(rows)
-                             else: current.append(rows)
+                             if rows and isinstance(rows[0], list):
+                                 current.extend(rows)
+                             else:
+                                 current.append(rows)
                     elif "row" in data:
                          key = f"company_names_from_task_{b_num}"
                          current = context.setdefault(key, [])
-                         if isinstance(current, list): current.append(data["row"])
+                         if isinstance(current, list):
+                             current.append(data["row"])
 
             # Map individual fields (if they exist)
             for k, v in data.items():

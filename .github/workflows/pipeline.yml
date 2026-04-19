@@ -78,7 +78,7 @@ jobs:
           PYTHONPATH: src:tests
           OPENAI_API_KEY: "fake_key_for_testing"
         run: |
-          pytest tests/test_integration.py -v --cov=src.gws_assistant.langgraph_workflow --cov=src.gws_assistant.execution --cov-report=term --cov-fail-under=70
+          pytest tests/test_integration.py -v --cov=gws_assistant.langgraph_workflow --cov=gws_assistant.execution --cov-report=term --cov-fail-under=70
 
   live-integration:
     name: Live Integration Tests

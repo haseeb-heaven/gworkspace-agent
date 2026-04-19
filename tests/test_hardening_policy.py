@@ -103,6 +103,7 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
+        mem0_api_key="test-key",
         mem0_user_id="agent-user",
     )
 

@@ -62,7 +62,14 @@ class LocalMemory(MemoryBackend):
     def __init__(self, config: AppConfigModel, logger: logging.Logger | None = None):
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
-        self.memory_file = Path.home() / ".gws_agent" / "memory.jsonl"
+
+        # Load from config, fallback to home directory
+        mem_dir = getattr(self.config, "memory_dir", None)
+        if mem_dir:
+            self.memory_file = Path(mem_dir) / "memory.jsonl"
+        else:
+            self.memory_file = Path.home() / ".gws_agent" / "memory.jsonl"
+
         self._max_episodes = 500
         self._stop_words = frozenset({
             "a", "an", "the", "is", "it", "its", "in", "on", "at", "to", "for",
@@ -76,6 +83,8 @@ class LocalMemory(MemoryBackend):
         return {w for w in text.lower().split() if w not in self._stop_words and len(w) > 1}
 
     def save_episode(self, goal: str, tasks: list[dict], outcome: str) -> None:
+        import portalocker
+
         self.memory_file.parent.mkdir(parents=True, exist_ok=True)
         episode = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -83,9 +92,12 @@ class LocalMemory(MemoryBackend):
             "tasks": tasks,
             "outcome": outcome,
         }
-        with open(self.memory_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(episode) + "\n")
-        self._prune_if_needed()
+
+        lock_file = self.memory_file.with_suffix(".jsonl.lock")
+        with portalocker.Lock(lock_file, timeout=5):
+            with open(self.memory_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(episode) + "\n")
+            self._prune_if_needed()
 
     def recall_similar(self, goal: str, max_results: int = 3) -> list[dict]:
         if not self.memory_file.exists():
@@ -170,7 +182,7 @@ class Mem0Memory(LocalMemory):
             self.logger.error(f"Error adding memory to Mem0: {e}")
 
     def _build_filters(self, user_id: str) -> dict[str, Any]:
-        return {"user_id": user_id}
+        return {"AND": [{"user_id": user_id}]}
 
     def search(self, query: str, user_id: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         if not self.client:
@@ -183,10 +195,7 @@ class Mem0Memory(LocalMemory):
                 filters = self._build_filters(resolved_user_id)
                 return self.client.search(query=query, version="v2", filters=filters, limit=limit)
             else:
-                try:
-                    return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
-                except Exception:
-                    return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
+                return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
         except Exception as e:
             msg = str(e)
             if "429" in msg or "quota" in msg.lower():

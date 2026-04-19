@@ -56,7 +56,7 @@ def mocker():
 
 
 @pytest.fixture
-def default_email():
+def default_email(request):
     import os
 
     try:
@@ -64,7 +64,13 @@ def default_email():
         load_dotenv()
     except ImportError:
         pass
-    return os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com"
+
+    email = os.getenv("DEFAULT_RECIPIENT_EMAIL")
+    if not email:
+        if request.node.get_closest_marker("live_integration") or os.getenv("RUN_LIVE_TESTS"):
+            pytest.skip("DEFAULT_RECIPIENT_EMAIL must be set in .env for live integration tests")
+        return "test@example.com"
+    return email
 
 
 def pytest_collection_modifyitems(config, items):

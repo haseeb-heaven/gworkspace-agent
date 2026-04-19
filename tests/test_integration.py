@@ -112,14 +112,18 @@ def test_flow3_web_search_to_docs(mock_web_search, config, logger):
     executor.execute(plan)
 
     calls = fake_gws.call_log
-    create_doc_call = next((c for c in calls if c["service"] == "docs" and c["action"] == "create_document"), None)
 
-    # If the executor expands code to inline update without batch update
-    assert create_doc_call is not None or any(c["service"] == "docs" for c in calls)
+    mock_web_search.invoke.assert_called_once_with({"query": "top 5 Python frameworks"})
+
+    create_doc_call = next((c for c in calls if c["service"] == "docs" and c["action"] == "create_document"), None)
+    assert create_doc_call is not None
 
     # Check batch_update content for docs.create_document
     update_call = next((c for c in calls if c["service"] == "docs" and c["action"] == "batch_update"), None)
-    # The heuristic might not create a batch update if the content was already passed, or it uses docs.create_document
+
+    if "Python framework" not in str(create_doc_call.get("params", {})):
+        assert update_call is not None
+        assert "Python framework" in str(update_call.get("params", {})) or "Django" in str(update_call.get("params", {}))
 
 def test_flow4_drive_to_sheets_to_gmail(config, logger):
     fake_gws = FakeGoogleWorkspace()
@@ -183,7 +187,9 @@ def test_flow6_reflection_retry_on_failure(config, logger):
     assert fake_gws.call_count >= 2
     # The first call failed, second should succeed, meaning it got retried
 
-def test_flow7_memory_recall_affects_planning(config, logger):
+def test_flow7_memory_recall_affects_planning(config, logger, tmp_path):
+    config.memory_dir = tmp_path
+
     fake_gws = FakeGoogleWorkspace()
     system = WorkspaceAgentSystem(config, logger)
 

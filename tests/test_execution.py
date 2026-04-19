@@ -88,7 +88,8 @@ class FakeRunner(GWSRunner):
                     try:
                         p_data = _json.loads(args[i+1])
                         msg_id = p_data.get("id") or p_data.get("messageId") or msg_id
-                    except: pass
+                    except (IndexError, _json.JSONDecodeError, ValueError):
+                        pass
             
             subject = f"Job offer {msg_id}"
             return ExecutionResult(
