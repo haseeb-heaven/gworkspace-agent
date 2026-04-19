@@ -343,7 +343,7 @@ class VerificationEngine:
                         raise VerificationError(tool_name, "Result is exactly the same as params", severity="WARNING")
 
             if "create" in tool_name.lower() or "insert" in tool_name.lower():
-                has_id = any(k in result for k in ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId"])
+                has_id = any(k in result for k in ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name"])
                 if not has_id:
                     raise VerificationError(tool_name, "Create operation result missing ID")
 
