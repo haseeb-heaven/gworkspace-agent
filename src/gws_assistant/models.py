@@ -35,22 +35,26 @@ class AppConfigModel:
     default_recipient_email: str = ""
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
+    mem0_host: str | None = None
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
-    _current_key_idx: int = 0
+    # NOTE: Must NOT use a leading underscore here.
+    # @dataclass(slots=True) does not persist mutations to underscore-prefixed
+    # fields between method calls — the slot write is silently dropped, causing
+    # rotate_api_key() to always read index 0 and always jump to index 1.
+    current_key_idx: int = 0
 
     def rotate_api_key(self) -> str | None:
         if not self.openrouter_api_keys:
             return self.api_key
-        
-        self._current_key_idx = (self._current_key_idx + 1) % len(self.openrouter_api_keys)
-        new_key = self.openrouter_api_keys[self._current_key_idx]
+
+        self.current_key_idx = (self.current_key_idx + 1) % len(self.openrouter_api_keys)
+        new_key = self.openrouter_api_keys[self.current_key_idx]
         self.api_key = new_key
         # Sync with environment so LangChain/OpenAI clients pick it up
         os.environ["OPENROUTER_API_KEY"] = new_key
         os.environ["OPENAI_API_KEY"] = new_key
         return new_key
-
 
 
 
@@ -73,7 +77,8 @@ class PlannedTask:
     action: str
     parameters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
-    _sequence_index: int = 0
+    # NOTE: Same slots=True rule applies — no leading underscore.
+    sequence_index: int = 0
 
 
 # ---------------------------------------------------------------------------

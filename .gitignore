@@ -1,5 +1,7 @@
 *.eml
 .gemini/settings.json
+*.json 
+*.jsonl
 
 # Dependencies
 node_modules/
@@ -23,6 +25,7 @@ env/
 
 # Logs and Environment
 logs/
+scratch/logs
 *.log
 .env
 .env.local
@@ -61,5 +64,4 @@ docs/
 !README.md
 !framework/
 !tests/
-run_live_scenarios.py
 
