@@ -216,11 +216,11 @@ class VerificationEngine:
                 if not summary or cls._is_placeholder(str(summary)) or len(str(summary).strip()) < 2:
                     raise VerificationError(tool_name, "Event summary required and min 2 chars", "summary")
 
-                start = params.get("start")
-                end = params.get("end")
+                start = params.get("start") or params.get("start_date") or params.get("start_datetime") or params.get("start_time")
+                end = params.get("end") or params.get("end_date") or params.get("end_datetime") or params.get("end_time")
                 if not start or not cls._is_valid_iso8601(start):
                     raise VerificationError(tool_name, "Valid start date required", "start")
-                if not end or not cls._is_valid_iso8601(end):
+                if end and not cls._is_valid_iso8601(end):
                     raise VerificationError(tool_name, "Valid end date required", "end")
                 if not cls._end_is_after_start(start, end):
                     raise VerificationError(tool_name, "End time must be after start time", "end")
