@@ -1,7 +1,7 @@
 *.eml
 .gemini/settings.json
-.json 
-.jsonl
+*.json 
+*.jsonl
 
 # Dependencies
 node_modules/
@@ -25,6 +25,7 @@ env/
 
 # Logs and Environment
 logs/
+scratch/logs
 *.log
 .env
 .env.local
