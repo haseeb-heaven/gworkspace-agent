@@ -3,6 +3,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+# Pre-compiled regex patterns for performance
+_EMAIL_RE = re.compile(r"[^@]+@[^@]+\.[^@]+")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -61,7 +64,7 @@ class DriveToGmailWorkflow:
             "Starting DriveToGmailWorkflow for query: %s, email: %s", query, email
         )
         try:
-            if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            if not _EMAIL_RE.match(email):
                 raise ValueError("Invalid email address")
 
             file_info = self.drive_service.search_file(query)

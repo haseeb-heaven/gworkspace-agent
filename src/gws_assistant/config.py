@@ -95,6 +95,7 @@ class AppConfig:
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
         mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
         mem0_host = (os.getenv("MEM0_HOST") or "").strip() or None
+        mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
 
         return AppConfigModel(
             provider=provider,
@@ -109,8 +110,8 @@ class AppConfig:
             env_file_path=env_file_path,
             setup_complete=setup_complete,
             max_retries=max_retries,
-            max_replans=max_replans,
             langchain_enabled=langchain_enabled,
+            max_replans=max_replans,
             use_heuristic_fallback=use_heuristic_fallback,
             code_execution_enabled=code_execution_enabled,
             code_execution_backend=code_execution_backend,
@@ -123,6 +124,7 @@ class AppConfig:
             mem0_api_key=mem0_api_key,
             mem0_user_id=mem0_user_id,
             mem0_host=mem0_host,
+            mem0_local_storage_path=mem0_local_storage_path,
         )
 
 

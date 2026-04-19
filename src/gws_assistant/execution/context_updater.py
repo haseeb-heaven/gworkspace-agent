@@ -1,6 +1,10 @@
 import re
 from typing import Any
 
+# Pre-compiled regex patterns for performance
+_EMAIL_BRACKETS_RE = re.compile(r"<(.+?)>")
+_TASK_PREFIX_RE = re.compile(r"(?:task-)?(\d+)")
+_TASK_BASE_RE = re.compile(r"(task-\d+)-\d+")
 
 class ContextUpdaterMixin:
     def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
@@ -92,7 +96,7 @@ class ContextUpdaterMixin:
             date_val = headers_dict.get("date", "Unknown Date")
 
             # Extract just email from "Name <email@example.com>"
-            email_match = re.search(r"<(.+?)>", str(sender))
+            email_match = _EMAIL_BRACKETS_RE.search(str(sender))
             email_addr = email_match.group(1) if email_match else sender
 
             row = [sender, subject, date_val, email_addr]
@@ -170,7 +174,7 @@ class ContextUpdaterMixin:
             if task:
                  task_id = str(task.id)
                  # Extract base ID (e.g. '2' from 'task-2-1' or 'task-2')
-                 m = re.match(r"(?:task-)?(\d+)", task_id)
+                 m = _TASK_PREFIX_RE.match(task_id)
                  if m:
                      base_num = m.group(1)
                      key = f"company_names_from_task_{base_num}"
@@ -215,7 +219,7 @@ class ContextUpdaterMixin:
             is_subtask = False
             if "-" in task_id:
                 # Extract base ID (e.g. 'task-2' from 'task-2-1')
-                m = re.match(r"(task-\d+)-\d+", task_id)
+                m = _TASK_BASE_RE.match(task_id)
                 if m:
                     b_id = m.group(1)
                     is_subtask = True
@@ -295,4 +299,6 @@ class ContextUpdaterMixin:
                     results_map[f"task-{seq_num}.id"] = first_id
 
         if "values" in data and isinstance(data["values"], list):
+             results_map["values"] = data["values"] # Direct alias for the most recent values
+
              results_map["values"] = data["values"] # Direct alias for the most recent values
