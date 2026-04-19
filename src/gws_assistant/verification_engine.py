@@ -146,7 +146,7 @@ class VerificationEngine:
         # CATEGORY 3 - GOOGLE DRIVE / DOCUMENT
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if "create" in tool_name or "copy" in tool_name:
-                title = params.get("title") or params.get("name") or params.get("folder_name")
+                title = params.get("title") or params.get("name")
                 if not title or cls._is_placeholder(str(title)) or len(str(title).strip()) < 1:
                     raise VerificationError(tool_name, "Document title required", "title")
 
@@ -493,9 +493,25 @@ class VerificationEngine:
                 # Check for parts
                 if not parts:
                     raise VerificationError("verify_attachment", "Attachment declared in params but not confirmed in result — email may have sent without attachment", severity="ERROR")
-                else:
-                    if len(parts) < len(attachments):
-                        raise VerificationError("verify_attachment", "Fewer attachments confirmed in result than declared in params", severity="ERROR")
+
+                declared = set()
+                for att in attachments:
+                    if isinstance(att, dict):
+                        # Use filename or file_id or file_path as identifier
+                        ident = str(att.get("filename") or att.get("file_id") or att.get("file_path") or "")
+                        if ident:
+                            declared.add(ident)
+
+                confirmed = set()
+                for part in parts:
+                    if isinstance(part, dict):
+                        # Common fields in Gmail/Drive parts
+                        ident = str(part.get("filename") or part.get("name") or part.get("fileId") or part.get("file_id") or "")
+                        if ident:
+                            confirmed.add(ident)
+
+                if len(parts) < len(attachments) or not declared.issubset(confirmed):
+                    raise VerificationError("verify_attachment", "Fewer attachments confirmed in result than declared in params", severity="ERROR")
 
 
     @classmethod
@@ -569,6 +585,7 @@ class VerificationEngine:
 
     @classmethod
     def _end_is_after_start(cls, start: Any, end: Any) -> bool:
+        from datetime import datetime
         def extract_date(v):
             if isinstance(v, dict):
                 return v.get("dateTime") or v.get("date")
@@ -578,4 +595,14 @@ class VerificationEngine:
         e = extract_date(end)
         if not s or not e:
             return True
-        return str(e) >= str(s)
+
+        try:
+            s_str = str(s).replace("Z", "+00:00")
+            e_str = str(e).replace("Z", "+00:00")
+
+            s_dt = datetime.fromisoformat(s_str)
+            e_dt = datetime.fromisoformat(e_str)
+
+            return e_dt > s_dt
+        except (TypeError, ValueError):
+            return False

@@ -94,7 +94,6 @@ class AppConfig:
         max_snippet_len = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
         mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
-        mem0_host = (os.getenv("MEM0_HOST") or "").strip() or None
 
         return AppConfigModel(
             provider=provider,
@@ -122,7 +121,6 @@ class AppConfig:
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
             mem0_user_id=mem0_user_id,
-            mem0_host=mem0_host,
         )
 
 

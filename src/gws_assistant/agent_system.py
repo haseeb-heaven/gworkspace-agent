@@ -398,41 +398,38 @@ Files moved to '{folder_name}'. Link: $last_folder_url"""
             )
         ]
 
-    def _single_service_task(self, service: str, text: str, index: int) -> PlannedTask:
-        lowered = text.lower()
-        action = _detect_action(service, text) or next(iter(SERVICES[service].actions))
+    def _single_service_task(self, service: str, lowered: str, index: int) -> PlannedTask:
+        action = _detect_action(service, lowered) or next(iter(SERVICES[service].actions))
         parameters: dict[str, Any] = {}
 
         if service == "gmail" and action == "list_messages":
-            parameters["q"] = _gmail_query_from_text(text)
-            parameters["max_results"] = _first_int(text) or 10
+            parameters["q"] = _gmail_query_from_text(lowered)
+            parameters["max_results"] = _first_int(lowered) or 10
         elif service == "drive" and action == "list_files":
-            parameters["page_size"] = _first_int(text) or 10
-            drive_query = _drive_query_from_text(text)
+            parameters["page_size"] = _first_int(lowered) or 10
+            drive_query = _drive_query_from_text(lowered)
             if drive_query:
                 parameters["q"] = drive_query
             else:
                 # Fallback: try to find anything in quotes or after search/find
-                query = _extract_quoted(text)
+                query = _extract_quoted(lowered)
                 if query:
                     parameters["q"] = f"name contains '{query}'"
         elif service == "drive" and action == "export_file":
-            parameters["file_id"] = _extract_id(text) or "{{task-1.id}}"
+            parameters["file_id"] = _extract_id(lowered) or "{{task-1.id}}"
         elif service == "search" and action == "web_search":
-            parameters["query"] = text
+            parameters["query"] = lowered
         elif service == "docs" and action == "get_document":
-            parameters["document_id"] = _extract_id(text) or "{{task-1.id}}"
+            parameters["document_id"] = _extract_id(lowered) or "{{task-1.id}}"
         elif service == "sheets" and action == "get_values":
-            parameters["spreadsheet_id"] = _extract_id(text) or "{{task-1.id}}"
+            parameters["spreadsheet_id"] = _extract_id(lowered) or "{{task-1.id}}"
             parameters["range"] = "Sheet1!A1"
         elif service == "gmail" and action == "send_message":
             parameters["to_email"] = self.config.default_recipient_email
             parameters["subject"] = "GWorkspace Notification"
-            parameters["body"] = f"Update regarding your request: {text[:100]}..."
-        elif service == "tasks" and action == "create_task":
-            parameters["title"] = _extract_quoted(text) or "New Task"
+            parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service in ("code", "computation"):
-            list_match = re.search(r"(\[.+?\])", text)
+            list_match = re.search(r"(\[.+?\])", lowered)
             data_str = list_match.group(1) if list_match else "[]"
             if "sort" in lowered:
                 rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
@@ -442,7 +439,7 @@ print(result)"""
             else:
                 # Try to generate generic processing code for "convert to table" etc
                 parameters["code"] = f"""# Processed data from previous steps
-print('Processing task: {text}')"""
+print('Processing task: {lowered}')"""
 
         return PlannedTask(
             id=f"task-{index}",

@@ -33,14 +33,9 @@ class LongTermMemory:
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.client = None
-        if config.mem0_api_key or config.mem0_host:
+        if config.mem0_api_key:
             try:
-                kwargs = {}
-                if config.mem0_api_key:
-                    kwargs["api_key"] = config.mem0_api_key
-                if config.mem0_host:
-                    kwargs["host"] = config.mem0_host
-                self.client = MemoryClient(**kwargs)
+                self.client = MemoryClient(api_key=config.mem0_api_key)
                 self.logger.info("Mem0 long-term memory client initialized (hosted).")
             except ImportError:
                 self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
