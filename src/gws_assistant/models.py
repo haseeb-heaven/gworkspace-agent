@@ -36,6 +36,7 @@ class AppConfigModel:
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
     mem0_host: str | None = None
+    mem0_local_storage_path: str = ".gemini/memories.jsonl"
     # NOTE: Must NOT use a leading underscore here.
     # @dataclass(slots=True) does not persist mutations to underscore-prefixed
     # fields between method calls — the slot write is silently dropped, causing

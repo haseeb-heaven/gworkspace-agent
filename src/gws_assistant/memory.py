@@ -160,7 +160,8 @@ class LongTermMemory:
         else:
             # Fallback to local custom offline JSON memory
             try:
-                self.client = LocalJSONMemory(".gemini/memories.jsonl")
+                storage_path = getattr(config, "MEM0_LOCAL_STORAGE_PATH", ".gemini/memories.jsonl")
+                self.client = LocalJSONMemory(storage_path)
                 self.logger.info("Custom offline JSON long-term memory initialized (local).")
             except Exception as e:
                 self.logger.error(f"Failed to initialize custom local memory: {e}")
