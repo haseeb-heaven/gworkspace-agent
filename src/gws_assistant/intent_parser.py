@@ -10,6 +10,20 @@ from typing import Any
 from .models import AppConfigModel, Intent
 from .service_catalog import SERVICES, normalize_service
 
+RE_INTENT_GMAIL_GET = re.compile(r"([a-zA-Z0-9_-]{35,65})")
+RE_INTENT_QUOTED_KV = re.compile(r"([a-zA-Z0-9_-]+)=(['\"])(.+?)\2")
+RE_INTENT_UNQUOTED_KV = re.compile(r"([a-zA-Z0-9_-]+)=([^\s\"']+)")
+RE_INTENT_ID_MATCH = re.compile(r"\b([a-zA-Z0-9_-]{35,65})\b")
+RE_INTENT_QUERY_MATCH_QUOTED = re.compile(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+['\"](.+?)['\"]", re.IGNORECASE)
+RE_INTENT_QUERY_MATCH_UNQUOTED = re.compile(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+([a-zA-Z0-9 _.-]{3,60})", re.IGNORECASE)
+RE_INTENT_QUERY_CLEAN_MYALL = re.compile(r"^(my|all)\s+", re.IGNORECASE)
+RE_INTENT_QUERY_CLEAN_IN = re.compile(r"\s+in\s+(gmail|drive|google\s+docs?|sheets?)$", re.IGNORECASE)
+RE_INTENT_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract)\s+", re.IGNORECASE)
+RE_INTENT_TITLE_MATCH_QUOTED = re.compile(r"(?:titled|named|called)\s+['\"](.+?)['\"]")
+RE_INTENT_TITLE_MATCH_UNQUOTED = re.compile(r"(?:titled|named|called)\s+([a-zA-Z0-9_-]+)")
+RE_INTENT_VALUES_MATCH = re.compile(r"(\[\[.+?\]\])")
+RE_INTENT_SUBJECT_MATCH = re.compile(r"subject ['\"](.+?)['\"]")
+
 try:
     from openai import OpenAI
     HAS_OPENAI_SDK = True
@@ -185,7 +199,7 @@ class IntentParser:
                 return "send_message"
             if any(kw in lowered for kw in ("list", "search", "find", "show", "inbox", "get")):
                 # If ID is present, it's a 'get', else 'list'
-                if re.search(r"([a-zA-Z0-9_-]{35,65})", text):
+                if RE_INTENT_GMAIL_GET.search(text):
                     return "get_message"
                 return "list_messages"
 
@@ -252,21 +266,21 @@ class IntentParser:
         lowered = text.lower()
         
         # 1a. Handle quoted values first (e.g. key="value with spaces")
-        quoted_kv = re.findall(r"([a-zA-Z0-9_-]+)=(['\"])(.+?)\2", text)
+        quoted_kv = RE_INTENT_QUOTED_KV.findall(text)
         for k, quote, v in quoted_kv:
             params[k] = v
             self.logger.debug(f"DEBUG: Found quoted KV: {k}={v}")
                 
         # 1b. Handle unquoted values (e.g. key=value or key=$placeholder)
         # We look for key= followed by non-whitespace characters
-        unquoted_kv = re.findall(r"([a-zA-Z0-9_-]+)=([^\s\"']+)", text)
+        unquoted_kv = RE_INTENT_UNQUOTED_KV.findall(text)
         for k, v in unquoted_kv:
             if k not in params:
                 params[k] = v
                 self.logger.debug(f"DEBUG: Found unquoted KV: {k}={v}")
 
         # 2. Extract Google IDs (fallback for bare IDs)
-        id_match = re.search(r"\b([a-zA-Z0-9_-]{35,65})\b", text)
+        id_match = RE_INTENT_ID_MATCH.search(text)
         if id_match:
             doc_id = id_match.group(1)
             if "document_id" not in params:
@@ -279,29 +293,29 @@ class IntentParser:
                 params["presentation_id"] = doc_id
 
         # 3. Extract Search Query (Gmail / Drive)
-        query_match = re.search(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+['\"](.+?)['\"]", text, re.IGNORECASE)
+        query_match = RE_INTENT_QUERY_MATCH_QUOTED.search(text)
         if not query_match:
-            query_match = re.search(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+([a-zA-Z0-9 _.-]{3,60})", text, re.IGNORECASE)
+            query_match = RE_INTENT_QUERY_MATCH_UNQUOTED.search(text)
         
         if query_match:
             query = query_match.group(1).strip()
             # Clean up
-            query = re.sub(r"^(my|all)\s+", "", query, flags=re.IGNORECASE)
-            query = re.sub(r"\s+in\s+(gmail|drive|google\s+docs?|sheets?)$", "", query, flags=re.IGNORECASE)
-            query = re.split(r"\s+(and|then|to|save|write|export|extract)\s+", query, flags=re.IGNORECASE)[0].strip()
+            query = RE_INTENT_QUERY_CLEAN_MYALL.sub("", query)
+            query = RE_INTENT_QUERY_CLEAN_IN.sub("", query)
+            query = RE_INTENT_QUERY_SPLIT.split(query)[0].strip()
             
             if query and query.lower() not in ("gmail", "drive", "file", "document", "spreadsheet", "sheet"):
                 params["q"] = query
             
         # 4. Extract Title (for Docs/Sheets)
-        title_match = re.search(r"(?:titled|named|called)\s+['\"](.+?)['\"]", text)
+        title_match = RE_INTENT_TITLE_MATCH_QUOTED.search(text)
         if not title_match:
-            title_match = re.search(r"(?:titled|named|called)\s+([a-zA-Z0-9_-]+)", text)
+            title_match = RE_INTENT_TITLE_MATCH_UNQUOTED.search(text)
         if title_match:
             params["title"] = title_match.group(1).strip()
 
         # 4. Extract Values (for Sheets)
-        values_match = re.search(r"(\[\[.+?\]\])", text)
+        values_match = RE_INTENT_VALUES_MATCH.search(text)
         if values_match:
              try:
                  params["values"] = json.loads(values_match.group(1).replace("'", '"'))
@@ -318,7 +332,7 @@ class IntentParser:
                 pass
 
         if "subject" in lowered:
-            match = re.search(r"subject ['\"](.+?)['\"]", lowered)
+            match = RE_INTENT_SUBJECT_MATCH.search(lowered)
             if match:
                 params["subject"] = match.group(1)
             else:
