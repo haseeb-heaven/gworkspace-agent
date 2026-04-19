@@ -25,13 +25,13 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({"saved_file": "scratch/exports/download_fake-id-1234567890", "mimeType": "text/plain"}),
+                stdout=json.dumps({"saved_file": "scratch/exports/download_f1", "mimeType": "text/plain"}),
             )
         if args[:3] == ["drive", "files", "get"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({"saved_file": "scratch/exports/download_fake-id-1234567890", "mimeType": "text/plain"}),
+                stdout=json.dumps({"saved_file": "scratch/exports/download_f1", "mimeType": "text/plain"}),
             )
         if args[:4] == ["gmail", "users", "messages", "send"]:
             return ExecutionResult(
@@ -52,7 +52,7 @@ def mock_export_file(tmp_path, mocker):
     # Mock open() to return our fake content when reading the exported file
     original_open = open
     def special_open(file, mode="r", *args, **kwargs):
-        if "download_fake-id-1234567890" in str(file):
+        if "download_f1" in str(file):
             return original_open(export_path, mode, *args, **kwargs)
         return original_open(file, mode, *args, **kwargs)
 
@@ -60,15 +60,7 @@ def mock_export_file(tmp_path, mocker):
     return export_path
 
 def test_drive_export_placeholder_resolution(mock_export_file, mocker):
-    os.environ['DEFAULT_RECIPIENT_EMAIL'] = 'user@gmail.com'
     runner = FakeRunner()
-
-    def patched_run(args, timeout_seconds=90, **kwargs):
-        runner.commands.append(args)
-        if args[:3] == ["drive", "files", "export"]:
-            return ExecutionResult(success=True, command=args, stdout='{"id": "fake-id-1234567890", "saved_file": "scratch/exports/download_fake-id-1234567890", "mimeType": "text/plain"}', output={"id": "fake-id-1234567890", "saved_file": "scratch/exports/download_fake-id-1234567890", "mimeType": "text/plain"})
-        return ExecutionResult(success=True, command=args, stdout='{"id": "fake-id-1234567890", "threadId": "fake-thread-1234"}', output={"id": "fake-id-1234567890", "threadId": "fake-thread-1234"})
-    mocker.patch.object(runner, "run", side_effect=patched_run)
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
 
     # 1. Drive export task
@@ -76,7 +68,7 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     plan = RequestPlan(
         raw_text="export and email",
         tasks=[
-            PlannedTask(id="task-1", service="drive", action="export_file", parameters={"file_id": "fake-id-1234567890", "mime_type": "text/plain"}),
+                PlannedTask(id="task-1", service="drive", action="export_file", parameters={"file_id": "f1-1234567890", "mime_type": "text/plain"}),
             PlannedTask(
                 id="task-2",
                 service="gmail",
@@ -96,7 +88,6 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     assert report.success is True
 
     # Check if the Gmail body was resolved
-        # It should be the second command (the first was export_file)
     gmail_cmd = runner.commands[1]
     raw_json = json.loads(gmail_cmd[gmail_cmd.index("--json") + 1])
     import base64
@@ -105,19 +96,12 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     # This is expected to FAIL before the fix because $drive_export_file is not in legacy_map
     assert "Content: Exported Content" in decoded
 
-def test_drive_export_folders_raises_validation_error(mocker):
+def test_drive_export_folders_raises_validation_error():
     runner = FakeRunner()
-
-    def patched_run(args, timeout_seconds=90, **kwargs):
-        runner.commands.append(args)
-        if args[:3] == ["drive", "files", "export"]:
-            return ExecutionResult(success=True, command=args, stdout='{"id": "fake-id-1234567890", "saved_file": "scratch/exports/download_fake-id-1234567890", "mimeType": "text/plain"}', output={"id": "fake-id-1234567890", "saved_file": "scratch/exports/download_fake-id-1234567890", "mimeType": "text/plain"})
-        return ExecutionResult(success=True, command=args, stdout='{"id": "fake-id-1234567890", "threadId": "fake-thread-1234"}', output={"id": "fake-id-1234567890", "threadId": "fake-thread-1234"})
-    mocker.patch.object(runner, "run", side_effect=patched_run)
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
 
     # A folder MIME type
-    params = {"file_id": "fake-id-1234567890", "source_mime": "application/vnd.google-apps.folder"}
+    params = {"file_id": "f1", "source_mime": "application/vnd.google-apps.folder"}
 
     # Building the command for a folder should now raise a ValidationError
     from gws_assistant.exceptions import ValidationError
