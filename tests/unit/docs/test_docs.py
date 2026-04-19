@@ -2,6 +2,19 @@ import json
 
 from gws_assistant.planner import CommandPlanner
 
+import pytest
+from gws_assistant.models import ExecutionResult
+
+@pytest.fixture(autouse=True)
+def mock_runner_run(mocker):
+    mocker.patch("gws_assistant.gws_runner.GWSRunner.run", return_value=ExecutionResult(
+        success=True,
+        command=[],
+        stdout='{"id": "fake-id-1234567890"}',
+        output={"id": "fake-id-1234567890"}
+    ))
+
+
 
 class TestDocsUnit:
     planner = CommandPlanner()
