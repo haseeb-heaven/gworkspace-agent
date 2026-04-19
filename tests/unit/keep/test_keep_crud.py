@@ -52,6 +52,13 @@ class TestKeepCRUD:
         # Mock create response
         runner.run.side_effect = [
             # Create call
+            ExecutionResult(success=True, command=[], stdout=json.dumps({"name": "notes/created12345678", "title": "Life"})),
+            # Triple-check calls (3 times get_note)
+            ExecutionResult(success=True, command=[], stdout=json.dumps({"name": "notes/created12345678"})),
+            ExecutionResult(success=True, command=[], stdout=json.dumps({"name": "notes/created12345678"})),
+            ExecutionResult(success=True, command=[], stdout=json.dumps({"name": "notes/created12345678"})),
+            # List call
+            ExecutionResult(success=True, command=[], stdout=json.dumps({"notes": [{"name": "notes/created12345678"}]})),
             ExecutionResult(success=True, command=[], stdout=json.dumps({"id": "fake-id-1234567890", "name": "notes/created123", "title": "Life"})),
             # Triple-check calls (3 times get_note)
             ExecutionResult(success=True, command=[], stdout=json.dumps({"id": "fake-id-1234567890", "name": "notes/created123"})),
@@ -66,7 +73,7 @@ class TestKeepCRUD:
         # Execute create
         result = executor.execute_single_task(create_task, {})
         assert result.success
-        assert result.output["name"] == "notes/created123"
+        assert result.output["name"] == "notes/created12345678"
         # Verify Triple-Check was called (1 create + 3 get)
         assert runner.run.call_count == 4
 
@@ -77,6 +84,7 @@ class TestKeepCRUD:
         assert len(result.output["notes"]) == 1
 
         # 3. Delete Note Task
+        delete_task = PlannedTask(id="t3", service="keep", action="delete_note", parameters={"name": "notes/created12345678"})
         delete_task = PlannedTask(id="t3", service="keep", action="delete_note", parameters={"id": "fake-id-1234567890", "name": "notes/created123"})
         result = executor.execute_single_task(delete_task, {})
         assert result.success
@@ -87,6 +95,7 @@ class TestKeepCRUD:
 
         runner.run.side_effect = [
             # Create success
+            ExecutionResult(success=True, command=[], stdout=json.dumps({"name": "notes/fail123456789", "title": "F"})),
             ExecutionResult(success=True, command=[], stdout=json.dumps({"id": "fake-id-1234567890", "name": "notes/fail", "title": "F"})),
             # First Triple-check fails
             ExecutionResult(success=False, command=[], error="Not found yet")

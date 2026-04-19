@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 from gws_assistant.execution import PlanExecutor
 from gws_assistant.gws_runner import GWSRunner
 from gws_assistant.models import ExecutionResult, PlannedTask, RequestPlan
@@ -38,7 +37,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"id":"sent-1"}',
+                stdout='{"id":"sent-1234567890", "labelIds": ["SENT"]}',
             )
         return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
 
@@ -64,7 +63,6 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     os.environ['DEFAULT_RECIPIENT_EMAIL'] = 'user@gmail.com'
     runner = FakeRunner()
 
-    original_runner_run = runner.run
     def patched_run(args, timeout_seconds=90, **kwargs):
         runner.commands.append(args)
         if args[:3] == ["drive", "files", "export"]:
@@ -98,6 +96,7 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     assert report.success is True
 
     # Check if the Gmail body was resolved
+        # It should be the second command (the first was export_file)
     gmail_cmd = runner.commands[1]
     raw_json = json.loads(gmail_cmd[gmail_cmd.index("--json") + 1])
     import base64
@@ -109,7 +108,6 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
 def test_drive_export_folders_raises_validation_error(mocker):
     runner = FakeRunner()
 
-    original_runner_run = runner.run
     def patched_run(args, timeout_seconds=90, **kwargs):
         runner.commands.append(args)
         if args[:3] == ["drive", "files", "export"]:

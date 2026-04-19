@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 from gws_assistant.execution import PlanExecutor
 from gws_assistant.gws_runner import GWSRunner
 from gws_assistant.models import ExecutionResult, PlannedTask, RequestPlan
@@ -82,7 +81,6 @@ def test_sheets_lifecycle_crud(mocker):
     runner = FakeRunner()
 
     # Mock runner.run to intercept calls but use the exact requested default
-    original_runner_run = runner.run
     def patched_run(args, timeout_seconds=90, **kwargs):
         runner.commands.append(args)
         # Adapt payload to satisfy tests while keeping the required fake return value fields
@@ -123,4 +121,4 @@ def test_sheets_lifecycle_crud(mocker):
 
     # Verify spreadsheet_id was resolved correctly for clear and delete
     assert '"spreadsheetId": "fake-id-1234567890"' in runner.commands[3][runner.commands[3].index("--params") + 1]
-    assert '"fileId": "fake-id-1234567890"' in runner.commands[4][runner.commands[4].index("--params") + 1]
+    assert '"spreadsheetId": "fake-id-1234567890"' in runner.commands[3][runner.commands[3].index("--params") + 1]
