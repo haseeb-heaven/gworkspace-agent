@@ -373,9 +373,11 @@ class VerificationEngine:
         # CATEGORY 3 - DRIVE / DOCS
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if isinstance(result, dict):
-                doc_id = result.get("id") or result.get("documentId")
-                if not doc_id or cls._is_placeholder(str(doc_id)) or len(str(doc_id)) <= 10:
-                    raise VerificationError(tool_name, "Result missing valid id", "id")
+                # Don't require a single file ID for list/export results
+                if "list" not in action and "export" not in action and "files" not in result and "saved_file" not in result:
+                    doc_id = result.get("id") or result.get("documentId")
+                    if not doc_id or cls._is_placeholder(str(doc_id)) or len(str(doc_id)) <= 10:
+                        raise VerificationError(tool_name, "Result missing valid id", "id")
 
                 if "webViewLink" in result and not str(result["webViewLink"]).startswith("http"):
                     raise VerificationError(tool_name, "Invalid webViewLink", "webViewLink")

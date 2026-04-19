@@ -171,9 +171,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             except Exception:
                 pass
 
-        if result.success and result.output:
+        if result.success and result.output is not None:
             try:
-                VerificationEngine.verify(task.action, task.parameters, result.output)
+                VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
             except VerificationError as e:
                 if e.severity == "ERROR":
                     from gws_assistant.exceptions import VerificationError as ExistingVerificationError
