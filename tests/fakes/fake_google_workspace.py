@@ -123,7 +123,14 @@ class FakeGoogleWorkspace(GWSRunner):
                     "id": params.get("id", "msg1"),
                     "threadId": "th1",
                     "snippet": "Full message content about invoice",
-                    "payload": {"body": {"data": "SGk="}},  # Base64 for "Hi"
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": "Jane Doe <jane.doe@gmail.com>"},
+                            {"name": "Subject", "value": "Real Invoice Data"},
+                            {"name": "Date", "value": "2023-10-01"}
+                        ],
+                        "body": {"data": "SGk="}
+                    },  # Base64 for "Hi"
                     "body_text": "Full message content about invoice 100$"
                 }
             elif action == "send_message":
@@ -146,7 +153,7 @@ class FakeGoogleWorkspace(GWSRunner):
                         {"id": "file123", "name": "Report Document.pdf", "mimeType": "application/pdf"}
                     ]
                 }
-            elif action == "export_file":
+            elif action == "export_file" or action == "get_file":
                 output = {
                     "saved_file": "/tmp/fake_exported_file.pdf",
                     "content": "Fake content of exported file: extracted data 42"

@@ -7,6 +7,8 @@ import re
 from typing import Any
 
 from .langchain_agent import plan_with_langchain
+from .models import AppConfigModel, PlannedTask, RequestPlan
+from .service_catalog import SERVICES
 
 RE_CODE_LIST = re.compile(r"(\[.+?\])")
 RE_GMAIL_QUERY_QUOTED = re.compile(r'["\']([^"\']{3,80})["\']')
@@ -21,8 +23,6 @@ RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
 RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](.+?)['\"]")
 RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
-from .models import AppConfigModel, PlannedTask, RequestPlan
-from .service_catalog import SERVICES
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
 

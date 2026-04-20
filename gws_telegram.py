@@ -1,6 +1,5 @@
 """Telegram Polling Wrapper for Google Workspace Assistant."""
 
-import logging
 import sys
 from pathlib import Path
 
@@ -10,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from gws_assistant.config import AppConfig
 from gws_assistant.logging_utils import setup_logging
 from gws_assistant.telegram_app import create_application
+
 
 def main():
     config = AppConfig.from_env()
@@ -26,7 +26,7 @@ def main():
         app = create_application(config)
         logger.info("Starting Telegram Bot in polling mode...")
         app.run_polling()
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to start Telegram Bot")
         sys.exit(1)
 

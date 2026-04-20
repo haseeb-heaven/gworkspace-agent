@@ -5,10 +5,8 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from gws_assistant.memory_backend import get_memory_backend
-
 from gws_assistant.config import AppConfig
-
+from gws_assistant.memory_backend import get_memory_backend
 
 
 def main():

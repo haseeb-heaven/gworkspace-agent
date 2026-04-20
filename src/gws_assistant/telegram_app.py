@@ -1,16 +1,14 @@
 import asyncio
 import logging
 import sys
-import os
-from typing import Optional
 
 from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
+    ContextTypes,
     MessageHandler,
     filters,
-    ContextTypes,
 )
 
 from gws_assistant.config import AppConfig

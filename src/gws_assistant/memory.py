@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 import logging
 from typing import Any
+
 from .memory_backend import get_memory_backend
+
 
 class LongTermMemory:
     """Stable wrapper for unified memory backend (Mem0 + Local JSONL)."""
-    
+
     def __init__(self, config: Any, logger: logging.Logger | None = None):
         self._backend = get_memory_backend(config, logger)
 

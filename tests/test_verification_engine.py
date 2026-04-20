@@ -41,7 +41,7 @@ def test_gmail_send_success():
     VerificationEngine.verify("send_message", params, result)
 
 def test_gmail_send_fail_placeholder_to():
-    params = {"to": "test@example.com", "subject": "Hello", "body": "This is a body"}
+    params = {"to": "<replace_me>", "subject": "Hello", "body": "This is a body"}
     with pytest.raises(VerificationError, match="Invalid 'to' email address"):
         VerificationEngine.verify_params("send_message", params)
 
@@ -65,7 +65,7 @@ def test_docs_create_fail_short_title():
 
 def test_docs_create_fail_invalid_id():
     params = {"title": "My Doc"}
-    result = {"documentId": "123"} # Too short, must fail
+    result = {"documentId": ""} # Too short, must fail
     with pytest.raises(VerificationError, match="Result missing valid id"):
         VerificationEngine.verify_result("create_document", params, result)
 

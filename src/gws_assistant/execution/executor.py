@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from gws_assistant.verification_engine import VerificationEngine, VerificationError
+
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
 from .reflector import ReflectorMixin

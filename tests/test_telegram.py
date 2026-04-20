@@ -1,19 +1,19 @@
-import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from telegram import Chat, Message, Update
+from telegram.ext import ContextTypes
 
 from gws_assistant.config import AppConfigModel
 from gws_assistant.telegram_app import (
     auth_check,
-    split_and_send,
-    run_gws_task,
-    handle_start,
-    handle_help,
+    handle_service_command,
     handle_text,
-    handle_service_command
+    run_gws_task,
+    split_and_send,
 )
-from telegram import Update, Message, Chat
-from telegram.ext import ContextTypes
+
 
 @pytest.fixture
 def mock_config():
