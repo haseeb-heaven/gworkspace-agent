@@ -100,6 +100,17 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("folder_id", "Enter the destination folder ID", "1XyZ..."),
                 ),
             ),
+            "copy_file": ActionSpec(
+                key="copy_file",
+                label="Copy file",
+                description="Create a copy of a Drive file. Returns metadata for the new copy.",
+                keywords=("copy", "duplicate", "backup", "clone"),
+                parameters=(
+                    ParameterSpec("file_id", "ID of the file to copy", "1AbCdEFg123"),
+                    ParameterSpec("name", "New name for the copy", "Backup of File", required=False),
+                    ParameterSpec("folder_id", "Optional: destination folder ID", "1XyZ...", required=False),
+                ),
+            ),
         },
     ),
     "sheets": ServiceSpec(

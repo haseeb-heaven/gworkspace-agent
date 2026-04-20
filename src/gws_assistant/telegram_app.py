@@ -66,8 +66,7 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
     """Execute the task by calling python gws_cli.py --task <task_text>"""
 
     logger.info(f"Starting command execution for task: {task_text[:50]}...")
-    await update.effective_message.reply_text("Received task")
-    await update.effective_message.reply_text("Running gws_cli.py")
+    await update.effective_message.reply_text("Received task. Processing...")
 
     try:
         # Execute gws_cli.py --task asynchronously
@@ -78,15 +77,14 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             stderr=asyncio.subprocess.PIPE
         )
 
-        # We also need a timeout to avoid hanging indefinitely.
+        # We increase the timeout to 180 seconds as requested by the logs showing 90s is not enough for some GWS tasks
         config = context.bot_data.get("config")
         # In the config model, the generic execution timeout is `timeout_seconds`,
         # but there is also a specific `gws_timeout_seconds` defined which we use.
-        # Fall back to 90 if neither is reliably present.
-        timeout_seconds = getattr(config, 'gws_timeout_seconds', getattr(config, 'timeout_seconds', 90)) if config else 90
+        # Fall back to 180 if neither is reliably present.
+        timeout_seconds = getattr(config, 'gws_timeout_seconds', getattr(config, 'timeout_seconds', 180)) if config else 180
 
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+        try:            stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(), timeout=timeout_seconds
             )
         except asyncio.TimeoutError:
@@ -100,13 +98,10 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
         stderr = stderr_bytes.decode('utf-8', errors='replace').strip()
 
         logger.info(f"Command completed for task: {task_text[:50]}...")
-        await update.effective_message.reply_text("Command completed")
 
         if process.returncode != 0:
             logger.error(f"Task failed with exit code {process.returncode}. Stderr: {stderr}")
             await update.effective_message.reply_text(f"Task failed with exit code {process.returncode}.")
-
-        await update.effective_message.reply_text("Sending result")
 
         output = stdout if stdout else stderr
         await split_and_send(update, output)
@@ -143,6 +138,47 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not task_text:
         return
 
+    # 1. Simple greeting / conversational check to avoid 90s timeout
+    greetings = {"hi", "hello", "hey", "hola", "yo", "greeting", "morning", "afternoon", "evening"}
+    lowered = task_text.lower().rstrip('.!?')
+
+    if lowered in greetings:
+        await update.effective_message.reply_text(
+            "Hello! I'm your Google Workspace Assistant. I can help you with Mail, Drive, Docs, Sheets, Calendar and more. "
+            "What would you like me to do?"
+        )
+        return
+
+    if lowered in {"help", "what can you do", "commands"}:
+        await handle_help(update, context)
+        return
+
+    if lowered in {"thanks", "thank you", "nice", "cool", "great"}:
+        await update.effective_message.reply_text("You're welcome! Let me know if there's anything else I can help with.")
+        return
+
+    # 2. Check if it's likely a Google Workspace task before running the heavy agent
+    # We use a simple keyword check as a first-pass filter
+    gws_keywords = {
+        "email", "mail", "gmail", "inbox", "message", "send", "subject", "body",
+        "drive", "file", "folder", "upload", "download", "export", "move", "find",
+        "doc", "document", "sheet", "spreadsheet", "table", "append", "row", "column",
+        "calendar", "event", "meeting", "meet", "schedule", "reminder", "appointment",
+        "task", "todo", "note", "keep"
+    }
+
+    has_gws_intent = any(kw in lowered for kw in gws_keywords)
+
+    # If it has no obvious GWS intent and it's short, it's likely chat
+    if not has_gws_intent and len(task_text.split()) < 5:
+         config = context.bot_data.get("config")
+         if config:
+             from .chat_utils import get_chat_response
+             response = await get_chat_response(task_text, config)
+             await update.effective_message.reply_text(response)
+             return
+
+    # 3. If it looks like a task, run the full agent
     await run_gws_task(update, context, task_text)
 
 async def handle_service_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

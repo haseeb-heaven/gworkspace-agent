@@ -18,7 +18,7 @@ RE_DRIVE_QUERY_QUOTED = re.compile(r'["\']([^"\']{3,80})["\']')
 RE_DRIVE_QUERY_MATCH = re.compile(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE)
 RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
 RE_EXTRACT_ID = re.compile(r"\b([a-zA-Z0-9_-]{25,})\b")
-RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
+RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,})\b")
 RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
 RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](.+?)['\"]")
@@ -245,7 +245,7 @@ $last_export_file_content"""
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
         return [
             PlannedTask(
                 id="task-1",
@@ -546,7 +546,7 @@ def _extract_id(text: str) -> str | None:
 
 def _extract_email(text: str) -> str | None:
     match = RE_EXTRACT_EMAIL.search(text)
-    return match.group(1) if match else None
+    return match.group(1).replace(" ", "") if match else None
 
 
 def _extract_quoted(text: str) -> str | None:

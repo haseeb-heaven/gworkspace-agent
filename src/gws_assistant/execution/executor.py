@@ -167,6 +167,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         final_content = file_content if file_content is not None else f"[File: {saved_file}]"
                         data["content"] = final_content
                         data["drive_export_content"] = final_content
+                        data["drive_export_path"] = saved_file
                 result.output = data
             except Exception:
                 pass

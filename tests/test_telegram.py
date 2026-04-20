@@ -142,9 +142,9 @@ async def test_run_gws_task_timeout(mock_create_subprocess, mock_update, mock_co
 @pytest.mark.asyncio
 async def test_handle_text(mock_update, mock_context):
     with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
-        mock_update.effective_message.text = "do something"
+        mock_update.effective_message.text = "send email"
         await handle_text(mock_update, mock_context)
-        mock_run_task.assert_called_once_with(mock_update, mock_context, "do something")
+        mock_run_task.assert_called_once_with(mock_update, mock_context, "send email")
 
 @pytest.mark.asyncio
 async def test_handle_text_unauthorized(mock_update, mock_context):
@@ -174,11 +174,11 @@ async def test_auth_rejects_wrong_chat_id(mock_update, mock_context):
 async def test_auth_accepts_correct_chat_id(mock_update, mock_context):
     mock_context.bot_data["config"].telegram_chat_id = "111111"
     mock_update.effective_chat.id = 111111
-    mock_update.effective_message.text = "do something"
+    mock_update.effective_message.text = "send email"
 
     with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
         await handle_text(mock_update, mock_context)
-        mock_run_task.assert_called_once_with(mock_update, mock_context, "do something")
+        mock_run_task.assert_called_once_with(mock_update, mock_context, "send email")
 
 @pytest.mark.asyncio
 async def test_auth_rejects_when_chat_id_env_missing(mock_update, mock_context):

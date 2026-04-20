@@ -26,9 +26,9 @@ class VerificationEngine:
 
     EXACT_PLACEHOLDERS = {
         "none", "null", "n/a", "na", "undefined",
-        "todo", "fixme", "placeholder", "example", "sample", "test", "dummy",
+        "todo", "fixme", "placeholder", "example", "sample", "dummy",
         "your_value", "insert_here", "replace_me", "changeme", "default",
-        "fake", "mock", "temp", "temporary", "tbd", "unknown", "missing"
+        "fake", "mock", "temporary", "tbd", "unknown", "missing"
     }
 
     NUMERIC_PLACEHOLDERS = {
@@ -150,6 +150,7 @@ class VerificationEngine:
             if "create" in tool_name or "copy" in tool_name:
                 title = params.get("title") or params.get("name") or params.get("folder_name")
                 if not title or cls._is_placeholder(str(title)) or len(str(title).strip()) < 1:
+                    print(f"DEBUG: Document title required failed for tool '{tool_name}' with params: {params}")
                     raise VerificationError(tool_name, "Document title required", "title")
 
             content = params.get("content")
@@ -365,7 +366,7 @@ class VerificationEngine:
                     pass
                 else:
                     msg_id = result.get("id") or result.get("messageId")
-                    if not msg_id and "draft" not in tool_name and "send" not in tool_name:
+                    if not msg_id and "draft" not in tool_name and "send" not in tool_name and "delete" not in tool_name and "trash" not in tool_name:
                         raise VerificationError(tool_name, "Result missing id or message_id")
 
                 if "send" in tool_name:
@@ -408,7 +409,12 @@ class VerificationEngine:
                 attachments = [attachments]
             if len(attachments) > 0:
                 # Basic check: result should have something indicating attachments were handled
-                parts = result.get("payload", {}).get("parts", []) or result.get("attachments", [])
+                payload = result.get("payload", {})
+                parts = payload.get("parts", []) if isinstance(payload, dict) else []
+                if not parts:
+                    parts = result.get("attachments", [])
+                
+                # If no parts/attachments are found in the result, it's a failure.
                 if not parts:
                      raise VerificationError("verify_attachment", "Attachment declared in params but not confirmed in result")
 

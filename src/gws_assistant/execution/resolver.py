@@ -132,8 +132,8 @@ class ResolverMixin:
             if self.config and self.config.default_recipient_email:
                 target = self.config.default_recipient_email
                 current = task.parameters.get("to_email")
-                # Force override everything to default_recipient_email
-                if current != target:
+                # Force override to target if set and different (Security Policy)
+                if target and current != target:
                     self.logger.warning(f"SECURITY: Redirecting email recipient from '{current}' to forced default '{target}'")
                     task.parameters["to_email"] = target
 
@@ -171,6 +171,7 @@ class ResolverMixin:
                 "$last_code_result":        "last_code_result",
                 "$drive_export_content":    "drive_export_content",
                 "$drive_export_file":       "drive_export_content",
+                "$drive_export_path":       "drive_export_path",
                 "$last_export_file_content": "last_export_file_content",
                 "$last_export_content":      "last_export_file_content",
                 "$last_file_content":        "last_export_file_content",

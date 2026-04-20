@@ -372,6 +372,23 @@ class CommandPlanner:
                 })
             ]
 
+        if action == "copy_file":
+            file_id = self._required_text(params, "file_id")
+            name = str(params.get("name") or "").strip()
+            folder_id = str(params.get("folder_id") or "").strip()
+
+            request_params: dict[str, Any] = {"fileId": file_id}
+            payload: dict[str, Any] = {}
+            if name:
+                payload["name"] = name
+            if folder_id:
+                payload["parents"] = [folder_id]
+
+            cmd = ["drive", "files", "copy", "--params", json.dumps(request_params)]
+            if payload:
+                cmd.extend(["--json", json.dumps(payload, ensure_ascii=True)])
+            return cmd
+
         raise ValidationError(f"Unsupported drive action: {action}")
 
     # ------------------------------------------------------------------
@@ -867,30 +884,22 @@ class CommandPlanner:
         msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
         msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
         for path in attachment_paths:
-            if not os.path.isfile(path):
-                continue
-            filename = os.path.basename(path)
-            with open(path, "rb") as fh:
-                data = fh.read()
-            part = email_lib.mime.application.MIMEApplication(data, Name=filename)
-            part["Content-Disposition"] = f'attachment; filename="{filename}"'
-            msg.attach(part)
-        return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+            # Strip [File: ] decoration if present
+            if isinstance(path, str) and path.startswith("[File: ") and path.endswith("]"):
+                path = path[7:-1].strip()
 
-    @staticmethod
-    def _build_raw_email_with_attachments(to_email: str, subject: str, body: str, attachment_paths: list[str]) -> str:
-        msg = email_lib.mime.multipart.MIMEMultipart("mixed")
-        msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
-        msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
-        for path in attachment_paths:
-            if not os.path.isfile(path):
+            if not path or not os.path.isfile(str(path)):
                 continue
-            filename = os.path.basename(path)
-            with open(path, "rb") as fh:
-                data = fh.read()
-            part = email_lib.mime.application.MIMEApplication(data, Name=filename)
-            part["Content-Disposition"] = f'attachment; filename="{filename}"'
-            msg.attach(part)
+
+            filename = os.path.basename(str(path))
+            try:
+                with open(str(path), "rb") as fh:
+                    data = fh.read()
+                part = email_lib.mime.application.MIMEApplication(data, Name=filename)
+                part["Content-Disposition"] = f'attachment; filename="{filename}"'
+                msg.attach(part)
+            except Exception:
+                continue
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
     @staticmethod

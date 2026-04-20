@@ -69,7 +69,8 @@ _EMAIL_BODY_PLACEHOLDERS = (
 # Model fallback chain — updated to currently-available OpenRouter endpoints.
 # ---------------------------------------------------------------------------
 _MODEL_FALLBACK_CHAIN: list[str] = [
-    "qwen/qwen3-coder:free",
+    "google/gemini-2.0-flash-lite-preview-02-05:free",
+    "qwen/qwen-2.5-coder-32b-instruct:free",
     "meta-llama/llama-3.3-70b-instruct:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
     "google/gemini-2.0-flash-exp:free",
