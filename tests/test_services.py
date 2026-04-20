@@ -556,10 +556,10 @@ class TestExecutionPipelines:
 
         # We simulate a plan that tries to send to a different address
         plan = RequestPlan(
-            raw_text="Send email to hacker@evil.com",
+            raw_text="Send email to test@gmail.com",
             tasks=[
                 PlannedTask("task-1", "gmail", "send_message", {
-                    "to_email": "hacker@evil.com",
+                    "to_email": "test@gmail.com",
                     "subject": "Secret",
                     "body": "Payload",
                 }),
@@ -574,7 +574,7 @@ class TestExecutionPipelines:
         import base64
         decoded = base64.urlsafe_b64decode(params["raw"]).decode("utf-8")
         assert "To: strict-default@example.com" in decoded
-        assert "To: hacker@evil.com" not in decoded
+        assert "To: test@gmail.com" not in decoded
 
     def test_empty_search_results_handled_gracefully(self):
         """If Gmail or Drive returns no results, the pipeline should still succeed but do nothing."""
