@@ -200,13 +200,22 @@ class ResolverMixin:
                 potential_path = stripped[1:-1].strip()
                 if "task-" in potential_path.lower() or potential_path in results_map:
                     path = potential_path
+                elif potential_path in context:
+                    # Also resolve plain context keys like {last_code_result}
+                    path = potential_path
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
 
             if path:
                 if path in context:
                     res = context[path]
-                    return res if res is not None else _UNRESOLVED_MARKER
+                    if res is not None:
+                        return res
+                    logger.warning(
+                        f"Placeholder '{path}' resolved to None in context. "
+                        f"Available context keys: {list(context.keys())}"
+                    )
+                    return _UNRESOLVED_MARKER
                 resolved = self._get_value_by_path(results_map, path)
 
                 # Smart unwrap:
@@ -246,6 +255,9 @@ class ResolverMixin:
                 if res is None:
                     res = self._get_value_by_path(results_map, p)
 
+                if p in context and context[p] is None:
+                    return ""
+
                 if res is not None:
                     # Smart unwrap: if the resolved value is a dict with 'content',
                     # promote the content.
@@ -257,10 +269,6 @@ class ResolverMixin:
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-
-                # If we explicitly found a None value in context, return empty string
-                if res is None and p in context:
-                    return ""
 
                 # Safety: Only return _UNRESOLVED_MARKER for tokens that are obviously intended as placeholders
                 # (double-braces, $task-N, or tokens containing 'task-' or known result keys).

@@ -73,7 +73,7 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com", "subject": "Export", "body": "Content: $drive_export_file"}
+                parameters={"to_email": os.environ.get("DEFAULT_RECIPIENT_EMAIL", "strict-default@example.com"), "subject": "Export", "body": "Content: $drive_export_file"}
             ),
         ],
     )
