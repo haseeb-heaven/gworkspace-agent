@@ -53,7 +53,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 continue
 
             # Store the 1-based sequence index
-            task._sequence_index = i + 1
+            task.sequence_index = i + 1
 
             # 2. Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)

@@ -48,6 +48,8 @@ def test_config_provider_specific_model_fallback_for_openrouter(monkeypatch):
     _required(monkeypatch)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.setenv("OPENROUTER_MODEL", "deepseek/deepseek-r1:free")
+    # Make sure we don't accidentally load LLM_MODEL from local .env
+    monkeypatch.setenv("LLM_MODEL", "")
     config = AppConfig.from_env()
     assert config.model == "deepseek/deepseek-r1:free"
 

@@ -53,6 +53,8 @@ _NAME_EQ_RE = re.compile(
     re.IGNORECASE,
 )
 
+RE_DRIVE_OP_MATCH = re.compile(r"^(name|fullText)\s+contains\s+['\"]?(.+?)['\"]?$", re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -154,7 +156,7 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
 
         # Fix: if it's already an operator clause but missing quotes, fix the quotes
         # to avoid it being re-wrapped in name contains.
-        op_match = re.match(r"^(name|fullText)\s+contains\s+['\"]?(.+?)['\"]?$", remainder, re.IGNORECASE)
+        op_match = RE_DRIVE_OP_MATCH.match(remainder)
         if op_match:
              field, val = op_match.group(1), op_match.group(2).strip()
              text_clauses.append(f"{field} contains '{_escape(val)}'")

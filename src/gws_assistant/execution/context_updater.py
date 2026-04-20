@@ -199,7 +199,7 @@ class ContextUpdaterMixin:
         if task and hasattr(task, "id") and task.id:
             task_id = str(task.id)
             num = task_id.removeprefix("task-")
-            seq_num = str(getattr(task, "_sequence_index", num))
+            seq_num = str(getattr(task, "sequence_index", num))
             action_name = str(task.action)
 
             # Map the full task result object (now enriched with IDs, URLs, headers, etc.)
