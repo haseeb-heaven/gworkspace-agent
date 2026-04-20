@@ -15,6 +15,7 @@ def test_calendar_creation(default_email):
         {
             'summary': 'Testing Framework', 
             'description': f'Email details to {default_email}',
+            'start_date': '2026-04-20',
             'start_time': 'tomorrow at 10am',
             'end_time': 'tomorrow at 11am'
         }
