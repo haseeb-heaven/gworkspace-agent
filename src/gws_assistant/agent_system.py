@@ -584,9 +584,6 @@ def _first_int(text: str) -> int | None:
 
 
 def _is_drive_to_email_request(text: str) -> bool:
-    exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
-    if any(word in text.lower() for word in exclusion_words):
-        return False
     return any(t in text for t in ("drive", "file", "document")) and any(t in text for t in ("email", "send", "mail"))
 
 
