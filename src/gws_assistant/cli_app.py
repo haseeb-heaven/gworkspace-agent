@@ -62,6 +62,10 @@ def _run_application(
     no_langchain: bool = False,
     sandbox: bool | None = None,
     read_only: bool | None = None,
+    dry_run: bool = False,
+    no_confirm: bool = False,
+    force_dangerous: bool = False,
+    is_telegram: bool = False,
 ) -> None:
     """Runs the terminal assistant (interactive or single-task)."""
     # Heavy imports are deferred here so that importing cli_app at the
@@ -86,6 +90,14 @@ def _run_application(
         config.sandbox_enabled = sandbox
     if read_only is not None:
         config.read_only_mode = read_only
+    if dry_run:
+        config.dry_run = dry_run
+    if no_confirm:
+        config.no_confirm = no_confirm
+    if force_dangerous:
+        config.force_dangerous = force_dangerous
+    if is_telegram:
+        config.is_telegram = is_telegram
 
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
@@ -175,6 +187,10 @@ def run(
     read_only: bool | None = typer.Option(
         None, "--read-only/--read-write", help="Force read-only mode (blocks all writes/deletes). Default: env or true."
     ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Log destructive actions without executing them."),
+    no_confirm: bool = typer.Option(False, "--no-confirm", help="Skip confirmation prompts for destructive actions."),
+    force_dangerous: bool = typer.Option(False, "--force-dangerous", help="Allow plans with multiple destructive actions."),
+    is_telegram: bool = typer.Option(False, "--is-telegram", hidden=True, help="Internal flag: denotes running from Telegram."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     # resilient_parsing is True during --help rendering and shell-completion;
@@ -189,9 +205,30 @@ def run(
 
         st(send_telegram)
         return
-    _run_application(
-        save_output=save_output, task=task, no_langchain=no_langchain, sandbox=sandbox, read_only=read_only
-    )
+
+    from gws_assistant.exceptions import SafetyConfirmationRequired
+    import json
+    import sys
+
+    try:
+        _run_application(
+            save_output=save_output,
+            task=task,
+            no_langchain=no_langchain,
+            sandbox=sandbox,
+            read_only=read_only,
+            dry_run=dry_run,
+            no_confirm=no_confirm,
+            force_dangerous=force_dangerous,
+            is_telegram=is_telegram,
+        )
+    except SafetyConfirmationRequired as e:
+        print(
+            json.dumps(
+                {"status": "confirmation_required", "action": e.action_name, "details": e.details}
+            )
+        )
+        sys.exit(2)
 
 
 def main() -> None:

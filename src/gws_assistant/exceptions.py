@@ -57,6 +57,18 @@ class UnsupportedServiceError(ValidationError):
     """Raised when a service has no CLI backing — must be skipped without retry."""
 
 
+class SafetyBlockedError(Exception):
+    """Raised when a destructive action is blocked by the SafetyGuard."""
+
+
+class SafetyConfirmationRequired(Exception):
+    """Raised when a destructive action requires user confirmation (e.g. over Telegram)."""
+    def __init__(self, message: str, action_name: str = "", details: str = ""):
+        super().__init__(message)
+        self.action_name = action_name
+        self.details = details
+
+
 class ToolExecutionError(Exception):
     """Fix #5 — raised when a tool call fails and success=False is returned.
 
