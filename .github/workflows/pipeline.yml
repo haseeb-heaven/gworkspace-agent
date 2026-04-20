@@ -53,6 +53,33 @@ jobs:
         run: |
           pytest -v -m "not live_integration" --cov=src --cov-report=term --cov-fail-under=80
 
+  integration-tests:
+    name: End-to-End Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov
+          pip install -e .
+
+      - name: Run integration tests
+        env:
+          PYTHONPATH: src:tests
+          OPENAI_API_KEY: "fake_key_for_testing"
+        run: |
+          pytest tests/test_integration.py -v --cov=gws_assistant.langgraph_workflow --cov=gws_assistant.execution --cov-report=term --cov-fail-under=70
+
   live-integration:
     name: Live Integration Tests
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_integration }}

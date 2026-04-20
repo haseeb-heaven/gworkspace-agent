@@ -1,8 +1,8 @@
 """Shared data models."""
 
 from __future__ import annotations
-import os
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -36,6 +36,7 @@ class AppConfigModel:
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
     mem0_host: str | None = None
+    memory_dir: Path | None = None
     mem0_local_storage_path: str = ".gemini/memories.jsonl"
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None

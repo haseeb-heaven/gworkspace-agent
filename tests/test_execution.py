@@ -88,8 +88,9 @@ class FakeRunner(GWSRunner):
                     try:
                         p_data = _json.loads(args[i+1])
                         msg_id = p_data.get("id") or p_data.get("messageId") or msg_id
-                    except: pass
-            
+                    except (IndexError, _json.JSONDecodeError, ValueError):
+                        pass
+
             subject = f"Job offer {msg_id}"
             return ExecutionResult(
                 success=True,
@@ -186,7 +187,7 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
     )
     report = executor.execute(plan)
     assert report.success is True
-    
+
     # commands: 0:list, 1:get(m1), 2:get(m2), 3:create_sheet, 4:append_values
     # Check if get_message was called correctly
     get_cmds = [c for c in runner.commands if c[:4] == ["gmail", "users", "messages", "get"]]
@@ -217,7 +218,7 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"), "subject": "Sheet data", "body": "$sheet_email_body"},
+                    parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
             ),
         ],
     )
@@ -300,7 +301,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 service="gmail",
                 action="send_message",
                 parameters={
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL"),
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
                     "subject": "Agentic Ai Frameworks summary",
                     "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
                 },
@@ -336,7 +337,7 @@ def test_gmail_details_accumulation():
         raw_text="extract jobs",
         tasks=[
             PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 2}),
-            # task-1 will expand into task-1-1 and task-1-2 in some future logic, 
+            # task-1 will expand into task-1-1 and task-1-2 in some future logic,
             # but currently expand_task handles specific actions.
             # Let's simulate expansion by providing get_message with a list.
             PlannedTask(id="task-2", service="gmail", action="get_message", parameters={"message_id": "{{message_id_from_task_1}}"}),
@@ -354,11 +355,11 @@ def test_gmail_details_accumulation():
     )
     report = executor.execute(plan)
     assert report.success is True
-    
+
     # Task 1: list_messages
     # Task 2 expanded into 2-1 and 2-2
     # Task 3: append_values
-    
+
     # Check that gmail_details_values in task-3 contains TWO rows
     append_task = report.executions[-1].task
     values = append_task.parameters["values"]

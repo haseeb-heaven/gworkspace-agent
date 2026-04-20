@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -54,7 +54,7 @@ def test_plan_with_langchain(mocker, config_with_key):
         "summary": "Test Output",
         "confidence": 0.0
     }
-    
+
     mock_chain.invoke.return_value = mock_plan_dict
 
     plan = plan_with_langchain("test request", config_with_key, logger)

@@ -1,11 +1,14 @@
-import os
 import logging
-import pytest
+import os
 from pathlib import Path
+
+import pytest
+
 from gws_assistant.execution import PlanExecutor
-from gws_assistant.models import PlannedTask, RequestPlan, ExecutionResult
-from gws_assistant.planner import CommandPlanner
 from gws_assistant.gws_runner import GWSRunner
+from gws_assistant.models import ExecutionResult, PlannedTask, RequestPlan
+from gws_assistant.planner import CommandPlanner
+
 
 class MockRunner(GWSRunner):
     def __init__(self):
@@ -28,7 +31,7 @@ def executor():
 def test_resolve_document_not_folder(executor):
     """Bug 1: drive.export_file should resolve to a document, not a folder."""
     exec_instance, runner = executor
-    
+
     # Mock drive.list_files to return a folder and a document
     runner.responses[("drive", "files", "list")] = ExecutionResult(
         success=True,
@@ -38,7 +41,7 @@ def test_resolve_document_not_folder(executor):
                '{"id": "doc_id", "name": "My Doc", "mimeType": "application/vnd.google-apps.document"}'
                ']}'
     )
-    
+
     plan = RequestPlan(
         raw_text="export doc",
         tasks=[
@@ -46,10 +49,10 @@ def test_resolve_document_not_folder(executor):
             PlannedTask(id="task-2", service="drive", action="export_file", parameters={"file_id": "{{task-1.id}}", "source_mime": "application/vnd.google-apps.document", "mime_type": "text/plain"})
         ]
     )
-    
+
     report = exec_instance.execute(plan)
     assert report.success is True
-    
+
     # Check task-2 parameters after resolution
     export_task = report.executions[1].task
     # EXPECTATION: It should pick 'doc_id', not 'folder_id'
@@ -58,10 +61,10 @@ def test_resolve_document_not_folder(executor):
 def test_expand_task_graceful_failure(executor):
     """Bug 2: _expand_task should handle missing parameters gracefully."""
     exec_instance, runner = executor
-    
+
     # Task that usually expands but missing parameter
     task = PlannedTask(id="task-1", service="gmail", action="get_message", parameters={})
-    
+
     # Should not crash, should return [task] or handle it
     expanded = exec_instance._expand_task(task, {})
     assert len(expanded) == 1
@@ -70,7 +73,7 @@ def test_expand_task_graceful_failure(executor):
 def test_resolve_placeholders_smart_pick(executor):
     """Bug 3: _resolve_placeholders should pick the correct item from a list when a single value is expected."""
     exec_instance, _ = executor
-    
+
     context = {
         "task_results": {
             "task-1": {
@@ -81,7 +84,7 @@ def test_resolve_placeholders_smart_pick(executor):
             }
         }
     }
-    
+
     # If we want an ID for a text operation, and we have multiple files
     # maybe we should be smarter if the context allows.
     # NEW BEHAVIOR: It should pick the first item's ID if we ask for .id on a list of files

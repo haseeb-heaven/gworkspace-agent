@@ -1,8 +1,8 @@
-import os
-import sys
 import json
+import os
 import subprocess
-from pathlib import Path
+import sys
+
 
 def run_gws_command(task):
     """Run a gws_cli task and return the output."""
@@ -18,7 +18,7 @@ def check_content(content, source_name):
         "None", "null", "NaN", "N/A", "empty",
         "unknown", "undefined"
     ]
-    
+
     issues = []
     if not content or not content.strip():
         issues.append(f"[{source_name}] Content is empty or whitespace.")
@@ -29,7 +29,7 @@ def check_content(content, source_name):
             # Check if it's a false positive (e.g., the word 'none' in a sentence)
             # For strictness, we'll flag it anyway in this 'high level verification'
             issues.append(f"[{source_name}] Found suspicious pattern: '{pattern}'")
-            
+
     return issues
 
 def verify_sheet(sheet_id_or_name):
@@ -45,7 +45,7 @@ def verify_sheet(sheet_id_or_name):
             content = stdout
     except:
         content = stdout
-    
+
     return check_content(content, f"Sheet:{sheet_id_or_name}")
 
 def verify_doc(doc_name):
@@ -63,10 +63,10 @@ def main():
         print("Usage: python verify_gws_data.py <type> <identifier>")
         print("Types: sheet, doc, gmail")
         sys.exit(1)
-        
+
     v_type = sys.argv[1].lower()
     identifier = sys.argv[2]
-    
+
     all_issues = []
     # Triple check logic: we run the verification 3 times (or check 3 different ways if possible)
     # Here we'll just run it once but very thoroughly.
@@ -81,12 +81,12 @@ def main():
         else:
             print(f"Unknown type: {v_type}")
             sys.exit(1)
-            
+
         all_issues.extend(issues)
-    
+
     # Deduplicate issues
     all_issues = list(set(all_issues))
-    
+
     if all_issues:
         print("\n--- VERIFICATION FAILED ---")
         for issue in all_issues:

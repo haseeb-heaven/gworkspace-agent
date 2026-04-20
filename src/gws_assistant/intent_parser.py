@@ -80,7 +80,7 @@ class IntentParser:
     def _parse_with_llm(self, text: str) -> Intent | None:
         if not self.client:
             return None
-        
+
         max_retries = self.config.max_retries
         for attempt in range(max_retries):
             try:
@@ -264,13 +264,13 @@ class IntentParser:
     def _extract_simple_parameters(self, text: str) -> dict[str, Any]:
         params: dict[str, Any] = {}
         lowered = text.lower()
-        
+
         # 1a. Handle quoted values first (e.g. key="value with spaces")
         quoted_kv = RE_INTENT_QUOTED_KV.findall(text)
         for k, quote, v in quoted_kv:
             params[k] = v
             self.logger.debug(f"DEBUG: Found quoted KV: {k}={v}")
-                
+
         # 1b. Handle unquoted values (e.g. key=value or key=$placeholder)
         # We look for key= followed by non-whitespace characters
         unquoted_kv = RE_INTENT_UNQUOTED_KV.findall(text)
@@ -296,17 +296,17 @@ class IntentParser:
         query_match = RE_INTENT_QUERY_MATCH_QUOTED.search(text)
         if not query_match:
             query_match = RE_INTENT_QUERY_MATCH_UNQUOTED.search(text)
-        
+
         if query_match:
             query = query_match.group(1).strip()
             # Clean up
             query = RE_INTENT_QUERY_CLEAN_MYALL.sub("", query)
             query = RE_INTENT_QUERY_CLEAN_IN.sub("", query)
             query = RE_INTENT_QUERY_SPLIT.split(query)[0].strip()
-            
+
             if query and query.lower() not in ("gmail", "drive", "file", "document", "spreadsheet", "sheet"):
                 params["q"] = query
-            
+
         # 4. Extract Title (for Docs/Sheets)
         title_match = RE_INTENT_TITLE_MATCH_QUOTED.search(text)
         if not title_match:

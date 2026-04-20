@@ -298,7 +298,7 @@ def _invoke_with_backoff(
         if not model:
             logger.warning("create_agent returned None for model '%s'", model_name)
             return None
-            
+
         try:
             chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
             result = _safe_invoke_structured_output(chain, {"request": request_text}, logger)
@@ -338,7 +338,7 @@ def _invoke_with_backoff(
                 else:
                     logger.info("Model '%s' rate-limited and retries exhausted.", model_name)
                     raise
-            
+
             logger.error("Model '%s' planning failed: %s", model_name, exc)
             return None
 
@@ -475,7 +475,7 @@ def plan_with_langchain(
                 params = t.get("parameters") or {}
                 if not params:
                     params = {k: v for k, v in t.items() if k not in ("id", "service", "action", "parameters", "reason")}
-                
+
                 tasks.append(PlannedTask(
                     id=str(t.get("id", f"task-{len(tasks)+1}")),
                     service=str(t.get("service", "")),

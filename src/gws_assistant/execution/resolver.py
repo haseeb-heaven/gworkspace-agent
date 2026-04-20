@@ -149,7 +149,7 @@ class ResolverMixin:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
-            
+
             logger.debug(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
             legacy_map = {
@@ -212,13 +212,13 @@ class ResolverMixin:
                     res = context[path]
                     return res if res is not None else _UNRESOLVED_MARKER
                 resolved = self._get_value_by_path(results_map, path)
-                
-                # Smart unwrap: 
+
+                # Smart unwrap:
                 # 1. If the resolved value is a dict with 'content', promote the content.
                 if isinstance(resolved, dict) and "content" in resolved:
                     resolved = resolved["content"]
 
-                # 2. If we resolved to a list, but we are a single-token placeholder 
+                # 2. If we resolved to a list, but we are a single-token placeholder
                 # (e.g. {{task-1.id}}), pick the first item.
                 singular_suffixes = ['.id', '.name', '.url', '.title', '.email', '.spreadsheet_id', '.document_id']
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
@@ -251,7 +251,7 @@ class ResolverMixin:
                     res = self._get_value_by_path(results_map, p)
 
                 if res is not None:
-                    # Smart unwrap: if the resolved value is a dict with 'content', 
+                    # Smart unwrap: if the resolved value is a dict with 'content',
                     # promote the content.
                     if isinstance(res, dict) and "content" in res:
                         res = res["content"]
@@ -261,7 +261,7 @@ class ResolverMixin:
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-                
+
                 # If we explicitly found a None value in context, return empty string
                 if res is None and p in context:
                     return ""
@@ -343,7 +343,7 @@ class ResolverMixin:
                 elif isinstance(curr, list):
                     # Map the token across the list elements
                     curr = [item.get(token) if isinstance(item, dict) else None for item in curr]
-                    # Filter out None if some items don't have it? 
+                    # Filter out None if some items don't have it?
                     # Usually we want to keep the list structure.
                 else:
                     return None

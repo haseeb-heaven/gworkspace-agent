@@ -1,8 +1,8 @@
 import json
-import os
-import sys
 import logging
+import os
 import re
+import sys
 import urllib.error
 import urllib.request
 
@@ -50,10 +50,10 @@ def send_telegram(message, context=None):
     enriched_message = message
     try:
         from gws_assistant.config import AppConfig
-        from gws_assistant.memory import LongTermMemory
+        from gws_assistant.memory_backend import get_memory_backend
 
         config = AppConfig.from_env()
-        memory = LongTermMemory(config)
+        memory = get_memory_backend(config)
 
         memories = memory.search(str(message), user_id=config.mem0_user_id)
         if memories:

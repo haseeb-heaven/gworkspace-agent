@@ -1,10 +1,12 @@
-import os
 import logging
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
-from gws_assistant.models import AppConfigModel
+
 from gws_assistant.langchain_agent import plan_with_langchain
+from gws_assistant.models import AppConfigModel
+
 
 @pytest.fixture
 def mock_logger():
@@ -34,36 +36,36 @@ def test_langchain_rotates_on_429(mock_create_agent, mock_logger, config):
     # Mock LLM chain to fail with 429 then succeed
     mock_llm = MagicMock()
     mock_create_agent.return_value = mock_llm
-    
+
     mock_structured_output = MagicMock()
     mock_llm.with_structured_output.return_value = mock_structured_output
-    
+
     # The chain is (prompt | mock_structured_output)
     # We can mock the result of the pipe directly
     with patch("langchain_core.prompts.chat.ChatPromptTemplate.__or__") as mock_or:
         mock_or.return_value = mock_structured_output
-        
+
         mock_structured_output.invoke.side_effect = [
             Exception("Rate limit reached (429)"),
             {
                 "tasks": [{
-                    "id": "t1", 
-                    "service": "gmail", 
-                    "action": "send_message", 
+                    "id": "t1",
+                    "service": "gmail",
+                    "action": "send_message",
                     "parameters": {
                         "to_email": "test@example.com",
                         "subject": "Test",
                         "body": "Hello"
                     }
-                }], 
+                }],
                 "summary": "done"
             }
         ]
-        
+
         with patch("time.sleep"), patch("gws_assistant.langchain_agent._MODEL_FALLBACK_CHAIN", [config.model]):
             plan = plan_with_langchain("send email to test@example.com", config, mock_logger)
 
-        
+
         assert plan is not None
 
         assert len(plan.tasks) == 1

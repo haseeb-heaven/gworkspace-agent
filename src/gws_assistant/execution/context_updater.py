@@ -94,11 +94,11 @@ class ContextUpdaterMixin:
             sender = headers_dict.get("from", "Unknown")
             subject = headers_dict.get("subject", "No Subject")
             date_val = headers_dict.get("date", "Unknown Date")
-            
+
             # Extract just email from "Name <email@example.com>"
             email_match = _EMAIL_BRACKETS_RE.search(str(sender))
             email_addr = email_match.group(1) if email_match else sender
-            
+
             row = [sender, subject, date_val, email_addr]
             data["row"] = row # For {task-N.row} access
 
@@ -122,7 +122,7 @@ class ContextUpdaterMixin:
 
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
-                
+
                 if task:
                     task_id = str(task.id)
                     num = task_id.removeprefix("task-")
@@ -169,7 +169,7 @@ class ContextUpdaterMixin:
 
         if "values" in data and isinstance(data["values"], list):
             rows = data["values"]
-            
+
             # Semantic extraction for tests - handle aggregation for all expanded tasks
             if task:
                  task_id = str(task.id)
@@ -210,6 +210,11 @@ class ContextUpdaterMixin:
             results_map[f"task-{seq_num}"] = data
             results_map[action_name] = data
 
+            # Map under 'output' for placeholders like {{task-1.output.spreadsheetId}}
+            if "output" not in data:
+                # Do not self-reference dictionary as it causes RecursionError in _resolve_placeholders
+                data["output"] = {k: v for k, v in data.items() if k != "output"}
+
             # If this is a subtask (e.g. task-2-1), also append to the base task's list (e.g. task-2)
             is_subtask = False
             if "-" in task_id:
@@ -221,15 +226,15 @@ class ContextUpdaterMixin:
                     # Initialize list if not already present or if it's currently a dict (from a different task)
                     if b_id not in results_map or not isinstance(results_map[b_id], list):
                         results_map[b_id] = []
-                    
+
                     results_map[b_id].append(data)
                     # self.logger.debug(f"DEBUG: Appended result to base task list '{b_id}' (size: {len(results_map[b_id])})")
-                    
+
                     # Also map the numeric base ID (e.g. '2' from 'task-2-1')
                     b_num = b_id.removeprefix("task-")
                     results_map[b_num] = results_map[b_id]
                     results_map[f"task-{b_num}"] = results_map[b_id]
-                    
+
                     # Map semantic keys like company_names_from_task_2
                     # If this subtask produced a 'values' or 'row', ensure it's in the base list
                     if "values" in data and isinstance(data["values"], list):
@@ -237,25 +242,28 @@ class ContextUpdaterMixin:
                          current = context.setdefault(key, [])
                          if isinstance(current, list):
                              rows = data["values"]
-                             if rows and isinstance(rows[0], list): current.extend(rows)
-                             else: current.append(rows)
+                             if rows and isinstance(rows[0], list):
+                                 current.extend(rows)
+                             else:
+                                 current.append(rows)
                     elif "row" in data:
                          key = f"company_names_from_task_{b_num}"
                          current = context.setdefault(key, [])
-                         if isinstance(current, list): current.append(data["row"])
+                         if isinstance(current, list):
+                             current.append(data["row"])
 
             # Map individual fields (if they exist)
             for k, v in data.items():
                 results_map[f"{task_id}.{k}"] = v
                 # ONLY map N.key and task-N.key if this is NOT an expansion subtask,
                 # or if it's the first subtask (to provide some default).
-                # Actually, if it's a subtask, we want task-N.key to be a list if possible? 
-                # For now, let's keep it simple: subtasks don't overwrite task-N.key 
+                # Actually, if it's a subtask, we want task-N.key to be a list if possible?
+                # For now, let's keep it simple: subtasks don't overwrite task-N.key
                 # unless they are the primary ID.
                 if not is_subtask:
                     results_map[f"{num}.{k}"] = v
                     results_map[f"task-{num}.{k}"] = v
-                
+
                 results_map[f"{seq_num}.{k}"] = v
                 results_map[f"task-{seq_num}.{k}"] = v
                 results_map[f"{action_name}.{k}"] = v
@@ -265,7 +273,7 @@ class ContextUpdaterMixin:
                 # Bug 1 Fix: Pick first non-folder ID if possible
                 files = data["files"]
                 first_id = files[0].get("id")
-                
+
                 # If the first item is a folder, try to find a document
                 if files[0].get("mimeType") == "application/vnd.google-apps.folder":
                     for f in files:
@@ -280,7 +288,7 @@ class ContextUpdaterMixin:
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
                     results_map[f"task-{seq_num}.id"] = first_id
-            
+
             if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")
                 if first_id:
@@ -291,4 +299,6 @@ class ContextUpdaterMixin:
                     results_map[f"task-{seq_num}.id"] = first_id
 
         if "values" in data and isinstance(data["values"], list):
+             results_map["values"] = data["values"] # Direct alias for the most recent values
+
              results_map["values"] = data["values"] # Direct alias for the most recent values

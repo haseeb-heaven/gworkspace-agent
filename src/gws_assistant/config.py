@@ -54,7 +54,7 @@ class AppConfig:
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
-        
+
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / "gws_assistant.log"
@@ -77,7 +77,7 @@ class AppConfig:
 
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
         gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
-        
+
         # Support multiple API keys for rotation (only for openrouter)
         openrouter_api_keys = []
         if provider == "openrouter":

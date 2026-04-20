@@ -1,9 +1,7 @@
 import json
 
-import pytest
-
-from gws_assistant.planner import CommandPlanner
 from gws_assistant.output_formatter import HumanReadableFormatter
+from gws_assistant.planner import CommandPlanner
 
 
 class TestSlidesUnit:

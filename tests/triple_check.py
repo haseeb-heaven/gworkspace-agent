@@ -1,6 +1,5 @@
-import sys
 import re
-import json
+import sys
 
 FORBIDDEN_PATTERNS = [
     r"None",
@@ -17,10 +16,10 @@ def triple_check(content):
     for pattern in FORBIDDEN_PATTERNS:
         if re.search(pattern, str(content), re.IGNORECASE):
             issues.append(f"Found forbidden pattern: {pattern}")
-    
+
     if not content or str(content).strip() == "":
         issues.append("Content is empty or whitespace.")
-    
+
     return issues
 
 if __name__ == "__main__":

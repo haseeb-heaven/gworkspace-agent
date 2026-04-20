@@ -56,12 +56,21 @@ def mocker():
 
 
 @pytest.fixture
-def default_email():
+def default_email(request):
     import os
 
-    from dotenv import load_dotenv
-    load_dotenv()
-    return os.getenv("DEFAULT_RECIPIENT_EMAIL")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    email = os.getenv("DEFAULT_RECIPIENT_EMAIL")
+    if not email:
+        if request.node.get_closest_marker("live_integration") or os.getenv("RUN_LIVE_TESTS"):
+            pytest.skip("DEFAULT_RECIPIENT_EMAIL must be set in .env for live integration tests")
+        return "test@example.com"
+    return email
 
 
 def pytest_collection_modifyitems(config, items):
@@ -69,11 +78,11 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         # Get path relative to tests directory
         rel_path = str(item.fspath).replace("\\", "/")
-        
+
         # Mark manual tests
         if "tests/manual" in rel_path:
             item.add_marker(pytest.mark.manual)
-        
+
         # Service mapping
         services = {
             "gmail": pytest.mark.gmail,
@@ -92,7 +101,7 @@ def pytest_collection_modifyitems(config, items):
             "model_armor": pytest.mark.modelarmor,
             "events": pytest.mark.events,
         }
-        
+
         for name, marker in services.items():
             if f"/{name}" in rel_path or f"_{name}" in rel_path:
                 item.add_marker(marker)
