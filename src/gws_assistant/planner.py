@@ -374,8 +374,10 @@ class CommandPlanner:
                     parents = data.get("parents")
                     if parents and isinstance(parents, list):
                         update_params["removeParents"] = ",".join(parents)
+                else:
+                    update_params["removeParents"] = "root"  # fallback: assume root if lookup fails
             except Exception:
-                pass
+                update_params["removeParents"] = "root"  # fallback: assume root if lookup fails
 
             return [
                 "drive",
@@ -590,7 +592,10 @@ class CommandPlanner:
                     event_end   = {"date": start_date}
             else:
                 event_start = {"date": start_date}
-                event_end   = {"date": (date.fromisoformat(start_date) + timedelta(days=1)).isoformat()}
+                try:
+                    event_end = {"date": (date.fromisoformat(start_date) + timedelta(days=1)).isoformat()}
+                except ValueError:
+                    event_end = {"date": start_date}
 
             description = (
                 str(params.get("description") or "").strip()
