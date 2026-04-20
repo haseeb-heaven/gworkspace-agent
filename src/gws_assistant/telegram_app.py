@@ -84,7 +84,8 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
         # Fall back to 180 if neither is reliably present.
         timeout_seconds = getattr(config, 'gws_timeout_seconds', getattr(config, 'timeout_seconds', 180)) if config else 180
 
-        try:            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(), timeout=timeout_seconds
             )
         except asyncio.TimeoutError:
