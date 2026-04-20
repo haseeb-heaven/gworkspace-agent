@@ -832,7 +832,7 @@ class CommandPlanner:
             message = self._required_text(params, "message")
             python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            script_path = os.path.join(base_dir, ".agent", "skills", "telegram-update", "scripts", "send_message.py")
+            script_path = os.path.join(base_dir, "scripts", "telegram_send_message.py")
             return [python_exe, script_path, message]
         raise ValidationError(f"Unsupported telegram action: {action}")
 
