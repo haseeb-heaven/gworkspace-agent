@@ -96,14 +96,20 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
     def execute_single_task(self, task: Any, context: Any) -> Any:
         # Service-specific overrides or synthetic handling
-        if task.service == "admin" and task.action == "log_activity":
-             return self._handle_admin_task(task, context)
-
         if task.service == "telegram":
             return self._handle_telegram_task(task, context)
 
         # 1. Resolve placeholders in parameters FIRST (type-preserving)
         task.parameters = self._resolve_placeholders(task.parameters, context)
+
+        if task.service == "search" and task.action == "web_search":
+            return self._handle_web_search_task(task, context)
+
+        if task.service == "admin" and task.action == "log_activity":
+            return self._handle_admin_task(task, context)
+
+        if task.service in ("code", "computation"):
+            return self._handle_code_execution_task(task, context)
 
         # 2. Build the command using already-resolved parameters
         try:
@@ -123,15 +129,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 command=["<aborted>"],
                 error=f"Unresolved placeholder in arguments: {args}",
             )
-
-        if task.service == "search" and task.action == "web_search":
-            return self._handle_web_search_task(task, context)
-
-        if task.service == "admin" and task.action == "log_activity":
-            return self._handle_admin_task(task, context)
-
-        if task.service in ("code", "computation"):
-            return self._handle_code_execution_task(task, context)
 
         result = self.runner.run(args)
         if result.success and result.stdout:
@@ -200,5 +197,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         result.success = False
                         result.error = f"Consistency check failed: could not verify {task.service} resource {resource_id} after creation."
                         result.stdout = json.dumps({"error": result.error})
+
+        elif result.success and result.output is None:
+            logger.warning(
+                f"Task {task.service}.{task.action} succeeded "
+                f"but returned no output — context NOT updated."
+            )
 
         return result
