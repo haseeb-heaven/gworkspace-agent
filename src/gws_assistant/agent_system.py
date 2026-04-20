@@ -447,6 +447,11 @@ Files moved to '{folder_name}'. Link: $last_folder_url"""
         elif service == "tasks" and action == "create_task":
             parameters["title"] = _extract_quoted(lowered) or "New Task"
         elif service in ("code", "computation"):
+            parameters["summary"] = _extract_quoted(lowered) or "New Event"
+            parameters["start_date"] = "2026-04-20" # Default to today for heuristic
+        elif service == "tasks" and action == "create_task":
+            parameters["title"] = _extract_quoted(lowered) or "New Task"
+        elif service in ("code", "computation"):
             list_match = RE_CODE_LIST.search(lowered)
             data_str = list_match.group(1) if list_match else "[]"
             if "sort" in lowered:
