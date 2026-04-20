@@ -16,8 +16,10 @@ class ContextUpdaterMixin:
 
         if "stdout" in data:
             context["last_code_stdout"] = data["stdout"]
+            data["last_code_stdout"] = data["stdout"]
         if "parsed_value" in data:
             context["last_code_result"] = data["parsed_value"]
+            data["last_code_result"] = data["parsed_value"]
 
         # 3. Service Specific Extractions
         if "spreadsheetId" in data:
