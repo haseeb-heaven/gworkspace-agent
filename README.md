@@ -18,6 +18,8 @@ An intelligent, agentic CLI and GUI for Google Workspace automation with a share
 | Internet Web Search | ✅ | ✅ DuckDuckGo / Tavily |
 | Sandboxed Code Execution | ✅ | ✅ RestrictedPython sandbox |
 | Workspace Automation | ✅ Full | ✅ Full + Google Meet & Chat |
+| Telegram Bot Transport | ❌ | ✅ Polling bot with auth |
+| Long-Term Memory | ❌ | ✅ Local JSONL + Mem0 |
 | Heuristic Fallback (no API key) | ✅ | ✅ |
 | Retry / Exponential Backoff | ❌ | ✅ |
 | Best For | Professional multi-step automation scripts | Complex research + compute + Workspace workflows |
@@ -33,33 +35,50 @@ An intelligent, agentic CLI and GUI for Google Workspace automation with a share
 The agent follows the **ReAct (Reasoning + Acting)** pattern — a continuous loop where the system **reasons** about what to do next, **acts** on it by calling a tool or API, **observes** the result, and uses that observation to guide the next step. This loop repeats until the entire user request is resolved.
 
 ```mermaid
-flowchart LR
-    A["👤 User Request"] --> B["🔍 Observe\nParse intent & detect services"]
-    B --> C["🧠 Reason\nLLM plans multi-step tasks"]
-    C --> D["⚡ Act\nExecute task via gws.exe"]
-    D --> E["📊 Observe\nParse result · update context"]
-    E --> F{"More tasks?"}
-    F -->|Yes| G["🧠 Reason\nResolve placeholders\nwith prior context"]
-    G --> D
-    F -->|No| H["🔍 Filter\nRelevance scoring"]
-    H --> I["📋 Format\nHuman-readable output"]
-    I --> J["✅ Present to User"]
+flowchart TD
+    A["👤 User Request (CLI/GUI/Telegram)"] --> B["🧠 Planner\nLLM or Heuristic"]
+    B --> C["🔍 Executor\nResolve placeholders & context"]
+    C --> D["⚡ GWS Runner\nSubprocess call to gws.exe"]
+    D --> E["📊 Verification\nTriple-check outcome integrity"]
+    E --> F["💾 Memory\nSave episode to JSONL/Mem0"]
+    F --> G{"More tasks?"}
+    G -->|Yes| C
+    G -->|No| H["📋 Output\nFormat results & reply"]
 
     style A fill:#e94560,color:#fff
-    style J fill:#0f3460,color:#fff
+    style H fill:#0f3460,color:#fff
 ```
 
-#### ReAct Loop — Step-by-Step
+#### Key Architectural Modules
 
-| Step | Component | What Happens |
-|------|-----------|--------------| 
-| 1 | **Intent Parser** | Detects which Google services (Gmail, Drive, Sheets, etc.) are mentioned |
-| 2 | **LLM Planner** | CrewAI or LangChain agent decomposes the request into an ordered list of tasks with parameters and `$placeholder` variables |
-| 3 | **Task Expander** | Resolves `$placeholders` (e.g., `$last_spreadsheet_id` → actual ID from prior step) and expands batch operations |
-| 4 | **GWS Runner** | Executes each command as a subprocess call to `gws.exe` with proper argument encoding |
-| 5 | **Context Store** | After each task, extracts key IDs, URLs, and values; stores them for downstream tasks |
-| 6 | **Relevance Filter** | Scores each result against original query keywords; drops items below relevance threshold |
-| 7 | **Output Formatter** | Converts raw API payloads into clean tables, summaries, and human-readable text |
+| Component | Responsibility |
+|-----------|----------------|
+| **WorkspaceAgentSystem** | Orchestrates planning using LLM (OpenRouter) with a deterministic heuristic fallback. |
+| **PlanExecutor** | Resolves dynamic placeholders (`$last_id`), expands batch tasks, and handles artifact injection (Gmail/Drive content). |
+| **VerificationEngine** | Multi-layered "Triple-Check" system that verifies API outcomes against expected schemas and side effects. |
+| **LongTermMemory** | Multi-layered memory system using local JSONL files and remote Mem0 instances for cross-session context. |
+| **GWSRunner** | Executes `gws.exe` with infinite timeout support, transient error retries, and large-argument temporary file handling. |
+
+---
+
+## Key Features
+
+### Core (Both Branches)
+- **Dual Framework Support** — Choose CrewAI (crew-ai branch) or LangChain + LangGraph (langchain-ai branch) depending on task complexity.
+- **ReAct Agentic Planning** — The LLM reasons, acts, observes, and iterates step-by-step until the full request is resolved.
+- **Multi-Layered Memory** — Persistent context across sessions via local JSONL storage or self-hosted Mem0 instances.
+- **Triple-Check Verification** — Mandatory validation of every task result to ensure structural and behavioral correctness.
+- **Dynamic Placeholder Resolution** — Resolves `$placeholders` across steps (e.g., inject a freshly created spreadsheet ID into the next step's email body).
+- **Infinite Timeouts** — Configurable subprocess execution (set `GWS_TIMEOUT_SECONDS=0`) to wait indefinitely for complex tasks.
+- **Human-Readable Output** — Formats all API payloads into clean tables and summaries instead of raw JSON.
+
+### LangChain + LangGraph Branch (`langchain-ai`) — Exclusive Features
+- **🌐 Internet Web Search** — Built-in DuckDuckGo and Tavily search with LLM-powered summarization.
+- **🤖 Telegram Bot Integration** — Secure polling bot transport with Chat ID whitelisting and direct chat fallback for non-GWS queries.
+- **💻 Sandboxed Code Execution** — Safely runs Python logic, calculations, and data transformations.
+- **🔄 Exponential Backoff & Retry** — Robust reliability layer against rate limits and transient errors.
+- **Google Meet & Google Chat** — Extended Workspace service support beyond the base set.
+- **LangGraph DAG Orchestration** — Conditional routing between Research, Code, and Workspace API task types.
 
 ---
 
