@@ -249,12 +249,12 @@ class CommandPlanner:
             name = self._required_text(params, "name")
             mime_type = str(params.get("mime_type") or "application/vnd.google-apps.document").strip()
             folder_id = str(params.get("folder_id") or "").strip()
-            
+
             payload = {"name": name, "mimeType": mime_type}
             if folder_id:
                 payload["parents"] = [folder_id]
-                
-            return ["drive", "files", "create", 
+
+            return ["drive", "files", "create",
                     "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                     "--json", json.dumps(payload, ensure_ascii=True)]
 
@@ -342,14 +342,16 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             name = str(params.get("name") or "").strip()
             description = str(params.get("description") or "").strip()
-            
+
             payload = {}
-            if name: payload["name"] = name
-            if description: payload["description"] = description
-            
+            if name:
+                payload["name"] = name
+            if description:
+                payload["description"] = description
+
             if not payload:
                 raise ValidationError("At least one metadata field (name or description) must be provided.")
-                
+
             return ["drive", "files", "update",
                     "--params", json.dumps({"fileId": file_id, "fields": "id,name,description"}),
                     "--json", json.dumps(payload, ensure_ascii=True)]
@@ -757,8 +759,10 @@ class CommandPlanner:
             title = self._required_text(params, "title")
             tl_id = str(params.get("tasklist") or "@default").strip()
             body = {"title": title}
-            if params.get("notes"): body["notes"] = str(params.get("notes"))
-            if params.get("due"): body["due"] = str(params.get("due"))
+            if params.get("notes"):
+                body["notes"] = str(params.get("notes"))
+            if params.get("due"):
+                body["due"] = str(params.get("due"))
             return ["tasks", "tasks", "insert", "--params", json.dumps({"tasklist": tl_id}), "--json", json.dumps(body, ensure_ascii=True)]
         if action == "get_task":
             tl_id = str(params.get("tasklist") or "@default").strip()
@@ -830,12 +834,15 @@ class CommandPlanner:
         if value is not None and str(value).strip():
             return str(value).strip()
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
-        if "name" in key.lower(): variations.append("name")
-        if "id" in key.lower(): variations.append("id")
-        if "code" in key.lower(): variations.extend(["script", "python"])
+        if "name" in key.lower():
+            variations.append("name")
+        if "id" in key.lower():
+            variations.append("id")
+        if "code" in key.lower():
+            variations.extend(["script", "python"])
         if "text" in key.lower() or "body" in key.lower() or "content" in key.lower():
             variations.extend(["text", "body", "content"])
-        
+
         for k, v in params.items():
             if k.lower().replace("_", "") in variations and v is not None and str(v).strip():
                 return str(v).strip()

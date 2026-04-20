@@ -1,8 +1,8 @@
 """Shared data models."""
 
 from __future__ import annotations
-import os
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -35,8 +35,6 @@ class AppConfigModel:
     default_recipient_email: str = ""
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
-    mem0_host: str | None = None
-    mem0_local_storage_path: str = ".gemini/memories.jsonl"
     # NOTE: Must NOT use a leading underscore here.
     # @dataclass(slots=True) does not persist mutations to underscore-prefixed
     # fields between method calls — the slot write is silently dropped, causing

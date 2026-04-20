@@ -54,7 +54,7 @@ class AppConfig:
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
-        
+
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / "gws_assistant.log"
@@ -77,7 +77,7 @@ class AppConfig:
 
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
         gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
-        
+
         # Support multiple API keys for rotation (only for openrouter)
         openrouter_api_keys = []
         if provider == "openrouter":
@@ -94,8 +94,6 @@ class AppConfig:
         max_snippet_len = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
         mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
-        mem0_host = (os.getenv("MEM0_HOST") or "").strip() or None
-        mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
 
         return AppConfigModel(
             provider=provider,
@@ -110,8 +108,8 @@ class AppConfig:
             env_file_path=env_file_path,
             setup_complete=setup_complete,
             max_retries=max_retries,
-            langchain_enabled=langchain_enabled,
             max_replans=max_replans,
+            langchain_enabled=langchain_enabled,
             use_heuristic_fallback=use_heuristic_fallback,
             code_execution_enabled=code_execution_enabled,
             code_execution_backend=code_execution_backend,
@@ -123,8 +121,6 @@ class AppConfig:
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
             mem0_user_id=mem0_user_id,
-            mem0_host=mem0_host,
-            mem0_local_storage_path=mem0_local_storage_path,
         )
 
 

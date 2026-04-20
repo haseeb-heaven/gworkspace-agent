@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 for p in list(Path('src').rglob('*.py')) + list(Path('tests').rglob('*.py')):
@@ -7,12 +6,12 @@ for p in list(Path('src').rglob('*.py')) + list(Path('tests').rglob('*.py')):
     except Exception:
         continue
     lines = text.splitlines()
-    
+
     future_index = -1
     for i, line in enumerate(lines):
         if line.startswith('from __future__ import'):
             future_index = i
-            
+
     if future_index != -1:
         # Check if there are any non-future imports or statements before future_index
         # If so, we need to move them after the last future import.

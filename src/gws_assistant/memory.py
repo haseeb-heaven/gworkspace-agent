@@ -6,7 +6,9 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
 from mem0 import MemoryClient
+
 from .models import AppConfigModel
 
 MEMORY_FILE = Path.home() / ".gws_agent" / "memory.jsonl"
@@ -24,147 +26,30 @@ _STOP_WORDS: frozenset[str] = frozenset({
 })
 
 
-
-import uuid
-
-# Maximum number of local memories to keep
-_MAX_LOCAL_MEMORIES = 1000
-
-class LocalJSONMemory:
-    """A purely offline, JSONL-based memory system to replace local Mem0 without transformers."""
-    
-    def __init__(self, storage_path: str = ".gemini/memories.jsonl"):
-        self.storage_path = Path(storage_path)
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        # Ensure file exists
-        if not self.storage_path.exists():
-            self.storage_path.write_text("", encoding="utf-8")
-            
-    def _read_all(self) -> list[dict]:
-        memories = []
-        if not self.storage_path.exists():
-            return memories
-        with open(self.storage_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    try:
-                        memories.append(json.loads(line))
-                    except Exception:
-                        pass
-        return memories
-
-    def _write_all(self, memories: list[dict]) -> None:
-        memories = memories[-_MAX_LOCAL_MEMORIES:]
-        with open(self.storage_path, "w", encoding="utf-8") as f:
-            for mem in memories:
-                f.write(json.dumps(mem) + "\n")
-
-    def add(self, data, user_id: str = None, metadata: dict = None) -> dict:
-        user_id = user_id or "default_user"
-        memories = self._read_all()
-        mem_id = str(uuid.uuid4())
-        new_mem = {
-            "id": mem_id,
-            "memory": data if isinstance(data, str) else json.dumps(data),
-            "user_id": user_id,
-            "metadata": metadata or {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-        memories.append(new_mem)
-        self._write_all(memories)
-        return {"id": mem_id, "memory": new_mem["memory"], "event": "added"}
-
-    def get_all(self, filters: dict = None, user_id: str = None) -> list[dict]:
-        memories = self._read_all()
-        uid = user_id
-        if filters and "user_id" in filters:
-            uid = filters["user_id"]
-        if uid:
-            memories = [m for m in memories if m.get("user_id") == uid]
-        return memories
-
-    def get(self, memory_id: str) -> dict | None:
-        memories = self._read_all()
-        for m in memories:
-            if m["id"] == memory_id:
-                return m
-        return None
-
-    def search(self, query: str, filters: dict = None, limit: int = 5, user_id: str = None) -> list[dict]:
-        uid = user_id
-        if filters and "user_id" in filters:
-            uid = filters["user_id"]
-            
-        memories = self.get_all(user_id=uid)
-        query_words = _tokenize(query)
-        if not query_words:
-            return memories[-limit:]
-            
-        scored = []
-        for mem in memories:
-            mem_words = _tokenize(mem.get("memory", ""))
-            intersection = len(query_words & mem_words)
-            if intersection > 0:
-                score = intersection / len(query_words | mem_words)
-                scored.append((score, mem))
-                
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [m for _, m in scored[:limit]]
-
-    def update(self, memory_id: str, data: str) -> dict | None:
-        memories = self._read_all()
-        updated_mem = None
-        for m in memories:
-            if m["id"] == memory_id:
-                m["memory"] = data if isinstance(data, str) else json.dumps(data)
-                m["updated_at"] = datetime.now(timezone.utc).isoformat()
-                updated_mem = m
-                break
-                
-        if updated_mem:
-            self._write_all(memories)
-            return {"id": memory_id, "memory": updated_mem["memory"], "event": "updated"}
-        return None
-
-    def delete(self, memory_id: str) -> dict:
-        memories = self._read_all()
-        initial_len = len(memories)
-        memories = [m for m in memories if m["id"] != memory_id]
-        
-        if len(memories) < initial_len:
-            self._write_all(memories)
-            return {"id": memory_id, "event": "deleted"}
-        return {"id": memory_id, "event": "not_found"}
-
 class LongTermMemory:
     """Long-term memory layer using Mem0 for semantic persistence."""
-
     def __init__(self, config: AppConfigModel, logger: logging.Logger | None = None):
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.client = None
-        if config.mem0_api_key or config.mem0_host:
+        if config.mem0_api_key:
             try:
-                kwargs = {}
-                if config.mem0_api_key:
-                    kwargs["api_key"] = config.mem0_api_key
-                if config.mem0_host:
-                    kwargs["host"] = config.mem0_host
-                self.client = MemoryClient(**kwargs)
+                self.client = MemoryClient(api_key=config.mem0_api_key)
                 self.logger.info("Mem0 long-term memory client initialized (hosted).")
             except ImportError:
                 self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
             except Exception as e:
                 self.logger.error(f"Failed to initialize Mem0 client: {e}")
         else:
-            # Fallback to local custom offline JSON memory
+            # Fallback to local Memory if no API key is provided
             try:
-                storage_path = getattr(config, "MEM0_LOCAL_STORAGE_PATH", ".gemini/memories.jsonl")
-                self.client = LocalJSONMemory(storage_path)
-                self.logger.info("Custom offline JSON long-term memory initialized (local).")
+                from mem0 import Memory
+                self.client = Memory()
+                self.logger.info("Mem0 long-term memory client initialized (local).")
+            except ImportError:
+                self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
             except Exception as e:
-                self.logger.error(f"Failed to initialize custom local memory: {e}")
+                self.logger.error(f"Failed to initialize local Mem0 memory: {e}")
 
     def _default_user_id(self, user_id: str | None = None) -> str:
         return user_id or self.config.mem0_user_id or "default_user"

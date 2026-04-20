@@ -4,11 +4,6 @@ import re
 from typing import Any
 
 _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
-
-# Pre-compiled regex patterns for performance
-_PLACEHOLDER_RE = re.compile(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)')
-_PATH_TOKENS_RE = re.compile(r'[^.\[\]]+|\[\d+\]')
-
 logger = logging.getLogger(__name__)
 
 class ResolverMixin:
@@ -149,7 +144,7 @@ class ResolverMixin:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
-            
+
             logger.debug(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
             legacy_map = {
@@ -212,13 +207,13 @@ class ResolverMixin:
                     res = context[path]
                     return res if res is not None else _UNRESOLVED_MARKER
                 resolved = self._get_value_by_path(results_map, path)
-                
-                # Smart unwrap: 
+
+                # Smart unwrap:
                 # 1. If the resolved value is a dict with 'content', promote the content.
                 if isinstance(resolved, dict) and "content" in resolved:
                     resolved = resolved["content"]
 
-                # 2. If we resolved to a list, but we are a single-token placeholder 
+                # 2. If we resolved to a list, but we are a single-token placeholder
                 # (e.g. {{task-1.id}}), pick the first item.
                 singular_suffixes = ['.id', '.name', '.url', '.title', '.email', '.spreadsheet_id', '.document_id']
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
@@ -251,7 +246,7 @@ class ResolverMixin:
                     res = self._get_value_by_path(results_map, p)
 
                 if res is not None:
-                    # Smart unwrap: if the resolved value is a dict with 'content', 
+                    # Smart unwrap: if the resolved value is a dict with 'content',
                     # promote the content.
                     if isinstance(res, dict) and "content" in res:
                         res = res["content"]
@@ -261,7 +256,7 @@ class ResolverMixin:
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
-                
+
                 # If we explicitly found a None value in context, return empty string
                 if res is None and p in context:
                     return ""
@@ -279,7 +274,7 @@ class ResolverMixin:
 
             # 4. Partial string replacement with regex
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
-            val = _PLACEHOLDER_RE.sub(replace_match, val)
+            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
             return val
 
         elif isinstance(val, list):
@@ -305,7 +300,7 @@ class ResolverMixin:
             return data[path]
 
         # 2. Split path into tokens, handling dots and brackets
-        tokens = _PATH_TOKENS_RE.findall(path)
+        tokens = re.findall(r'[^.\[\]]+|\[\d+\]', path)
         if not tokens:
             return None
 
@@ -343,7 +338,7 @@ class ResolverMixin:
                 elif isinstance(curr, list):
                     # Map the token across the list elements
                     curr = [item.get(token) if isinstance(item, dict) else None for item in curr]
-                    # Filter out None if some items don't have it? 
+                    # Filter out None if some items don't have it?
                     # Usually we want to keep the list structure.
                 else:
                     return None

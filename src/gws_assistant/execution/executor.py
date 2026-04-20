@@ -5,11 +5,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from .resolver import ResolverMixin, _UNRESOLVED_MARKER
+from gws_assistant.verification_engine import VerificationEngine, VerificationError
+
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
-from .verifier import VerifierMixin
 from .reflector import ReflectorMixin
+from .resolver import _UNRESOLVED_MARKER, ResolverMixin
+from .verifier import VerifierMixin
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 continue
 
             # Store the 1-based sequence index
-            task._sequence_index = i + 1
+            task.sequence_index = i + 1
 
             # 2. Resolve task (includes range auto-fix and gmail artifact injection)
             task = self._resolve_task(task, context)
@@ -76,11 +78,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             executions.append(TaskExecution(task=task, result=result))
             if not result.success:
                 break
-            
+
             i += 1
 
         report = PlanExecutionReport(plan=plan, executions=executions)
-        
+
         # Save to long-term memory if successful
         if report.success and self._memory:
             try:
@@ -152,7 +154,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         if not is_text:
                             ext = os.path.splitext(saved_file)[1].lower()
                             is_text = ext in (".txt", ".csv", ".json", ".md", ".py", ".js", ".html")
-                        
+
                         file_content = None
                         if is_text:
                             try:
@@ -160,7 +162,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                     file_content = f.read().lstrip('\ufeff')
                             except Exception as e:
                                 logger.warning("Failed to read exported file %s: %s", saved_file, e)
-                        
+
                         # Always set content, fallback to path if binary or read failed
                         final_content = file_content if file_content is not None else f"[File: {saved_file}]"
                         data["content"] = final_content
@@ -169,7 +171,17 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             except Exception:
                 pass
 
-        if result.success and result.output:
+        if result.success and result.output is not None:
+            try:
+                VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
+            except VerificationError as e:
+                if e.severity == "ERROR":
+                    from gws_assistant.exceptions import VerificationError as ExistingVerificationError
+                    logger.error(f"Verification engine caught an error: {e}")
+                    raise ExistingVerificationError(str(e))
+                else:
+                    logger.warning(f"Verification engine warning: {e}")
+
             # Synchronize stdout with any enrichments (like body extraction)
             result.stdout = json.dumps(result.output)
 
@@ -177,8 +189,8 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             creation_actions = ("create_spreadsheet", "create_document", "create_file", "create_event", "create_task", "create_note")
             if task.action in creation_actions:
                 resource_id = (
-                    result.output.get("spreadsheetId") or 
-                    result.output.get("documentId") or 
+                    result.output.get("spreadsheetId") or
+                    result.output.get("documentId") or
                     result.output.get("id") or
                     result.output.get("name")
                 )

@@ -24,15 +24,14 @@ class WorkspaceAgentSystem:
         self.memory = LongTermMemory(config, logger)
 
     def plan(self, user_text: str) -> RequestPlan:
-        from .intent_parser import IntentParser
         from .memory import recall_similar
 
         # Local episodic memory
         past = recall_similar(user_text)
-        
+
         # Long-term semantic memory (Mem0)
         semantic_memories = self.memory.search(user_text)
-        
+
         memory_hint_parts = []
         if past:
             self.logger.info("Local Memory: found %d similar past episodes", len(past))
@@ -75,7 +74,7 @@ class WorkspaceAgentSystem:
         # service_prefixes = ("web_search", "drive", "gmail", "sheets", "docs", "calendar", "keep", "meet", "code", "computation", "telegram")
         # lowered = text.lower()
         # is_direct = any(lowered.startswith(p) for p in service_prefixes) or "=" in text or ":" in text
-        # 
+        #
         # if is_direct:
         #     parser = IntentParser(self.config, self.logger)
         #     intent = parser.parse(text, force_heuristic=True)
@@ -130,7 +129,7 @@ class WorkspaceAgentSystem:
             )
 
         # MULTI-TASK HEURISTICS (General Patterns)
-        
+
         # Pattern B: Gmail -> Sheets -> Email (Extraction)
         if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
              tasks = self._gmail_to_sheets_tasks(text, lowered)
@@ -218,7 +217,7 @@ class WorkspaceAgentSystem:
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
-        
+
         send_params: dict[str, Any] = {
             "to_email": recipient,
             "subject": f"Document: {query}",
@@ -228,7 +227,7 @@ Please find the content below:
 
 $last_export_file_content"""
         }
-        
+
         if "attach" in lowered:
             send_params["attachments"] = ["{{task-1.id}}"]
 
@@ -339,7 +338,7 @@ $last_spreadsheet_values"""
         query = _drive_query_from_text(text)
         folder_name = _extract_quoted(text) or "Organized Files"
         recipient = self.config.default_recipient_email
-        
+
         return [
             PlannedTask(
                 id="task-1",
@@ -353,7 +352,7 @@ $last_spreadsheet_values"""
                 service="drive",
                 action="list_files",
                 parameters={"q": query, "page_size": 20},
-                reason=f"List files to move."
+                reason="List files to move."
             ),
             PlannedTask(
                 id="task-3",
@@ -480,15 +479,15 @@ def _detect_services_in_order(text: str) -> list[str]:
             if match:
                 hits.append((match.start(), service_key))
                 break
-    
+
     found_services = [service for _, service in sorted(hits, key=lambda item: item[0])]
-    
+
     # Priority Fix: If we detected both a workspace service and generic 'search',
     # and they are at the same position or search is just a keyword, prioritize the workspace service.
     if "search" in found_services and len(found_services) > 1:
         # If any other service exists, we likely want that service's search, not web search
         found_services = [s for s in found_services if s != "search"]
-        
+
     return found_services
 
 
@@ -496,7 +495,7 @@ def _detect_action(service: str, text: str) -> str | None:
     best_action = None
     best_score = 0
     lowered = text.lower()
-    
+
     for action_key, action_spec in SERVICES[service].actions.items():
         # Check negative keywords first - if any exist, this action is disqualified
         neg_hit = False
@@ -512,13 +511,13 @@ def _detect_action(service: str, text: str) -> str | None:
         if score > best_score:
             best_score = score
             best_action = action_key
-            
+
     return best_action
 
 
 def _gmail_query_from_text(text: str) -> str:
     quoted = re.search(r'["\']([^"\']{3,80})["\']', text)
-    if quoted: 
+    if quoted:
         q = quoted.group(1).strip()
         # If the user says "subject:...", keep it. Otherwise, just use the keywords.
         if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
@@ -534,7 +533,8 @@ def _gmail_query_from_text(text: str) -> str:
 
 def _drive_query_from_text(text: str) -> str:
     quoted = re.search(r'["\']([^"\']{3,80})["\']', text)
-    if quoted: return f"fullText contains '{quoted.group(1).strip()}'"
+    if quoted:
+        return f"fullText contains '{quoted.group(1).strip()}'"
     match = re.search(r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", text, re.IGNORECASE)
     if match:
         query = match.group(1).strip()
@@ -601,11 +601,11 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
     for m in matches:
         if "," in m:
             rows.append([item.strip() for item in m.split(",")])
-    
+
     # If no rows found in quotes, try to find patterns like 'Score1, 100'
     if not rows:
          pattern = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
          for m in pattern.finditer(text):
              rows.append([m.group(1).strip(), m.group(2).strip()])
-             
+
     return rows if rows else [["Data", "Value"], ["Item1", "10"]]

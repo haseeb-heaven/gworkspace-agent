@@ -1,10 +1,6 @@
 import re
 from typing import Any
 
-# Pre-compiled regex patterns for performance
-_EMAIL_BRACKETS_RE = re.compile(r"<(.+?)>")
-_TASK_PREFIX_RE = re.compile(r"(?:task-)?(\d+)")
-_TASK_BASE_RE = re.compile(r"(task-\d+)-\d+")
 
 class ContextUpdaterMixin:
     def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
@@ -94,11 +90,11 @@ class ContextUpdaterMixin:
             sender = headers_dict.get("from", "Unknown")
             subject = headers_dict.get("subject", "No Subject")
             date_val = headers_dict.get("date", "Unknown Date")
-            
+
             # Extract just email from "Name <email@example.com>"
-            email_match = _EMAIL_BRACKETS_RE.search(str(sender))
+            email_match = re.search(r"<(.+?)>", str(sender))
             email_addr = email_match.group(1) if email_match else sender
-            
+
             row = [sender, subject, date_val, email_addr]
             data["row"] = row # For {task-N.row} access
 
@@ -122,7 +118,7 @@ class ContextUpdaterMixin:
 
                 context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
-                
+
                 if task:
                     task_id = str(task.id)
                     num = task_id.removeprefix("task-")
@@ -169,12 +165,12 @@ class ContextUpdaterMixin:
 
         if "values" in data and isinstance(data["values"], list):
             rows = data["values"]
-            
+
             # Semantic extraction for tests - handle aggregation for all expanded tasks
             if task:
                  task_id = str(task.id)
                  # Extract base ID (e.g. '2' from 'task-2-1' or 'task-2')
-                 m = _TASK_PREFIX_RE.match(task_id)
+                 m = re.match(r"(?:task-)?(\d+)", task_id)
                  if m:
                      base_num = m.group(1)
                      key = f"company_names_from_task_{base_num}"
@@ -199,7 +195,7 @@ class ContextUpdaterMixin:
         if task and hasattr(task, "id") and task.id:
             task_id = str(task.id)
             num = task_id.removeprefix("task-")
-            seq_num = str(getattr(task, "_sequence_index", num))
+            seq_num = str(getattr(task, "sequence_index", getattr(task, "_sequence_index", num)))
             action_name = str(task.action)
 
             # Map the full task result object (now enriched with IDs, URLs, headers, etc.)
@@ -214,22 +210,22 @@ class ContextUpdaterMixin:
             is_subtask = False
             if "-" in task_id:
                 # Extract base ID (e.g. 'task-2' from 'task-2-1')
-                m = _TASK_BASE_RE.match(task_id)
+                m = re.match(r"(task-\d+)-\d+", task_id)
                 if m:
                     b_id = m.group(1)
                     is_subtask = True
                     # Initialize list if not already present or if it's currently a dict (from a different task)
                     if b_id not in results_map or not isinstance(results_map[b_id], list):
                         results_map[b_id] = []
-                    
+
                     results_map[b_id].append(data)
                     # self.logger.debug(f"DEBUG: Appended result to base task list '{b_id}' (size: {len(results_map[b_id])})")
-                    
+
                     # Also map the numeric base ID (e.g. '2' from 'task-2-1')
                     b_num = b_id.removeprefix("task-")
                     results_map[b_num] = results_map[b_id]
                     results_map[f"task-{b_num}"] = results_map[b_id]
-                    
+
                     # Map semantic keys like company_names_from_task_2
                     # If this subtask produced a 'values' or 'row', ensure it's in the base list
                     if "values" in data and isinstance(data["values"], list):
@@ -237,25 +233,28 @@ class ContextUpdaterMixin:
                          current = context.setdefault(key, [])
                          if isinstance(current, list):
                              rows = data["values"]
-                             if rows and isinstance(rows[0], list): current.extend(rows)
-                             else: current.append(rows)
+                             if rows and isinstance(rows[0], list):
+                                 current.extend(rows)
+                             else:
+                                 current.append(rows)
                     elif "row" in data:
                          key = f"company_names_from_task_{b_num}"
                          current = context.setdefault(key, [])
-                         if isinstance(current, list): current.append(data["row"])
+                         if isinstance(current, list):
+                             current.append(data["row"])
 
             # Map individual fields (if they exist)
             for k, v in data.items():
                 results_map[f"{task_id}.{k}"] = v
                 # ONLY map N.key and task-N.key if this is NOT an expansion subtask,
                 # or if it's the first subtask (to provide some default).
-                # Actually, if it's a subtask, we want task-N.key to be a list if possible? 
-                # For now, let's keep it simple: subtasks don't overwrite task-N.key 
+                # Actually, if it's a subtask, we want task-N.key to be a list if possible?
+                # For now, let's keep it simple: subtasks don't overwrite task-N.key
                 # unless they are the primary ID.
                 if not is_subtask:
                     results_map[f"{num}.{k}"] = v
                     results_map[f"task-{num}.{k}"] = v
-                
+
                 results_map[f"{seq_num}.{k}"] = v
                 results_map[f"task-{seq_num}.{k}"] = v
                 results_map[f"{action_name}.{k}"] = v
@@ -265,7 +264,7 @@ class ContextUpdaterMixin:
                 # Bug 1 Fix: Pick first non-folder ID if possible
                 files = data["files"]
                 first_id = files[0].get("id")
-                
+
                 # If the first item is a folder, try to find a document
                 if files[0].get("mimeType") == "application/vnd.google-apps.folder":
                     for f in files:
@@ -280,7 +279,7 @@ class ContextUpdaterMixin:
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
                     results_map[f"task-{seq_num}.id"] = first_id
-            
+
             if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")
                 if first_id:
