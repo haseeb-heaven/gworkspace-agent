@@ -13,7 +13,7 @@ def test_build_calendar_delete_event():
 def test_build_telegram_send_message():
     planner = CommandPlanner()
     args = planner.build_command("telegram", "send_message", {"message": "Test update"})
-    assert "send_message.py" in args[1]
+    assert "telegram_send_message.py" in args[1]
     assert "Test update" in args[2]
 
 def test_build_calendar_update_event():

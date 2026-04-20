@@ -26,7 +26,7 @@ MANDATORY VERIFICATION:
 1. Run the task using gws_cli.py.
 2. Use scripts/verify_gws_data.py to TRIPLE-CHECK the results (Sheet, Doc, or Gmail).
 3. If verification fails, fix the issue and retry.
-4. Send progress updates to Telegram using .agent/skills/telegram-update/scripts/send_message.py.
+4. Send progress updates to Telegram using scripts/telegram_send_message.py.
 5. Provide a final verification report in the output.
 """
 

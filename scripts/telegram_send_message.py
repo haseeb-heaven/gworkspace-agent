@@ -15,7 +15,7 @@ except ImportError:
 
 def send_telegram_message(message: str):
     # Determine the root directory and find the .env file
-    root_dir = Path(__file__).resolve().parents[4]
+    root_dir = Path(__file__).resolve().parents[1]
     env_path = root_dir / ".env"
     # Load .env variables
     env = dotenv_values(env_path)
@@ -51,6 +51,6 @@ if __name__ == "__main__":
 
     message = args.text or args.message
     if not message:
-        print('Usage: python send_message.py "Message text"', file=sys.stderr)
+        print('Usage: python telegram_send_message.py "Message text"', file=sys.stderr)
         sys.exit(1)
     send_telegram_message(message)
