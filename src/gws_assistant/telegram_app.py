@@ -15,9 +15,13 @@ from gws_assistant.config import AppConfig
 
 logger = logging.getLogger(__name__)
 
+import json
+
 # The specific commands requested by the user
 ALLOWED_COMMANDS = ["mail", "docs", "sheet", "calendar", "notes"]
 
+# Dictionary to hold pending confirmations: chat_id -> asyncio.Future
+pending_confirmations = {}
 
 async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Check if the user is allowed to interact with the bot based on TELEGRAM_CHAT_ID."""
@@ -114,6 +118,49 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
 
         logger.info(f"Command completed for task: {task_text[:50]}...")
 
+        if process.returncode == 2:
+            try:
+                data = json.loads(stdout)
+                if data.get("status") == "confirmation_required":
+                    chat_id = update.effective_chat.id
+                    prompt_msg = f"⚠️ Confirmation Required ⚠️\n\nAction: {data.get('action')}\nDetails: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
+                    await update.effective_message.reply_text(prompt_msg)
+
+                    loop = asyncio.get_running_loop()
+                    future = loop.create_future()
+                    pending_confirmations[chat_id] = future
+
+                    try:
+                        reply = await asyncio.wait_for(future, timeout=60.0)
+                        if reply.strip().lower() == "yes":
+                            await update.effective_message.reply_text("Proceeding...")
+                            # Re-run with --force-dangerous
+                            process2 = await asyncio.create_subprocess_exec(
+                                sys.executable, "gws_cli.py", "--task", task_text, "--force-dangerous", "--is-telegram",
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE
+                            )
+                            stdout_bytes2, stderr_bytes2 = await asyncio.wait_for(
+                                process2.communicate(), timeout=timeout_seconds
+                            )
+                            stdout2 = stdout_bytes2.decode('utf-8', errors='replace').strip()
+                            stderr2 = stderr_bytes2.decode('utf-8', errors='replace').strip()
+
+                            if process2.returncode != 0:
+                                logger.error(f"Task failed with exit code {process2.returncode}. Stderr: {stderr2}")
+                                await update.effective_message.reply_text(f"Task failed with exit code {process2.returncode}.")
+                            output2 = stdout2 if stdout2 else stderr2
+                            await split_and_send(update, output2)
+                        else:
+                            await update.effective_message.reply_text("Action cancelled.")
+                    except asyncio.TimeoutError:
+                        await update.effective_message.reply_text("Timeout reached. Action cancelled.")
+                    finally:
+                        pending_confirmations.pop(chat_id, None)
+                    return
+            except Exception as parse_e:
+                logger.error(f"Failed to parse exit code 2 stdout: {parse_e}")
+
         if process.returncode != 0:
             logger.error(f"Task failed with exit code {process.returncode}. Stderr: {stderr}")
             # If we have stderr, show it, otherwise show a generic error
@@ -159,6 +206,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     task_text = update.effective_message.text.strip()
+    chat_id = update.effective_chat.id
+
+    if chat_id in pending_confirmations:
+        future = pending_confirmations[chat_id]
+        if not future.done():
+            future.set_result(task_text)
+        return
     if not task_text:
         return
 
@@ -258,6 +312,8 @@ def create_application(config: AppConfig) -> Application:
     """Create and configure the Telegram application."""
     if not config.telegram_bot_token:
         raise ValueError("TELEGRAM_BOT_TOKEN is not set in configuration.")
+
+    config.is_telegram = True
 
     application = Application.builder().token(config.telegram_bot_token).build()
 
