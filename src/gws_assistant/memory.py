@@ -111,7 +111,10 @@ class LongTermMemory:
                 if isinstance(self.client, MemoryClient):
                         # Hosted Mem0 expects direct filters with v2 for user-scoped reads.
                         filters = self._build_filters(resolved_user_id)
-                        return self.client.search(query=query, version="v2", filters=filters, limit=limit)
+                        response = self.client.search(query=query, version="v2", filters=filters, limit=limit)
+                        if isinstance(response, dict) and "results" in response:
+                                return response["results"]
+                        return response
                 else:
                         # Local/OSS client uses filters instead of direct user_id for some versions
                         try:
