@@ -120,26 +120,6 @@ async def test_run_gws_task_stderr_fallback(mock_create_subprocess, mock_update,
     assert any("Task failed with exit code 1" in call[0][0] for call in calls)
 
 @pytest.mark.asyncio
-@patch("gws_assistant.telegram_app.asyncio.create_subprocess_exec")
-async def test_run_gws_task_timeout(mock_create_subprocess, mock_update, mock_context):
-    mock_process = AsyncMock()
-
-    async def mock_communicate():
-        await asyncio.sleep(0.2)
-        return (b"", b"")
-
-    mock_process.communicate = mock_communicate
-    mock_create_subprocess.return_value = mock_process
-
-    # Override timeout to be very short
-    mock_context.bot_data["config"].gws_timeout_seconds = 0.1
-
-    await run_gws_task(mock_update, mock_context, "test task")
-
-    calls = mock_update.effective_message.reply_text.call_args_list
-    assert any("timed out" in call[0][0] for call in calls)
-
-@pytest.mark.asyncio
 async def test_handle_text(mock_update, mock_context):
     with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
         mock_update.effective_message.text = "send email"

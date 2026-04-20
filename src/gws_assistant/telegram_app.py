@@ -77,22 +77,14 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             stderr=asyncio.subprocess.PIPE
         )
 
-        # We increase the timeout to 180 seconds as requested by the logs showing 90s is not enough for some GWS tasks
-        config = context.bot_data.get("config")
-        # In the config model, the generic execution timeout is `timeout_seconds`,
-        # but there is also a specific `gws_timeout_seconds` defined which we use.
-        # Fall back to 180 if neither is reliably present.
-        timeout_seconds = getattr(config, 'gws_timeout_seconds', getattr(config, 'timeout_seconds', 180)) if config else 180
-
+        # Execute gws_cli.py until it naturally finishes
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=timeout_seconds
-            )
-        except asyncio.TimeoutError:
-            logger.warning(f"Command timed out after {timeout_seconds} seconds for task: {task_text[:50]}...")
+            stdout_bytes, stderr_bytes = await process.communicate()
+        except Exception as e:
+            logger.error(f"Error during process communication: {e}")
             process.kill()
             await process.communicate()
-            await update.effective_message.reply_text(f"Command timed out after {timeout_seconds} seconds.")
+            await update.effective_message.reply_text(f"Error during task execution: {str(e)}")
             return
 
         stdout = stdout_bytes.decode('utf-8', errors='replace').strip()

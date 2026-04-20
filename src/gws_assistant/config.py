@@ -75,7 +75,7 @@ class AppConfig:
         code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
         e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
 
-        gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "90").strip())
+        gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "0").strip())
         gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
 
         # Support multiple API keys for rotation (only for openrouter)
