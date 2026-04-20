@@ -8,6 +8,7 @@ import email.mime.application
 import email.mime.multipart
 import email.mime.text
 import json
+import logging
 import os
 import re
 import subprocess
@@ -359,17 +360,29 @@ class CommandPlanner:
         if action == "move_file":
             file_id = self._required_text(params, "file_id")
             folder_id = self._required_text(params, "folder_id")
-            # In Drive v3, move is accomplished via update with addParents/removeParents
+            # In Drive v3, move is accomplished via update with addParents/removeParents.
+            # We must first fetch the current parents.
+            update_params = {"fileId": file_id, "addParents": folder_id}
+            try:
+                gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
+                result = subprocess.run(
+                    [gws_exe, "drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "parents"})],
+                    capture_output=True, timeout=10, text=True
+                )
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    parents = data.get("parents")
+                    if parents and isinstance(parents, list):
+                        update_params["removeParents"] = ",".join(parents)
+            except Exception:
+                pass
+
             return [
                 "drive",
                 "files",
                 "update",
                 "--params",
-                json.dumps({
-                    "fileId": file_id,
-                    "addParents": folder_id,
-                    "removeParents": "root"  # Optional: assuming it was in root or we don't know the old parent
-                })
+                json.dumps(update_params)
             ]
 
         if action == "copy_file":
@@ -577,7 +590,7 @@ class CommandPlanner:
                     event_end   = {"date": start_date}
             else:
                 event_start = {"date": start_date}
-                event_end   = {"date": start_date}
+                event_end   = {"date": (date.fromisoformat(start_date) + timedelta(days=1)).isoformat()}
 
             description = (
                 str(params.get("description") or "").strip()
@@ -667,7 +680,12 @@ class CommandPlanner:
         if action == "batch_update":
             document_id      = self._required_text(params, "document_id")
             text             = str(params.get("text") or "").strip()
-            requests_payload = [{"insertText": {"location": {"index": 1}, "text": text}}]
+            if "index" in params:
+                location = {"location": {"index": int(params["index"])}}
+            else:
+                location = {"endOfSegmentLocation": {"segmentId": ""}}
+
+            requests_payload = [{"insertText": {**location, "text": text}}]
             return ["docs", "documents", "batchUpdate",
                     "--params", json.dumps({"documentId": document_id}),
                     "--json",   json.dumps({"requests": requests_payload}, ensure_ascii=True)]
@@ -832,7 +850,7 @@ class CommandPlanner:
             message = self._required_text(params, "message")
             python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            script_path = os.path.join(base_dir, "scripts", "telegram_send_message.py")
+            script_path = os.environ.get("TELEGRAM_SCRIPT_PATH", os.path.join(base_dir, "scripts", "telegram_send_message.py"))
             return [python_exe, script_path, message]
         raise ValidationError(f"Unsupported telegram action: {action}")
 
@@ -914,4 +932,5 @@ class CommandPlanner:
                     return file_path
             return None
         except Exception:
+            logging.exception("Failed to export drive file to temp: %s", file_id)
             return None
