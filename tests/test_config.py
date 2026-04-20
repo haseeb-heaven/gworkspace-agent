@@ -36,6 +36,7 @@ def test_config_generic_llm_env_overrides_provider_specific(monkeypatch):
     _required(monkeypatch)
     monkeypatch.setenv("LLM_MODEL", "qwen/qwen3-coder:free")
     monkeypatch.setenv("LLM_API_KEY", "generic")
+    monkeypatch.setenv("OPENAI_API_KEY", "generic")
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("USE_HEURISTIC_FALLBACK", "true")
     config = AppConfig.from_env()
