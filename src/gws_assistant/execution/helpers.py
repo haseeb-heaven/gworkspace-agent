@@ -148,7 +148,6 @@ class HelpersMixin:
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
-            output_data.get("stdout", "")
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
                 context["last_code_result"] = parsed

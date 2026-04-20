@@ -12,10 +12,14 @@ def extract_data(body):
     # From: ebill@airtel.com -> Airtel
 
     bank = "Unknown Bank"
-    if "emiratesnbd" in body.lower(): bank = "Emirates NBD"
-    elif "liv.me" in body.lower(): bank = "Liv"
-    elif "emiratesislamic" in body.lower(): bank = "Emirates Islamic"
-    elif "airtel" in body.lower(): bank = "Airtel"
+    if "emiratesnbd" in body.lower():
+        bank = "Emirates NBD"
+    elif "liv.me" in body.lower():
+        bank = "Liv"
+    elif "emiratesislamic" in body.lower():
+        bank = "Emirates Islamic"
+    elif "airtel" in body.lower():
+        bank = "Airtel"
 
     # Date extraction
     # "Due by 13-Apr-2026"

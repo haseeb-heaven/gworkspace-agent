@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from gws_assistant.verification_engine import VerificationEngine, VerificationError
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
 from .reflector import ReflectorMixin
@@ -169,7 +170,17 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             except Exception:
                 pass
 
-        if result.success and result.output:
+        if result.success and result.output is not None:
+            try:
+                VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
+            except VerificationError as e:
+                if e.severity == "ERROR":
+                    from gws_assistant.exceptions import VerificationError as ExistingVerificationError
+                    logger.error(f"Verification engine caught an error: {e}")
+                    raise ExistingVerificationError(str(e))
+                else:
+                    logger.warning(f"Verification engine warning: {e}")
+
             # Synchronize stdout with any enrichments (like body extraction)
             result.stdout = json.dumps(result.output)
 

@@ -38,9 +38,10 @@ class WorkspaceAgentSystem:
         self.memory = get_memory_backend(config, logger)
 
     def plan(self, user_text: str) -> RequestPlan:
+        from .memory import recall_similar
 
         # Local episodic memory
-        past = self.memory.recall_similar(user_text)
+        past = recall_similar(user_text)
 
         # Long-term semantic memory (Mem0)
         semantic_memories = self.memory.search(user_text)
@@ -81,32 +82,6 @@ class WorkspaceAgentSystem:
                 summary=NO_SERVICE_MESSAGE,
                 no_service_detected=True,
             )
-
-        # 1. Check for direct command override (e.g. service action key=value or starting with service key)
-        # If the user provides explicit parameters or starts with a service name, prioritize heuristics.
-        # service_prefixes = ("web_search", "drive", "gmail", "sheets", "docs", "calendar", "keep", "meet", "code", "computation", "telegram")
-        # lowered = text.lower()
-        # is_direct = any(lowered.startswith(p) for p in service_prefixes) or "=" in text or ":" in text
-        #
-        # if is_direct:
-        #     parser = IntentParser(self.config, self.logger)
-        #     intent = parser.parse(text, force_heuristic=True)
-        #     if intent.service and intent.action and not intent.needs_clarification:
-        #         task = PlannedTask(
-        #             id="task-1",
-        #             service=intent.service,
-        #             action=intent.action,
-        #             parameters=intent.parameters,
-        #             reason=f"Direct command detected: {intent.service}.{intent.action}",
-        #         )
-        #         return RequestPlan(
-        #             raw_text=text,
-        #             tasks=[task],
-        #             summary=f"Planned direct task: {intent.service}.{intent.action}",
-        #             confidence=1.0,
-        #             no_service_detected=False,
-        #             source="direct_command",
-        #         )
 
         # 2. Primary: LLM Planning
         if self._use_langchain:
@@ -447,11 +422,6 @@ Files moved to '{folder_name}'. Link: $last_folder_url"""
         elif service == "tasks" and action == "create_task":
             parameters["title"] = _extract_quoted(lowered) or "New Task"
         elif service in ("code", "computation"):
-            parameters["summary"] = _extract_quoted(lowered) or "New Event"
-            parameters["start_date"] = "2026-04-20" # Default to today for heuristic
-        elif service == "tasks" and action == "create_task":
-            parameters["title"] = _extract_quoted(lowered) or "New Task"
-        elif service in ("code", "computation"):
             list_match = RE_CODE_LIST.search(lowered)
             data_str = list_match.group(1) if list_match else "[]"
             if "sort" in lowered:
@@ -556,7 +526,8 @@ def _gmail_query_from_text(text: str) -> str:
 
 def _drive_query_from_text(text: str) -> str:
     quoted = RE_DRIVE_QUERY_QUOTED.search(text)
-    if quoted: return f"fullText contains '{quoted.group(1).strip()}'"
+    if quoted:
+        return f"fullText contains '{quoted.group(1).strip()}'"
     match = RE_DRIVE_QUERY_MATCH.search(text)
     if match:
         query = match.group(1).strip()

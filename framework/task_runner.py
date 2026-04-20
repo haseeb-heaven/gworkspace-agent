@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -56,13 +57,18 @@ class TaskRunner:
         self.attempt_count += 1
         logger.info(f"Runner {self.agent_id} starting tests for {self.service} (Attempt {self.attempt_count}/{self.max_retries})")
 
+        # Use shutil.which to find pytest executable
+        _pytest_exe = shutil.which("pytest") or "pytest"
+
         try:
             # Set up environment with src in PYTHONPATH
             env = os.environ.copy()
             env["PYTHONPATH"] = "src" + os.pathsep + env.get("PYTHONPATH", "")
 
             # Use sys.executable to run pytest module to ensure same environment
-            cmd = [sys.executable, "-m", "pytest", "-v", "-m", self.service]
+            # IMPORTANT: We MUST exclude live_integration and manual markers to prevent real side-effects (like sending emails)
+            marker_expr = f"{self.service} and not live_integration and not manual"
+            cmd = [sys.executable, "-m", "pytest", "-v", "-m", marker_expr]
 
             process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == 'nt')
 

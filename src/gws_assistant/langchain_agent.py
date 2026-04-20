@@ -462,7 +462,8 @@ def plan_with_langchain(
 
         # Basic cleanup of planned tasks
         for t in tasks_data:
-            if not isinstance(t, dict): continue
+            if not isinstance(t, dict):
+                continue
             if t.get("service") == "gmail" and t.get("action") == "send_message":
                 params = t.get("parameters") or {}
                 if explicit_email:

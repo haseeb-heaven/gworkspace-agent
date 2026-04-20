@@ -10,6 +10,7 @@ from gws_assistant.memory_backend import get_memory_backend
 from gws_assistant.config import AppConfig
 
 
+
 def main():
     # Setup minimal logging
     logging.basicConfig(level=logging.ERROR)

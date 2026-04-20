@@ -1,4 +1,4 @@
-*.eml
+﻿*.eml
 .gemini/settings.json
 *.json
 *.jsonl
@@ -25,7 +25,6 @@ env/
 
 # Logs and Environment
 logs/
-scratch/logs
 *.log
 .env
 .env.local
@@ -47,9 +46,9 @@ artifacts/
 .skill
 *.skill
 skills/
-.gemini 
+.gemini
 $params
-.git 
+.git
 docs/
 
 # Files
@@ -64,4 +63,3 @@ docs/
 !README.md
 !framework/
 !tests/
-

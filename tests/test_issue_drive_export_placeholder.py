@@ -37,7 +37,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"id":"sent-1"}',
+                stdout='{"id":"sent-1234567890", "labelIds": ["SENT"]}',
             )
         return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
 
@@ -68,7 +68,7 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     plan = RequestPlan(
         raw_text="export and email",
         tasks=[
-            PlannedTask(id="task-1", service="drive", action="export_file", parameters={"file_id": "f1", "mime_type": "text/plain"}),
+                PlannedTask(id="task-1", service="drive", action="export_file", parameters={"file_id": "f1-1234567890", "mime_type": "text/plain"}),
             PlannedTask(
                 id="task-2",
                 service="gmail",

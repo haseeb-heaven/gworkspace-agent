@@ -43,7 +43,7 @@ def verify_sheet(sheet_id_or_name):
             content = str(data)
         else:
             content = stdout
-    except:
+    except Exception:
         content = stdout
 
     return check_content(content, f"Sheet:{sheet_id_or_name}")

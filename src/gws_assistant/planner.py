@@ -344,8 +344,10 @@ class CommandPlanner:
             description = str(params.get("description") or "").strip()
 
             payload = {}
-            if name: payload["name"] = name
-            if description: payload["description"] = description
+            if name:
+                payload["name"] = name
+            if description:
+                payload["description"] = description
 
             if not payload:
                 raise ValidationError("At least one metadata field (name or description) must be provided.")
@@ -757,8 +759,10 @@ class CommandPlanner:
             title = self._required_text(params, "title")
             tl_id = str(params.get("tasklist") or "@default").strip()
             body = {"title": title}
-            if params.get("notes"): body["notes"] = str(params.get("notes"))
-            if params.get("due"): body["due"] = str(params.get("due"))
+            if params.get("notes"):
+                body["notes"] = str(params.get("notes"))
+            if params.get("due"):
+                body["due"] = str(params.get("due"))
             return ["tasks", "tasks", "insert", "--params", json.dumps({"tasklist": tl_id}), "--json", json.dumps(body, ensure_ascii=True)]
         if action == "get_task":
             tl_id = str(params.get("tasklist") or "@default").strip()
@@ -830,9 +834,12 @@ class CommandPlanner:
         if value is not None and str(value).strip():
             return str(value).strip()
         variations = [key.lower().replace("_", ""), key.replace("_", "")]
-        if "name" in key.lower(): variations.append("name")
-        if "id" in key.lower(): variations.append("id")
-        if "code" in key.lower(): variations.extend(["script", "python"])
+        if "name" in key.lower():
+            variations.append("name")
+        if "id" in key.lower():
+            variations.append("id")
+        if "code" in key.lower():
+            variations.extend(["script", "python"])
         if "text" in key.lower() or "body" in key.lower() or "content" in key.lower():
             variations.extend(["text", "body", "content"])
 
@@ -853,6 +860,22 @@ class CommandPlanner:
     def _build_raw_email(to_email: str, subject: str, body: str) -> str:
         message = f"To: {to_email}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\nMIME-Version: 1.0\r\n\r\n{body}"
         return base64.urlsafe_b64encode(message.encode("utf-8")).decode("ascii")
+
+    @staticmethod
+    def _build_raw_email_with_attachments(to_email: str, subject: str, body: str, attachment_paths: list[str]) -> str:
+        msg = email_lib.mime.multipart.MIMEMultipart("mixed")
+        msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
+        msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
+        for path in attachment_paths:
+            if not os.path.isfile(path):
+                continue
+            filename = os.path.basename(path)
+            with open(path, "rb") as fh:
+                data = fh.read()
+            part = email_lib.mime.application.MIMEApplication(data, Name=filename)
+            part["Content-Disposition"] = f'attachment; filename="{filename}"'
+            msg.attach(part)
+        return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
     @staticmethod
     def _build_raw_email_with_attachments(to_email: str, subject: str, body: str, attachment_paths: list[str]) -> str:

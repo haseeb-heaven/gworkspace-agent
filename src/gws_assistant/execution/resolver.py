@@ -4,11 +4,6 @@ import re
 from typing import Any
 
 _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
-
-# Pre-compiled regex patterns for performance
-_PLACEHOLDER_RE = re.compile(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)')
-_PATH_TOKENS_RE = re.compile(r'[^.\[\]]+|\[\d+\]')
-
 logger = logging.getLogger(__name__)
 
 class ResolverMixin:
@@ -279,7 +274,7 @@ class ResolverMixin:
 
             # 4. Partial string replacement with regex
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
-            val = _PLACEHOLDER_RE.sub(replace_match, val)
+            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
             return val
 
         elif isinstance(val, list):
@@ -305,7 +300,7 @@ class ResolverMixin:
             return data[path]
 
         # 2. Split path into tokens, handling dots and brackets
-        tokens = _PATH_TOKENS_RE.findall(path)
+        tokens = re.findall(r'[^.\[\]]+|\[\d+\]', path)
         if not tokens:
             return None
 

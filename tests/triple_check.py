@@ -28,7 +28,7 @@ if __name__ == "__main__":
         try:
             with open(sys.argv[1], "r", encoding="utf-8") as f:
                 data = f.read()
-        except:
+        except Exception:
             data = " ".join(sys.argv[1:])
     else:
         data = sys.stdin.read()
