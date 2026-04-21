@@ -1,4 +1,4 @@
-﻿*.eml
+*.eml
 .gemini/settings.json
 *.json
 *.jsonl
@@ -51,6 +51,11 @@ $params
 .git
 docs/
 
+# Planning and Local Extensions
+.planning/phases/
+.planning/research/
+conductor/
+
 # Files
 *.exe
 *.txt
@@ -59,14 +64,16 @@ docs/
 *.xlsx
 *.pptx
 
+# Trash/Temp scripts
+run_tasks_*.py
+run_8_to_15.py
+read_mem0.py
+*.scratchpad
+download.html
+
 # Allowed
 !README.md
 !framework/
 !tests/
-!.planning/
-.agent/
-artifacts/
-run_tasks_*.py
-run_8_to_15.py
-*.scratchpad
-download.html
+!.planning/ROADMAP.md
+!.planning/STATE.md
