@@ -388,10 +388,12 @@ def plan_with_langchain(
         "13. CODE OUTPUT: use $last_code_result or $last_code_stdout. "
         "14. SEND EMAIL: LAST task must be gmail.send_message. "
         "15. PIPELINE: prefer complex multi-step workflows. "
-        "16. STRING QUOTING: use placeholders for large text. "
+        "16. SPREADSHEETS: when creating a tracking sheet from search or email, ALWAYS use code.execute first to format the data into a clean list of lists (rows). For each row, do NOT just copy snippets; write an actual descriptive title and a concise summary of the key information. Then pass $last_code_result to sheets.append_values. "
+        "17. STRING QUOTING: use placeholders for large text. "
         "17. MULTIPLE TABS: use distinct range names. "
         "18. PARAMETER BINDING: auto-links IDs between tasks. "
         "19. CURRENCY: wrap symbols in string quotes."
+        "20. SUMMARIZATION: When writing to a Doc or Sheet from search results, synthesize and summarize the information. Do NOT include raw search snippets like 'Jan 1, 2024 ...' in the final output."
     )
 
     if memory_hint:
