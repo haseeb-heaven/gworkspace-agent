@@ -46,6 +46,24 @@ class ResolverMixin:
                     expanded.append(new_task)
                 return expanded if expanded else [task]
 
+        if task.service == "drive" and task.action == "delete_file":
+            file_ids = resolved_params.get("file_id")
+            # If no file_id provided, but we have legacy $drive_file_ids in context, use them!
+            if (not file_ids or file_ids == "$placeholder" or file_ids == _UNRESOLVED_MARKER) and "drive_file_ids" in context:
+                 file_ids = context["drive_file_ids"]
+                 self.logger.info(f"Auto-injected {len(file_ids)} Drive IDs from context for deletion expansion.")
+
+            if isinstance(file_ids, list) and file_ids:
+                expanded = []
+                for i, f_id in enumerate(file_ids):
+                    if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
+                        continue
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i+1}"
+                    new_task.parameters["file_id"] = f_id
+                    expanded.append(new_task)
+                return expanded if expanded else [task]
+
         return [task]
 
     def _resolve_task(self, task: Any, context: dict) -> Any:
@@ -225,7 +243,7 @@ class ResolverMixin:
 
                 # 2. If we resolved to a list, but we are a single-token placeholder
                 # (e.g. {{task-1.id}}), pick the first item.
-                singular_suffixes = ['.id', '.name', '.url', '.title', '.email', '.spreadsheet_id', '.document_id']
+                singular_suffixes = ['.name', '.url', '.title', '.email', '.spreadsheet_id', '.document_id']
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     resolved = resolved[0]

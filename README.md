@@ -39,6 +39,25 @@ To set up the Google Workspace Agent, including Google Cloud credentials and the
 
 ---
 
+## 🛡️ Safety & Modes (New!)
+
+The agent is designed to be **Safe by Default**. It intercepts operations that could modify or delete your data.
+
+### Read-Only Mode (Default: True)
+Blocks all write, create, update, append, send, and delete actions.
+*   **To disable (allow writes):** Run with `--read-write` or set `READ_ONLY_MODE=false` in `.env`.
+
+### Sandbox Mode (Default: True)
+When writes are allowed (`--read-write`), Sandbox mode intercepts any state-changing action and prompts for user confirmation `(Y/N)` before executing.
+*   **To disable (run autonomously):** Run with `--no-sandbox` or set `SANDBOX_ENABLED=false` in `.env`.
+
+### Configuration Precedence
+1. **CLI Flags** (`--sandbox` / `--read-write`) have the highest priority.
+2. **Environment Variables** (`SANDBOX_ENABLED` / `READ_ONLY_MODE` in `.env`) are used if no flags are provided.
+3. **Hardcoded Defaults** are used if `.env` is empty (Defaults to `True` for both).
+
+---
+
 ## Interfaces
 
 The agent supports four interfaces. All of them read from the same `.env` configuration.
@@ -172,10 +191,10 @@ Then open: [http://localhost:8080](http://localhost:8080)
 ```
 Browser → http://localhost:7860
 
-Input:  "Find all Drive files with .qvm extension and email me a count summary"
+Input:  "Find all Drive files with .doc extension and email me a count summary"
 
-Output: ✅ Found 42 .qvm files across your Drive.
-        Summary table emailed to haseebmir.hm@gmail.com.
+Output: ✅ Found 42 .doc files across your Drive.
+        Summary table emailed to user@gmail.com.
 ```
 
 ---
@@ -318,7 +337,7 @@ Plan:
 ### Drive metadata analysis (no file download)
 
 ```text
-Input: "Search Drive for all files with .qvm extension, count them,
+Input: "Search Drive for all files with .xls extension, count them,
         build a summary table, and email it to me. Do not download any files."
 
 Plan:

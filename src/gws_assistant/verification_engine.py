@@ -51,12 +51,15 @@ class VerificationEngine:
         if not isinstance(params, dict):
             params = {}
 
+        logger.debug(f"Verifying {tool_name} with params keys {list(params.keys())}")
+
         try:
             cls.verify_params(tool_name, params)
         except VerificationError as e:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_params failed for {tool_name}: {e}")
                 raise
 
         try:
@@ -65,6 +68,7 @@ class VerificationEngine:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_result failed for {tool_name}: {e}")
                 raise
 
         try:
@@ -73,6 +77,7 @@ class VerificationEngine:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_attachment_sent failed for {tool_name}: {e}")
                 raise
 
         try:
@@ -81,13 +86,17 @@ class VerificationEngine:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_document_not_empty failed for {tool_name}: {e}")
                 raise
 
     @classmethod
     def verify_params(cls, tool_name: str, params: dict) -> None:
-        parts = tool_name.split("_")
-        service = parts[0]
-        action = tool_name
+        # tool_name is expected to be "service_action"
+        if "_" in tool_name:
+            service, action = tool_name.split("_", 1)
+        else:
+            service = tool_name
+            action = tool_name
 
         # CATEGORY 2 - GMAIL
         if service == "gmail" or "message" in action or "email" in action or "send" in action:
