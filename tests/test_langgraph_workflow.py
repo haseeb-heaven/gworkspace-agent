@@ -33,6 +33,8 @@ def test_reflection_retry_then_success(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
+    from gws_assistant.models import ReflectionDecision
+    executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
 
     task = PlannedTask(id="1", service="drive", action="list_files")
     plan = RequestPlan(raw_text="List files", tasks=[task], no_service_detected=False)
@@ -45,6 +47,13 @@ def test_reflection_retry_then_success(config):
         ExecutionResult(success=True, command=["mock"], stdout="Recovered"),
     ]
 
+    def mock_reflect(error, attempts, max_retries):
+        if not error:
+            return (ReflectionDecision(action="continue", reason="ok"), False)
+        return (ReflectionDecision(action="retry", reason="retry"), False)
+
+    executor.reflect_on_error.side_effect = mock_reflect
+
     output = run_workflow("List files", config, system, executor, logger)
     assert "Recovered" in output
     assert executor.execute_single_task.call_count == 2
@@ -54,6 +63,8 @@ def test_replan_path_retains_history(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
+    from gws_assistant.models import ReflectionDecision
+    executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
 
     first_task = PlannedTask(id="1", service="drive", action="list_files")
     second_task = PlannedTask(id="2", service="drive", action="list_files")
@@ -70,6 +81,15 @@ def test_replan_path_retains_history(config):
         ExecutionResult(success=True, command=["mock"], stdout="after replan"),
     ]
     config.max_retries = 1
+
+    def mock_reflect_replan(error, attempts, max_retries):
+        if not error:
+            return (ReflectionDecision(action="continue", reason="ok"), False)
+        if attempts >= max_retries:
+            return (ReflectionDecision(action="replan", reason="exhausted"), False)
+        return (ReflectionDecision(action="retry", reason="retry"), False)
+
+    executor.reflect_on_error.side_effect = mock_reflect_replan
 
     app = create_workflow(config, system, executor, logger)
     final_state = app.invoke(
@@ -90,6 +110,8 @@ def test_silent_failure_guard(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
+    from gws_assistant.models import ReflectionDecision
+    executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
 
     task = PlannedTask(id="1", service="drive", action="list_files")
     system.plan.return_value = RequestPlan(raw_text="x", tasks=[task], no_service_detected=False)
@@ -105,6 +127,8 @@ def test_history_trimming(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
+    from gws_assistant.models import ReflectionDecision
+    executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
     task = PlannedTask(id="1", service="drive", action="list_files")
     system.plan.return_value = RequestPlan(raw_text="x", tasks=[task], no_service_detected=False)
     executor._expand_task.return_value = [task]
@@ -129,6 +153,8 @@ def test_computation_routes_generate_code_and_executes(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
+    from gws_assistant.models import ReflectionDecision
+    executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
     system.plan.return_value = RequestPlan(raw_text="compute 2+2", tasks=[], no_service_detected=True)
     config.use_heuristic_fallback = True
     config.api_key = None
@@ -141,6 +167,8 @@ def test_code_execution_respects_config_flag(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
+    from gws_assistant.models import ReflectionDecision
+    executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
     config.code_execution_enabled = False
     config.use_heuristic_fallback = True
     config.api_key = None

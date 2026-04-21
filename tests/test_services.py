@@ -305,7 +305,8 @@ class TestPlannerCalendar:
         })
         body = json.loads(args[args.index("--json") + 1])
         assert body["start"]["date"] == "2026-04-15"
-        assert body["end"]["date"] == "2026-04-15"
+        # Planner now returns next day for all-day end date as per GCal API best practice
+        assert body["end"]["date"] == "2026-04-16"
 
     def test_create_event_strips_time_portion(self):
         """Calendar API rejects timestamps in date-only fields."""
@@ -550,6 +551,9 @@ class TestExecutionPipelines:
         config = _config(tmp_path)
         # Set a specific default email in config
         config.default_recipient_email = "strict-default@example.com"
+        # Disable read-only mode and sandbox so the send_message task isn't blocked or prompted in the test
+        config.read_only_mode = False
+        config.sandbox_enabled = False
 
         runner = FakeRunner()
         executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"), config=config)

@@ -35,14 +35,17 @@ class TestSearchUnit:
             def __init__(self, num_results: int) -> None:
                 self.num_results = num_results
 
-            def invoke(self, payload):
+            def run(self, payload):
                 raise RuntimeError("ddg unavailable")
+
+            def invoke(self, payload):
+                return self.run(payload)
 
         class FakeTavily:
             def __init__(self, max_results: int) -> None:
                 self.max_results = max_results
 
-            def invoke(self, payload):
+            def run(self, payload):
                 return {
                     "results": [
                         {
@@ -53,10 +56,13 @@ class TestSearchUnit:
                     ]
                 }
 
+            def invoke(self, payload):
+                return self.run(payload)
+
         mocker.patch.object(ws, "HAS_DDG", True)
         mocker.patch.object(ws, "HAS_TAVILY", True)
-        mocker.patch.object(ws, "DuckDuckGoSearchResults", FailingDuckDuckGo)
-        mocker.patch.object(ws, "TavilySearchResults", FakeTavily)
+        mocker.patch.object(ws, "DuckDuckGoSearchResults", FailingDuckDuckGo, create=True)
+        mocker.patch.object(ws, "TavilySearchResults", FakeTavily, create=True)
         mocker.patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}, clear=False)
 
         result = web_search_tool.invoke({"query": "test fallback"})

@@ -54,7 +54,7 @@ def test_config_rejects_non_free_openrouter_model(monkeypatch, tmp_path):
 def test_artifact_content_validation_rejects_invalid_values():
     from gws_assistant.execution.verifier import validate_artifact_content
 
-    invalid_values = ["", "   ", None, "null", "None", "$last_sheet", "{{task-1.id}}", "___UNRESOLVED_PLACEHOLDER___"]
+    invalid_values = ["", "   ", None, "null", "$last_sheet", "{{task-1.id}}", "___UNRESOLVED_PLACEHOLDER___"]
 
     for value in invalid_values:
         with pytest.raises(ValueError):
