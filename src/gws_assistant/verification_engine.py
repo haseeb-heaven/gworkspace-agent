@@ -216,7 +216,7 @@ class VerificationEngine:
                     for row in values:
                         if isinstance(row, list):
                             for cell in row:
-                                if cell is not None and cls._is_placeholder(str(cell)):
+                                if cell is not None and str(cell).strip() and cls._is_placeholder(str(cell)):
                                     print(f"DEBUG: Placeholder found in values: '{cell}', full params: {params}")
                                     raise VerificationError(tool_name, f"Placeholder found in values: {cell}", "values")
 
