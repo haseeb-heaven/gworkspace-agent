@@ -298,7 +298,7 @@ print(summary)"""
                 parameters={
                     "to_email": recipient,
                     "subject": f"Drive Metadata Summary: {query}",
-                    "body": "Here is the summary you requested:\n\n{{task-2.result}}"
+                    "body": "Here is the summary you requested:\n\n{{task-2.stdout}}"
                 },
                 reason="Email the metadata summary table."
             )
