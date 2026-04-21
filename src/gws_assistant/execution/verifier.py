@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 _INVALID_STRING_PATTERNS = (
     re.compile(r"^\s*$"),
-    re.compile(r"^\s*(none|null|nan|undefined)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(null|nan|undefined)\s*$", re.IGNORECASE),
     re.compile(r"___UNRESOLVED_PLACEHOLDER___"),
     re.compile(r"\{\{[^{}]+\}\}"),
     re.compile(r"(?<![\w$])\$[A-Za-z_][A-Za-z0-9_.-]*"),
