@@ -207,7 +207,7 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
+        exclusion_words = ("count", "metadata", "no file content", "do not download", "names only", "file summary", "list summary")
         skip_export = any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in exclusion_words)
 
         if skip_export:
