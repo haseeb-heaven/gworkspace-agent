@@ -68,23 +68,36 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
     logger.info(f"Starting command execution for task: {task_text[:50]}...")
     await update.effective_message.reply_text("Received task. Processing...")
 
+    config = context.bot_data.get("config")
+    timeout = 300
+    if config and hasattr(config, "gws_timeout_seconds") and config.gws_timeout_seconds > 0:
+        timeout = config.gws_timeout_seconds
+
     try:
         # Execute gws_cli.py --task asynchronously
         # Use sys.executable to ensure the same Python environment
+        import os
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+
         process = await asyncio.create_subprocess_exec(
-            sys.executable, "gws_cli.py", "--task", task_text,
+            sys.executable, "gws_cli.py", "--task", task_text, "--read-write", "--no-sandbox",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            env=env
         )
 
         # Execute gws_cli.py until it naturally finishes
         try:
-            stdout_bytes, stderr_bytes = await process.communicate()
-        except Exception as e:
-            logger.error(f"Error during process communication: {e}")
-            process.kill()
-            await process.communicate()
-            await update.effective_message.reply_text(f"Error during task execution: {str(e)}")
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+                await process.wait()
+            except Exception:
+                pass
+            logger.error(f"Task timed out after {timeout} seconds: {task_text[:50]}")
+            await update.effective_message.reply_text(f"Error: Task timed out after {timeout}s.")
             return
 
         stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
@@ -94,7 +107,12 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
 
         if process.returncode != 0:
             logger.error(f"Task failed with exit code {process.returncode}. Stderr: {stderr}")
-            await update.effective_message.reply_text(f"Task failed with exit code {process.returncode}.")
+            # If we have stderr, show it, otherwise show a generic error
+            msg = f"Task failed with exit code {process.returncode}."
+            if stderr:
+                msg += f"\n\nDetails:\n{stderr}"
+            await update.effective_message.reply_text(msg)
+            return
 
         output = stdout if stdout else stderr
         await split_and_send(update, output)
