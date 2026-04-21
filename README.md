@@ -31,142 +31,11 @@ An intelligent, agentic CLI and GUI for Google Workspace automation powered by a
 
 ---
 
-## Prerequisites
+## 🚀 Getting Started
 
-Before you begin, ensure you have the following installed and available:
+To set up the Google Workspace Agent, including Google Cloud credentials and the required CLI tools, please refer to the detailed guide:
 
-| Requirement | Version | Notes |
-|---|---|---|
-| **Python** | `>= 3.10` | `3.11` recommended |
-| **gws CLI** | Latest | [Google Workspace CLI](https://github.com/googleworkspace/cli) — must be on `PATH` or configured via `GWS_BINARY_PATH` |
-| **OpenRouter API Key** | — | Free tier available at [openrouter.ai](https://openrouter.ai). Required for LLM planning. |
-| **Tavily API Key** | Optional | For enhanced web search. Falls back to DuckDuckGo if not set. |
-| **Telegram Bot Token** | Optional | Only required if using the Telegram interface. |
-| **E2B API Key** | Optional | Only required if using `CODE_EXECUTION_BACKEND=e2b`. |
-
-> ℹ️ The agent works without an API key using the built-in **heuristic fallback** planner — but LLM-based planning is strongly recommended for complex multi-step tasks.
-
----
-
-## Installation
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/haseeb-heaven/gworkspace-agent.git
-cd gworkspace-agent
-git checkout develop
-```
-
-### 2. Create and activate a virtual environment
-
-```bash
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
-
-# macOS / Linux
-python -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install the package and dependencies
-
-```bash
-pip install -e .
-```
-
-To also install development/test dependencies:
-
-```bash
-pip install -e ".[dev]"
-```
-
-Or using `requirements.txt` if available:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Copy the environment template
-
-```bash
-# Windows
-copy .env.example .env
-
-# macOS / Linux
-cp .env.example .env
-```
-
-### 5. Run the interactive setup wizard
-
-This is the **easiest and recommended** way to configure the agent. It walks you through all required settings and writes your `.env` file automatically.
-
-```bash
-python gws_cli.py --setup
-```
-
-The wizard will:
-- Detect or ask for the path to the `gws` binary
-- Ask for your OpenRouter API key and model
-- Ask for optional keys (Tavily, Telegram, E2B)
-- Save everything to `.env`
-
----
-
-## Configuration
-
-All configuration is controlled via the `.env` file. The most important variables are:
-
-### Core Settings
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENROUTER_API_KEY` | ✅ Yes | — | Your OpenRouter API key for LLM planning |
-| `OPENROUTER_MODEL` | ✅ Yes | `openrouter/free` | Model to use (e.g. `nvidia/nemotron-super-49b-v1:free`) |
-| `OPENROUTER_BASE_URL` | ✅ Yes | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
-| `GWS_BINARY_PATH` | ✅ Yes | `gws` | Full path to the `gws` CLI binary |
-| `LANGCHAIN_ENABLED` | No | `true` | Set to `false` to use heuristic-only planning |
-
-### Optional Settings
-
-| Variable | Default | Description |
-|---|---|---|
-| `TAVILY_API_KEY` | — | Enhanced web search via Tavily (falls back to DuckDuckGo) |
-| `DEFAULT_RECIPIENT_EMAIL` | — | Fallback email recipient when not specified in the prompt |
-| `CODE_EXECUTION_ENABLED` | `true` | Enable or disable sandboxed Python code execution |
-| `CODE_EXECUTION_BACKEND` | `local` | `local`, `restricted_subprocess`, `docker`, or `e2b` |
-| `E2B_API_KEY` | — | Required only when `CODE_EXECUTION_BACKEND=e2b` |
-| `MAX_RETRIES` | `3` | Number of retries for failed Workspace API calls |
-| `LLM_TIMEOUT_SECONDS` | `30` | Timeout for LLM API calls in seconds |
-| `LOG_LEVEL` | `INFO` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `LOG_FILE_PATH` | `logs/gws_assistant.log` | Path to the rotating log file |
-
-### Telegram Settings (Bot interface only)
-
-| Variable | Description |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/botfather) |
-| `TELEGRAM_CHAT_ID` | Your Telegram chat ID (whitelist — bot rejects all others) |
-
-See `.env.example` for the complete template with all available variables.
-
----
-
-## Quick Start
-
-### Setup in 3 steps
-
-```bash
-# 1. Install
-pip install -e .
-
-# 2. Run setup wizard
-python gws_cli.py --setup
-
-# 3. Run your first task
-python gws_cli.py --task "List my 5 most recent Gmail messages"
-```
+👉 **[Read the SETUP.md Guide](./SETUP.md)**
 
 ---
 
@@ -580,83 +449,14 @@ flowchart TD
 
 ## Troubleshooting
 
-### `gws binary not found`
+For detailed troubleshooting and common issues, please see the **[Troubleshooting section in SETUP.md](./SETUP.md#troubleshooting)**.
 
-```
-Setup Error: gws binary not found at: gws
-```
+### Common Quick Fixes
 
-**Fix:** Install the [Google Workspace CLI](https://github.com/googleworkspace/cli) and either:
-- Add it to your system `PATH`, or
-- Set `GWS_BINARY_PATH=/full/path/to/gws` in your `.env`
-
-Then re-run:
-```bash
-python gws_cli.py --setup
-```
-
----
-
-### `No LLM API key configured`
-
-```
-No LLM API key is configured. Planning will fall back to local heuristics.
-```
-
-**Fix:** Add your OpenRouter key to `.env`:
-```env
-OPENROUTER_API_KEY=sk-or-...
-```
-
-Or run without LLM using heuristic mode:
-```bash
-python gws_cli.py --no-langchain --task "your task"
-```
-
----
-
-### `Setup is missing or incomplete`
-
-```
-Setup Required: Expected config file: .env
-```
-
-**Fix:** Run the setup wizard:
-```bash
-python gws_cli.py --setup
-```
-
----
-
-### Tests showing `0 selected / N deselected`
-
-This happens when tests have no service marker and the default pytest filter excludes them.
-
-**Fix:** Add a marker to your test or module:
-
-```python
-# Per test
-@pytest.mark.drive
-def test_something():
-    ...
-
-# Per module (top of file)
-pytestmark = pytest.mark.drive
-```
-
-To run ALL tests ignoring marker filters:
-```bash
-python -m pytest -m ""
-```
-
----
-
-### Telegram bot not responding
-
-1. Confirm `TELEGRAM_BOT_TOKEN` is correct in `.env`
-2. Confirm `TELEGRAM_CHAT_ID` matches your actual Telegram chat ID
-3. The bot will silently drop all messages from unauthorized chat IDs by design
-4. Check logs at `logs/gws_assistant.log` for `Unauthorized access attempt` entries
+- **`gws binary not found`**: Ensure `gws` is in your PATH or configured in `.env`.
+- **`No LLM API key configured`**: Add `OPENROUTER_API_KEY` to `.env`.
+- **`Setup Required`**: Run `python gws_cli.py --setup`.
+- **Tests showing `0 selected / N deselected`**: Run `python -m pytest -m ""` to run all tests.
 
 ---
 
