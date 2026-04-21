@@ -152,6 +152,19 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern A1: Drive Metadata Only (e.g. counts, tables, summaries)
+        if "drive" in services and _is_metadata_only_request(lowered):
+            tasks = self._drive_metadata_computation_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
+                confidence=0.75,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Pattern A-Metadata: Drive Metadata -> Code -> Gmail
         if "drive" in services and "gmail" in services and _is_drive_metadata_to_email_request(lowered):
             tasks = self._drive_metadata_to_gmail_tasks(text, lowered)
@@ -241,6 +254,53 @@ class WorkspaceAgentSystem:
             confidence=0.4,
             no_service_detected=False,
         )
+
+    def _drive_metadata_computation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _drive_query_from_text(text)
+        recipient = self.config.default_recipient_email
+
+        # Determine the action required
+        code_script = "print('Processing metadata:\\n' + str($drive_summary_values))"
+        if "count" in lowered:
+            code_script = "data = $drive_summary_values\nprint(f'Counted {len(data) - 1 if len(data) > 1 else 0} files matching the query.')"
+        elif "table" in lowered or "summary" in lowered:
+            code_script = "data = $drive_summary_values\nif len(data) <= 1:\n    print('No files found.')\nelse:\n    print('Files Summary:')\n    for row in data[1:]:\n        print(f'- {row[0]} ({row[1]})')"
+
+        tasks = [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": 50},
+                reason="Search for files to retrieve metadata."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="code",
+                action="execute",
+                parameters={
+                    "code": code_script
+                },
+                reason="Compute over metadata."
+            )
+        ]
+
+        if any(kw in lowered for kw in ("email", "send", "mail")):
+            tasks.append(
+                PlannedTask(
+                    id="task-3",
+                    service="gmail",
+                    action="send_message",
+                    parameters={
+                        "to_email": recipient,
+                        "subject": f"Drive Metadata Report: {query}",
+                        "body": "Here is the computed metadata result:\n\n$last_code_stdout"
+                    },
+                    reason="Email the computed metadata result."
+                )
+            )
+
+        return tasks
 
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
@@ -721,6 +781,12 @@ def _is_sheet_to_email_request(text: str) -> bool:
 def _is_drive_folder_move_request(text: str) -> bool:
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
 
+
+def _is_metadata_only_request(text: str) -> bool:
+    """Detect requests that combine Drive search/listing with metadata-only intent."""
+    has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
+    has_metadata_intent = any(t in text for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list"))
+    return has_drive_intent and has_metadata_intent
 
 def _is_sheet_creation_request(text: str) -> bool:
     # Avoid matching "create email" or "create doc"
