@@ -18,8 +18,8 @@ An intelligent, agentic CLI and GUI for Google Workspace automation powered by a
 - [Quick Start](#quick-start)
 - [Interfaces](#interfaces)
   - [CLI — Terminal Interface](#1-cli--terminal-interface)
-  - [Desktop GUI — CustomTkinter](#2-desktop-gui--customtkinter)
-  - [Gradio — Browser Web UI](#3-gradio--browser-web-ui)
+  - [Python Desktop GUI — gws_gui.py](#2-python-desktop-gui--gws_guipy)
+  - [Web-based GUI — gws_gui_web.py](#3-web-based-gui--gws_gui_webpy)
   - [Telegram Bot](#4-telegram-bot)
 - [Running Tests](#running-tests)
 - [Example Workflows](#example-workflows)
@@ -80,11 +80,9 @@ python gws_cli.py
 python gws_cli.py --task "Search Drive for all .qvm files, count them, build a table, and email it to me"
 ```
 
-#### Launch (heuristic mode — no API key required)
+#### CLI Demo
 
-```bash
-python gws_cli.py --no-langchain --task "List my Drive files and save them to a new Sheet"
-```
+![CLI Demo](assets/cli_demo.png)
 
 #### Available flags
 
@@ -94,35 +92,14 @@ python gws_cli.py --no-langchain --task "List my Drive files and save them to a 
 | `--setup` | Run the interactive setup wizard |
 | `--no-langchain` | Disable LLM — use heuristic planner only |
 | `--save-output FILE` | Append all output to a file |
-
-#### CLI Demo
-
-![CLI Demo](assets/cli_demo.png)
-
-#### Example session
-
-```
-$ python gws_cli.py
-
-╭─────────────────────────────────────────────────────────╮
-│         Google Workspace Assistant — Ready               │
-╰─────────────────────────────────────────────────────────╯
-
-You: List my unread emails about invoices and save them to a Google Sheet
-
-Agent:
-  [1] gmail.list_messages   → Searching for unread invoice emails...
-  [2] sheets.create         → Creating new spreadsheet...
-  [3] sheets.append_values  → Writing 7 rows to sheet...
-
-✅ Done. Sheet: https://docs.google.com/spreadsheets/d/...
-```
+| `--read-write` | Disable read-only mode for the session |
+| `--no-sandbox` | Disable interactive confirmation prompts |
 
 ---
 
-### 2. Desktop GUI — CustomTkinter
+### 2. Python Desktop GUI — gws_gui.py
 
-A native desktop application with a point-and-click interface. Useful for users who prefer visual interaction.
+A native desktop application built with `CustomTkinter`. It provides a structured way to analyze natural language requests, select GWS services/actions manually, and view formatted execution logs in a dark-themed window.
 
 #### Launch
 
@@ -130,51 +107,39 @@ A native desktop application with a point-and-click interface. Useful for users 
 python gws_gui.py
 ```
 
-Or using the installed entry point:
+#### Python GUI Demo
 
-```bash
-gws-assistant-gui
-```
+![Desktop GUI Demo](assets/gui_desktop_demo.png)
 
-#### What it looks like
+#### Features
+- **Analyze Request**: Automatically detects the intended service and action from your text.
+- **Manual Overrides**: Fine-tune the detected parameters or select actions from dropdowns.
+- **Real-time Console**: Watch the raw `gws` commands and API responses as they happen.
 
-- Text box to enter natural language requests
-- Service and action dropdowns for manual selection
-- Analyze and Execute buttons
-- Output panel with formatted results
-
-> ℹ️ Requires a display environment. Will not work over SSH without X forwarding or a virtual display.
+> ℹ️ Requires a display environment. Will not work over SSH without X forwarding.
 
 ---
 
-### 3. Gradio — Browser Web UI
+### 3. Web-based GUI — gws_gui_web.py
 
-A browser-based chat UI. Ideal for demos, remote access, and sharing with non-technical users.
+A modern, browser-based chat interface powered by `Gradio`. Ideal for quick research tasks, remote access, and sharing the agent's capabilities via a public URL.
 
 #### Launch (local)
 
 ```bash
-python gws_gradio.py
+python gws_gui_web.py
 ```
 
 Then open: [http://localhost:7860](http://localhost:7860)
 
-#### Launch (custom host/port)
+#### Web GUI Demo
+
+![Web GUI Demo](assets/gui_web_demo.png)
+
+#### Launch (public share link)
 
 ```bash
-python gws_gradio.py --host 0.0.0.0 --port 8080
-```
-
-#### Launch (public share link via Gradio tunnel)
-
-```bash
-python gws_gradio.py --share
-```
-
-#### Or using the installed entry point
-
-```bash
-gws-assistant-gradio
+python gws_gui_web.py --share
 ```
 
 #### Run with Docker
@@ -183,176 +148,37 @@ gws-assistant-gradio
 docker build -t gws-agent .
 docker run -p 8080:8080 \
   -e OPENROUTER_API_KEY=your_key \
-  -e OPENROUTER_MODEL=openrouter/free \
   -e GWS_BINARY_PATH=/usr/local/bin/gws \
   gws-agent
-```
-
-Then open: [http://localhost:8080](http://localhost:8080)
-
-#### Gradio Demo
-
-![Gradio Demo](assets/gui_demo.png)
-
-#### Example
-
-```
-Browser → http://localhost:7860
-
-Input:  "Find all Drive files with .doc extension and email me a count summary"
-
-Output: ✅ Found 42 .doc files across your Drive.
-        Summary table emailed to user@gmail.com.
 ```
 
 ---
 
 ### 4. Telegram Bot
 
-A secure Telegram bot interface. Only responds to a whitelisted Chat ID set in `.env`.
-
-#### Prerequisites
-
-1. Create a bot via [@BotFather](https://t.me/botfather) and copy the token.
-2. Get your Chat ID (send `/start` to [@userinfobot](https://t.me/userinfobot)).
-3. Add to `.env`:
-
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-TELEGRAM_CHAT_ID=your_chat_id_here
-```
+A secure Telegram bot interface. Only responds to a whitelisted Chat ID set in `.env`. It spawns a background `gws_cli.py` process for every request.
 
 #### Launch
 
 ```bash
-python -m gws_assistant.telegram_app
+python gws_telegram.py
 ```
 
-#### Available Telegram commands
-
-| Command | Description |
-|---|---|
-| `/start` | Show welcome message |
-| `/help` | Show available commands |
-| `/mail <task>` | Run a Gmail task |
-| `/docs <task>` | Run a Google Docs task |
-| `/sheet <task>` | Run a Google Sheets task |
-| `/calendar <task>` | Run a Calendar task |
-| `/notes <task>` | Run a Google Keep task |
-
-Or just send any natural language message directly to the bot.
-
-#### Example
-
-```
-You → Bot:  /mail Show my 5 most recent emails
-
-Bot → You:  📬 Found 5 messages:
-            1. Subject: Invoice #1042 | From: billing@acme.com
-            2. Subject: Team standup | From: manager@co.com
-            ...
-```
-
-> ⚠️ The bot rejects all messages from chat IDs that do not match `TELEGRAM_CHAT_ID`. If `TELEGRAM_CHAT_ID` is not set, the bot blocks all messages by default.
+> ⚠️ The bot rejects all messages from chat IDs that do not match `TELEGRAM_CHAT_ID`.
 
 ---
 
 ## Running Tests
 
-### Default test run
-
 ```bash
 python -m pytest
 ```
 
-### Understanding pytest markers
-
-This repo uses **service markers** to categorize tests. The default `pytest.ini` filter only runs tests marked with specific service markers:
-
-```
-not manual and not live_integration and (gmail or docs or sheets or drive or calendar or tasks or keep)
-```
-
-This means **unmarked tests will be deselected** by default. All tests must have at least one service marker to run under the default filter.
-
-### Available markers
-
-| Marker | Meaning |
-|---|---|
-| `@pytest.mark.gmail` | Gmail-related tests |
-| `@pytest.mark.drive` | Google Drive-related tests |
-| `@pytest.mark.sheets` | Google Sheets-related tests |
-| `@pytest.mark.docs` | Google Docs-related tests |
-| `@pytest.mark.calendar` | Calendar-related tests |
-| `@pytest.mark.tasks` | Google Tasks-related tests |
-| `@pytest.mark.keep` | Google Keep-related tests |
-| `@pytest.mark.live_integration` | Tests that call real Google APIs (excluded by default) |
-| `@pytest.mark.manual` | Tests requiring human interaction (excluded by default) |
-
-### Run only Drive tests
-
-```bash
-python -m pytest -m drive
-```
-
-### Run all tests including live integration
-
-```bash
-python -m pytest -m ""
-```
-
-### Run a specific test file
-
-```bash
-python -m pytest tests/test_agent_system.py -v
-```
-
-### Tip: Fixing deselected tests
-
-If your tests show `0 selected / N deselected`, add a marker to your test:
-
-```python
-import pytest
-
-@pytest.mark.drive
-def test_my_drive_feature():
-    ...
-```
-
-Or at module level to mark all tests in the file:
-
-```python
-import pytest
-
-pytestmark = pytest.mark.drive
-```
+> ℹ️ Unmarked tests are deselected by default. Run `python -m pytest -m ""` to include live integration tests.
 
 ---
 
 ## Example Workflows
-
-### Email + Sheets pipeline
-
-```text
-Input: "Get my 10 latest unread emails about invoices and save them to a new Google Sheet"
-
-Plan:
-  [1] gmail.list_messages  → Search for unread invoice emails
-  [2] sheets.create        → Create new spreadsheet
-  [3] sheets.append_values → Write rows using $gmail_summary_values
-```
-
-### Drive metadata analysis (no file download)
-
-```text
-Input: "Search Drive for all files with .xls extension, count them,
-        build a summary table, and email it to me. Do not download any files."
-
-Plan:
-  [1] drive.list_files  → Metadata-only search, page_size=50
-  [2] code.execute      → Count files, format Markdown table
-  [3] gmail.send        → Email the table output
-```
 
 ### Research → Docs → Sheets → Email
 
@@ -367,63 +193,6 @@ Plan:
   [4] gmail.send        → Email with Doc + Sheet links
 ```
 
-### Heuristic fallback (no API key)
-
-```text
-Input: "List my Drive files and append them to an existing spreadsheet."
-
-Plan (heuristic mode):
-  [1] drive.list_files        → Lists all Drive files
-  [2] sheets.append_values    → Appends using $drive_summary_values placeholder
-```
-
----
-
-## Project Structure
-
-```text
-.
-├── gws_cli.py                  # Main CLI launcher
-├── gws_gui.py                  # Desktop GUI launcher (CustomTkinter)
-├── gws_gradio.py               # Gradio web UI launcher
-├── Dockerfile                  # Docker image for Gradio deployment
-├── pyproject.toml              # Package config and dependencies
-├── requirements.txt            # Pip requirements
-├── pytest.ini                  # Test configuration and markers
-├── .env.example                # Environment variable template
-│
-└── src/
-    └── gws_assistant/
-        ├── __init__.py
-        ├── __main__.py
-        ├── agent_system.py         # ReAct planning core (LLM + heuristic)
-        ├── cli_app.py              # Rich terminal UI
-        ├── gui_app.py              # CustomTkinter desktop GUI
-        ├── gradio_app.py           # Gradio browser UI
-        ├── telegram_app.py         # Telegram polling bot
-        ├── config.py               # .env loading and validation
-        ├── conversation.py         # Orchestration engine
-        ├── execution.py            # Task expansion and placeholder resolution
-        ├── gws_runner.py           # gws subprocess runner (retry, backoff)
-        ├── langgraph_workflow.py   # LangGraph DAG orchestration
-        ├── langchain_agent.py      # LangChain planner
-        ├── models.py               # Typed task/plan models
-        ├── output_formatter.py     # Human-readable output (tables, summaries)
-        ├── planner.py              # Command argument builder
-        ├── service_catalog.py      # Service + action definitions
-        ├── setup_wizard.py         # Interactive setup flow
-        └── logging_utils.py        # Structured logging setup
-│
-└── tests/
-    ├── test_agent_system.py        # Agent planning and heuristic tests
-    ├── test_langchain_agent.py     # LangChain planner tests
-    ├── test_langgraph_workflow.py  # LangGraph DAG tests
-    ├── test_execution.py           # Executor and placeholder tests
-    ├── test_heuristic.py           # Heuristic fallback tests
-    ├── test_config.py              # Config loading tests
-    └── test_retry.py               # GWS runner retry tests
-```
-
 ---
 
 ## Architecture
@@ -432,7 +201,7 @@ Plan (heuristic mode):
 
 ```mermaid
 flowchart TD
-    A["👤 User Request (CLI / GUI / Gradio / Telegram)"] --> B["🧠 Planner\nLLM (OpenRouter) or Heuristic fallback"]
+    A["👤 User Request (CLI / GUI / Web / Telegram)"] --> B["🧠 Planner\nLLM (OpenRouter) or Heuristic fallback"]
     B --> C["🔍 Executor\nResolve placeholders & context"]
     C --> D["⚡ GWS Runner\nSubprocess call to gws binary"]
     D --> E["📊 Verification\nTriple-check outcome integrity"]
@@ -440,81 +209,3 @@ flowchart TD
     F --> G{"More tasks?"}
     G -->|Yes| C
     G -->|No| H["📋 Output\nFormat and return results"]
-
-    style A fill:#e94560,color:#fff
-    style H fill:#0f3460,color:#fff
-```
-
-### Key Modules
-
-| Module | Responsibility |
-|---|---|
-| `WorkspaceAgentSystem` | Orchestrates planning — LLM-first with heuristic fallback |
-| `PlanExecutor` | Resolves `$placeholders`, expands batch tasks, injects context |
-| `GWSRunner` | Executes `gws` subprocess with retries, backoff, and large-arg handling |
-| `LangGraphWorkflow` | DAG-based conditional routing between Search, Code, and API tasks |
-| `LongTermMemory` | Cross-session context via local JSONL + optional Mem0 |
-
----
-
-## Supported Services
-
-| Service | Actions | Notes |
-|---|---|---|
-| **Gmail** | `list_messages`, `get_message`, `send_message` | Full read/write |
-| **Google Drive** | `list_files`, `get_file`, `export_file`, `create_folder`, `delete_file` | Metadata-only mode supported |
-| **Google Sheets** | `create_spreadsheet`, `get_values`, `append_values` | Placeholder injection supported |
-| **Google Docs** | `get_document`, `create_document`, `batch_update` | |
-| **Google Calendar** | `list_events`, `create_event` | |
-| **Google Slides** | `get_presentation` | |
-| **Google Contacts** | `list_contacts` | |
-| **Google Tasks** | `list_tasks` | |
-| **Web Search** | `web_search` | DuckDuckGo (default) or Tavily |
-| **Code Execution** | `code.execute` | RestrictedPython sandbox |
-
----
-
-## Troubleshooting
-
-For detailed troubleshooting and common issues, please see the **[Troubleshooting section in SETUP.md](./SETUP.md#troubleshooting)**.
-
-### Common Quick Fixes
-
-- **`gws binary not found`**: Ensure `gws` is in your PATH or configured in `.env`.
-- **`No LLM API key configured`**: Add `OPENROUTER_API_KEY` to `.env`.
-- **`Setup Required`**: Run `python gws_cli.py --setup`.
-- **Tests showing `0 selected / N deselected`**: Run `python -m pytest -m ""` to run all tests.
-
----
-
-## Branch Comparison
-
-| Feature | `develop` | `crew-ai` | `langchain-ai` |
-|---|---|---|---|
-| LLM Framework | LangChain + LangGraph | CrewAI | LangChain + LangGraph |
-| Internet Web Search | ✅ DuckDuckGo / Tavily | ✅ | ✅ |
-| Sandboxed Code Execution | ✅ RestrictedPython | ✅ | ✅ |
-| Telegram Bot | ✅ | ❌ | ✅ |
-| Long-Term Memory | ✅ JSONL + Mem0 | ❌ | ✅ |
-| Heuristic Fallback | ✅ | ✅ | ✅ |
-| Retry / Backoff | ✅ | ❌ | ✅ |
-| Metadata-Only Drive Workflows | ✅ | ❌ | ❌ |
-| Best For | Active development | Multi-step automation | Research + compute pipelines |
-
----
-
-## Changelog
-
-See [CHANGELOG.md](https://github.com/haseeb-heaven/gworkspace-agent/blob/master/CHANGELOG.md) for full release history.
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
-
----
-
-## Author
-
-Built and maintained by [Haseeb-Heaven](https://github.com/haseeb-heaven).
