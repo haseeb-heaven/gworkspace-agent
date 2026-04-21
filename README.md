@@ -95,6 +95,10 @@ python gws_cli.py --no-langchain --task "List my Drive files and save them to a 
 | `--no-langchain` | Disable LLM — use heuristic planner only |
 | `--save-output FILE` | Append all output to a file |
 
+#### CLI Demo
+
+![CLI Demo](assets/cli_demo.png)
+
 #### Example session
 
 ```
@@ -185,6 +189,10 @@ docker run -p 8080:8080 \
 ```
 
 Then open: [http://localhost:8080](http://localhost:8080)
+
+#### Gradio Demo
+
+![Gradio Demo](assets/gui_demo.png)
 
 #### Example
 
