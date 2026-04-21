@@ -4,7 +4,11 @@ import logging
 import os
 from pathlib import Path
 
+import pytest
+
 from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
+
+pytestmark = pytest.mark.drive
 from gws_assistant.models import AppConfigModel
 
 
@@ -60,3 +64,64 @@ def test_agent_disables_heuristics_when_flag_false(tmp_path):
     plan = agent.plan("Find tickets in Gmail")
     assert plan.no_service_detected is True
     assert "disabled" in plan.summary.lower()
+
+def test_agent_plans_metadata_only_count_by_extension(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("Search Drive, count files by extension and email the result")
+
+    assert plan.no_service_detected is False
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "export_file" not in actions
+    assert "send_message" in actions
+
+def test_agent_plans_metadata_only_list_names_table(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("Search my drive files, list names only and build a table and send email")
+
+    assert plan.no_service_detected is False
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "export_file" not in actions
+    assert "send_message" in actions
+
+def test_agent_plans_metadata_only_no_download(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("Search Drive, get metadata only, no download, then summarize and email")
+
+    assert plan.no_service_detected is False
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "export_file" not in actions
+    assert "send_message" in actions
+
+def test_agent_plans_metadata_only_summary_no_content(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("search Drive and send only the summary, not file content to email")
+
+    assert plan.no_service_detected is False
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "export_file" not in actions
+    assert "send_message" in actions
+
+
+def test_agent_plans_content_extraction_when_requested(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("get the document and email the content")
+
+    assert plan.no_service_detected is False
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "export_file" in actions
+    assert "send_message" in actions
+
+def test_agent_plans_ambiguous_prompt_forbidding_download(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("check drive but do not download anything and send me an email")
+
+    assert plan.no_service_detected is False
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "export_file" not in actions
+    assert "send_message" in actions
