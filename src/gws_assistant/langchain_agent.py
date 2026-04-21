@@ -375,7 +375,7 @@ def plan_with_langchain(
         "STRICT RULES:\n"
         "1. ONLY use service keys and action keys EXACTLY as listed in the catalog above. "
         "2. PARAMETERS: provide a 'parameters' object containing ALL 'required' parameters. "
-        "3. PYTHON CODE: in code.execute, write standard, valid Python. "
+        "3. PYTHON CODE: in code.execute, write standard, valid Python. Do NOT use JavaScript keywords like 'const', 'let', or 'return' at the top level. "
         "4. SEQUENTIAL PLAN: reference prior outputs with {{{{task-N.field}}}} (e.g. {{{{task-1.id}}}}). "
         "5. BULK OPERATIONS: for lists, use {{{{task-N.files.id}}}} (Drive) or {{{{task-N.messages.id}}}} (Gmail) to trigger auto-expansion. "
         "6. DRIVE QUERIES: use 'q' parameter for drive.list_files. "
