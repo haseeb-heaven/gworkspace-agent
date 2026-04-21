@@ -266,7 +266,7 @@ $last_export_file_content"""
         recipient = self.config.default_recipient_email
         page_size = _first_int(lowered) or 50
 
-        code = """files = {{task-1.result}}
+        code = """files = {{task-1.files}}
 count = len(files)
 table = "Name | ID | MimeType\\n"
 table += "-" * 50 + "\\n"
