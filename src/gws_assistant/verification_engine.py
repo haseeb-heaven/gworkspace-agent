@@ -25,7 +25,7 @@ class VerificationEngine:
     ]
 
     EXACT_PLACEHOLDERS = {
-        "none", "null", "n/a", "na", "undefined",
+        "null", "n/a", "na", "undefined",
         "todo", "fixme", "placeholder", "example", "sample", "dummy",
         "your_value", "insert_here", "replace_me", "changeme", "default",
         "fake", "mock", "temporary", "tbd", "unknown", "missing"
