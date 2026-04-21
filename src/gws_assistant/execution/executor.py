@@ -124,11 +124,14 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         if parents and isinstance(parents, list):
                             context["fetch_parents"] = ",".join(parents)
                         else:
-                            context["fetch_parents"] = "root"
+                            from gws_assistant.models import ExecutionResult
+                            return ExecutionResult(success=False, command=["drive", "files", "update"], error="Failed to lookup current file parents: No parents returned.")
                     else:
-                        context["fetch_parents"] = "root"
-                except Exception:
-                    context["fetch_parents"] = "root"
+                        from gws_assistant.models import ExecutionResult
+                        return ExecutionResult(success=False, command=["drive", "files", "update"], error="Failed to lookup current file parents: API call failed.")
+                except Exception as e:
+                    from gws_assistant.models import ExecutionResult
+                    return ExecutionResult(success=False, command=["drive", "files", "update"], error=f"Failed to lookup current file parents: {e}")
 
         # 2. Build the command using already-resolved parameters
         try:
