@@ -206,21 +206,30 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        send_params: dict[str, Any] = {
-            "to_email": recipient,
-            "subject": f"Document: {query}",
-            "body": """Hi,
+        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
+        skip_export = any(word in lowered for word in exclusion_words)
+
+        if skip_export:
+            body_content = """Hi,
+
+Here are the files found:
+
+$drive_summary_values"""
+        else:
+            body_content = """Hi,
 
 Please find the content below:
 
 $last_export_file_content"""
+
+        send_params: dict[str, Any] = {
+            "to_email": recipient,
+            "subject": f"Document: {query}",
+            "body": body_content
         }
 
         if "attach" in lowered:
             send_params["attachments"] = ["{{task-1.id}}"]
-
-        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
-        skip_export = any(word in lowered for word in exclusion_words)
 
         tasks = [
             PlannedTask(
