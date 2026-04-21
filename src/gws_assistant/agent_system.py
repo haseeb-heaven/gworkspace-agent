@@ -37,6 +37,29 @@ class WorkspaceAgentSystem:
         from .memory_backend import get_memory_backend
         self.memory = get_memory_backend(config, logger)
 
+    def summarize(self, text: str) -> str:
+        """Summarize text using the configured LLM."""
+        if not text or not self._use_langchain:
+            return text
+
+        try:
+            from .langchain_agent import create_agent
+            model = create_agent(self.config, self.logger)
+            if not model:
+                return text
+
+            prompt = (
+                "Summarize the following information into a concise, well-structured, and informative summary. "
+                "Focus on the key facts, dates, and changes. Do NOT include raw snippets like dates prefixing the text (e.g. 'Jan 1, 2024 ...'). "
+                "Use bullet points for lists. Output ONLY the summary.\n\n"
+                f"Information to summarize:\n{text}"
+            )
+            response = model.invoke(prompt)
+            return getattr(response, "content", str(response)).strip()
+        except Exception as exc:
+            self.logger.warning("Summarization failed: %s", exc)
+            return text
+
     def plan(self, user_text: str) -> RequestPlan:
         from .memory import recall_similar
 

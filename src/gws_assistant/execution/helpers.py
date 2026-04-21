@@ -35,6 +35,8 @@ class HelpersMixin:
 
             context["web_search_markdown"]     = "\n\n".join(markdown_lines)
             context["web_search_table_values"] = table_values
+            context["web_search_rows"]         = table_values # Alias for consistency
+            context["web_search_summary"]      = result_data.get("summary", "")
 
             return ExecutionResult(
                 success=True,
