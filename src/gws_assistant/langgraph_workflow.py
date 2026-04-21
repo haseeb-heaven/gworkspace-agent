@@ -244,36 +244,24 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         attempts = state.get("current_attempt", 0)
         context = dict(state.get("context", {}))
         updates: dict[str, Any] = {}
-        if not error:
-            decision = ReflectionDecision(action="continue", reason="Task completed successfully.")
-        elif "CODE_EXECUTION_ENABLED=false" in str(error):
-            decision = ReflectionDecision(action="continue", reason="Code execution is disabled by configuration.")
-        elif "declined by user in sandbox" in str(error).lower() or "blocked by read-only mode" in str(error).lower() or "declined by user" in str(error).lower():
-            decision = ReflectionDecision(action="continue", reason="Action blocked by safety policy or user. Aborting plan.")
+        
+        decision, abort_plan = executor.reflect_on_error(error, attempts, config.max_retries)
+        
+        if abort_plan:
             updates["abort_plan"] = True
-        elif "unresolved placeholder" in str(error).lower() or "unresolved stub" in str(error).lower():
-            decision = ReflectionDecision(action="continue", reason="Deterministic placeholder error; skip retry.")
-            updates["abort_plan"] = True
-        elif attempts < config.max_retries:
-            # Fix #2 — branch on error type, never blindly retry.
-            # Only transient errors (SERVER, UNKNOWN) are retried.
-            error_str = str(error)
-            error_type = classify_api_error(stderr=error_str, stdout="")
-            if error_type in (APIErrorType.SERVER, APIErrorType.UNKNOWN):
-                decision = ReflectionDecision(action="retry", reason=f"Retrying transient/unknown error ({error_type.value}).")
+            
+        if decision.action == "replan":
+            if state.get("plan") and context.get("replan_count", 0) < config.max_replans:
+                context["replan_count"] = int(context.get("replan_count", 0)) + 1
+                updates["context"] = context
+                updates["current_attempt"] = 0
+                updates["current_task_index"] = 0
+                updates["error"] = None
+                decision.reason = "Retries exhausted, requesting new plan."
             else:
-                decision = ReflectionDecision(action="continue", reason=f"Permanent or specific error ({error_type.value}); skip retry.")
+                decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
                 updates["abort_plan"] = True
-        elif state.get("plan") and context.get("replan_count", 0) < config.max_replans:
-            context["replan_count"] = int(context.get("replan_count", 0)) + 1
-            updates["context"] = context
-            updates["current_attempt"] = 0
-            updates["current_task_index"] = 0
-            updates["error"] = None
-            decision = ReflectionDecision(action="replan", reason="Retries exhausted, requesting new plan.")
-        else:
-            decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
-            updates["abort_plan"] = True
+
         _log_step("reflection", {"error": error, "attempt": attempts}, decision)
         updates["reflection"] = decision
         updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))

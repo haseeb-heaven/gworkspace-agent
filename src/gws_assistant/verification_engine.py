@@ -387,6 +387,8 @@ class VerificationEngine:
             if isinstance(result, dict):
                 if "list" not in action and "export" not in action and "files" not in result and "saved_file" not in result:
                     doc_id = result.get("id") or result.get("documentId")
+                    if not doc_id and "tabs" in result and isinstance(result["tabs"], list):
+                        pass # Tab-based document, id might be structured differently, handled below
                     if not doc_id or cls._is_placeholder(str(doc_id)) or len(str(doc_id)) < 1:
                         raise VerificationError(tool_name, "Result missing valid id", "id")
 

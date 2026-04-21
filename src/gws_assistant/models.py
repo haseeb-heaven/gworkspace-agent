@@ -219,6 +219,7 @@ class AgentState(TypedDict, total=False):
     reflection: ReflectionDecision | None
     current_attempt: int
     thought_trace: list[dict]
+    abort_plan: bool
 
 
 class StructuredToolResult(TypedDict):
