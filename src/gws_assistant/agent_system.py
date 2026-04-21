@@ -208,7 +208,7 @@ class WorkspaceAgentSystem:
         recipient = self.config.default_recipient_email
 
         exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
-        skip_export = any(word in lowered for word in exclusion_words)
+        skip_export = any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in exclusion_words)
 
         if skip_export:
             body_content = """Hi,
