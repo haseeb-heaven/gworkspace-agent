@@ -58,6 +58,17 @@ When writes are allowed (`--read-write`), Sandbox mode intercepts any state-chan
 
 ---
 
+## 🎬 Video Demos
+
+### Automated Product Tour
+![GWS Agent Demo](assets/demo_animated.svg)
+
+The agent includes an **Automated Video Demo System** that can record real usage videos on your machine using OBS Studio.
+
+👉 **[See the Video Recording Guide](./docs/VIDEO_DEMO_GUIDE.md)**
+
+---
+
 ## Interfaces
 
 The agent supports four interfaces. All of them read from the same `.env` configuration.
