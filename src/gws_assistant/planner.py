@@ -361,23 +361,12 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             folder_id = self._required_text(params, "folder_id")
             # In Drive v3, move is accomplished via update with addParents/removeParents.
-            # We must first fetch the current parents.
-            update_params = {"fileId": file_id, "addParents": folder_id}
-            try:
-                gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
-                result = subprocess.run(
-                    [gws_exe, "drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "parents"})],
-                    capture_output=True, timeout=10, text=True
-                )
-                if result.returncode == 0:
-                    data = json.loads(result.stdout)
-                    parents = data.get("parents")
-                    if parents and isinstance(parents, list):
-                        update_params["removeParents"] = ",".join(parents)
-                else:
-                    update_params["removeParents"] = "root"  # fallback: assume root if lookup fails
-            except Exception:
-                update_params["removeParents"] = "root"  # fallback: assume root if lookup fails
+            # The execution engine will intercept this placeholder and fetch parents.
+            update_params = {
+                "fileId": file_id,
+                "addParents": folder_id,
+                "removeParents": "{{fetch_parents}}"
+            }
 
             return [
                 "drive",

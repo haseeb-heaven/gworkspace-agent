@@ -111,6 +111,25 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         if task.service in ("code", "computation"):
             return self._handle_code_execution_task(task, context)
 
+        # Intercept move_file to perform parent lookup safely in the executor
+        if task.service == "drive" and task.action == "move_file":
+            file_id = task.parameters.get("file_id")
+            if file_id:
+                try:
+                    lookup_args = ["drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "parents"})]
+                    lookup_result = self.runner.run(lookup_args)
+                    if lookup_result.success and lookup_result.stdout:
+                        data = json.loads(lookup_result.stdout)
+                        parents = data.get("parents")
+                        if parents and isinstance(parents, list):
+                            context["fetch_parents"] = ",".join(parents)
+                        else:
+                            context["fetch_parents"] = "root"
+                    else:
+                        context["fetch_parents"] = "root"
+                except Exception:
+                    context["fetch_parents"] = "root"
+
         # 2. Build the command using already-resolved parameters
         try:
             args = self.planner.build_command(task.service, task.action, task.parameters)
@@ -162,6 +181,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
                         # Always set content, fallback to path if binary or read failed
                         final_content = file_content if file_content is not None else f"[File: {saved_file}]"
+
+                        self.logger.info("Exported file content for %s. Size: %s", saved_file, len(final_content) if file_content is not None else "N/A (Binary/Path only)")
+
                         data["content"] = final_content
                         data["drive_export_content"] = final_content
                         data["drive_export_path"] = saved_file

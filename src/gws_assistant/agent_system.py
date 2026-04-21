@@ -211,6 +211,7 @@ class WorkspaceAgentSystem:
         skip_export = any(word in lowered for word in exclusion_words)
 
         if skip_export:
+            self.logger.info("Metadata-only mode selected for drive-to-gmail tasks based on exclusion words. Skipping file export.")
             body_content = """Hi,
 
 Here are the files found:
