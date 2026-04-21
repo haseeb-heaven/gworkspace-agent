@@ -16,7 +16,7 @@ _INVALID_STRING_PATTERNS = (
 
 
 def validate_artifact_content(value: Any, source_name: str = "artifact") -> None:
-    """Reject empty, null-like, or unresolved-placeholder content recursively."""
+    """Reject null-like or unresolved-placeholder content recursively."""
     if value is None:
         raise ValueError(f"{source_name} contains None")
     if isinstance(value, str):
@@ -25,14 +25,10 @@ def validate_artifact_content(value: Any, source_name: str = "artifact") -> None
                 raise ValueError(f"{source_name} contains invalid value: {value!r}")
         return
     if isinstance(value, dict):
-        if not value:
-            raise ValueError(f"{source_name} is an empty object")
         for key, item in value.items():
             validate_artifact_content(item, f"{source_name}.{key}")
         return
     if isinstance(value, (list, tuple, set)):
-        if not value:
-            raise ValueError(f"{source_name} is an empty collection")
         for index, item in enumerate(value):
             validate_artifact_content(item, f"{source_name}[{index}]")
         return
@@ -119,13 +115,11 @@ class TripleVerifier:
 
     @staticmethod
     def _payload(result: Any) -> Any:
+        from gws_assistant.json_utils import safe_json_loads
         if getattr(result, "output", None) is not None:
             return result.output
         stdout = getattr(result, "stdout", "")
-        try:
-            return json.loads(stdout)
-        except Exception:
-            return stdout
+        return safe_json_loads(stdout, fallback_to_string=True)
 
     @staticmethod
     def _validate_expected_fields(payload: Any, expected_fields: dict[str, Any]) -> None:
