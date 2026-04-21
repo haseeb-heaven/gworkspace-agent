@@ -207,8 +207,8 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        exclusion_words = ("count", "metadata", "no file content", "do not download", "names only", "file summary", "list summary")
-        skip_export = any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in exclusion_words)
+        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
+        skip_export = any(word in lowered for word in exclusion_words)
 
         if skip_export:
             body_content = """Hi,
@@ -255,7 +255,7 @@ $last_export_file_content"""
 
         tasks.append(
             PlannedTask(
-                id="task-3",
+                id=f"task-{len(tasks) + 1}",
                 service="gmail",
                 action="send_message",
                 parameters=send_params,
