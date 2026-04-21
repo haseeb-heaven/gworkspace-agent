@@ -167,7 +167,8 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         result = self.runner.run(args)
         if result.success and result.stdout:
             try:
-                data = json.loads(result.stdout)
+                from gws_assistant.json_utils import safe_json_loads
+                data = safe_json_loads(result.stdout)
 
                 # Special Case: docs.create_document with initial content
                 if task.service == "docs" and task.action == "create_document":

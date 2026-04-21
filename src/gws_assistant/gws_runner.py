@@ -109,11 +109,21 @@ class GWSRunner:
                 except Exception:
                     pass
 
+            stdout = result.stdout
+            stderr = result.stderr
+            # Strip 'Using keyring backend' from output to avoid misinterpretation
+            if stdout and "Using keyring backend" in stdout:
+                import re
+                stdout = re.sub(r"Using keyring backend:.*", "", stdout).strip()
+            if stderr and "Using keyring backend" in stderr:
+                import re
+                stderr = re.sub(r"Using keyring backend:.*", "", stderr).strip()
+
             return ExecutionResult(
                 success=result.returncode == 0,
                 command=command,
-                stdout=result.stdout,
-                stderr=result.stderr,
+                stdout=stdout,
+                stderr=stderr,
                 return_code=result.returncode,
             )
         except subprocess.TimeoutExpired:

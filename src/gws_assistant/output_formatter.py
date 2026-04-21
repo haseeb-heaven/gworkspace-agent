@@ -94,7 +94,8 @@ class HumanReadableFormatter:
 
 def _parse_json(stdout: str) -> dict[str, Any] | None:
     try:
-        payload = json.loads(stdout)
+        from gws_assistant.json_utils import safe_json_loads
+        payload = safe_json_loads(stdout)
         return payload if isinstance(payload, dict) else None
     except Exception:
         return None

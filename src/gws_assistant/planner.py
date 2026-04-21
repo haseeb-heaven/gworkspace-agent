@@ -370,7 +370,8 @@ class CommandPlanner:
                     capture_output=True, timeout=10, text=True
                 )
                 if result.returncode == 0:
-                    data = json.loads(result.stdout)
+                    from gws_assistant.json_utils import safe_json_loads
+                    data = safe_json_loads(result.stdout)
                     parents = data.get("parents")
                     if parents and isinstance(parents, list):
                         update_params["removeParents"] = ",".join(parents)
