@@ -130,6 +130,19 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern A-Metadata: Drive Metadata -> Code -> Gmail
+        if "drive" in services and "gmail" in services and _is_drive_metadata_to_email_request(lowered):
+             tasks = self._drive_metadata_to_gmail_tasks(text, lowered)
+             task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+             return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
              tasks = self._drive_to_gmail_tasks(text, lowered)
@@ -207,17 +220,7 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
-        skip_export = any(word in lowered for word in exclusion_words)
-
-        if skip_export:
-            body_content = """Hi,
-
-Here are the files found:
-
-$drive_summary_values"""
-        else:
-            body_content = """Hi,
+        body_content = """Hi,
 
 Please find the content below:
 
@@ -239,31 +242,67 @@ $last_export_file_content"""
                 action="list_files",
                 parameters={"q": query, "page_size": 50},
                 reason="Search for the requested document."
-            )
-        ]
-
-        if not skip_export:
-            tasks.append(
-                PlannedTask(
-                    id="task-2",
-                    service="drive",
-                    action="export_file",
-                    parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
-                    reason="Extract content for the email."
-                )
-            )
-
-        tasks.append(
+            ),
             PlannedTask(
-                id=f"task-{len(tasks) + 1}",
+                id="task-2",
+                service="drive",
+                action="export_file",
+                parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
+                reason="Extract content for the email."
+            ),
+            PlannedTask(
+                id="task-3",
                 service="gmail",
                 action="send_message",
                 parameters=send_params,
                 reason="Email the extracted content."
             )
-        )
+        ]
 
         return tasks
+
+    def _drive_metadata_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _drive_query_from_text(text)
+        recipient = self.config.default_recipient_email
+        page_size = _first_int(lowered) or 50
+
+        code = """files = {{task-1.result}}
+count = len(files)
+table = "Name | ID | MimeType\\n"
+table += "-" * 50 + "\\n"
+for f in files:
+    table += f"{f.get('name', 'N/A')} | {f.get('id', 'N/A')} | {f.get('mimeType', 'N/A')}\\n"
+
+summary = f"Total matching files: {count}\\n\\n{table}"
+print(summary)"""
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": page_size},
+                reason="Search for the requested document metadata."
+            ),
+            PlannedTask(
+                id="task-2",
+                service="code",
+                action="execute",
+                parameters={"code": code},
+                reason="Compute summary table from drive metadata."
+            ),
+            PlannedTask(
+                id="task-3",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Drive Metadata Summary: {query}",
+                    "body": "Here is the summary you requested:\n\n{{task-2.result}}"
+                },
+                reason="Email the metadata summary table."
+            )
+        ]
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
@@ -594,7 +633,18 @@ def _first_int(text: str) -> int | None:
 
 
 def _is_drive_to_email_request(text: str) -> bool:
-    return any(t in text for t in ("drive", "file", "document")) and any(t in text for t in ("email", "send", "mail"))
+    lowered = text.lower()
+    exclusion_words = ("count", "table", "summary", "metadata", "metadata only", "names only", "no file content", "do not download")
+    if any(word in lowered for word in exclusion_words):
+        return False
+    return any(t in lowered for t in ("drive", "file", "document")) and any(t in lowered for t in ("email", "send", "mail"))
+
+def _is_drive_metadata_to_email_request(text: str) -> bool:
+    lowered = text.lower()
+    exclusion_words = ("count", "table", "summary", "metadata", "metadata only", "names only", "no file content", "do not download")
+    if not any(word in lowered for word in exclusion_words):
+        return False
+    return any(t in lowered for t in ("drive", "file", "document")) and any(t in lowered for t in ("email", "send", "mail"))
 
 
 def _is_gmail_to_sheets_request(text: str) -> bool:
