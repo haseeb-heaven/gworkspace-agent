@@ -374,6 +374,8 @@ class CommandPlanner:
                     parents = data.get("parents")
                     if parents and isinstance(parents, list):
                         update_params["removeParents"] = ",".join(parents)
+                    else:
+                        update_params["removeParents"] = "root"
                 else:
                     update_params["removeParents"] = "root"  # fallback: assume root if lookup fails
             except Exception:
