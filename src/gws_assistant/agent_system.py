@@ -133,10 +133,11 @@ class WorkspaceAgentSystem:
         # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
              tasks = self._drive_to_gmail_tasks(text, lowered)
+             task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
              return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: drive.list_files -> drive.export_file -> gmail.send_message",
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
                 confidence=0.7,
                 no_service_detected=False,
                 source="heuristic",
@@ -206,42 +207,63 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        send_params: dict[str, Any] = {
-            "to_email": recipient,
-            "subject": f"Document: {query}",
-            "body": """Hi,
+        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
+        skip_export = any(word in lowered for word in exclusion_words)
+
+        if skip_export:
+            body_content = """Hi,
+
+Here are the files found:
+
+$drive_summary_values"""
+        else:
+            body_content = """Hi,
 
 Please find the content below:
 
 $last_export_file_content"""
+
+        send_params: dict[str, Any] = {
+            "to_email": recipient,
+            "subject": f"Document: {query}",
+            "body": body_content
         }
 
         if "attach" in lowered:
             send_params["attachments"] = ["{{task-1.id}}"]
 
-        return [
+        tasks = [
             PlannedTask(
                 id="task-1",
                 service="drive",
                 action="list_files",
-                parameters={"q": query, "page_size": 1},
+                parameters={"q": query, "page_size": 50},
                 reason="Search for the requested document."
-            ),
+            )
+        ]
+
+        if not skip_export:
+            tasks.append(
+                PlannedTask(
+                    id="task-2",
+                    service="drive",
+                    action="export_file",
+                    parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
+                    reason="Extract content for the email."
+                )
+            )
+
+        tasks.append(
             PlannedTask(
-                id="task-2",
-                service="drive",
-                action="export_file",
-                parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
-                reason="Extract content for the email."
-            ),
-            PlannedTask(
-                id="task-3",
+                id=f"task-{len(tasks) + 1}",
                 service="gmail",
                 action="send_message",
                 parameters=send_params,
                 reason="Email the extracted content."
             )
-        ]
+        )
+
+        return tasks
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
@@ -464,7 +486,16 @@ print('Processing task: {lowered}')"""
 
 def _detect_services_in_order(text: str) -> list[str]:
     hits: list[tuple[int, str]] = []
+    strict_services = {"modelarmor", "admin", "script", "events"}
+
     for service_key, spec in SERVICES.items():
+        if service_key in strict_services:
+            pattern = re.compile(rf"\b{re.escape(service_key)}\b", re.IGNORECASE)
+            match = pattern.search(text)
+            if match:
+                hits.append((match.start(), service_key))
+            continue
+
         terms = (service_key, *spec.aliases)
         for term in terms:
             pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
