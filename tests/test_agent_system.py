@@ -50,8 +50,6 @@ def test_agent_plans_sheet_get(tmp_path):
     assert plan.tasks[0].parameters["spreadsheet_id"] == "1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo"
 
 
-@pytest.mark.drive
-@pytest.mark.gmail
 def test_agent_reports_no_service(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
     plan = agent.plan("Remind me to drink water")
@@ -59,7 +57,6 @@ def test_agent_reports_no_service(tmp_path):
     assert plan.summary == NO_SERVICE_MESSAGE
 
 
-@pytest.mark.drive
 @pytest.mark.gmail
 def test_agent_disables_heuristics_when_flag_false(tmp_path):
     config = _config(tmp_path)
@@ -95,7 +92,7 @@ def test_agent_plans_metadata_only_list_names_table(tmp_path):
 @pytest.mark.drive
 def test_agent_plans_metadata_only_no_download(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
-    plan = agent.plan("Search Drive, get metadata only, no download, then summarize and email")
+    plan = agent.plan("Search Drive, do not download, then summarize and email")
 
     assert plan.no_service_detected is False
     actions = [task.action for task in plan.tasks]
