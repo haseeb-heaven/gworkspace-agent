@@ -741,7 +741,6 @@ def _first_int(text: str) -> int | None:
 
 def _is_drive_to_email_request(text: str) -> bool:
     lowered = text.lower()
-<<<<<<< HEAD
     exclusion_words = (
         "count",
         "table",
@@ -776,20 +775,6 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
     return any(t in lowered for t in ("drive", "file", "document")) and any(
         t in lowered for t in ("email", "send", "mail")
     )
-=======
-    exclusion_words = ("count", "table", "summary", "metadata", "metadata only", "names only", "no file content", "do not download")
-    if any(word in lowered for word in exclusion_words):
-        return False
-    return any(t in lowered for t in ("drive", "file", "document")) and any(t in lowered for t in ("email", "send", "mail"))
-
-
-def _is_drive_metadata_to_email_request(text: str) -> bool:
-    """Detect Drive + metadata keywords + explicit email intent."""
-    lowered = text.lower()
-    exclusion_words = ("count", "table", "summary", "metadata", "metadata only", "names only", "no file content", "do not download")
-    if not any(word in lowered for word in exclusion_words):
-        return False
-    return any(t in lowered for t in ("drive", "file", "document")) and any(t in lowered for t in ("email", "send", "mail"))
 
 
 def _is_metadata_only_request(text: str) -> bool:
@@ -798,7 +783,6 @@ def _is_metadata_only_request(text: str) -> bool:
     has_metadata_intent = any(t in text for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list"))
     has_email_intent = any(t in text for t in ("email", "send", "mail"))
     return has_drive_intent and has_metadata_intent and not has_email_intent
->>>>>>> 82e6343 (fix(merge): Resolve conflict with develop — keep both metadata routing paths)
 
 
 def _is_gmail_to_sheets_request(text: str) -> bool:
@@ -820,16 +804,12 @@ def _is_drive_folder_move_request(text: str) -> bool:
 def _is_sheet_creation_request(text: str) -> bool:
     # Avoid matching "create email" or "create doc"
     if "email" in text or "doc" in text or "folder" in text:
-<<<<<<< HEAD
         # If it's "create a sheet", it's fine. If it's "create an email", it's not.
         return (
             "create" in text
             and ("sheet" in text or "spreadsheet" in text)
             and not any(phrase in text for phrase in ("create email", "create a doc", "create document"))
         )
-=======
-        return "create" in text and ("sheet" in text or "spreadsheet" in text) and not any(phrase in text for phrase in ("create email", "create a doc", "create document"))
->>>>>>> 82e6343 (fix(merge): Resolve conflict with develop — keep both metadata routing paths)
     return "sheet" in text and any(t in text for t in ("create", "add", "new"))
 
 
