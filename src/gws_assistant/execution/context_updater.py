@@ -133,10 +133,14 @@ class ContextUpdaterMixin:
                     context["gmail_details_values"] = []
 
         if "files" in data:
+            from gws_assistant.execution.drive_metadata import summarize as summarize_drive
+            summary_data = summarize_drive(data)
+
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
-                context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+                context["drive_summary_values"] = summary_data["table"]
+                context["drive_summary_table"] = summary_data["table"]
                 if len(files) > 0:
                     if "mimeType" in files[0]:
                         context["last_file_mime"] = files[0]["mimeType"]

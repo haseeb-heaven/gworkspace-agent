@@ -215,7 +215,7 @@ class WorkspaceAgentSystem:
 
 Here are the files found:
 
-$drive_summary_values"""
+$drive_summary_table"""
         else:
             body_content = """Hi,
 

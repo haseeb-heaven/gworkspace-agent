@@ -159,6 +159,7 @@ class ResolverMixin:
                 "$web_search_table_values": "web_search_table_values",
                 "$web_search_rows":         "web_search_rows",
                 "$web_search_summary":      "web_search_summary",
+                "$drive_summary_table":     "drive_summary_table",
                 "$calendar_events":         "calendar_events",
                 "$calendar_items":          "calendar_events",
                 "$sheet_email_body":        "sheet_email_body",
