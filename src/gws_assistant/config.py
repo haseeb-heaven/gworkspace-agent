@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .models import AppConfigModel
+from .model_registry import TOOL_CAPABLE_MODELS, validate_tool_model
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_DEFAULT_MODEL = "openrouter/free"
@@ -44,13 +45,31 @@ class AppConfig:
         if not provider:
             provider = "openrouter"
 
-        if provider != "openrouter":
-            raise ValueError("Only OpenRouter free models are supported. Set LLM_PROVIDER=openrouter.")
-
         api_key = generic_key or openrouter_key or None
-        model = (os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
-        if model != "openrouter/free" and not model.endswith(":free"):
-            raise ValueError("OpenRouter model must be a free model ending with ':free' or equal to 'openrouter/free'.")
+
+        # Resolve primary model — prefer LLM_MODEL, fall back to OPENROUTER_MODEL alias
+        model = (
+            os.getenv("LLM_MODEL")
+            or os.getenv("OPENROUTER_MODEL")
+            or "openrouter/nvidia/nemotron-super-49b-v1:free"
+        ).strip()
+
+        # Resolve fallback models
+        fallback_raw = [
+            os.getenv("LLM_FALLBACK_MODEL") or "",
+            os.getenv("LLM_FALLBACK_MODEL2") or "",
+            os.getenv("LLM_FALLBACK_MODEL3") or "",
+        ]
+        llm_fallback_models = [m.strip() for m in fallback_raw if m.strip()]
+
+        # Enforce tool-calling support on primary model
+        validate_tool_model(model, "LLM_MODEL")
+
+        # Enforce tool-calling support on each fallback model
+        for idx, fb_model in enumerate(llm_fallback_models):
+            env_label = "LLM_FALLBACK_MODEL" if idx == 0 else f"LLM_FALLBACK_MODEL{idx + 1}"
+            validate_tool_model(fb_model, env_label)
+
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
