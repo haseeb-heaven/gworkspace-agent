@@ -28,7 +28,9 @@ def config():
         max_retries=3,
         langchain_enabled=False,  # Use heuristic planner for deterministic tests
         use_heuristic_fallback=True,
-        default_recipient_email="test@example.com"
+        default_recipient_email="test@example.com",
+        read_only_mode=False,
+        sandbox_enabled=False
     )
 
 @pytest.fixture
