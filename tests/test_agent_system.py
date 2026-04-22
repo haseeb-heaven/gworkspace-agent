@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 
-from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
+from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem, _detect_services_in_order
 from gws_assistant.models import AppConfigModel
 
 
@@ -71,6 +71,7 @@ def test_metadata_drive_phrases_prevent_export(tmp_path):
         actions = [task.action for task in plan.tasks]
         assert "list_files" in actions
         assert "send_message" in actions
+        assert actions.index("list_files") < actions.index("send_message")
         assert "export_file" not in actions, f"export_file should be omitted when phrase '{phrase}' is present"
 
 def test_qvm_scenario_regression(tmp_path):
@@ -82,9 +83,11 @@ def test_qvm_scenario_regression(tmp_path):
     actions = [task.action for task in plan.tasks]
     assert "list_files" in actions
     assert "send_message" in actions
+    assert actions.index("list_files") < actions.index("send_message")
     assert "export_file" not in actions, "export_file should be omitted in .qvm metadata scenario"
 
-from gws_assistant.agent_system import _detect_services_in_order
+    list_task = next(t for t in plan.tasks if t.action == "list_files")
+    assert ".qvm" in list_task.parameters.get("q", "")
 
 def test_strict_service_detection():
     # Strict services should not be detected from substrings.
@@ -98,10 +101,12 @@ def test_strict_service_detection():
     assert "modelarmor" not in services3
 
     services4 = _detect_services_in_order("We have some seventy events")
-    assert "events" in services4  # exact word "events" matches \bevents\b
+    # "events" should be matched because it's an exact word boundary match
+    assert "events" in services4
 
     services5 = _detect_services_in_order("My seventy event")
-    assert "events" not in services5  # singular "event" must not match \bevents\b
+    # "events" should not be matched because the input contains the singular "event" which does not match the /\bevents\b/ pattern
+    assert "events" not in services5
 
     # Proper detection with exact boundaries
     services_strict = _detect_services_in_order("run the script, call admin, use modelarmor, check events")
