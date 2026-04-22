@@ -12,9 +12,13 @@ from .service_catalog import SERVICES
 
 RE_CODE_LIST = re.compile(r"(\[.+?\])")
 RE_GMAIL_QUERY_QUOTED = re.compile(r'["\']([^"\']{3,80})["\']')
+<<<<<<< HEAD
 RE_GMAIL_QUERY_MATCH = re.compile(
     r"(?:about|for|matching|with|named|search|find|search gmail for)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE
 )
+=======
+RE_GMAIL_QUERY_MATCH = re.compile(r"(?:about|for|matching|with|named|search|find|search gmail for)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE)
+>>>>>>> d0156a4 (Update src/gws_assistant/agent_system.py)
 RE_GMAIL_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
 RE_DRIVE_QUERY_QUOTED = re.compile(r'["\']([^"\']{3,80})["\']')
 RE_DRIVE_QUERY_MATCH = re.compile(
