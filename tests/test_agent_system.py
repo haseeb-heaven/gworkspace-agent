@@ -98,10 +98,10 @@ def test_strict_service_detection():
     assert "modelarmor" not in services3
 
     services4 = _detect_services_in_order("We have some seventy events")
-    assert "events" in services4 # events should be caught if it's exact word match
+    assert "events" in services4  # exact word "events" matches \bevents\b
 
     services5 = _detect_services_in_order("My seventy event")
-    assert "events" not in services5 # wait, we'll see how it acts
+    assert "events" not in services5  # singular "event" must not match \bevents\b
 
     # Proper detection with exact boundaries
     services_strict = _detect_services_in_order("run the script, call admin, use modelarmor, check events")
