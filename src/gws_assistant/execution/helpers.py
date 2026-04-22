@@ -33,8 +33,9 @@ class HelpersMixin:
                 elif isinstance(r, list):
                     table_values.append(r)
 
-            context["web_search_markdown"]     = "\n\n".join(markdown_lines)
-            context["web_search_table_values"] = table_values
+            context["search_summary_rows"] = table_values
+            context["search_summary_table"] = "\n\n".join(markdown_lines)
+            context["search_summary_count"] = len(results)
 
             return ExecutionResult(
                 success=True,

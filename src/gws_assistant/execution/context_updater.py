@@ -15,11 +15,22 @@ class ContextUpdaterMixin:
                 break
 
         if "stdout" in data:
-            context["last_code_stdout"] = data["stdout"]
-            data["last_code_stdout"] = data["stdout"]
+            val = data["stdout"]
+            context["code_output"] = val
+            data["code_output"] = val
+
         if "parsed_value" in data:
-            context["last_code_result"] = data["parsed_value"]
-            data["last_code_result"] = data["parsed_value"]
+            val = data["parsed_value"]
+            context["code_output"] = val  # Overrides stdout if parsed_value is present (legacy behavior)
+            data["code_output"] = val
+
+        if "exit_code" in data:
+            context["code_exit_code"] = data["exit_code"]
+            data["code_exit_code"] = data["exit_code"]
+
+        if "stderr" in data:
+            context["code_error"] = data["stderr"]
+            data["code_error"] = data["stderr"]
 
         # 3. Service Specific Extractions
         if "spreadsheetId" in data:
@@ -118,7 +129,15 @@ class ContextUpdaterMixin:
                         context[f"message_id_from_task_{num}"] = m_id
                         context[f"thread_id_from_task_{num}"] = t_id
 
-                context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
+                rows = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
+                context["gmail_summary_rows"] = rows
+
+                table_lines = ["| ID | Thread ID |", "|---|---|"]
+                for r in rows:
+                    table_lines.append(f"| {r[0]} | {r[1]} |")
+                context["gmail_summary_table"] = "\n".join(table_lines)
+                context["gmail_summary_count"] = len(msgs)
+
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
 
                 if task:
@@ -136,7 +155,20 @@ class ContextUpdaterMixin:
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
-                context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+
+                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+                context["drive_metadata_rows"] = rows
+                context["drive_summary_rows"] = rows
+
+                table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
+                for r in rows:
+                    table_lines.append(f"| {r[0]} | {r[1]} | {r[2]} |")
+                context["drive_metadata_table"] = "\n".join(table_lines)
+                context["drive_summary_table"] = "\n".join(table_lines)
+
+                context["drive_file_count"] = len(files)
+                context["drive_summary_count"] = len(files)
+
                 if len(files) > 0:
                     if "mimeType" in files[0]:
                         context["last_file_mime"] = files[0]["mimeType"]
@@ -187,8 +219,17 @@ class ContextUpdaterMixin:
                      else:
                          context[key] = rows
 
-            lines = [" | ".join(str(c) for c in row) for row in rows]
-            context["sheet_email_body"] = "\n".join(lines)
+            context["sheet_summary_rows"] = rows
+
+            if rows:
+                cols = len(rows[0])
+                table_lines = ["| " + " | ".join(str(c) for c in rows[0]) + " |"]
+                table_lines.append("|" + "|".join(["---"] * cols) + "|")
+                for r in rows[1:]:
+                    table_lines.append("| " + " | ".join(str(c) for c in r) + " |")
+                context["sheet_summary_table"] = "\n".join(table_lines)
+            else:
+                context["sheet_summary_table"] = ""
 
         # ------------------------------------------------------------------
         # FINAL: Store everything in results_map for {task-N} resolution

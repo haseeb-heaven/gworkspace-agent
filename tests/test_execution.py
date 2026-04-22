@@ -368,3 +368,71 @@ def test_gmail_details_accumulation():
     assert len(values) == 2
     assert values[0][1] == "Job offer m1"
     assert values[1][1] == "Job offer m2"
+
+def test_code_output_resolution():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+
+    # Fake runner for code execute doesn't natively exist, we can stub it or test logic via direct handle.
+    plan = RequestPlan(
+        raw_text="run code and send",
+        tasks=[
+            PlannedTask(id="task-1", service="code", action="execute", parameters={"code": "print('hello world')"}),
+            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"}),
+        ]
+    )
+
+    # We need to mock _handle_code_execution_task to simulate the updated code outputs
+    # since FakeRunner might not intercept code.execute natively (it goes through _handle_code_execution_task)
+    original_handle = getattr(executor, "_handle_code_execution_task", None)
+
+    def fake_code_execute(task, context):
+        from gws_assistant.models import ExecutionResult
+        # Mimic context updater directly since the real handler calls runner
+        result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
+        context["code_output"] = result_data["parsed_value"]
+        context["last_code_stdout"] = result_data["stdout"]
+        context["last_code_result"] = result_data["parsed_value"]
+        # Add tasks results structure for compatibility if needed
+        context.setdefault("task_results", {})["task-1"] = result_data
+
+        return ExecutionResult(success=True, command=["code", "execute"], output=result_data, stdout="hello world\n")
+
+    executor._handle_code_execution_task = fake_code_execute
+
+    report = executor.execute(plan)
+    assert report.success is True
+
+    # The second task is send_message, verify it resolved $code_output
+    send_cmds = [c for c in runner.commands if c[:4] == ["gmail", "users", "messages", "send"]]
+    assert len(send_cmds) == 1
+
+    # Check payload
+    payload_str = send_cmds[0][send_cmds[0].index("--json") + 1]
+    payload = json.loads(payload_str)
+    decoded_body = base64.urlsafe_b64decode(payload["raw"]).decode("ascii")
+    assert "Result: hello world" in decoded_body
+
+
+def test_legacy_placeholder_resolution():
+    from gws_assistant.execution.executor import PlanExecutor
+    from gws_assistant.planner import CommandPlanner
+    import logging
+
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+
+    context = {
+        "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
+        "code_output": "test_output_123"
+    }
+
+    # Should resolve correctly mapping from legacy to new
+    resolved_drive = executor._resolve_placeholders("$drive_summary_values", context)
+    assert resolved_drive == [["file1.txt", "text/plain", "link1"]]
+
+    resolved_code = executor._resolve_placeholders("$last_code_stdout", context)
+    assert resolved_code == "test_output_123"
+
+    resolved_code_result = executor._resolve_placeholders("$last_code_result", context)
+    assert resolved_code_result == "test_output_123"

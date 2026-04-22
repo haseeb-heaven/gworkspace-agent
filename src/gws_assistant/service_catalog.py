@@ -228,13 +228,13 @@ SERVICES: dict[str, ServiceSpec] = {
             "send_message": ActionSpec(
                 key="send_message",
                 label="Send email",
-                description="Send an email from the authenticated account. 'body' can be a $placeholder (e.g. $sheet_email_body, $last_code_stdout, $web_search_markdown) resolved at runtime.",
+                description="Send an email from the authenticated account. 'body' can be a $placeholder (e.g. $sheet_summary_table, $code_output, $search_summary_table) resolved at runtime.",
                 keywords=("send", "compose", "mail", "email", "share"),
                 negative_keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
                     ParameterSpec("to_email", "Recipient email address", "person@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
-                    ParameterSpec("body", "Email body or $placeholder", "$sheet_email_body"),
+                    ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
                     ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
                 ),
             ),
@@ -702,7 +702,7 @@ SERVICES: dict[str, ServiceSpec] = {
             "execute": ActionSpec(
                 key="execute",
                 label="Execute Python code",
-                description="Run a block of Python code. Captured results are available as $last_code_stdout and $last_code_result.",
+                description="Run a block of Python code. Captured results are available as $code_output.",
                 keywords=("run", "execute", "python", "code", "sort", "calculate", "math", "compute"),
                 parameters=(
                     ParameterSpec("code", "Python code to execute", "sorted([3, 1, 2])"),
