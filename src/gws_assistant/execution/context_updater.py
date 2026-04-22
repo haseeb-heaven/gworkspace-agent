@@ -277,7 +277,6 @@ class ContextUpdaterMixin:
                 for r in rows[1:]:
                     padded_r = pad_row(r, cols)
                     table_lines.append("| " + " | ".join(padded_r) + " |")
-
                 context["sheet_summary_table"] = "\n".join(table_lines)
             else:
                 context["sheet_summary_table"] = ""
