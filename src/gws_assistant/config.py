@@ -117,6 +117,8 @@ class AppConfig:
         mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
         telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
         telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
+        groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip() or None
+        ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
 
         sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
         read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=True)
@@ -153,6 +155,9 @@ class AppConfig:
             telegram_chat_id=telegram_chat_id,
             sandbox_enabled=sandbox_enabled,
             read_only_mode=read_only_mode,
+            llm_fallback_models=llm_fallback_models,
+            groq_api_key=groq_api_key,
+            ollama_api_base=ollama_api_base,
         )
 
 
