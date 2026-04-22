@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 
+from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem, _detect_services_in_order
 import pytest
 
 from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
@@ -68,6 +69,59 @@ def test_agent_disables_heuristics_when_flag_false(tmp_path):
     assert plan.no_service_detected is True
     assert "disabled" in plan.summary.lower()
 
+def test_metadata_drive_phrases_prevent_export(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    phrases = ["count", "table", "metadata only", "names only", "do not download", "no file content"]
+    for phrase in phrases:
+        plan = agent.plan(f"Search Drive for report and {phrase} and email it")
+        assert plan.no_service_detected is False
+
+        actions = [task.action for task in plan.tasks]
+        assert "list_files" in actions
+        assert "send_message" in actions
+        assert actions.index("list_files") < actions.index("send_message")
+        assert "export_file" not in actions, f"export_file should be omitted when phrase '{phrase}' is present"
+
+def test_qvm_scenario_regression(tmp_path):
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    scenario = "search Drive for all .qvm files, count them, build a summary table, email the table, do not download or export file content"
+    plan = agent.plan(scenario)
+    assert plan.no_service_detected is False
+
+    actions = [task.action for task in plan.tasks]
+    assert "list_files" in actions
+    assert "send_message" in actions
+    assert actions.index("list_files") < actions.index("send_message")
+    assert "export_file" not in actions, "export_file should be omitted in .qvm metadata scenario"
+
+    list_task = next(t for t in plan.tasks if t.action == "list_files")
+    assert ".qvm" in list_task.parameters.get("q", "")
+
+def test_strict_service_detection():
+    # Strict services should not be detected from substrings.
+    services1 = _detect_services_in_order("I need to administrate my users")
+    assert "admin" not in services1
+
+    services2 = _detect_services_in_order("This is a subscript")
+    assert "script" not in services2
+
+    services3 = _detect_services_in_order("Modelarmorizing the project")
+    assert "modelarmor" not in services3
+
+    services4 = _detect_services_in_order("We have some seventy events")
+    # "events" should be matched because it's an exact word boundary match
+    assert "events" in services4
+
+    services5 = _detect_services_in_order("My seventy event")
+    # "events" should not be matched because the input contains the singular "event" which does not match the /\bevents\b/ pattern
+    assert "events" not in services5
+
+    # Proper detection with exact boundaries
+    services_strict = _detect_services_in_order("run the script, call admin, use modelarmor, check events")
+    assert "script" in services_strict
+    assert "admin" in services_strict
+    assert "modelarmor" in services_strict
+    assert "events" in services_strict
 @pytest.mark.drive
 def test_agent_plans_metadata_only_count_by_extension(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
