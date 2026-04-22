@@ -330,11 +330,19 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             error=None,
         )
         context = dict(state.get("context", {}))
-        context["web_search_summary"] = summary
-        context["web_search_rows"] = [
+
+        rows = [
             [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
             for r in result.get("results", [])
         ]
+        context["web_search_summary"] = summary
+        context["web_search_rows"] = rows
+
+        # New canonical keys
+        context["search_summary_table"] = summary
+        context["search_summary_rows"] = rows
+        context["search_summary_count"] = len(result.get("results", []))
+
         return {
             "final_output": f"Web Search Result:\n\n{summary}",
             "last_result": structured,
