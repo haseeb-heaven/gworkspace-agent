@@ -45,7 +45,7 @@ class FakeRunner(GWSRunner):
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout=_json.dumps({
-                    "spreadsheetId": "sheet-1234567890",
+                    "spreadsheetId": "sheet-1",
                     "spreadsheetUrl": "https://example.test/sheet",
                     "properties": {"title": title},
                     "sheets": [{"properties": {"title": title}}],
@@ -71,13 +71,13 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=_json.dumps({"documentId": "doc-12345678", "title": title}),
+                stdout=_json.dumps({"documentId": "doc-1", "title": title}),
             )
         if args[:3] == ["docs", "documents", "batchUpdate"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"documentId":"doc-12345678","replies":[]}',
+                stdout='{"documentId":"doc-1","replies":[]}',
             )
         if args[:4] == ["gmail", "users", "messages", "get"]:
             import json as _json
@@ -88,7 +88,7 @@ class FakeRunner(GWSRunner):
                     try:
                         p_data = _json.loads(args[i+1])
                         msg_id = p_data.get("id") or p_data.get("messageId") or msg_id
-                    except Exception:
+                    except (IndexError, _json.JSONDecodeError, ValueError):
                         pass
 
             subject = f"Job offer {msg_id}"
@@ -212,7 +212,7 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-1",
                 service="sheets",
                 action="get_values",
-                    parameters={"spreadsheet_id": "sheet-1234567", "range": "Sheet1!A1:B2"},
+                parameters={"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
             ),
             PlannedTask(
                 id="task-2",
@@ -327,7 +327,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     send_cmd = runner.commands[4]
     raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
     decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
-    assert "https://docs.google.com/document/d/doc-12345678/edit" in decoded
+    assert "https://docs.google.com/document/d/doc-1/edit" in decoded
     assert "https://example.test/sheet" in decoded
 
 def test_gmail_details_accumulation():
@@ -346,7 +346,7 @@ def test_gmail_details_accumulation():
                 service="sheets",
                 action="append_values",
                 parameters={
-                        "spreadsheet_id": "s1-12345678",
+                    "spreadsheet_id": "s1",
                     "range": "Sheet1!A1",
                     "values": "$gmail_details_values",
                 },

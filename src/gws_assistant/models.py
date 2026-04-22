@@ -40,6 +40,8 @@ class AppConfigModel:
     mem0_local_storage_path: str = ".gemini/memories.jsonl"
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    sandbox_enabled: bool = True
+    read_only_mode: bool = True
     # NOTE: Must NOT use a leading underscore here.
     # @dataclass(slots=True) does not persist mutations to underscore-prefixed
     # fields between method calls — the slot write is silently dropped, causing
@@ -217,6 +219,7 @@ class AgentState(TypedDict, total=False):
     reflection: ReflectionDecision | None
     current_attempt: int
     thought_trace: list[dict]
+    abort_plan: bool
 
 
 class StructuredToolResult(TypedDict):

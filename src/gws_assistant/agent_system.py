@@ -223,7 +223,7 @@ class WorkspaceAgentSystem:
         body_content = """Hi,
 
 Please find the content below:
-
+                                                                              
 $last_export_file_content"""
 
         send_params: dict[str, Any] = {

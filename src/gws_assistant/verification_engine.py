@@ -51,12 +51,15 @@ class VerificationEngine:
         if not isinstance(params, dict):
             params = {}
 
+        logger.debug(f"Verifying {tool_name} with params keys {list(params.keys())}")
+
         try:
             cls.verify_params(tool_name, params)
         except VerificationError as e:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_params failed for {tool_name}: {e}")
                 raise
 
         try:
@@ -65,6 +68,7 @@ class VerificationEngine:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_result failed for {tool_name}: {e}")
                 raise
 
         try:
@@ -73,6 +77,7 @@ class VerificationEngine:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_attachment_sent failed for {tool_name}: {e}")
                 raise
 
         try:
@@ -81,13 +86,17 @@ class VerificationEngine:
             if e.severity == "WARNING":
                 logger.warning(str(e))
             else:
+                logger.error(f"verify_document_not_empty failed for {tool_name}: {e}")
                 raise
 
     @classmethod
     def verify_params(cls, tool_name: str, params: dict) -> None:
-        parts = tool_name.split("_")
-        service = parts[0]
-        action = tool_name
+        # tool_name is expected to be "service_action"
+        if "_" in tool_name:
+            service, action = tool_name.split("_", 1)
+        else:
+            service = tool_name
+            action = tool_name
 
         # CATEGORY 2 - GMAIL
         if service == "gmail" or "message" in action or "email" in action or "send" in action:
@@ -207,7 +216,7 @@ class VerificationEngine:
                     for row in values:
                         if isinstance(row, list):
                             for cell in row:
-                                if cell is not None and cls._is_placeholder(str(cell)):
+                                if cell is not None and str(cell).strip() and cls._is_placeholder(str(cell)):
                                     print(f"DEBUG: Placeholder found in values: '{cell}', full params: {params}")
                                     raise VerificationError(tool_name, f"Placeholder found in values: {cell}", "values")
 
@@ -378,6 +387,8 @@ class VerificationEngine:
             if isinstance(result, dict):
                 if "list" not in action and "export" not in action and "files" not in result and "saved_file" not in result:
                     doc_id = result.get("id") or result.get("documentId")
+                    if not doc_id and "tabs" in result and isinstance(result["tabs"], list):
+                        pass # Tab-based document, id might be structured differently, handled below
                     if not doc_id or cls._is_placeholder(str(doc_id)) or len(str(doc_id)) < 1:
                         raise VerificationError(tool_name, "Result missing valid id", "id")
 

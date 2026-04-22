@@ -99,6 +99,9 @@ class AppConfig:
         telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
         telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
 
+        sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
+        read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=True)
+
         return AppConfigModel(
             provider=provider,
             model=model,
@@ -129,6 +132,8 @@ class AppConfig:
             mem0_local_storage_path=mem0_local_storage_path,
             telegram_bot_token=telegram_bot_token,
             telegram_chat_id=telegram_chat_id,
+            sandbox_enabled=sandbox_enabled,
+            read_only_mode=read_only_mode,
         )
 
 

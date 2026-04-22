@@ -23,6 +23,11 @@ def get_executor():
         config = AppConfig.from_env()
     except ValueError as exc:
         pytest.skip(f"Workspace validation environment is not configured: {exc}")
+    
+    # Validation tests are designed to perform write operations
+    config.read_only_mode = False
+    config.sandbox_enabled = False
+    
     logger = setup_logging(config)
     # Correct path to gws binary in project root
     gws_path = Path(os.getenv('GWS_BINARY_PATH', 'gws'))
