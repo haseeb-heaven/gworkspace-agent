@@ -266,7 +266,7 @@ class WorkspaceAgentSystem:
 
         code_script = "print('Processing metadata:\\n' + str($drive_summary_values))"
         if "count" in lowered:
-            code_script = "data = $drive_summary_values\nprint(f'Counted {len(data) - 1 if len(data) > 1 else 0} files matching the query.')"
+            code_script = "data = $drive_summary_values\nprint(f'Counted {len(data)} files matching the query.')"
         elif "table" in lowered or "summary" in lowered:
             code_script = (
                 "data = $drive_summary_values\n"
