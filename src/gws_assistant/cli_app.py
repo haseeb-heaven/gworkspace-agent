@@ -56,7 +56,13 @@ def _save_output(path: Path, text: str) -> None:
         handle.write(text.rstrip() + "\n\n")
 
 
-def _run_application(save_output: Path | None = None, task: str | None = None, no_langchain: bool = False) -> None:
+def _run_application(
+    save_output: Path | None = None,
+    task: str | None = None,
+    no_langchain: bool = False,
+    sandbox: bool | None = None,
+    read_only: bool | None = None
+) -> None:
     """Runs the terminal assistant (interactive or single-task)."""
     # Heavy imports are deferred here so that importing cli_app at the
     # module level (e.g. for --help) does not trigger the full
@@ -74,6 +80,12 @@ def _run_application(save_output: Path | None = None, task: str | None = None, n
     if no_langchain:
         config.api_key = None
         config.langchain_enabled = False
+
+    # Runtime overrides
+    if sandbox is not None:
+        config.sandbox_enabled = sandbox
+    if read_only is not None:
+        config.read_only_mode = read_only
 
     logger = setup_logging(config)
     logger.info("Starting CLI application.")
@@ -155,6 +167,8 @@ def run(
     task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
     no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
     send_telegram: str | None = typer.Option(None, "--send-telegram", help="Send a message to Telegram and exit."),
+    sandbox: bool | None = typer.Option(None, "--sandbox/--no-sandbox", help="Enable or disable sandbox mode (intercepts writes/deletes). Default: env or true."),
+    read_only: bool | None = typer.Option(None, "--read-only/--read-write", help="Force read-only mode (blocks all writes/deletes). Default: env or true."),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     # resilient_parsing is True during --help rendering and shell-completion;
@@ -168,7 +182,13 @@ def run(
         from .tools.telegram import send_telegram as st
         st(send_telegram)
         return
-    _run_application(save_output=save_output, task=task, no_langchain=no_langchain)
+    _run_application(
+        save_output=save_output,
+        task=task,
+        no_langchain=no_langchain,
+        sandbox=sandbox,
+        read_only=read_only
+    )
 
 
 def main() -> None:

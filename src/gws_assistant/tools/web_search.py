@@ -12,7 +12,7 @@ except ImportError:
     HAS_DDG = False
 
 try:
-    from langchain_community.tools.tavily_search import TavilySearchResults
+    from langchain_tavily import TavilySearchResults
     HAS_TAVILY = True
 except ImportError:
     HAS_TAVILY = False
@@ -95,7 +95,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
 
     # Neither backend available / returned results
     tavily_msg = (
-        "Tavily search isn't available (no TAVILY_API_KEY or langchain-community not installed)."
+        "Tavily search isn't available (no TAVILY_API_KEY or langchain-tavily not installed)."
         if not tavily_key or not HAS_TAVILY
         else "Tavily search isn't available."
     )

@@ -95,12 +95,46 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         return report
 
     def execute_single_task(self, task: Any, context: Any) -> Any:
+        from gws_assistant.models import ExecutionResult
+
         # Service-specific overrides or synthetic handling
         if task.service == "telegram":
             return self._handle_telegram_task(task, context)
 
         # 1. Resolve placeholders in parameters FIRST (type-preserving)
         task.parameters = self._resolve_placeholders(task.parameters, context)
+
+        # Sandbox / Read-Only Mode Logic
+        is_delete = any(kw in task.action.lower() for kw in ("delete", "remove", "trash", "clear"))
+        is_write = any(kw in task.action.lower() for kw in ("create", "update", "append", "send", "upload", "copy", "move", "batch"))
+
+        if self.config:
+            if is_delete or is_write:
+                # Read-only mode blocks ALL writes
+                if self.config.read_only_mode:
+                    self.logger.warning(f"READ-ONLY MODE: Blocking {task.service}.{task.action}")
+                    return ExecutionResult(
+                        success=False,
+                        command=["<blocked>"],
+                        error=f"Task {task.service}.{task.action} blocked by READ-ONLY mode. Disable READ_ONLY_MODE to allow modifications."
+                    )
+
+                # Sandbox mode specifically intercepts deletions or high-risk writes for confirmation
+                if self.config.sandbox_enabled:
+                    prompt_msg = f"\n[SANDBOX] Task {task.service}.{task.action} requires modification/deletion. Disable sandbox to proceed? (Y/N): "
+                    # We use a simple input check here. In a real CLI this might need better handling.
+                    choice = input(prompt_msg).strip().lower()
+                    if choice != 'y':
+                        self.logger.info(f"SANDBOX: User declined {task.service}.{task.action}")
+                        return ExecutionResult(
+                            success=False,
+                            command=["<declined>"],
+                            error=f"Task {task.service}.{task.action} declined by user in SANDBOX mode."
+                        )
+                    else:
+                        self.logger.info(f"SANDBOX: User authorized {task.service}.{task.action}. Proceeding.")
+        
+        self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 
         if task.service == "search" and task.action == "web_search":
             return self._handle_web_search_task(task, context)
@@ -110,6 +144,28 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
         if task.service in ("code", "computation"):
             return self._handle_code_execution_task(task, context)
+
+        # Intercept move_file to perform parent lookup safely in the executor
+        if task.service == "drive" and task.action == "move_file":
+            file_id = task.parameters.get("file_id")
+            if file_id:
+                try:
+                    lookup_args = ["drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "parents"})]
+                    lookup_result = self.runner.run(lookup_args)
+                    if lookup_result.success and lookup_result.stdout:
+                        data = json.loads(lookup_result.stdout)
+                        parents = data.get("parents")
+                        if parents and isinstance(parents, list):
+                            context["fetch_parents"] = ",".join(parents)
+                        else:
+                            from gws_assistant.models import ExecutionResult
+                            return ExecutionResult(success=False, command=["drive", "files", "update"], error="Failed to lookup current file parents: No parents returned.")
+                    else:
+                        from gws_assistant.models import ExecutionResult
+                        return ExecutionResult(success=False, command=["drive", "files", "update"], error="Failed to lookup current file parents: API call failed.")
+                except Exception as e:
+                    from gws_assistant.models import ExecutionResult
+                    return ExecutionResult(success=False, command=["drive", "files", "update"], error=f"Failed to lookup current file parents: {e}")
 
         # 2. Build the command using already-resolved parameters
         try:
@@ -162,6 +218,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
                         # Always set content, fallback to path if binary or read failed
                         final_content = file_content if file_content is not None else f"[File: {saved_file}]"
+
+                        self.logger.info("Exported file content for %s. Size: %s", saved_file, len(final_content) if file_content is not None else "N/A (Binary/Path only)")
+
                         data["content"] = final_content
                         data["drive_export_content"] = final_content
                         data["drive_export_path"] = saved_file
@@ -171,6 +230,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
         if result.success and result.output is not None:
             try:
+                # Use service_action format for verification engine
                 VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
             except VerificationError as e:
                 if e.severity == "ERROR":
@@ -187,8 +247,8 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             creation_actions = ("create_spreadsheet", "create_document", "create_file", "create_event", "create_task", "create_note")
             if task.action in creation_actions:
                 resource_id = (
-                    result.output.get("spreadsheetId") or
-                    result.output.get("documentId") or
+                    result.output.get("spreadsheetId") or result.output.get("spreadsheet_id") or
+                    result.output.get("documentId") or result.output.get("document_id") or
                     result.output.get("id") or
                     result.output.get("name")
                 )
