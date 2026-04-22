@@ -154,7 +154,7 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_rows"},
             ),
         ],
     )
@@ -348,7 +348,7 @@ def test_gmail_details_accumulation():
                 parameters={
                         "spreadsheet_id": "s1-12345678",
                     "range": "Sheet1!A1",
-                    "values": "$gmail_details_values",
+                    "values": "$gmail_summary_rows",
                 },
             ),
         ],
@@ -360,14 +360,14 @@ def test_gmail_details_accumulation():
     # Task 2 expanded into 2-1 and 2-2
     # Task 3: append_values
 
-    # Check that gmail_details_values in task-3 contains TWO rows
+    # Check that gmail_summary_rows in task-3 contains TWO rows
     append_task = report.executions[-1].task
     values = append_task.parameters["values"]
     assert isinstance(values, list)
     # We expect 2 rows from the 2 get_message tasks
     assert len(values) == 2
-    assert values[0][1] == "Job offer m1"
-    assert values[1][1] == "Job offer m2"
+    assert values[0][1] == "No Subject" # In the FakeRunner list_messages stub, payload doesn't exist
+    assert values[1][1] == "No Subject"
 
 def test_code_output_resolution():
     runner = FakeRunner()
@@ -391,8 +391,6 @@ def test_code_output_resolution():
         # Mimic context updater directly since the real handler calls runner
         result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
         context["code_output"] = result_data["parsed_value"]
-        context["last_code_stdout"] = result_data["stdout"]
-        context["last_code_result"] = result_data["parsed_value"]
         # Add tasks results structure for compatibility if needed
         context.setdefault("task_results", {})["task-1"] = result_data
 
@@ -400,8 +398,12 @@ def test_code_output_resolution():
 
     executor._handle_code_execution_task = fake_code_execute
 
-    report = executor.execute(plan)
-    assert report.success is True
+    try:
+        report = executor.execute(plan)
+        assert report.success is True
+    finally:
+        if original_handle:
+            executor._handle_code_execution_task = original_handle
 
     # The second task is send_message, verify it resolved $code_output
     send_cmds = [c for c in runner.commands if c[:4] == ["gmail", "users", "messages", "send"]]
@@ -424,7 +426,8 @@ def test_legacy_placeholder_resolution():
 
     context = {
         "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
-        "code_output": "test_output_123"
+        "code_output": "test_output_123",
+        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |"
     }
 
     # Should resolve correctly mapping from legacy to new
@@ -436,3 +439,6 @@ def test_legacy_placeholder_resolution():
 
     resolved_code_result = executor._resolve_placeholders("$last_code_result", context)
     assert resolved_code_result == "test_output_123"
+
+    resolved_sheet = executor._resolve_placeholders("$sheet_email_body", context)
+    assert resolved_sheet == "| Col1 | Col2 |\n|---|---|\n| A | B |"

@@ -129,12 +129,41 @@ class ContextUpdaterMixin:
                         context[f"message_id_from_task_{num}"] = m_id
                         context[f"thread_id_from_task_{num}"] = t_id
 
-                rows = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
-                context["gmail_summary_rows"] = rows
+                # Enriched schema for messages summary
+                rows = []
+                for m in msgs:
+                    # m is often a sparse object during list_messages, but might have headers if partial response
+                    m_id = m.get("id", "")
+                    t_id = m.get("threadId", "")
+                    # Extract potential payload headers if available (from partial list or mock)
+                    h_dict = {}
+                    payload = m.get("payload", {})
+                    if "headers" in payload:
+                        headers = payload["headers"]
+                        if isinstance(headers, list):
+                            h_dict = {str(h.get("name", "")).lower(): h.get("value", "") for h in headers}
+                        else:
+                            h_dict = {str(k).lower(): v for k, v in headers.items()}
 
-                table_lines = ["| ID | Thread ID |", "|---|---|"]
+                    sender = h_dict.get("from", "Unknown")
+                    subject = h_dict.get("subject", "No Subject")
+                    date_val = h_dict.get("date", "Unknown Date")
+
+                    # If we don't have payload, use ID/Thread fallback to ensure structure matches
+                    # Or try snippet if available
+                    if not payload and "snippet" in m:
+                        subject = m.get("snippet", subject)
+
+                    rows.append([sender, subject, date_val, m_id, t_id])
+
+                context["gmail_summary_rows"] = rows
+                context["gmail_summary_values"] = rows
+
+                table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
                 for r in rows:
-                    table_lines.append(f"| {r[0]} | {r[1]} |")
+                    # Sanitize cells
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |")
                 context["gmail_summary_table"] = "\n".join(table_lines)
                 context["gmail_summary_count"] = len(msgs)
 
@@ -162,7 +191,8 @@ class ContextUpdaterMixin:
 
                 table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
                 for r in rows:
-                    table_lines.append(f"| {r[0]} | {r[1]} | {r[2]} |")
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
                 context["drive_metadata_table"] = "\n".join(table_lines)
                 context["drive_summary_table"] = "\n".join(table_lines)
 
@@ -222,11 +252,20 @@ class ContextUpdaterMixin:
             context["sheet_summary_rows"] = rows
 
             if rows:
-                cols = len(rows[0])
-                table_lines = ["| " + " | ".join(str(c) for c in rows[0]) + " |"]
+                cols = max(len(r) for r in rows)
+
+                def pad_row(row_list, length):
+                    safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
+                    return safe_row + [""] * (length - len(safe_row))
+
+                header_row = pad_row(rows[0], cols)
+                table_lines = ["| " + " | ".join(header_row) + " |"]
                 table_lines.append("|" + "|".join(["---"] * cols) + "|")
+
                 for r in rows[1:]:
-                    table_lines.append("| " + " | ".join(str(c) for c in r) + " |")
+                    padded_r = pad_row(r, cols)
+                    table_lines.append("| " + " | ".join(padded_r) + " |")
+
                 context["sheet_summary_table"] = "\n".join(table_lines)
             else:
                 context["sheet_summary_table"] = ""

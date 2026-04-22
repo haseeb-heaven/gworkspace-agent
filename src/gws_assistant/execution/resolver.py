@@ -256,15 +256,16 @@ class ResolverMixin:
                 return _UNRESOLVED_MARKER
 
             # 3. Partial string replacement
-            for placeholder, ctx_key in LEGACY_PLACEHOLDER_MAP.items():
-                if placeholder in val and ctx_key in context:
-                    res = context[ctx_key]
-                    if res is None:
-                        val = val.replace(placeholder, _UNRESOLVED_MARKER)
-                    elif use_repr_for_complex and isinstance(res, (dict, list)):
-                        val = val.replace(placeholder, repr(res))
-                    else:
-                        val = val.replace(placeholder, str(res))
+            if "$" in val:
+                for placeholder, ctx_key in LEGACY_PLACEHOLDER_MAP.items():
+                    if placeholder in val and ctx_key in context:
+                        res = context[ctx_key]
+                        if res is None:
+                            val = val.replace(placeholder, _UNRESOLVED_MARKER)
+                        elif use_repr_for_complex and isinstance(res, (dict, list)):
+                            val = val.replace(placeholder, repr(res))
+                        else:
+                            val = val.replace(placeholder, str(res))
 
             def replace_match(match):
                 # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...
