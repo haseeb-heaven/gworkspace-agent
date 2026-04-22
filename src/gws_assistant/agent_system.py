@@ -23,9 +23,9 @@ RE_DRIVE_QUERY_MATCH = re.compile(
 RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
 RE_EXTRACT_ID = re.compile(r"\b([a-zA-Z0-9_-]{25,})\b")
 RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,})\b")
-RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
+RE_EXTRACT_QUOTED = re.compile(r'["\'](["\']+?)["\']')
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
-RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](.+?)['\"]")
+RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](["\']+?)['\"]")
 RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
@@ -152,7 +152,7 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern A1: Drive Metadata Only (e.g. counts, tables, summaries)
+        # Pattern A1: Drive Metadata Only (counts, tables, summaries — no email required)
         if "drive" in services and _is_metadata_only_request(lowered):
             tasks = self._drive_metadata_computation_tasks(text, lowered)
             task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
@@ -256,15 +256,23 @@ class WorkspaceAgentSystem:
         )
 
     def _drive_metadata_computation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Drive metadata-only path: list files, compute over metadata, optionally email."""
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        # Determine the action required
         code_script = "print('Processing metadata:\\n' + str($drive_summary_values))"
         if "count" in lowered:
             code_script = "data = $drive_summary_values\nprint(f'Counted {len(data) - 1 if len(data) > 1 else 0} files matching the query.')"
         elif "table" in lowered or "summary" in lowered:
-            code_script = "data = $drive_summary_values\nif len(data) <= 1:\n    print('No files found.')\nelse:\n    print('Files Summary:')\n    for row in data[1:]:\n        print(f'- {row[0]} ({row[1]})')"
+            code_script = (
+                "data = $drive_summary_values\n"
+                "if len(data) <= 1:\n"
+                "    print('No files found.')\n"
+                "else:\n"
+                "    print('Files Summary:')\n"
+                "    for row in data[1:]:\n"
+                "        print(f'- {row[0]} ({row[1]})')"
+            )
 
         tasks = [
             PlannedTask(
@@ -272,17 +280,15 @@ class WorkspaceAgentSystem:
                 service="drive",
                 action="list_files",
                 parameters={"q": query, "page_size": 50},
-                reason="Search for files to retrieve metadata."
+                reason="Search for files to retrieve metadata.",
             ),
             PlannedTask(
                 id="task-2",
                 service="code",
                 action="execute",
-                parameters={
-                    "code": code_script
-                },
-                reason="Compute over metadata."
-            )
+                parameters={"code": code_script},
+                reason="Compute summary or count over retrieved metadata.",
+            ),
         ]
 
         if any(kw in lowered for kw in ("email", "send", "mail")):
@@ -294,13 +300,59 @@ class WorkspaceAgentSystem:
                     parameters={
                         "to_email": recipient,
                         "subject": f"Drive Metadata Report: {query}",
-                        "body": "Here is the computed metadata result:\n\n$last_code_stdout"
+                        "body": "Here is the computed metadata result:\n\n$last_code_stdout",
                     },
-                    reason="Email the computed metadata result."
+                    reason="Email the computed metadata result.",
                 )
             )
 
         return tasks
+
+    def _drive_metadata_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Drive metadata with explicit email intent: list files -> compute table -> send email."""
+        query = _drive_query_from_text(text)
+        recipient = self.config.default_recipient_email
+        page_size = _first_int(lowered) or 50
+
+        code = (
+            "files = {{task-1.files}}\n"
+            "count = len(files)\n"
+            "table = \"Name | ID | MimeType\\n\"\n"
+            "table += \"-\" * 50 + \"\\n\"\n"
+            "for f in files:\n"
+            "    table += f\"{f.get('name', 'N/A')} | {f.get('id', 'N/A')} | {f.get('mimeType', 'N/A')}\\n\"\n"
+            "\n"
+            "summary = f\"Total matching files: {count}\\n\\n{table}\"\n"
+            "print(summary)"
+        )
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": page_size},
+                reason="Search for the requested document metadata.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="code",
+                action="execute",
+                parameters={"code": code},
+                reason="Compute summary table from drive metadata.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Drive Metadata Summary: {query}",
+                    "body": "Here is the summary you requested:\n\n{{task-2.stdout}}",
+                },
+                reason="Email the metadata summary table.",
+            ),
+        ]
 
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
@@ -322,7 +374,11 @@ Please find the content below:
                                                                               
 $last_export_file_content"""
 
-        send_params: dict[str, Any] = {"to_email": recipient, "subject": f"Document: {query}", "body": body_content}
+        send_params: dict[str, Any] = {
+            "to_email": recipient,
+            "subject": f"Document: {query}",
+            "body": body_content,
+        }
 
         if "attach" in lowered:
             send_params["attachments"] = ["{{task-1.id}}"]
@@ -353,48 +409,7 @@ $last_export_file_content"""
 
         return tasks
 
-    def _drive_metadata_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        query = _drive_query_from_text(text)
-        recipient = self.config.default_recipient_email
-        page_size = _first_int(lowered) or 50
 
-        code = """files = {{task-1.files}}
-count = len(files)
-table = "Name | ID | MimeType\\n"
-table += "-" * 50 + "\\n"
-for f in files:
-    table += f"{f.get('name', 'N/A')} | {f.get('id', 'N/A')} | {f.get('mimeType', 'N/A')}\\n"
-
-summary = f"Total matching files: {count}\\n\\n{table}"
-print(summary)"""
-
-        return [
-            PlannedTask(
-                id="task-1",
-                service="drive",
-                action="list_files",
-                parameters={"q": query, "page_size": page_size},
-                reason="Search for the requested document metadata.",
-            ),
-            PlannedTask(
-                id="task-2",
-                service="code",
-                action="execute",
-                parameters={"code": code},
-                reason="Compute summary table from drive metadata.",
-            ),
-            PlannedTask(
-                id="task-3",
-                service="gmail",
-                action="send_message",
-                parameters={
-                    "to_email": recipient,
-                    "subject": f"Drive Metadata Summary: {query}",
-                    "body": "Here is the summary you requested:\n\n{{task-2.stdout}}",
-                },
-                reason="Email the metadata summary table.",
-            ),
-        ]
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
@@ -531,7 +546,10 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 id="task-2",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "{{task-1.id}}", "values": _extract_data_rows(text)},
+                parameters={
+                    "spreadsheet_id": "{{task-1.id}}",
+                    "values": _extract_data_rows(text),
+                },
                 reason="Add data rows to the sheet.",
             ),
         ]
@@ -549,7 +567,6 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             if drive_query:
                 parameters["q"] = drive_query
             else:
-                # Fallback: try to find anything in quotes or after search/find
                 query = _extract_quoted(lowered)
                 if query:
                     parameters["q"] = f"name contains '{query}'"
@@ -580,7 +597,6 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
 result = sorted(data, reverse={rev})
 print(result)"""
             else:
-                # Try to generate generic processing code for "convert to table" etc
                 parameters["code"] = f"""# Processed data from previous steps
 print('Processing task: {lowered}')"""
 
@@ -637,7 +653,6 @@ def _detect_services_in_order(text: str) -> list[str]:
     # Priority Fix: If we detected both a workspace service and generic 'search',
     # and they are at the same position or search is just a keyword, prioritize the workspace service.
     if "search" in found_services and len(found_services) > 1:
-        # If any other service exists, we likely want that service's search, not web search
         found_services = [s for s in found_services if s != "search"]
 
     return found_services
@@ -649,7 +664,6 @@ def _detect_action(service: str, text: str) -> str | None:
     lowered = text.lower()
 
     for action_key, action_spec in SERVICES[service].actions.items():
-        # Check negative keywords first - if any exist, this action is disqualified
         neg_hit = False
         if hasattr(action_spec, "negative_keywords") and action_spec.negative_keywords:
             for nk in action_spec.negative_keywords:
@@ -671,7 +685,6 @@ def _gmail_query_from_text(text: str) -> str:
     quoted = RE_GMAIL_QUERY_QUOTED.search(text)
     if quoted:
         q = quoted.group(1).strip()
-        # If the user says "subject:...", keep it. Otherwise, just use the keywords.
         if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
             return q
         return q
@@ -697,8 +710,6 @@ def _drive_query_from_text(text: str) -> str:
 
 def _extract_id(text: str) -> str | None:
     """Extract a Google Workspace ID (alphanumeric string with underscores/dashes) from text."""
-    # Look for common ID pattern: ~44 characters, alphanumeric, includes - and _
-    # Often found after 'ID:', 'id ', or in quotes.
     match = RE_EXTRACT_ID.search(text)
     return match.group(1) if match else None
 
@@ -730,6 +741,7 @@ def _first_int(text: str) -> int | None:
 
 def _is_drive_to_email_request(text: str) -> bool:
     lowered = text.lower()
+<<<<<<< HEAD
     exclusion_words = (
         "count",
         "table",
@@ -764,6 +776,29 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
     return any(t in lowered for t in ("drive", "file", "document")) and any(
         t in lowered for t in ("email", "send", "mail")
     )
+=======
+    exclusion_words = ("count", "table", "summary", "metadata", "metadata only", "names only", "no file content", "do not download")
+    if any(word in lowered for word in exclusion_words):
+        return False
+    return any(t in lowered for t in ("drive", "file", "document")) and any(t in lowered for t in ("email", "send", "mail"))
+
+
+def _is_drive_metadata_to_email_request(text: str) -> bool:
+    """Detect Drive + metadata keywords + explicit email intent."""
+    lowered = text.lower()
+    exclusion_words = ("count", "table", "summary", "metadata", "metadata only", "names only", "no file content", "do not download")
+    if not any(word in lowered for word in exclusion_words):
+        return False
+    return any(t in lowered for t in ("drive", "file", "document")) and any(t in lowered for t in ("email", "send", "mail"))
+
+
+def _is_metadata_only_request(text: str) -> bool:
+    """Detect Drive metadata-only requests that do NOT require emailing (counts, tables, summaries)."""
+    has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
+    has_metadata_intent = any(t in text for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list"))
+    has_email_intent = any(t in text for t in ("email", "send", "mail"))
+    return has_drive_intent and has_metadata_intent and not has_email_intent
+>>>>>>> 82e6343 (fix(merge): Resolve conflict with develop — keep both metadata routing paths)
 
 
 def _is_gmail_to_sheets_request(text: str) -> bool:
@@ -782,34 +817,30 @@ def _is_drive_folder_move_request(text: str) -> bool:
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
 
 
-def _is_metadata_only_request(text: str) -> bool:
-    """Detect requests that combine Drive search/listing with metadata-only intent."""
-    has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
-    has_metadata_intent = any(t in text for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list"))
-    return has_drive_intent and has_metadata_intent
-
 def _is_sheet_creation_request(text: str) -> bool:
     # Avoid matching "create email" or "create doc"
     if "email" in text or "doc" in text or "folder" in text:
+<<<<<<< HEAD
         # If it's "create a sheet", it's fine. If it's "create an email", it's not.
         return (
             "create" in text
             and ("sheet" in text or "spreadsheet" in text)
             and not any(phrase in text for phrase in ("create email", "create a doc", "create document"))
         )
+=======
+        return "create" in text and ("sheet" in text or "spreadsheet" in text) and not any(phrase in text for phrase in ("create email", "create a doc", "create document"))
+>>>>>>> 82e6343 (fix(merge): Resolve conflict with develop — keep both metadata routing paths)
     return "sheet" in text and any(t in text for t in ("create", "add", "new"))
 
 
 def _extract_data_rows(text: str) -> list[list[Any]]:
     """Extract rows from text like 'Score1, 100' or similar csv-like patterns."""
     rows = []
-    # Look for header and data rows in quotes
     matches = RE_EXTRACT_DATA_ROWS.findall(text)
     for m in matches:
         if "," in m:
             rows.append([item.strip() for item in m.split(",")])
 
-    # If no rows found in quotes, try to find patterns like 'Score1, 100'
     if not rows:
         for m in RE_EXTRACT_DATA_PATTERN.finditer(text):
             rows.append([m.group(1).strip(), m.group(2).strip()])
