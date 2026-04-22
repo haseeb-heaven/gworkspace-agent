@@ -50,6 +50,7 @@ def test_agent_plans_sheet_get(tmp_path):
     assert plan.tasks[0].parameters["spreadsheet_id"] == "1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo"
 
 
+@pytest.mark.gmail
 def test_agent_reports_no_service(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
     plan = agent.plan("Remind me to drink water")
