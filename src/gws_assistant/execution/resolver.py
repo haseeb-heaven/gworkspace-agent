@@ -389,4 +389,6 @@ class ResolverMixin:
         if sheet_url:
             links.append(f"Google Sheet: {sheet_url}")
 
-        return f"{body}\n\n" + "\n".join(links)
+        final_body = f"{body}\n\n" + "\n".join(links)
+        self.logger.info("Generated email body with artifact links. Body length: %s, Links count: %s", len(final_body), len(links))
+        return final_body
