@@ -206,9 +206,10 @@ def run(
         st(send_telegram)
         return
 
-    from gws_assistant.exceptions import SafetyConfirmationRequired
     import json
     import sys
+
+    from gws_assistant.exceptions import SafetyConfirmationRequired
 
     try:
         _run_application(

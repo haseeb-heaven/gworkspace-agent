@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from gws_assistant.verification_engine import VerificationEngine, VerificationError
+from gws_assistant.exceptions import SafetyBlockedError, VerificationError
+from gws_assistant.models import ExecutionResult
+from gws_assistant.verification_engine import VerificationEngine
 
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
@@ -99,7 +101,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         return report
 
     def execute_single_task(self, task: Any, context: Any) -> Any:
-        from gws_assistant.models import ExecutionResult
 
         # Service-specific overrides or synthetic handling
         if task.service == "telegram":
@@ -116,30 +117,40 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         )
 
         if self.config:
-            if is_delete or is_write:
-                # Read-only mode blocks ALL writes
-                if self.config.read_only_mode:
-                    self.logger.warning(f"READ-ONLY MODE: Blocking {task.service}.{task.action}")
-                    return ExecutionResult(
-                        success=False,
-                        command=["<blocked>"],
-                        error=f"Task {task.service}.{task.action} blocked by READ-ONLY mode. Disable READ_ONLY_MODE to allow modifications.",
-                    )
+            from gws_assistant.safety_guard import SafetyGuard
 
-                # Sandbox mode specifically intercepts deletions or high-risk writes for confirmation
-                if self.config.sandbox_enabled:
-                    prompt_msg = f"\n[SANDBOX] Task {task.service}.{task.action} requires modification/deletion. Disable sandbox to proceed? (Y/N): "
-                    # We use a simple input check here. In a real CLI this might need better handling.
-                    choice = input(prompt_msg).strip().lower()
-                    if choice != "y":
-                        self.logger.info(f"SANDBOX: User declined {task.service}.{task.action}")
-                        return ExecutionResult(
-                            success=False,
-                            command=["<declined>"],
-                            error=f"Task {task.service}.{task.action} declined by user in SANDBOX mode.",
-                        )
-                    else:
-                        self.logger.info(f"SANDBOX: User authorized {task.service}.{task.action}. Proceeding.")
+            # 1. Read-only mode blocks ALL writes/deletes
+            is_delete = any(kw in task.action.lower() for kw in ("delete", "remove", "trash", "clear"))
+            is_write = any(
+                kw in task.action.lower()
+                for kw in ("create", "update", "append", "send", "upload", "copy", "move", "batch")
+            )
+            if (is_delete or is_write) and self.config.read_only_mode:
+                self.logger.warning(f"READ-ONLY MODE: Blocking {task.service}.{task.action}")
+                return ExecutionResult(
+                    success=False,
+                    command=["<blocked>"],
+                    error=f"Task {task.service}.{task.action} blocked by READ-ONLY mode. Disable READ_ONLY_MODE to allow modifications.",
+                )
+
+            # 2. SafetyGuard checks for destructive actions (confirmations/blocks)
+            try:
+                safety_result = SafetyGuard.check_action(
+                    task,
+                    is_dry_run=self.config.dry_run,
+                    no_confirm=self.config.no_confirm,
+                    is_telegram=self.config.is_telegram,
+                    force_dangerous=self.config.force_dangerous,
+                )
+                if isinstance(safety_result, ExecutionResult):
+                    return safety_result  # Dry-run or similar mock response
+            except SafetyBlockedError as e:
+                self.logger.warning(f"SAFETY BLOCK: {e}")
+                return ExecutionResult(
+                    success=False,
+                    command=["<blocked>"],
+                    error=str(e)
+                )
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 

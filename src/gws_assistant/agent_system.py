@@ -110,6 +110,9 @@ class WorkspaceAgentSystem:
         if self._use_langchain:
             plan = plan_with_langchain(text, self.config, self.logger, memory_hint=memory_hint)
             if plan and plan.tasks:
+                from .safety_guard import SafetyGuard
+
+                SafetyGuard.check_plan(plan, force_dangerous=self.config.force_dangerous)
                 return plan
             if plan and plan.no_service_detected:
                 return plan
@@ -123,7 +126,12 @@ class WorkspaceAgentSystem:
             )
 
         # 3. Heuristic Fallback
-        return self._plan_with_heuristics(text)
+        plan = self._plan_with_heuristics(text)
+        if plan and plan.tasks:
+            from .safety_guard import SafetyGuard
+
+            SafetyGuard.check_plan(plan, force_dangerous=self.config.force_dangerous)
+        return plan
 
     def _plan_with_heuristics(self, text: str) -> RequestPlan:
         lowered = text.lower()

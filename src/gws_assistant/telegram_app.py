@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import sys
 
@@ -15,7 +16,6 @@ from gws_assistant.config import AppConfig
 
 logger = logging.getLogger(__name__)
 
-import json
 
 # The specific commands requested by the user
 ALLOWED_COMMANDS = ["mail", "docs", "sheet", "calendar", "notes"]
@@ -141,7 +141,7 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                                 stderr=asyncio.subprocess.PIPE
                             )
                             stdout_bytes2, stderr_bytes2 = await asyncio.wait_for(
-                                process2.communicate(), timeout=timeout_seconds
+                                process2.communicate(), timeout=timeout
                             )
                             stdout2 = stdout_bytes2.decode('utf-8', errors='replace').strip()
                             stderr2 = stderr_bytes2.decode('utf-8', errors='replace').strip()

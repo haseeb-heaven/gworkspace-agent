@@ -10,19 +10,16 @@ Single entry point for all LLM calls. Handles:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import litellm
 from litellm import completion
 from litellm.exceptions import (
+    APIConnectionError,
     AuthenticationError,
     BadRequestError,
-    APIConnectionError,
     RateLimitError,
 )
-
-from .model_registry import TOOL_CAPABLE_MODELS, validate_tool_model
 
 logger = logging.getLogger(__name__)
 

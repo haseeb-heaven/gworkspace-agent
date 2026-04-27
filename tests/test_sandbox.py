@@ -64,9 +64,9 @@ def test_sandbox_mode_declined(mock_config, mock_runner, executor):
 
     with patch('builtins.input', return_value='n'):
         result = executor.execute_single_task(task, {})
-
+    
     assert result.success is False
-    assert "declined" in result.error
+    assert "aborted" in result.error
     mock_runner.run.assert_not_called()
 
 @pytest.mark.drive

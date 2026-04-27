@@ -27,6 +27,7 @@ def get_executor():
     # Validation tests are designed to perform write operations
     config.read_only_mode = False
     config.sandbox_enabled = False
+    config.no_confirm = True
 
     logger = setup_logging(config)
     # Correct path to gws binary in project root
