@@ -196,7 +196,7 @@ class ContextUpdaterMixin:
 
                 from gws_assistant.execution.drive_metadata import summarize
                 summary_data = summarize(data)
-                
+
                 # Consistently map all expected metadata keys
                 rows = summary_data["summary_rows"]
                 table = summary_data["table"]
@@ -205,10 +205,10 @@ class ContextUpdaterMixin:
                 context["drive_metadata_rows"] = rows
                 context["drive_summary_rows"] = rows
                 context["drive_summary_values"] = rows
-                
+
                 context["drive_metadata_table"] = table
                 context["drive_summary_table"] = table
-                
+
                 context["drive_file_count"] = count
                 context["drive_summary_count"] = count
 

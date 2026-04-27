@@ -254,11 +254,6 @@ class ResolverMixin:
 
             def resolve_shorthand(shorthand_path):
                 shorthand_tokens = [t for t in shorthand_path.lower().split("_") if t]
-                # Look for the most recent task that matches these tokens
-                # We iterate backwards through the results_map to find the latest relevant result.
-                best_match = None
-                max_matches = -1
-
                 for key, val_item in reversed(list(results_map.items())):
                     # Skip numeric keys and task-N keys for shorthand matching to avoid noise
                     if re.match(r"^task-\d+$|^\d+$", str(key)):

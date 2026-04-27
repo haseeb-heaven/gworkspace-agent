@@ -1,5 +1,7 @@
 from typing import Any
+
 from gws_assistant.output_formatter import _format_drive_files
+
 
 def summarize(payload: dict[str, Any]) -> dict[str, Any]:
     """
