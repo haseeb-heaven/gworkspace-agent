@@ -79,7 +79,7 @@ def call_llm(
     Raises: RuntimeError if ALL models and keys are exhausted.
     """
     model_chain = [config.model] + [
-        m for m in config.llm_fallback_models if m in TOOL_CAPABLE_MODELS
+        m for m in config.llm_fallback_models
     ]
 
     last_error: Exception | None = None
