@@ -8,8 +8,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .model_registry import validate_tool_model
 from .models import AppConfigModel
-from .model_registry import TOOL_CAPABLE_MODELS, validate_tool_model
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_DEFAULT_MODEL = "openrouter/free"
@@ -54,13 +54,22 @@ class AppConfig:
             or "openrouter/nvidia/nemotron-super-49b-v1:free"
         ).strip()
 
+        if provider == "openrouter" and not model.startswith("openrouter/"):
+            model = f"openrouter/{model}"
+
         # Resolve fallback models
         fallback_raw = [
             os.getenv("LLM_FALLBACK_MODEL") or "",
             os.getenv("LLM_FALLBACK_MODEL2") or "",
             os.getenv("LLM_FALLBACK_MODEL3") or "",
         ]
-        llm_fallback_models = [m.strip() for m in fallback_raw if m.strip()]
+        llm_fallback_models = []
+        for m in fallback_raw:
+            m = m.strip()
+            if m:
+                if provider == "openrouter" and not m.startswith("openrouter/"):
+                    m = f"openrouter/{m}"
+                llm_fallback_models.append(m)
 
         # Enforce tool-calling support on primary model
         validate_tool_model(model, "LLM_MODEL")
