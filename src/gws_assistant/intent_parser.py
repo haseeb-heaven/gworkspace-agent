@@ -99,7 +99,7 @@ class IntentParser:
                     "If service is missing or unsupported, set needs_clarification=true."
                 )
                 completion = self.client.chat.completions.create(
-                    model=self.config.model,
+                    model=self.config.api_model_name(),
                     temperature=0,
                     response_format={"type": "json_object"},
                     messages=[

@@ -6,9 +6,10 @@ import re
 import time
 from typing import Any
 
+from langchain_community.chat_models import ChatLiteLLM
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 
+from .model_registry import validate_tool_model
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
 
@@ -72,15 +73,6 @@ _EMAIL_BODY_PLACEHOLDERS = (
     "$gmail_summary_table",
     "$search_summary_table",
 )
-
-# ---------------------------------------------------------------------------
-# Model fallback chain — updated to currently-available OpenRouter endpoints.
-# ---------------------------------------------------------------------------
-_MODEL_FALLBACK_CHAIN: list[str] = [
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "openrouter/free",
-]
 
 _BACKOFF_SCHEDULE: list[float] = [2.0, 4.0, 8.0, 16.0, 30.0]
 
@@ -297,21 +289,43 @@ def create_agent(
     config: AppConfigModel,
     logger: logging.Logger,
     model_override: str | None = None,
-) -> ChatOpenAI | None:
-    api_key = config.api_key
-    if not api_key or not str(api_key).strip():
-        logger.warning("create_agent: API key is missing or empty. Cannot create ChatOpenAI agent.")
-        return None
+) -> ChatLiteLLM | None:
+    model_to_use = model_override or config.model
 
     try:
-        return ChatOpenAI(
-            model=model_override or config.model,
-            api_key=api_key,  # type: ignore[arg-type]
-            base_url=config.base_url,
+        # Guard at agent init time
+        validate_tool_model(model_to_use, "LLM_MODEL")
+
+        # Build provider-specific kwargs
+        extra_kwargs: dict = {}
+        api_key = config.api_key
+
+        if model_to_use.startswith("openrouter/"):
+            extra_kwargs["api_base"] = config.base_url
+        elif model_to_use.startswith("groq/"):
+            api_key = config.groq_api_key
+        elif model_to_use.startswith("ollama/"):
+            extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
+            api_key = "ollama"
+
+        if not api_key or not str(api_key).strip():
+            logger.warning("create_agent: API key is missing or empty. Cannot create ChatLiteLLM agent.")
+            return None
+
+        # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
+        model_name = config.api_model_name() if model_override is None else model_override
+        if model_name.startswith("openrouter/"):
+            model_name = model_name[len("openrouter/"):]
+
+        return ChatLiteLLM(
+            model=model_name,
+            api_key=api_key,
             temperature=0,
+            request_timeout=config.timeout_seconds,
+            **extra_kwargs,
         )
     except Exception as e:
-        logger.error("Failed to create ChatOpenAI agent: %s", e)
+        logger.error("Failed to create ChatLiteLLM agent: %s", e)
         return None
 
 
@@ -434,7 +448,7 @@ def plan_with_langchain(
 
     Execution order:
     1. Try primary model (config.model) with up to 3 retries + exponential back-off.
-    2. On exhaustion or 404, iterate through _MODEL_FALLBACK_CHAIN.
+    2. On exhaustion or 404, iterate through config.llm_fallback_models.
     3. Each candidate plan is validated by is_valid_plan() before acceptance.
     4. If every model is exhausted, return None so the heuristic planner takes over.
     """
@@ -485,7 +499,9 @@ def plan_with_langchain(
     prompt = ChatPromptTemplate.from_messages([("system", system_prompt), ("user", "{request}")])
 
     primary_model = config.model or ""
-    models_to_try: list[str] = [primary_model] + [m for m in _MODEL_FALLBACK_CHAIN if m != primary_model]
+    models_to_try: list[str] = [primary_model] + [
+        m for m in config.llm_fallback_models if m != primary_model
+    ]
 
     plan_data: Any = None
     for model_idx, model_name in enumerate(models_to_try):

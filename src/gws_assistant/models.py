@@ -42,6 +42,9 @@ class AppConfigModel:
     telegram_chat_id: str | None = None
     sandbox_enabled: bool = True
     read_only_mode: bool = True
+    llm_fallback_models: list[str] = field(default_factory=list)
+    groq_api_key: str | None = None
+    ollama_api_base: str | None = None
     # NOTE: Must NOT use a leading underscore here.
     # @dataclass(slots=True) does not persist mutations to underscore-prefixed
     # fields between method calls — the slot write is silently dropped, causing
@@ -59,6 +62,13 @@ class AppConfigModel:
         os.environ["OPENROUTER_API_KEY"] = new_key
         os.environ["OPENAI_API_KEY"] = new_key
         return new_key
+
+    def api_model_name(self) -> str:
+        """Strips the LiteLLM provider prefix from the model name."""
+        for prefix in ("openrouter/", "groq/", "ollama/"):
+            if self.model.startswith(prefix):
+                return self.model[len(prefix):]
+        return self.model
 
 
 @dataclass(slots=True)

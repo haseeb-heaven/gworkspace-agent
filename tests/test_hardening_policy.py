@@ -15,8 +15,8 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GWS_BINARY_PATH", str(tmp_path / "gws"))
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-test-key")
-    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
-    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "openrouter/nvidia/nemotron-super-49b-v1:free")
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("MEM0_API_KEY", "")
@@ -25,29 +25,19 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def test_config_defaults_to_openrouter_free_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
-    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
 
     config = AppConfig.from_env()
 
     assert config.provider == "openrouter"
-    assert config.model.endswith(":free") or config.model == "openrouter/free"
+    assert config.model == "openrouter/nvidia/nemotron-super-49b-v1:free"
 
 
-def test_config_rejects_openai_provider(monkeypatch, tmp_path):
+def test_config_rejects_non_tool_capable_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("LLM_PROVIDER", "openai")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
 
-    with pytest.raises(ValueError, match="Only OpenRouter free models"):
-        AppConfig.from_env()
-
-
-def test_config_rejects_non_free_openrouter_model(monkeypatch, tmp_path):
-    _set_required_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("OPENROUTER_MODEL", "openai/gpt-4.1-mini")
-
-    with pytest.raises(ValueError, match="OpenRouter model must be a free model"):
+    with pytest.raises(ValueError, match="tool-capable model allowlist"):
         AppConfig.from_env()
 
 

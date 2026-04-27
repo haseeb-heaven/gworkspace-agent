@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .model_registry import validate_tool_model
 from .models import AppConfigModel
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
@@ -44,13 +45,40 @@ class AppConfig:
         if not provider:
             provider = "openrouter"
 
-        if provider != "openrouter":
-            raise ValueError("Only OpenRouter free models are supported. Set LLM_PROVIDER=openrouter.")
-
         api_key = generic_key or openrouter_key or None
-        model = (os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or OPENROUTER_DEFAULT_MODEL).strip()
-        if model != "openrouter/free" and not model.endswith(":free"):
-            raise ValueError("OpenRouter model must be a free model ending with ':free' or equal to 'openrouter/free'.")
+
+        # Resolve primary model — prefer LLM_MODEL, fall back to OPENROUTER_MODEL alias
+        model = (
+            os.getenv("LLM_MODEL")
+            or os.getenv("OPENROUTER_MODEL")
+            or "openrouter/nvidia/nemotron-super-49b-v1:free"
+        ).strip()
+
+        if provider == "openrouter" and not model.startswith("openrouter/"):
+            model = f"openrouter/{model}"
+
+        # Resolve fallback models
+        fallback_raw = [
+            os.getenv("LLM_FALLBACK_MODEL") or "",
+            os.getenv("LLM_FALLBACK_MODEL2") or "",
+            os.getenv("LLM_FALLBACK_MODEL3") or "",
+        ]
+        llm_fallback_models = []
+        for m in fallback_raw:
+            m = m.strip()
+            if m:
+                if provider == "openrouter" and not m.startswith("openrouter/"):
+                    m = f"openrouter/{m}"
+                llm_fallback_models.append(m)
+
+        # Enforce tool-calling support on primary model
+        validate_tool_model(model, "LLM_MODEL")
+
+        # Enforce tool-calling support on each fallback model
+        for idx, fb_model in enumerate(llm_fallback_models):
+            env_label = "LLM_FALLBACK_MODEL" if idx == 0 else f"LLM_FALLBACK_MODEL{idx + 1}"
+            validate_tool_model(fb_model, env_label)
+
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
@@ -98,6 +126,8 @@ class AppConfig:
         mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
         telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
         telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
+        groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip() or None
+        ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
 
         sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
         read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=True)
@@ -134,6 +164,9 @@ class AppConfig:
             telegram_chat_id=telegram_chat_id,
             sandbox_enabled=sandbox_enabled,
             read_only_mode=read_only_mode,
+            llm_fallback_models=llm_fallback_models,
+            groq_api_key=groq_api_key,
+            ollama_api_base=ollama_api_base,
         )
 
 

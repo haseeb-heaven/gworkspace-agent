@@ -34,8 +34,11 @@ async def get_chat_response(text: str, config: AppConfigModel) -> str:
             )
 
             response = await client.chat.completions.create(
-                model=config.model,
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
+                model=config.api_model_name(),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ],
                 max_tokens=200,
                 temperature=0.7,
             )
