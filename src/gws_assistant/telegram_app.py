@@ -149,7 +149,6 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                             if process2.returncode != 0:
                                 logger.error(f"Task failed with exit code {process2.returncode}. Stderr: {stderr2}")
                                 await update.effective_message.reply_text(f"Task failed with exit code {process2.returncode}.")
-                                return
                             output2 = stdout2 if stdout2 else stderr2
                             await split_and_send(update, output2)
                         else:
