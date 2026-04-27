@@ -5,6 +5,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 class HelpersMixin:
     def _think(self, *args, **kwargs) -> str:
         return "Thought: Proceeding with planned task."
@@ -17,40 +18,48 @@ class HelpersMixin:
         try:
             from gws_assistant.models import ExecutionResult
             from gws_assistant.tools.web_search import web_search_tool
+
             query = task.parameters.get("query", "")
             result_data = web_search_tool.invoke({"query": query})
             results = result_data.get("results") or result_data.get("rows") or []
 
             markdown_lines = []
-            table_values = [["Title", "Content", "Link"]]
+            table_values = []
             for r in results:
                 if isinstance(r, dict):
-                    title   = r.get("title", "")
-                    content = r.get("content", "")
-                    link    = r.get("link", "")
+                    title = r.get("title", "")
+                    # The web search tool returns 'snippet' and 'url'
+                    # But if we receive 'content' and 'link' fallback to those.
+                    content = r.get("snippet", r.get("content", ""))
+                    link = r.get("url", r.get("link", ""))
                     markdown_lines.append(f"## {title}\n{content}\n{link}")
-                    table_values.append([title, content, link])
+                    table_values.append([title, link, content])
                 elif isinstance(r, list):
                     table_values.append(r)
 
-            context["web_search_markdown"]     = "\n\n".join(markdown_lines)
+            # PR #24 Canonical Keys
+            context["search_summary_rows"] = table_values
+            context["search_summary_table"] = "\n\n".join(markdown_lines)
+            context["search_summary_count"] = len(results)
+
+            # Legacy Aliases (HEAD)
+            context["web_search_markdown"] = context["search_summary_table"]
             context["web_search_table_values"] = table_values
-            context["web_search_rows"]         = table_values # Alias for consistency
-            context["web_search_summary"]      = result_data.get("summary", "")
+            context["web_search_rows"] = table_values
+            context["web_search_summary"] = result_data.get("summary", "")
 
             return ExecutionResult(
-                success=True,
-                command=["web_search", query],
-                stdout=json.dumps(result_data),
-                output=result_data
+                success=True, command=["web_search", query], stdout=json.dumps(result_data), output=result_data
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
+
             return ExecutionResult(success=False, command=["web_search"], error=str(exc))
 
     def _handle_admin_task(self, task: Any, context: dict) -> Any:
         """Handle synthetic admin tasks like log_activity."""
         from gws_assistant.models import ExecutionResult
+
         action = task.action
         if action == "log_activity":
             data = task.parameters.get("data", "")
@@ -59,7 +68,7 @@ class HelpersMixin:
                 success=True,
                 command=["admin", "log_activity", "internal"],
                 stdout=json.dumps({"success": True, "logged_at": datetime.now().isoformat()}),
-                output={"success": True}
+                output={"success": True},
             )
         return ExecutionResult(success=False, command=["admin"], error=f"Unsupported synthetic admin action: {action}")
 
@@ -88,7 +97,7 @@ class HelpersMixin:
                 return ExecutionResult(
                     success=False,
                     command=["code_execute"],
-                    error="Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false)."
+                    error="Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false).",
                 )
 
             # Inject task_results and other common context keys into extra_globals
@@ -101,8 +110,8 @@ class HelpersMixin:
                 if key.startswith("task-"):
                     try:
                         num = int(key.split("-")[1])
-                        results_with_numeric[num] = val     # 1-based
-                        results_with_numeric[num - 1] = val # 0-based
+                        results_with_numeric[num] = val  # 1-based
+                        results_with_numeric[num - 1] = val  # 0-based
                     except (ValueError, IndexError):
                         pass
 
@@ -154,6 +163,7 @@ class HelpersMixin:
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
                 context["last_code_result"] = parsed
+                context["code_output"] = parsed
 
                 # Promote parsed_value keys to results_map for easy placeholder access
                 if isinstance(parsed, dict):
@@ -170,10 +180,11 @@ class HelpersMixin:
                 command=["code_execute"],
                 stdout=json.dumps(result.get("output", {})),
                 error=result.get("error"),
-                output=result.get("output", {})
+                output=result.get("output", {}),
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
+
             return ExecutionResult(success=False, command=["code_execute"], error=str(exc))
 
     def _handle_telegram_task(self, task: Any, context: dict) -> Any:
@@ -192,8 +203,9 @@ class HelpersMixin:
                 stdout=redact_sensitive(message),
                 stderr="" if sent else "Telegram send failed.",
                 return_code=0 if sent else 1,
-                output={"success": sent}
+                output={"success": sent},
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
+
             return ExecutionResult(success=False, command=["telegram"], error=str(exc))

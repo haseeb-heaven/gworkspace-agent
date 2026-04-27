@@ -71,7 +71,9 @@ class GWSRunner:
 
     def run(self, args: list[str], timeout_seconds: int | None = None) -> ExecutionResult:
 
-        timeout = timeout_seconds if timeout_seconds is not None else (self.config.gws_timeout_seconds if self.config else 90)
+        timeout = (
+            timeout_seconds if timeout_seconds is not None else (self.config.gws_timeout_seconds if self.config else 90)
+        )
         # Interpret 0 as no timeout (infinite)
         if timeout == 0:
             timeout = None
@@ -83,9 +85,7 @@ class GWSRunner:
         tmp_files: list[str] = []
         stdin_input: str | None = None
         if _args_too_long(command):
-            self.logger.warning(
-                "Oversized CLI arg detected (WinError 206 risk); rewriting large args to temp files."
-            )
+            self.logger.warning("Oversized CLI arg detected (WinError 206 risk); rewriting large args to temp files.")
             command, tmp_files, stdin_input = _rewrite_large_args_via_tempfile(command)
 
         self.logger.info("Executing command: %s", " ".join(a[:80] if len(a) > 80 else a for a in command))
@@ -114,9 +114,11 @@ class GWSRunner:
             # Strip 'Using keyring backend' from output to avoid misinterpretation
             if stdout and "Using keyring backend" in stdout:
                 import re
+
                 stdout = re.sub(r"Using keyring backend:.*", "", stdout).strip()
             if stderr and "Using keyring backend" in stderr:
                 import re
+
                 stderr = re.sub(r"Using keyring backend:.*", "", stderr).strip()
 
             return ExecutionResult(
@@ -151,13 +153,16 @@ class GWSRunner:
     def run_with_retry(self, args: list[str], max_retries: int | None = None) -> ExecutionResult:
         """Run a command with exponential backoff on transient errors (429, 500, 502, 503, 504)."""
         import time
+
         retries = max_retries if max_retries is not None else (self.config.gws_max_retries if self.config else 3)
         last_result: ExecutionResult | None = None
 
         for attempt in range(retries):
             if attempt > 0:
                 delay = 2**attempt
-                self.logger.warning("Transient error detected. Retrying in %ds (attempt %d/%d)...", delay, attempt + 1, retries)
+                self.logger.warning(
+                    "Transient error detected. Retrying in %ds (attempt %d/%d)...", delay, attempt + 1, retries
+                )
                 time.sleep(delay)
 
             last_result = self.run(args)
@@ -170,7 +175,6 @@ class GWSRunner:
             is_transient = last_result.return_code in (429, 500, 502, 503, 504)
 
             if not is_transient:
-
                 break
 
         return last_result or ExecutionResult(success=False, command=[], error="Unknown error in run_with_retry")

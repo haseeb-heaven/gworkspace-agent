@@ -61,7 +61,7 @@ def _run_application(
     task: str | None = None,
     no_langchain: bool = False,
     sandbox: bool | None = None,
-    read_only: bool | None = None
+    read_only: bool | None = None,
 ) -> None:
     """Runs the terminal assistant (interactive or single-task)."""
     # Heavy imports are deferred here so that importing cli_app at the
@@ -167,8 +167,14 @@ def run(
     task: str | None = typer.Option(None, "--task", help="Execute a single task and exit."),
     no_langchain: bool = typer.Option(False, "--no-langchain", help="Disable LangChain and force heuristic mode."),
     send_telegram: str | None = typer.Option(None, "--send-telegram", help="Send a message to Telegram and exit."),
-    sandbox: bool | None = typer.Option(None, "--sandbox/--no-sandbox", help="Enable or disable sandbox mode (intercepts writes/deletes). Default: env or true."),
-    read_only: bool | None = typer.Option(None, "--read-only/--read-write", help="Force read-only mode (blocks all writes/deletes). Default: env or true."),
+    sandbox: bool | None = typer.Option(
+        None,
+        "--sandbox/--no-sandbox",
+        help="Enable or disable sandbox mode (intercepts writes/deletes). Default: env or true.",
+    ),
+    read_only: bool | None = typer.Option(
+        None, "--read-only/--read-write", help="Force read-only mode (blocks all writes/deletes). Default: env or true."
+    ),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     # resilient_parsing is True during --help rendering and shell-completion;
@@ -180,14 +186,11 @@ def run(
         return
     if send_telegram:
         from .tools.telegram import send_telegram as st
+
         st(send_telegram)
         return
     _run_application(
-        save_output=save_output,
-        task=task,
-        no_langchain=no_langchain,
-        sandbox=sandbox,
-        read_only=read_only
+        save_output=save_output, task=task, no_langchain=no_langchain, sandbox=sandbox, read_only=read_only
     )
 
 
@@ -195,6 +198,7 @@ def main() -> None:
     """Entry point for console scripts."""
     if sys.platform == "win32":
         import io
+
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     app()

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # The specific commands requested by the user
 ALLOWED_COMMANDS = ["mail", "docs", "sheet", "calendar", "notes"]
 
+
 async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Check if the user is allowed to interact with the bot based on TELEGRAM_CHAT_ID."""
     if not update.effective_chat:
@@ -37,6 +38,7 @@ async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
 
     return True
 
+
 async def split_and_send(update: Update, text: str):
     """Split message into <= 4096 character chunks and send."""
     MAX_LEN = 4096
@@ -45,7 +47,7 @@ async def split_and_send(update: Update, text: str):
         text = "No output returned."
 
     # First, try to split by lines
-    lines = text.split('\n')
+    lines = text.split("\n")
     chunk = ""
     for line in lines:
         if len(chunk) + len(line) + 1 > MAX_LEN:
@@ -62,6 +64,7 @@ async def split_and_send(update: Update, text: str):
     if chunk.strip():
         await update.effective_message.reply_text(chunk.strip())
 
+
 async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_text: str):
     """Execute the task by calling python gws_cli.py --task <task_text>"""
 
@@ -77,14 +80,20 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
         # Execute gws_cli.py --task asynchronously
         # Use sys.executable to ensure the same Python environment
         import os
+
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
 
         process = await asyncio.create_subprocess_exec(
-            sys.executable, "gws_cli.py", "--task", task_text, "--read-write", "--no-sandbox",
+            sys.executable,
+            "gws_cli.py",
+            "--task",
+            task_text,
+            "--read-write",
+            "--no-sandbox",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=env
+            env=env,
         )
 
         # Execute gws_cli.py until it naturally finishes
@@ -100,8 +109,8 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             await update.effective_message.reply_text(f"Error: Task timed out after {timeout}s.")
             return
 
-        stdout = stdout_bytes.decode('utf-8', errors='replace').strip()
-        stderr = stderr_bytes.decode('utf-8', errors='replace').strip()
+        stdout = stdout_bytes.decode("utf-8", errors="replace").strip()
+        stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
 
         logger.info(f"Command completed for task: {task_text[:50]}...")
 
@@ -125,7 +134,10 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_check(update, context):
         return
-    await update.effective_message.reply_text("Hello! I am your Google Workspace Assistant. Send me a task or use commands like /mail, /docs, etc.")
+    await update.effective_message.reply_text(
+        "Hello! I am your Google Workspace Assistant. Send me a task or use commands like /mail, /docs, etc."
+    )
+
 
 async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_check(update, context):
@@ -141,6 +153,7 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.effective_message.reply_text(help_text)
 
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_check(update, context):
         return
@@ -151,7 +164,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 1. Simple greeting / conversational check to avoid 90s timeout
     greetings = {"hi", "hello", "hey", "hola", "yo", "greeting", "morning", "afternoon", "evening"}
-    lowered = task_text.lower().rstrip('.!?')
+    lowered = task_text.lower().rstrip(".!?")
 
     if lowered in greetings:
         await update.effective_message.reply_text(
@@ -165,32 +178,66 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if lowered in {"thanks", "thank you", "nice", "cool", "great"}:
-        await update.effective_message.reply_text("You're welcome! Let me know if there's anything else I can help with.")
+        await update.effective_message.reply_text(
+            "You're welcome! Let me know if there's anything else I can help with."
+        )
         return
 
     # 2. Check if it's likely a Google Workspace task before running the heavy agent
     # We use a simple keyword check as a first-pass filter
     gws_keywords = {
-        "email", "mail", "gmail", "inbox", "message", "send", "subject", "body",
-        "drive", "file", "folder", "upload", "download", "export", "move", "find",
-        "doc", "document", "sheet", "spreadsheet", "table", "append", "row", "column",
-        "calendar", "event", "meeting", "meet", "schedule", "reminder", "appointment",
-        "task", "todo", "note", "keep"
+        "email",
+        "mail",
+        "gmail",
+        "inbox",
+        "message",
+        "send",
+        "subject",
+        "body",
+        "drive",
+        "file",
+        "folder",
+        "upload",
+        "download",
+        "export",
+        "move",
+        "find",
+        "doc",
+        "document",
+        "sheet",
+        "spreadsheet",
+        "table",
+        "append",
+        "row",
+        "column",
+        "calendar",
+        "event",
+        "meeting",
+        "meet",
+        "schedule",
+        "reminder",
+        "appointment",
+        "task",
+        "todo",
+        "note",
+        "keep",
     }
 
     has_gws_intent = any(kw in lowered for kw in gws_keywords)
 
     # If it has no obvious GWS intent and it's short, it's likely chat
     if not has_gws_intent and len(task_text.split()) < 5:
-         config = context.bot_data.get("config")
-         if config:
-             from .chat_utils import get_chat_response
-             response = await get_chat_response(task_text, config)
-             await update.effective_message.reply_text(response)
-             return
+        config = context.bot_data.get("config")
+        if config:
+            from .chat_utils import get_chat_response
+
+            response = await get_chat_response(task_text, config)
+            await update.effective_message.reply_text(response)
+            return
 
     # 3. If it looks like a task, run the full agent
     await run_gws_task(update, context, task_text)
+
 
 async def handle_service_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_check(update, context):
@@ -201,10 +248,11 @@ async def handle_service_command(update: Update, context: ContextTypes.DEFAULT_T
     # So "/docs Create a new document" becomes "docs Create a new document"
     text = update.effective_message.text.strip()
     # Strip the leading '/'
-    if text.startswith('/'):
+    if text.startswith("/"):
         text = text[1:]
 
     await run_gws_task(update, context, text)
+
 
 def create_application(config: AppConfig) -> Application:
     """Create and configure the Telegram application."""

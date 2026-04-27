@@ -85,7 +85,7 @@ class AppConfig:
                 os.getenv("OPENROUTER_API_KEY1"),
                 os.getenv("OPENROUTER_API_KEY2"),
                 os.getenv("OPENROUTER_API_KEY3"),
-                os.getenv("OPENROUTER_API_KEY"), # Default fallback
+                os.getenv("OPENROUTER_API_KEY"),  # Default fallback
             ]
             openrouter_api_keys = [k.strip() for k in openrouter_api_keys_list if k and k.strip()]
         if not openrouter_api_keys and api_key:
@@ -135,7 +135,6 @@ class AppConfig:
             sandbox_enabled=sandbox_enabled,
             read_only_mode=read_only_mode,
         )
-
 
 
 def _resolve_gws_binary_path(value: str) -> Path:

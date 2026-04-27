@@ -12,21 +12,22 @@ from enum import Enum
 
 class APIErrorType(Enum):
     """Typed taxonomy of Google API errors seen in the wild."""
-    INVALID_QUERY  = "invalid_query"   # HTTP 400 — malformed q / field value
-    AUTH           = "auth"            # HTTP 401 / 403 — credential problem
-    RATE_LIMIT     = "rate_limit"      # HTTP 429 — quota / rate limit
-    SERVER         = "server"          # HTTP 5xx — transient server error
-    NOT_FOUND      = "not_found"       # HTTP 404 — resource missing
-    UNKNOWN        = "unknown"         # Anything else
+
+    INVALID_QUERY = "invalid_query"  # HTTP 400 — malformed q / field value
+    AUTH = "auth"  # HTTP 401 / 403 — credential problem
+    RATE_LIMIT = "rate_limit"  # HTTP 429 — quota / rate limit
+    SERVER = "server"  # HTTP 5xx — transient server error
+    NOT_FOUND = "not_found"  # HTTP 404 — resource missing
+    UNKNOWN = "unknown"  # Anything else
 
 
 # Patterns mapped to error types.  Each tuple is (compiled_re, APIErrorType).
 _ERROR_PATTERNS: list[tuple[re.Pattern, APIErrorType]] = [
-    (re.compile(r"Invalid Value|invalid|bad request|malformed",  re.IGNORECASE), APIErrorType.INVALID_QUERY),
+    (re.compile(r"Invalid Value|invalid|bad request|malformed", re.IGNORECASE), APIErrorType.INVALID_QUERY),
     (re.compile(r"401|403|unauthorized|forbidden|invalid_grant|authError", re.IGNORECASE), APIErrorType.AUTH),
-    (re.compile(r"429|rateLimitExceeded|userRateLimitExceeded|quota",      re.IGNORECASE), APIErrorType.RATE_LIMIT),
-    (re.compile(r"5\d\d|backendError|internalError|Service Unavailable",   re.IGNORECASE), APIErrorType.SERVER),
-    (re.compile(r"404|410|notFound|not found|deleted",                      re.IGNORECASE), APIErrorType.NOT_FOUND),
+    (re.compile(r"429|rateLimitExceeded|userRateLimitExceeded|quota", re.IGNORECASE), APIErrorType.RATE_LIMIT),
+    (re.compile(r"5\d\d|backendError|internalError|Service Unavailable", re.IGNORECASE), APIErrorType.SERVER),
+    (re.compile(r"404|410|notFound|not found|deleted", re.IGNORECASE), APIErrorType.NOT_FOUND),
 ]
 
 
@@ -46,6 +47,7 @@ def classify_api_error(stderr: str, stdout: str) -> APIErrorType:
 # ---------------------------------------------------------------------------
 # Exception hierarchy
 # ---------------------------------------------------------------------------
+
 
 class ValidationError(Exception):
     """Raised when a planned task or command fails schema/semantic validation."""

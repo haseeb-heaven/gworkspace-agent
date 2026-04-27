@@ -78,7 +78,9 @@ class TripleVerifier:
             self.logger.info("Triple-check attempt %d/%d for %s %s.", index + 1, self.attempts, service, resource_id)
             result = self.runner.run(args)
             if not result.success:
-                self.logger.warning("Triple-check failed for %s %s: %s", service, resource_id, result.error or result.stderr)
+                self.logger.warning(
+                    "Triple-check failed for %s %s: %s", service, resource_id, result.error or result.stderr
+                )
                 return False
 
             payload = self._payload(result)
@@ -98,7 +100,13 @@ class TripleVerifier:
             return self.planner.build_command(service, action, {id_param: resource_id})
 
         if service == "calendar":
-            return ["calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": resource_id})]
+            return [
+                "calendar",
+                "events",
+                "get",
+                "--params",
+                json.dumps({"calendarId": "primary", "eventId": resource_id}),
+            ]
         if service == "sheets":
             return ["sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": resource_id})]
         if service == "docs":
@@ -116,6 +124,7 @@ class TripleVerifier:
     @staticmethod
     def _payload(result: Any) -> Any:
         from gws_assistant.json_utils import safe_json_loads
+
         if getattr(result, "output", None) is not None:
             return result.output
         stdout = getattr(result, "stdout", "")

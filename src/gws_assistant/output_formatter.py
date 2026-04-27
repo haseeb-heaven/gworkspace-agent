@@ -82,7 +82,7 @@ class HumanReadableFormatter:
         if "drive_export_content" in payload:
             return str(payload["drive_export_content"]).strip()
         if "content" in payload and "saved_file" in payload:
-             return str(payload["content"]).strip()
+            return str(payload["content"]).strip()
         if "items" in payload and isinstance(payload.get("items"), list):
             return _format_calendar_items(payload)
         if "stdout" in payload and payload.get("stdout"):
@@ -95,6 +95,7 @@ class HumanReadableFormatter:
 def _parse_json(stdout: str) -> dict[str, Any] | None:
     try:
         from gws_assistant.json_utils import safe_json_loads
+
         payload = safe_json_loads(stdout)
         return payload if isinstance(payload, dict) else None
     except Exception:

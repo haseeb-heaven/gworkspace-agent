@@ -29,7 +29,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"messages":[{"id":"m1","threadId":"t1"}, {"id":"m2","threadId":"t2"}],"resultSizeEstimate":2}',
+                stdout='{"messages":[{"id":"m1","threadId":"t1","payload":{"headers":[{"name":"Subject","value":"Job offer m1"}]}}, {"id":"m2","threadId":"t2","payload":{"headers":[{"name":"Subject","value":"Job offer m2"}]}}],"resultSizeEstimate":2}',
             )
         if args[:3] == ["sheets", "spreadsheets", "create"]:
             import json as _json
@@ -154,7 +154,7 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_values"},
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_rows"},
             ),
         ],
     )
@@ -321,8 +321,8 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
 
     append_cmd = runner.commands[3]
     sheet_payload = json.loads(append_cmd[append_cmd.index("--json") + 1])
-    assert sheet_payload["values"][1][0] == "LangGraph"
-    assert sheet_payload["values"][2][0] == "CrewAI"
+    assert sheet_payload["values"][0][0] == "LangGraph"
+    assert sheet_payload["values"][1][0] == "CrewAI"
 
     send_cmd = runner.commands[4]
     raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])
@@ -348,7 +348,7 @@ def test_gmail_details_accumulation():
                 parameters={
                     "spreadsheet_id": "s1",
                     "range": "Sheet1!A1",
-                    "values": "$gmail_details_values",
+                    "values": "$gmail_summary_rows",
                 },
             ),
         ],
@@ -360,7 +360,7 @@ def test_gmail_details_accumulation():
     # Task 2 expanded into 2-1 and 2-2
     # Task 3: append_values
 
-    # Check that gmail_details_values in task-3 contains TWO rows
+    # Check that gmail_summary_rows in task-3 contains TWO rows
     append_task = report.executions[-1].task
     values = append_task.parameters["values"]
     assert isinstance(values, list)
@@ -368,3 +368,77 @@ def test_gmail_details_accumulation():
     assert len(values) == 2
     assert values[0][1] == "Job offer m1"
     assert values[1][1] == "Job offer m2"
+
+def test_code_output_resolution():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+
+    # Fake runner for code execute doesn't natively exist, we can stub it or test logic via direct handle.
+    plan = RequestPlan(
+        raw_text="run code and send",
+        tasks=[
+            PlannedTask(id="task-1", service="code", action="execute", parameters={"code": "print('hello world')"}),
+            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"}),
+        ]
+    )
+
+    # We need to mock _handle_code_execution_task to simulate the updated code outputs
+    # since FakeRunner might not intercept code.execute natively (it goes through _handle_code_execution_task)
+    original_handle = getattr(executor, "_handle_code_execution_task", None)
+
+    def fake_code_execute(task, context):
+        from gws_assistant.models import ExecutionResult
+        # Mimic context updater directly since the real handler calls runner
+        result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
+        context["code_output"] = result_data["parsed_value"]
+        # Add tasks results structure for compatibility if needed
+        context.setdefault("task_results", {})["task-1"] = result_data
+
+        return ExecutionResult(success=True, command=["code", "execute"], output=result_data, stdout="hello world\n")
+
+    executor._handle_code_execution_task = fake_code_execute
+
+    try:
+        report = executor.execute(plan)
+        assert report.success is True
+    finally:
+        if original_handle:
+            executor._handle_code_execution_task = original_handle
+
+    # The second task is send_message, verify it resolved $code_output
+    send_cmds = [c for c in runner.commands if c[:4] == ["gmail", "users", "messages", "send"]]
+    assert len(send_cmds) == 1
+
+    # Check payload
+    payload_str = send_cmds[0][send_cmds[0].index("--json") + 1]
+    payload = json.loads(payload_str)
+    decoded_body = base64.urlsafe_b64decode(payload["raw"]).decode("ascii")
+    assert "Result: hello world" in decoded_body
+
+
+def test_legacy_placeholder_resolution():
+    from gws_assistant.execution.executor import PlanExecutor
+    from gws_assistant.planner import CommandPlanner
+    import logging
+
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+
+    context = {
+        "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
+        "code_output": "test_output_123",
+        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |"
+    }
+
+    # Should resolve correctly mapping from legacy to new
+    resolved_drive = executor._resolve_placeholders("$drive_summary_values", context)
+    assert resolved_drive == [["file1.txt", "text/plain", "link1"]]
+
+    resolved_code = executor._resolve_placeholders("$last_code_stdout", context)
+    assert resolved_code == "test_output_123"
+
+    resolved_code_result = executor._resolve_placeholders("$last_code_result", context)
+    assert resolved_code_result == "test_output_123"
+
+    resolved_sheet = executor._resolve_placeholders("$sheet_email_body", context)
+    assert resolved_sheet == "| Col1 | Col2 |\n|---|---|\n| A | B |"

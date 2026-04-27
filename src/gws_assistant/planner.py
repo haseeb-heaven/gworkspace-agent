@@ -27,7 +27,7 @@ _UNSUPPORTED_STUB_SERVICES = frozenset({"analytics", "bigquery"})
 
 # Matches a raw Google Drive file ID (alphanumeric + hyphens/underscores, 25-60 chars).
 # Drive file IDs look like: 1-A9SUqwDnbUE51VZ7FbAh8i-wUGz8Cqw9jCIUw0nMjo
-_DRIVE_FILE_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{25,60}$')
+_DRIVE_FILE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{25,60}$")
 
 # MIME type used when exporting Google Docs to PDF for attachment.
 _GDOC_EXPORT_MIME = "application/pdf"
@@ -37,8 +37,13 @@ _GDOC_EXPORT_MIME = "application/pdf"
 # ---------------------------------------------------------------------------
 
 _WEEKDAY_NAMES = {
-    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-    "friday": 4, "saturday": 5, "sunday": 6,
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
 }
 
 # ISO-8601 date pattern  YYYY-MM-DD
@@ -81,7 +86,7 @@ def _resolve_date_expression(raw: str) -> str:
 
     # "next monday" / "next friday" etc.
     next_prefix = val.startswith("next ")
-    check_val   = val[5:] if next_prefix else val
+    check_val = val[5:] if next_prefix else val
 
     if check_val in _WEEKDAY_NAMES:
         target_wd = _WEEKDAY_NAMES[check_val]
@@ -103,9 +108,9 @@ def _parse_time_to_hhmm(raw: str) -> tuple[int, int] | None:
     m = _TIME_RE.search(raw.strip())
     if not m:
         return None
-    hour   = int(m.group(1))
+    hour = int(m.group(1))
     minute = int(m.group(2)) if m.group(2) else 0
-    ampm   = (m.group(3) or "").lower()
+    ampm = (m.group(3) or "").lower()
     if ampm == "pm" and hour != 12:
         hour += 12
     elif ampm == "am" and hour == 12:
@@ -198,7 +203,7 @@ class CommandPlanner:
         if service_key in ("code", "computation"):
             return [service_key, action_key, "internal"]
         if service_key == "workflow":
-            return ["workflow", "list"] # Placeholder for internal workflow listing
+            return ["workflow", "list"]  # Placeholder for internal workflow listing
         raise ValidationError(f"No command builder for service: {service_key}")
 
     # ------------------------------------------------------------------
@@ -227,24 +232,49 @@ class CommandPlanner:
                 # If the query looks like a document search, prioritize Google Docs mimeType.
                 lowered = raw_query.lower()
                 if any(kw in lowered for kw in ("document", "doc", "12th", "class")) and "mimetype" not in lowered:
-                    request_params["q"] = f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
+                    request_params["q"] = (
+                        f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
+                    )
                 else:
                     request_params["q"] = sanitize_drive_query(raw_query)
             return ["drive", "files", "list", "--params", json.dumps(request_params, ensure_ascii=True)]
 
         if action == "create_folder":
             folder_name = self._required_text(params, "folder_name")
-            return ["drive", "files", "create", "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}), "--json",
-                    json.dumps({"mimeType": "application/vnd.google-apps.folder", "name": folder_name}, ensure_ascii=True)]
+            return [
+                "drive",
+                "files",
+                "create",
+                "--params",
+                json.dumps({"fields": "id,name,mimeType,webViewLink"}),
+                "--json",
+                json.dumps({"mimeType": "application/vnd.google-apps.folder", "name": folder_name}, ensure_ascii=True),
+            ]
 
         if action == "upload_file":
             file_path = self._required_text(params, "file_path")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
-            return ["drive", "files", "create", "--upload", file_path, "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}), "--json", json.dumps({"name": name}, ensure_ascii=True)]
+            return [
+                "drive",
+                "files",
+                "create",
+                "--upload",
+                file_path,
+                "--params",
+                json.dumps({"fields": "id,name,mimeType,webViewLink"}),
+                "--json",
+                json.dumps({"name": name}, ensure_ascii=True),
+            ]
 
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
-            return ["drive", "files", "get", "--params", json.dumps({"fileId": file_id, "fields": "id,name,mimeType,webViewLink"})]
+            return [
+                "drive",
+                "files",
+                "get",
+                "--params",
+                json.dumps({"fileId": file_id, "fields": "id,name,mimeType,webViewLink"}),
+            ]
 
         if action == "create_file":
             name = self._required_text(params, "name")
@@ -255,15 +285,21 @@ class CommandPlanner:
             if folder_id:
                 payload["parents"] = [folder_id]
 
-            return ["drive", "files", "create",
-                    "--params", json.dumps({"fields": "id,name,mimeType,webViewLink"}),
-                    "--json", json.dumps(payload, ensure_ascii=True)]
+            return [
+                "drive",
+                "files",
+                "create",
+                "--params",
+                json.dumps({"fields": "id,name,mimeType,webViewLink"}),
+                "--json",
+                json.dumps(payload, ensure_ascii=True),
+            ]
 
         if action == "export_file":
             file_id = self._required_text(params, "file_id")
 
             requested_mime = str(params.get("mime_type") or "").strip()
-            source_mime    = str(params.get("source_mime") or "").strip()
+            source_mime = str(params.get("source_mime") or "").strip()
 
             # 🔥 PRIMARY: use source_mime if available to determine best export format
             # Only certain types support the 'export' endpoint.
@@ -272,26 +308,25 @@ class CommandPlanner:
                 "application/vnd.google-apps.document",
                 "application/vnd.google-apps.spreadsheet",
                 "application/vnd.google-apps.presentation",
-                "application/vnd.google-apps.drawing"
+                "application/vnd.google-apps.drawing",
             }
             is_workspace_doc = source_mime in exportable_mimes
             if source_mime == "application/vnd.google-apps.folder":
-                 # Folders CANNOT be exported or downloaded as media.
-                 # Returning a ValidationError here helps the agent realize it picked a folder instead of a document.
-                 raise ValidationError(f"File '{file_id}' is a folder and cannot be read as document content. Please search specifically for documents or list folder contents.")
+                # Folders CANNOT be exported or downloaded as media.
+                # Returning a ValidationError here helps the agent realize it picked a folder instead of a document.
+                raise ValidationError(
+                    f"File '{file_id}' is a folder and cannot be read as document content. Please search specifically for documents or list folder contents."
+                )
 
             if source_mime and not is_workspace_doc:
-                 return [
+                return [
                     "drive",
                     "files",
                     "get",
                     "--params",
-                    json.dumps({
-                        "fileId": file_id,
-                        "alt": "media"
-                    }),
+                    json.dumps({"fileId": file_id, "alt": "media"}),
                     "-o",
-                    f"scratch/exports/download_{file_id}"
+                    f"scratch/exports/download_{file_id}",
                 ]
 
             if source_mime == "application/vnd.google-apps.document":
@@ -309,17 +344,14 @@ class CommandPlanner:
 
             # If the user explicitly asks for media/download or it's already a PDF and they want it
             if mime_type == "media" or (source_mime == "application/pdf" and mime_type == "application/pdf"):
-                 return [
+                return [
                     "drive",
                     "files",
                     "get",
                     "--params",
-                    json.dumps({
-                        "fileId": file_id,
-                        "alt": "media"
-                    }),
+                    json.dumps({"fileId": file_id, "alt": "media"}),
                     "-o",
-                    f"scratch/exports/download_{file_id}"
+                    f"scratch/exports/download_{file_id}",
                 ]
 
             return [
@@ -327,12 +359,9 @@ class CommandPlanner:
                 "files",
                 "export",
                 "--params",
-                json.dumps({
-                    "fileId": file_id,
-                    "mimeType": mime_type
-                }),
+                json.dumps({"fileId": file_id, "mimeType": mime_type}),
                 "-o",
-                f"scratch/exports/download_{file_id}"
+                f"scratch/exports/download_{file_id}",
             ]
 
         if action == "delete_file":
@@ -353,28 +382,24 @@ class CommandPlanner:
             if not payload:
                 raise ValidationError("At least one metadata field (name or description) must be provided.")
 
-            return ["drive", "files", "update",
-                    "--params", json.dumps({"fileId": file_id, "fields": "id,name,description"}),
-                    "--json", json.dumps(payload, ensure_ascii=True)]
+            return [
+                "drive",
+                "files",
+                "update",
+                "--params",
+                json.dumps({"fileId": file_id, "fields": "id,name,description"}),
+                "--json",
+                json.dumps(payload, ensure_ascii=True),
+            ]
 
         if action == "move_file":
             file_id = self._required_text(params, "file_id")
             folder_id = self._required_text(params, "folder_id")
             # In Drive v3, move is accomplished via update with addParents/removeParents.
             # The execution engine will intercept this placeholder and fetch parents.
-            update_params = {
-                "fileId": file_id,
-                "addParents": folder_id,
-                "removeParents": "{{fetch_parents}}"
-            }
+            update_params = {"fileId": file_id, "addParents": folder_id, "removeParents": "{{fetch_parents}}"}
 
-            return [
-                "drive",
-                "files",
-                "update",
-                "--params",
-                json.dumps(update_params)
-            ]
+            return ["drive", "files", "update", "--params", json.dumps(update_params)]
 
         if action == "copy_file":
             file_id = self._required_text(params, "file_id")
@@ -402,11 +427,15 @@ class CommandPlanner:
     def _build_sheets_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "create_spreadsheet":
             title = self._required_text(params, "title")
-            return ["sheets", "spreadsheets", "create", "--json",
-                    json.dumps({
-                        "properties": {"title": title},
-                        "sheets": [{"properties": {"title": title}}]
-                    }, ensure_ascii=True)]
+            return [
+                "sheets",
+                "spreadsheets",
+                "create",
+                "--json",
+                json.dumps(
+                    {"properties": {"title": title}, "sheets": [{"properties": {"title": title}}]}, ensure_ascii=True
+                ),
+            ]
 
         if action == "get_spreadsheet":
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
@@ -416,9 +445,12 @@ class CommandPlanner:
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
             range_name = str(params.get("range") or "A1")
             return [
-                "sheets", "+read",
-                "--spreadsheet", spreadsheet_id,
-                "--range", range_name,
+                "sheets",
+                "+read",
+                "--spreadsheet",
+                spreadsheet_id,
+                "--range",
+                range_name,
             ]
 
         if action == "append_values":
@@ -431,17 +463,30 @@ class CommandPlanner:
                 values = [[values]]  # e.g. "hello" -> [["hello"]]
             elif isinstance(values, list):
                 if values and not isinstance(values[0], list):
-                    values = [values] # e.g. ['a', 'b'] -> [['a', 'b']]
-                elif not values: # Handle empty list
+                    values = [values]  # e.g. ['a', 'b'] -> [['a', 'b']]
+                elif not values:  # Handle empty list
                     values = [["No values supplied"]]
-            else: # Handle non-string, non-list types (e.g., None, int, etc.)
+            else:  # Handle non-string, non-list types (e.g., None, int, etc.)
                 val_str = "" if values is None else str(values)
-                values = [[val_str]] # Wrap in list of lists
+                values = [[val_str]]  # Wrap in list of lists
 
             return [
-                "sheets", "spreadsheets", "values", "append",
-                "--params", json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name, "valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"}, ensure_ascii=True),
-                "--json",  json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}, ensure_ascii=True),
+                "sheets",
+                "spreadsheets",
+                "values",
+                "append",
+                "--params",
+                json.dumps(
+                    {
+                        "spreadsheetId": spreadsheet_id,
+                        "range": range_name,
+                        "valueInputOption": "RAW",
+                        "insertDataOption": "INSERT_ROWS",
+                    },
+                    ensure_ascii=True,
+                ),
+                "--json",
+                json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}, ensure_ascii=True),
             ]
 
         if action == "delete_spreadsheet":
@@ -452,12 +497,15 @@ class CommandPlanner:
             spreadsheet_id = self._required_text(params, "spreadsheet_id")
             range_name = self._format_range(str(params.get("range") or "A1"))
             return [
-                "sheets", "spreadsheets", "values", "clear",
-                "--params", json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name}, ensure_ascii=True),
+                "sheets",
+                "spreadsheets",
+                "values",
+                "clear",
+                "--params",
+                json.dumps({"spreadsheetId": spreadsheet_id, "range": range_name}, ensure_ascii=True),
             ]
 
         raise ValidationError(f"Unsupported sheets action: {action}")
-
 
     # ------------------------------------------------------------------
     # Gmail
@@ -466,7 +514,7 @@ class CommandPlanner:
     def _build_gmail_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_messages":
             max_results = self._safe_positive_int(params.get("max_results"), default=10)
-            raw_query   = str(params.get("q") or "").strip()
+            raw_query = str(params.get("q") or "").strip()
             request_params: dict[str, Any] = {
                 "userId": "me",
                 "maxResults": max_results,
@@ -480,23 +528,20 @@ class CommandPlanner:
         if action == "get_message":
             # Allow message_id to be missing or a placeholder during planning
             message_id = params.get("message_id") or "{{message_id}}"
-            return ["gmail", "users", "messages", "get", "--params",
-                    json.dumps({"userId": "me", "id": message_id})]
+            return ["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "trash_message":
             message_id = self._required_text(params, "message_id")
-            return ["gmail", "users", "messages", "trash", "--params",
-                    json.dumps({"userId": "me", "id": message_id})]
+            return ["gmail", "users", "messages", "trash", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "delete_message":
             message_id = self._required_text(params, "message_id")
-            return ["gmail", "users", "messages", "delete", "--params",
-                    json.dumps({"userId": "me", "id": message_id})]
+            return ["gmail", "users", "messages", "delete", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "send_message":
             to_email = self._required_text(params, "to_email").strip().rstrip(".")
-            subject  = self._required_text(params, "subject")
-            body     = self._required_text(params, "body")
+            subject = self._required_text(params, "subject")
+            body = self._required_text(params, "body")
 
             attachments = params.get("attachments")
             attachment_paths: list[str] = []
@@ -524,15 +569,24 @@ class CommandPlanner:
 
             if resolved_attachment_paths:
                 raw_email = self._build_raw_email_with_attachments(
-                    to_email=to_email, subject=subject, body=body,
+                    to_email=to_email,
+                    subject=subject,
+                    body=body,
                     attachment_paths=resolved_attachment_paths,
                 )
             else:
                 raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
 
-            return ["gmail", "users", "messages", "send",
-                    "--params", json.dumps({"userId": "me"}),
-                    "--json",   json.dumps({"raw": raw_email}, ensure_ascii=True)]
+            return [
+                "gmail",
+                "users",
+                "messages",
+                "send",
+                "--params",
+                json.dumps({"userId": "me"}),
+                "--json",
+                json.dumps({"raw": raw_email}, ensure_ascii=True),
+            ]
 
         raise ValidationError(f"Unsupported gmail action: {action}")
 
@@ -543,26 +597,30 @@ class CommandPlanner:
     def _build_calendar_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_events":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
-            return ["calendar", "events", "list", "--params",
-                    json.dumps({"calendarId": calendar_id, "singleEvents": True,
-                                "orderBy": "startTime", "maxResults": 20})]
+            return [
+                "calendar",
+                "events",
+                "list",
+                "--params",
+                json.dumps({"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}),
+            ]
 
         if action == "create_event":
             summary = self._required_text(params, "summary")
             start_date_raw = self._required_text(params, "start_date")
-            start_date     = _resolve_date_expression(start_date_raw)
+            start_date = _resolve_date_expression(start_date_raw)
             time_zone = str(params.get("time_zone") or params.get("timezone") or "UTC").strip()
             start_datetime_raw = str(params.get("start_datetime") or "").strip()
             start_time_raw = str(params.get("start_time") or "").strip()
 
             event_start: dict[str, str]
-            event_end:   dict[str, str]
+            event_end: dict[str, str]
 
             if start_datetime_raw:
                 dt_str = start_datetime_raw if "T" in start_datetime_raw else f"{start_date}T{start_datetime_raw}"
                 event_start = {"dateTime": dt_str, "timeZone": time_zone}
                 try:
-                    dt_obj  = datetime.fromisoformat(dt_str)
+                    dt_obj = datetime.fromisoformat(dt_str)
                     end_str = (dt_obj + timedelta(hours=1)).isoformat()
                 except ValueError:
                     end_str = dt_str
@@ -573,9 +631,9 @@ class CommandPlanner:
                     h, m = parsed_time
                     y, month, day = [int(p) for p in start_date.split("-")]
                     dt_start = datetime(y, month, day, h, m)
-                    dt_end   = dt_start + timedelta(hours=1)
+                    dt_end = dt_start + timedelta(hours=1)
                     event_start = {"dateTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": time_zone}
-                    event_end   = {"dateTime": dt_end.strftime("%Y-%m-%dT%H:%M:%S"),   "timeZone": time_zone}
+                    event_end = {"dateTime": dt_end.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": time_zone}
                 else:
                     event_start = {"date": start_date}
                     try:
@@ -597,12 +655,12 @@ class CommandPlanner:
             )
 
             reminder_minutes_raw = params.get("reminder_minutes") or params.get("reminder")
-            reminder_minutes     = self._safe_positive_int(reminder_minutes_raw, default=0)
+            reminder_minutes = self._safe_positive_int(reminder_minutes_raw, default=0)
 
             event_body: dict[str, Any] = {
                 "summary": summary,
-                "start":   event_start,
-                "end":     event_end,
+                "start": event_start,
+                "end": event_end,
             }
 
             if description:
@@ -612,35 +670,51 @@ class CommandPlanner:
                 event_body["conferenceData"] = {
                     "createRequest": {
                         "requestId": f"meet-{int(datetime.now().timestamp())}",
-                        "conferenceSolutionKey": {"type": "hangoutsMeet"}
+                        "conferenceSolutionKey": {"type": "hangoutsMeet"},
                     }
                 }
 
             if reminder_minutes > 0:
                 event_body["reminders"] = {
                     "useDefault": False,
-                    "overrides":  [{"method": "popup", "minutes": reminder_minutes}],
+                    "overrides": [{"method": "popup", "minutes": reminder_minutes}],
                 }
 
             params_dict: dict[str, Any] = {"calendarId": "primary"}
             if "conferenceData" in event_body:
                 params_dict["conferenceDataVersion"] = 1
 
-            return ["calendar", "events", "insert",
-                    "--params", json.dumps(params_dict),
-                    "--json",   json.dumps(event_body, ensure_ascii=True)]
+            return [
+                "calendar",
+                "events",
+                "insert",
+                "--params",
+                json.dumps(params_dict),
+                "--json",
+                json.dumps(event_body, ensure_ascii=True),
+            ]
 
         if action == "get_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
             event_id = self._required_text(params, "event_id")
-            return ["calendar", "events", "get", "--params",
-                    json.dumps({"calendarId": calendar_id, "eventId": event_id})]
+            return [
+                "calendar",
+                "events",
+                "get",
+                "--params",
+                json.dumps({"calendarId": calendar_id, "eventId": event_id}),
+            ]
 
         if action == "delete_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
             event_id = self._required_text(params, "event_id")
-            return ["calendar", "events", "delete", "--params",
-                    json.dumps({"calendarId": calendar_id, "eventId": event_id})]
+            return [
+                "calendar",
+                "events",
+                "delete",
+                "--params",
+                json.dumps({"calendarId": calendar_id, "eventId": event_id}),
+            ]
 
         if action == "update_event":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
@@ -651,9 +725,15 @@ class CommandPlanner:
             if params.get("description"):
                 patch_body["description"] = str(params.get("description")).strip()
 
-            return ["calendar", "events", "patch",
-                    "--params", json.dumps({"calendarId": calendar_id, "eventId": event_id}),
-                    "--json",   json.dumps(patch_body, ensure_ascii=True)]
+            return [
+                "calendar",
+                "events",
+                "patch",
+                "--params",
+                json.dumps({"calendarId": calendar_id, "eventId": event_id}),
+                "--json",
+                json.dumps(patch_body, ensure_ascii=True),
+            ]
 
         raise ValidationError(f"Unsupported calendar action: {action}")
 
@@ -668,24 +748,31 @@ class CommandPlanner:
             return ["docs", "documents", "create", "--json", json.dumps(doc_body, ensure_ascii=True)]
 
         if action == "get_document":
-            doc_id = (params.get("document_id") or params.get("documentId")
-                      or params.get("file_id")   or params.get("fileId"))
+            doc_id = (
+                params.get("document_id") or params.get("documentId") or params.get("file_id") or params.get("fileId")
+            )
             if not doc_id or not str(doc_id).strip():
                 raise ValidationError("Missing required parameter: document_id")
             return ["docs", "documents", "get", "--params", json.dumps({"documentId": str(doc_id).strip()})]
 
         if action == "batch_update":
-            document_id      = self._required_text(params, "document_id")
-            text             = str(params.get("text") or "").strip()
+            document_id = self._required_text(params, "document_id")
+            text = str(params.get("text") or "").strip()
             if "index" in params:
                 location = {"location": {"index": int(params["index"])}}
             else:
                 location = {"endOfSegmentLocation": {"segmentId": ""}}
 
             requests_payload = [{"insertText": {**location, "text": text}}]
-            return ["docs", "documents", "batchUpdate",
-                    "--params", json.dumps({"documentId": document_id}),
-                    "--json",   json.dumps({"requests": requests_payload}, ensure_ascii=True)]
+            return [
+                "docs",
+                "documents",
+                "batchUpdate",
+                "--params",
+                json.dumps({"documentId": document_id}),
+                "--json",
+                json.dumps({"requests": requests_payload}, ensure_ascii=True),
+            ]
 
         raise ValidationError(f"Unsupported docs action: {action}")
 
@@ -698,8 +785,12 @@ class CommandPlanner:
             title = str(params.get("title") or "Untitled Presentation").strip()
             return ["slides", "presentations", "create", "--json", json.dumps({"title": title}, ensure_ascii=True)]
         if action == "get_presentation":
-            presentation_id = (params.get("presentation_id") or params.get("presentationId")
-                               or params.get("id") or params.get("file_id"))
+            presentation_id = (
+                params.get("presentation_id")
+                or params.get("presentationId")
+                or params.get("id")
+                or params.get("file_id")
+            )
             if not presentation_id:
                 raise ValidationError("Missing required parameter: presentation_id")
             return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": str(presentation_id)})]
@@ -712,9 +803,20 @@ class CommandPlanner:
     def _build_contacts_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_contacts":
             page_size = self._safe_positive_int(params.get("page_size"), default=10)
-            return ["people", "people", "connections", "list", "--params",
-                    json.dumps({"resourceName": "people/me", "pageSize": page_size,
-                                "personFields": "names,emailAddresses,phoneNumbers"})]
+            return [
+                "people",
+                "people",
+                "connections",
+                "list",
+                "--params",
+                json.dumps(
+                    {
+                        "resourceName": "people/me",
+                        "pageSize": page_size,
+                        "personFields": "names,emailAddresses,phoneNumbers",
+                    }
+                ),
+            ]
         raise ValidationError(f"Unsupported contacts action: {action}")
 
     def _build_chat_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -723,15 +825,28 @@ class CommandPlanner:
             return ["chat", "spaces", "list", "--params", json.dumps({"pageSize": page_size})]
         if action == "send_message":
             space = self._required_text(params, "space")
-            text  = self._required_text(params, "text")
-            return ["chat", "spaces", "messages", "create",
-                    "--params", json.dumps({"parent": space}),
-                    "--json",   json.dumps({"text": text}, ensure_ascii=True)]
+            text = self._required_text(params, "text")
+            return [
+                "chat",
+                "spaces",
+                "messages",
+                "create",
+                "--params",
+                json.dumps({"parent": space}),
+                "--json",
+                json.dumps({"text": text}, ensure_ascii=True),
+            ]
         if action == "list_messages":
-            space     = self._required_text(params, "space")
+            space = self._required_text(params, "space")
             page_size = self._safe_positive_int(params.get("page_size"), default=10)
-            return ["chat", "spaces", "messages", "list", "--params",
-                    json.dumps({"parent": space, "pageSize": page_size})]
+            return [
+                "chat",
+                "spaces",
+                "messages",
+                "list",
+                "--params",
+                json.dumps({"parent": space, "pageSize": page_size}),
+            ]
         raise ValidationError(f"Unsupported chat action: {action}")
 
     def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -751,7 +866,13 @@ class CommandPlanner:
         if action == "create_note":
             title = str(params.get("title") or "New Note").strip()
             body = str(params.get("body") or "").strip()
-            return ["keep", "notes", "create", "--json", json.dumps({"title": title, "body": {"text": {"text": body}}}, ensure_ascii=True)]
+            return [
+                "keep",
+                "notes",
+                "create",
+                "--json",
+                json.dumps({"title": title, "body": {"text": {"text": body}}}, ensure_ascii=True),
+            ]
         if action == "get_note":
             name = self._required_text(params, "name")
             return ["keep", "notes", "get", "--params", json.dumps({"name": name})]
@@ -765,9 +886,14 @@ class CommandPlanner:
             return ["admin", "log_activity", "internal"]
         if action == "list_activities":
             app_name = str(params.get("application_name") or "drive").strip()
-            max_res  = self._safe_positive_int(params.get("max_results"), default=10)
-            return ["admin-reports", "activities", "list",
-                    "--params", json.dumps({"userKey": "all", "applicationName": app_name, "maxResults": max_res})]
+            max_res = self._safe_positive_int(params.get("max_results"), default=10)
+            return [
+                "admin-reports",
+                "activities",
+                "list",
+                "--params",
+                json.dumps({"userKey": "all", "applicationName": app_name, "maxResults": max_res}),
+            ]
         raise ValidationError(f"Unsupported admin action: {action}")
 
     def _build_forms_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -795,7 +921,15 @@ class CommandPlanner:
                 body["notes"] = str(params.get("notes"))
             if params.get("due"):
                 body["due"] = str(params.get("due"))
-            return ["tasks", "tasks", "insert", "--params", json.dumps({"tasklist": tl_id}), "--json", json.dumps(body, ensure_ascii=True)]
+            return [
+                "tasks",
+                "tasks",
+                "insert",
+                "--params",
+                json.dumps({"tasklist": tl_id}),
+                "--json",
+                json.dumps(body, ensure_ascii=True),
+            ]
         if action == "get_task":
             tl_id = str(params.get("tasklist") or "@default").strip()
             task_id = self._required_text(params, "task_id")
@@ -804,7 +938,15 @@ class CommandPlanner:
             tl_id = str(params.get("tasklist") or "@default").strip()
             task_id = self._required_text(params, "task_id")
             body = {k: v for k, v in params.items() if k in ("title", "status", "notes", "due") and v is not None}
-            return ["tasks", "tasks", "update", "--params", json.dumps({"tasklist": tl_id, "task": task_id}), "--json", json.dumps(body)]
+            return [
+                "tasks",
+                "tasks",
+                "update",
+                "--params",
+                json.dumps({"tasklist": tl_id, "task": task_id}),
+                "--json",
+                json.dumps(body),
+            ]
         if action == "delete_task":
             tl_id = str(params.get("tasklist") or "@default").strip()
             task_id = self._required_text(params, "task_id")
@@ -839,7 +981,14 @@ class CommandPlanner:
         if action == "sanitize_text":
             text = self._required_text(params, "text")
             template = self._required_text(params, "template")
-            return ["modelarmor", "+sanitize-prompt", "--params", json.dumps({"template": template}), "--json", json.dumps({"text": text}, ensure_ascii=True)]
+            return [
+                "modelarmor",
+                "+sanitize-prompt",
+                "--params",
+                json.dumps({"template": template}),
+                "--json",
+                json.dumps({"text": text}, ensure_ascii=True),
+            ]
         raise ValidationError(f"Unsupported modelarmor action: {action}")
 
     def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -847,7 +996,9 @@ class CommandPlanner:
             message = self._required_text(params, "message")
             python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            script_path = os.environ.get("TELEGRAM_SCRIPT_PATH", os.path.join(base_dir, "scripts", "telegram_send_message.py"))
+            script_path = os.environ.get(
+                "TELEGRAM_SCRIPT_PATH", os.path.join(base_dir, "scripts", "telegram_send_message.py")
+            )
             return [python_exe, script_path, message]
         raise ValidationError(f"Unsupported telegram action: {action}")
 
@@ -924,7 +1075,20 @@ class CommandPlanner:
             gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
             for mime_type, ext in [("application/pdf", ".pdf"), ("text/csv", ".csv")]:
                 file_path = os.path.join(tmp_dir, f"{file_id}{ext}")
-                result = subprocess.run([gws_exe, "drive", "files", "export", "--params", json.dumps({"fileId": file_id, "mimeType": mime_type}), "-o", file_path], capture_output=True, timeout=30)
+                result = subprocess.run(
+                    [
+                        gws_exe,
+                        "drive",
+                        "files",
+                        "export",
+                        "--params",
+                        json.dumps({"fileId": file_id, "mimeType": mime_type}),
+                        "-o",
+                        file_path,
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                )
                 if result.returncode == 0 and os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
                     return file_path
             return None

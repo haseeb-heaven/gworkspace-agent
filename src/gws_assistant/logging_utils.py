@@ -17,7 +17,7 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
     # Map 'NONE' or 'OFF' to a very high level to silence everything
     requested_level = config.log_level.upper()
     if requested_level in ("NONE", "OFF"):
-        console_level = 100 # Higher than CRITICAL
+        console_level = 100  # Higher than CRITICAL
     else:
         console_level = getattr(logging, requested_level, logging.INFO)
 

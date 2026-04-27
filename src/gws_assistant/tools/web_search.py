@@ -7,12 +7,14 @@ from langchain_core.tools import tool
 
 try:
     from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchResults
+
     HAS_DDG = True
 except ImportError:
     HAS_DDG = False
 
 try:
     from langchain_tavily import TavilySearchResults
+
     HAS_TAVILY = True
 except ImportError:
     HAS_TAVILY = False
@@ -42,25 +44,22 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
             search = DuckDuckGoSearchResults(num_results=max_results)
             raw_result_str = str(search.invoke({"query": query}))
             snippets = []
-            
+
             # DuckDuckGoSearchResults returns a string like:
             # "snippet: ..., title: ..., link: ..., snippet: ..., title: ..., link: ..."
             # We use regex with lookahead to find all matches correctly even if fields contain commas.
             import re
+
             pattern = re.compile(r"snippet: (.*?),\s+title: (.*?),\s+link: (.*?)(?=\s*,\s*snippet:|$)", re.DOTALL)
             matches = pattern.findall(raw_result_str)
-            
+
             for m in matches:
-                snippets.append({
-                    "content": m[0].strip(),
-                    "title": m[1].strip(),
-                    "link": m[2].strip()
-                })
-                
+                snippets.append({"content": m[0].strip(), "title": m[1].strip(), "link": m[2].strip()})
+
             if not snippets and raw_result_str:
                 # Fallback if parsing failed but we got a string
                 snippets.append({"content": raw_result_str, "title": "Search Result"})
-                
+
             if snippets:
                 summary = "\n".join([f"- {s.get('title')}: {s.get('content', '')[:300]}..." for s in snippets[:3]])
                 return dataclasses.asdict(WebSearchResult(query=query, results=snippets, summary=summary))
@@ -82,6 +81,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
                 results = raw
             else:
                 results = []
+
             def sanitize(text: str) -> str:
                 if not text:
                     return ""
@@ -96,7 +96,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
                 {
                     "title": sanitize(r.get("title", "")),
                     "content": sanitize(r.get("content", "")),
-                    "url": r.get("url", "")
+                    "url": r.get("url", ""),
                 }
                 for r in results
                 if isinstance(r, dict)
@@ -105,10 +105,12 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
                 summary = "\n".join([f"- {s.get('title')}: {s.get('content', '')[:300]}..." for s in snippets[:3]])
                 return dataclasses.asdict(WebSearchResult(query=query, results=snippets, summary=summary))
         except Exception as exc:
-            return dataclasses.asdict(WebSearchResult(
-                query=query,
-                error=f"{ddg_error} Tavily fallback also failed: {exc}",
-            ))
+            return dataclasses.asdict(
+                WebSearchResult(
+                    query=query,
+                    error=f"{ddg_error} Tavily fallback also failed: {exc}",
+                )
+            )
 
     # Neither backend available / returned results
     tavily_msg = (
@@ -116,10 +118,12 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
         if not tavily_key or not HAS_TAVILY
         else "Tavily search isn't available."
     )
-    return dataclasses.asdict(WebSearchResult(
-        query=query,
-        error=f"{ddg_error} {tavily_msg}",
-    ))
+    return dataclasses.asdict(
+        WebSearchResult(
+            query=query,
+            error=f"{ddg_error} {tavily_msg}",
+        )
+    )
 
 
 @tool

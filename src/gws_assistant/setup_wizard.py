@@ -64,7 +64,9 @@ def run_setup_wizard(env_file_path: Path | None = None) -> Path:
         "OpenRouter base URL",
         existing.get("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL,
     )
-    tavily_api_key = _ask_secret("Tavily API key for enhanced web search (optional)", existing.get("TAVILY_API_KEY", ""))
+    tavily_api_key = _ask_secret(
+        "Tavily API key for enhanced web search (optional)", existing.get("TAVILY_API_KEY", "")
+    )
     default_recipient = _ask_text(
         "Default recipient email (optional)",
         existing.get("DEFAULT_RECIPIENT_EMAIL", ""),

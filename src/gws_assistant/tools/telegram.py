@@ -87,6 +87,7 @@ def send_telegram(message, context=None):
         print(f"Exception sending Telegram message: {e}")
         return False
 
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         send_telegram(" ".join(sys.argv[1:]))

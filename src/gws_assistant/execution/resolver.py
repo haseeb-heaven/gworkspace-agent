@@ -6,6 +6,56 @@ from typing import Any
 _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
 logger = logging.getLogger(__name__)
 
+LEGACY_PLACEHOLDER_MAP = {
+    "$last_spreadsheet_id": "last_spreadsheet_id",
+    "$last_spreadsheet_url": "last_spreadsheet_url",
+    "$last_document_id": "last_document_id",
+    "$last_document_url": "last_document_url",
+    "$gmail_message_body": "gmail_message_body",
+    "$gmail_message_ids": "gmail_message_ids",
+    "$gmail_details_values": "gmail_details_values",
+    "$calendar_events": "calendar_events",
+    "$calendar_items": "calendar_events",
+    "$drive_file_ids": "drive_file_ids",
+    "$last_folder_id": "last_folder_id",
+    "$last_folder_url": "last_folder_url",
+    "$drive_export_content": "drive_export_content",
+    "$drive_export_file": "drive_export_content",
+    "$drive_export_path": "drive_export_path",
+    "$last_export_file_content": "last_export_file_content",
+    "$last_export_content": "last_export_file_content",
+    "$last_file_content": "last_export_file_content",
+    # Standardized output contracts mapping (legacy -> new)
+    "$drive_summary_values": "drive_metadata_rows",
+    "$last_code_stdout": "code_output",
+    "$last_code_result": "code_output",
+    "$gmail_summary_values": "gmail_summary_rows",
+    "$web_search_table_values": "search_summary_rows",
+    "$web_search_markdown": "search_summary_table",
+    "$web_search_rows": "search_summary_rows",
+    "$web_search_summary": "search_summary_table",
+    "$sheet_email_body": "sheet_summary_table",
+    # Include the new standardized ones too to resolve if called explicitly
+    "$drive_metadata_rows": "drive_metadata_rows",
+    "$drive_file_count": "drive_file_count",
+    "$drive_metadata_table": "drive_metadata_table",
+    "$code_output": "code_output",
+    "$code_exit_code": "code_exit_code",
+    "$code_error": "code_error",
+    "$drive_summary_rows": "drive_summary_rows",
+    "$drive_summary_table": "drive_summary_table",
+    "$drive_summary_count": "drive_summary_count",
+    "$gmail_summary_rows": "gmail_summary_rows",
+    "$gmail_summary_table": "gmail_summary_table",
+    "$gmail_summary_count": "gmail_summary_count",
+    "$search_summary_rows": "search_summary_rows",
+    "$search_summary_table": "search_summary_table",
+    "$search_summary_count": "search_summary_count",
+    "$sheet_summary_rows": "sheet_summary_rows",
+    "$sheet_summary_table": "sheet_summary_table",
+}
+
+
 class ResolverMixin:
     def _expand_task(self, task: Any, context: dict) -> list:
         """Expand a single task into a list of executable tasks.
@@ -13,14 +63,17 @@ class ResolverMixin:
         """
         # Resolve placeholders in parameters FIRST to see if we have a list
         import copy
+
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
 
         if task.service == "gmail" and task.action == "get_message":
             msg_ids = resolved_params.get("message_id")
             # If no message_id provided, but we have legacy $gmail_message_ids in context, use them!
-            if (not msg_ids or msg_ids == "{{message_id}}" or msg_ids == _UNRESOLVED_MARKER) and "gmail_message_ids" in context:
-                 msg_ids = context["gmail_message_ids"]
-                 self.logger.info(f"Auto-injected {len(msg_ids)} IDs from context for expansion.")
+            if (
+                not msg_ids or msg_ids == "{{message_id}}" or msg_ids == _UNRESOLVED_MARKER
+            ) and "gmail_message_ids" in context:
+                msg_ids = context["gmail_message_ids"]
+                self.logger.info(f"Auto-injected {len(msg_ids)} IDs from context for expansion.")
 
             if isinstance(msg_ids, list) and msg_ids:
                 expanded = []
@@ -28,7 +81,7 @@ class ResolverMixin:
                     if not m_id or not isinstance(m_id, str) or m_id == _UNRESOLVED_MARKER:
                         continue
                     new_task = copy.deepcopy(task)
-                    new_task.id = f"{task.id}-{i+1}"
+                    new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["message_id"] = m_id
                     expanded.append(new_task)
                 return expanded if expanded else [task]
@@ -41,7 +94,7 @@ class ResolverMixin:
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
                         continue
                     new_task = copy.deepcopy(task)
-                    new_task.id = f"{task.id}-{i+1}"
+                    new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["file_id"] = f_id
                     expanded.append(new_task)
                 return expanded if expanded else [task]
@@ -49,9 +102,11 @@ class ResolverMixin:
         if task.service == "drive" and task.action == "delete_file":
             file_ids = resolved_params.get("file_id")
             # If no file_id provided, but we have legacy $drive_file_ids in context, use them!
-            if (not file_ids or file_ids == "$placeholder" or file_ids == _UNRESOLVED_MARKER) and "drive_file_ids" in context:
-                 file_ids = context["drive_file_ids"]
-                 self.logger.info(f"Auto-injected {len(file_ids)} Drive IDs from context for deletion expansion.")
+            if (
+                not file_ids or file_ids == "$placeholder" or file_ids == _UNRESOLVED_MARKER
+            ) and "drive_file_ids" in context:
+                file_ids = context["drive_file_ids"]
+                self.logger.info(f"Auto-injected {len(file_ids)} Drive IDs from context for deletion expansion.")
 
             if isinstance(file_ids, list) and file_ids:
                 expanded = []
@@ -59,7 +114,7 @@ class ResolverMixin:
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
                         continue
                     new_task = copy.deepcopy(task)
-                    new_task.id = f"{task.id}-{i+1}"
+                    new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["file_id"] = f_id
                     expanded.append(new_task)
                 return expanded if expanded else [task]
@@ -109,7 +164,7 @@ class ResolverMixin:
                     task.parameters["source_mime"] = context["last_file_mime"]
 
         # 3. Variable resolution
-        use_repr = (task.service == "code" and task.action == "execute")
+        use_repr = task.service == "code" and task.action == "execute"
         task.parameters = self._resolve_placeholders(task.parameters, context, use_repr_for_complex=use_repr)
 
         # 4. Range auto-fix for Sheets (After resolution)
@@ -134,11 +189,11 @@ class ResolverMixin:
 
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
-            if (not f_id or f_id.startswith("{{")):
-                 if context.get("last_file_id"):
-                     task.parameters["file_id"] = context["last_file_id"]
-                 elif context.get("last_document_id"):
-                     task.parameters["file_id"] = context["last_document_id"]
+            if not f_id or f_id.startswith("{{"):
+                if context.get("last_file_id"):
+                    task.parameters["file_id"] = context["last_file_id"]
+                elif context.get("last_document_id"):
+                    task.parameters["file_id"] = context["last_document_id"]
 
         if task.service == "sheets" and task.action == "create_spreadsheet":
             if not task.parameters.get("title"):
@@ -152,7 +207,9 @@ class ResolverMixin:
                 current = task.parameters.get("to_email")
                 # Force override to target if set and different (Security Policy)
                 if target and current != target:
-                    self.logger.warning(f"SECURITY: Redirecting email recipient from '{current}' to forced default '{target}'")
+                    self.logger.warning(
+                        f"SECURITY: Redirecting email recipient from '{current}' to forced default '{target}'"
+                    )
                     task.parameters["to_email"] = target
 
         return task
@@ -165,42 +222,12 @@ class ResolverMixin:
 
             logger.debug(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
-            legacy_map = {
-                "$last_spreadsheet_id":     "last_spreadsheet_id",
-                "$last_spreadsheet_url":    "last_spreadsheet_url",
-                "$last_document_id":        "last_document_id",
-                "$last_document_url":       "last_document_url",
-                "$gmail_message_body":      "gmail_message_body",
-                "$gmail_summary_values":    "gmail_summary_values",
-                "$drive_summary_values":    "drive_summary_values",
-                "$web_search_markdown":     "web_search_markdown",
-                "$web_search_table_values": "web_search_table_values",
-                "$web_search_rows":         "web_search_rows",
-                "$web_search_summary":      "web_search_summary",
-                "$calendar_events":         "calendar_events",
-                "$calendar_items":          "calendar_events",
-                "$sheet_email_body":        "sheet_email_body",
-                "$gmail_message_ids":       "gmail_message_ids",
-                "$gmail_details_values":    "gmail_details_values",
-                "$drive_file_ids":          "drive_file_ids",
-                "$last_folder_id":          "last_folder_id",
-                "$last_folder_url":         "last_folder_url",
-                "$last_code_stdout":        "last_code_stdout",
-                "$last_code_result":        "last_code_result",
-                "$drive_export_content":    "drive_export_content",
-                "$drive_export_file":       "drive_export_content",
-                "$drive_export_path":       "drive_export_path",
-                "$last_export_file_content": "last_export_file_content",
-                "$last_export_content":      "last_export_file_content",
-                "$last_file_content":        "last_export_file_content",
-            }
-
             results_map = context.get("task_results", {})
             logger.debug(f"DEBUG: results_map keys: {list(results_map.keys())}")
 
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
-            if val in legacy_map and legacy_map[val] in context:
-                res = context[legacy_map[val]]
+            if val in LEGACY_PLACEHOLDER_MAP and LEGACY_PLACEHOLDER_MAP[val] in context:
+                res = context[LEGACY_PLACEHOLDER_MAP[val]]
                 if res is None:
                     return ""
                 # If we are in code context, we might want repr, but for expansion we want the raw list.
@@ -231,26 +258,31 @@ class ResolverMixin:
                 # We iterate backwards through the results_map to find the latest relevant result.
                 best_match = None
                 max_matches = -1
-                
+
                 for key, val_item in reversed(list(results_map.items())):
                     # Skip numeric keys and task-N keys for shorthand matching to avoid noise
                     if re.match(r"^task-\d+$|^\d+$", str(key)):
                         continue
-                        
+
                     key_tokens = str(key).lower().split("_")
                     matches = 0
                     for st in shorthand_tokens:
                         # Check exact, plural, or synonyms
-                        is_match = any(st == kt or st + "s" == kt or kt + "s" == st or
-                                     (st == "sheet" and kt == "spreadsheet") or
-                                     (st == "doc" and kt == "document") or
-                                     (st == "msg" and kt == "message") or
-                                     (st == "mail" and kt == "message") for kt in key_tokens)
+                        is_match = any(
+                            st == kt
+                            or st + "s" == kt
+                            or kt + "s" == st
+                            or (st == "sheet" and kt == "spreadsheet")
+                            or (st == "doc" and kt == "document")
+                            or (st == "msg" and kt == "message")
+                            or (st == "mail" and kt == "message")
+                            for kt in key_tokens
+                        )
                         if is_match:
                             matches += 1
-                    
+
                     if matches > 0 and matches >= len(shorthand_tokens):
-                        # If we have a perfect or better match, take it. 
+                        # If we have a perfect or better match, take it.
                         # Since we are reversed, this is the most recent one.
                         return val_item
                 return None
@@ -261,7 +293,7 @@ class ResolverMixin:
                     res = context[path]
                     if res is not None:
                         return res
-                
+
                 resolved = None
                 if path.startswith(":"):
                     resolved = resolve_shorthand(path[1:])
@@ -275,7 +307,17 @@ class ResolverMixin:
 
                 # 2. If we resolved to a list, but we are a single-token placeholder
                 # (e.g. {{task-1.id}}), pick the first item.
-                singular_suffixes = ['.id', '.name', '.url', '.title', '.email', '.spreadsheet_id', '.document_id', '.spreadsheetId', '.documentId']
+                singular_suffixes = [
+                    ".id",
+                    ".name",
+                    ".url",
+                    ".title",
+                    ".email",
+                    ".spreadsheet_id",
+                    ".document_id",
+                    ".spreadsheetId",
+                    ".documentId",
+                ]
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     resolved = resolved[0]
@@ -285,21 +327,22 @@ class ResolverMixin:
                 return _UNRESOLVED_MARKER
 
             # 3. Partial string replacement
-            for placeholder, ctx_key in legacy_map.items():
-                if placeholder in val and ctx_key in context:
-                    res = context[ctx_key]
-                    if res is None:
-                        val = val.replace(placeholder, _UNRESOLVED_MARKER)
-                    elif use_repr_for_complex and isinstance(res, (dict, list)):
-                        val = val.replace(placeholder, repr(res))
-                    else:
-                        val = val.replace(placeholder, str(res))
+            if "$" in val:
+                for placeholder, ctx_key in LEGACY_PLACEHOLDER_MAP.items():
+                    if placeholder in val and ctx_key in context:
+                        res = context[ctx_key]
+                        if res is None:
+                            val = val.replace(placeholder, _UNRESOLVED_MARKER)
+                        elif use_repr_for_complex and isinstance(res, (dict, list)):
+                            val = val.replace(placeholder, repr(res))
+                        else:
+                            val = val.replace(placeholder, str(res))
 
             def replace_match(match):
                 # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...
                 p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
                 if p.startswith("$"):
-                    p = p[1:] # strip $ from $task-N
+                    p = p[1:]  # strip $ from $task-N
 
                 res = context.get(p)
                 if res is None:
@@ -339,17 +382,22 @@ class ResolverMixin:
                 # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
                 # This prevents accidental corruption of JSON payloads containing single braces.
                 is_explicit = bool(match.group(1) or match.group(3))
-                is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":")))
+                is_task_token = bool(
+                    p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":"))
+                )
 
                 if is_explicit or is_task_token:
                     return _UNRESOLVED_MARKER
                 return match.group(0)
 
-
             # 4. Partial string replacement with regex
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
             # Added ':' to support shorthand like {{:get_message}}
-            val = re.sub(r'\{\{([\w\-\.\[\]:]+)\}\}|\{([\w\-\.\[\]:]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
+            val = re.sub(
+                r"\{\{([\w\-\.\[\]:]+)\}\}|\{([\w\-\.\[\]:]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)",
+                replace_match,
+                val,
+            )
             return val
 
         elif isinstance(val, list):
@@ -375,13 +423,13 @@ class ResolverMixin:
             return data[path]
 
         # 2. Split path into tokens, handling dots and brackets
-        tokens = re.findall(r'[^.\[\]]+|\[\d+\]', path)
+        tokens = re.findall(r"[^.\[\]]+|\[\d+\]", path)
         if not tokens:
             return None
 
         curr: Any = data
         for i, token in enumerate(tokens):
-            if token.startswith('['):
+            if token.startswith("["):
                 index = int(token[1:-1])
                 # Auto-unwrap if dict contains a known list key
                 if isinstance(curr, dict):
@@ -425,7 +473,7 @@ class ResolverMixin:
 
     def _get_artifact_links_body(self, body: str, context: dict) -> str:
         """Inject doc/sheet URLs from context into email body."""
-        doc_url   = context.get("last_document_url", "")
+        doc_url = context.get("last_document_url", "")
         sheet_url = context.get("last_spreadsheet_url", "")
 
         if not doc_url and not sheet_url:
@@ -438,5 +486,7 @@ class ResolverMixin:
             links.append(f"Google Sheet: {sheet_url}")
 
         final_body = f"{body}\n\n" + "\n".join(links)
-        self.logger.info("Generated email body with artifact links. Body length: %s, Links count: %s", len(final_body), len(links))
+        self.logger.info(
+            "Generated email body with artifact links. Body length: %s, Links count: %s", len(final_body), len(links)
+        )
         return final_body

@@ -60,6 +60,7 @@ RE_DRIVE_OP_MATCH = re.compile(r"^(name|fullText)\s+contains\s+['\"]?(.+?)['\"]?
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _escape(value: str) -> str:
     """Fix #8 — escape single quotes inside a Drive query value."""
     # Also strip backslashes that would break the query string.
@@ -158,9 +159,9 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
         # to avoid it being re-wrapped in name contains.
         op_match = RE_DRIVE_OP_MATCH.match(remainder)
         if op_match:
-             field, val = op_match.group(1), op_match.group(2).strip()
-             text_clauses.append(f"{field} contains '{_escape(val)}'")
-             remainder = ""
+            field, val = op_match.group(1), op_match.group(2).strip()
+            text_clauses.append(f"{field} contains '{_escape(val)}'")
+            remainder = ""
 
         # Fix #5 — if remainder has no Drive operator it is bare text.
         if remainder:
@@ -184,6 +185,7 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def sanitize_drive_query(raw: str) -> str:
     """Normalise an LLM-generated Drive query string to valid Drive API v3 syntax.
