@@ -43,7 +43,7 @@ def test_full_agent_path():
     executor._update_context_from_result(payload, context, None)
 
     # Check that drive_summary_values is a formatted string, not a list
-    val = context.get("drive_summary_values")
+    val = context.get("drive_summary_table")
     assert isinstance(val, str)
     assert "File A" in val
     assert "Name" in val
