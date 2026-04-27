@@ -290,11 +290,6 @@ def create_agent(
     logger: logging.Logger,
     model_override: str | None = None,
 ) -> ChatLiteLLM | None:
-    api_key = config.api_key
-    if not api_key or not str(api_key).strip():
-        logger.warning("create_agent: API key is missing or empty. Cannot create ChatLiteLLM agent.")
-        return None
-
     model_to_use = model_override or config.model
 
     try:
@@ -303,10 +298,19 @@ def create_agent(
 
         # Build provider-specific kwargs
         extra_kwargs: dict = {}
+        api_key = config.api_key
+
         if model_to_use.startswith("openrouter/"):
             extra_kwargs["api_base"] = config.base_url
+        elif model_to_use.startswith("groq/"):
+            api_key = config.groq_api_key
         elif model_to_use.startswith("ollama/"):
             extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
+            api_key = "ollama"
+
+        if not api_key or not str(api_key).strip():
+            logger.warning("create_agent: API key is missing or empty. Cannot create ChatLiteLLM agent.")
+            return None
 
         # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
         model_name = config.api_model_name() if model_override is None else model_override
