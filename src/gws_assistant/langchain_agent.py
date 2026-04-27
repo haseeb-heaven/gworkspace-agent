@@ -59,10 +59,10 @@ _EMAIL_SEND_KEYWORDS = (
 )
 
 _EMAIL_BODY_PLACEHOLDERS = (
-    "$last_code_stdout",
-    "$sheet_email_body",
-    "$gmail_summary_values",
-    "$web_search_markdown",
+    "$code_output",
+    "$sheet_summary_table",
+    "$gmail_summary_table",
+    "$search_summary_table",
 )
 
 # ---------------------------------------------------------------------------
@@ -151,13 +151,13 @@ def _derive_email_subject(request_text: str) -> str:
 def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
     services_used = {t.get("service", "") for t in tasks_data if isinstance(t, dict)}
     if "code" in services_used or "computation" in services_used:
-        return "$last_code_stdout"
+        return "$code_output"
     if "sheets" in services_used:
-        return "$sheet_email_body"
+        return "$sheet_summary_table"
     if "gmail" in services_used:
-        return "$gmail_summary_values"
+        return "$gmail_summary_table"
     if "search" in services_used:
-        return "$web_search_markdown"
+        return "$search_summary_table"
     return "Here are the results of your Google Workspace request."
 
 
@@ -436,7 +436,7 @@ def plan_with_langchain(
         "10. DATA STRUCTURES: drive.list_files returns {{{{files: [...]}}}}, gmail.list_messages returns {{{{messages: [...]}}}}. "
         "11. LEGACY: you may use $drive_file_ids or $gmail_message_ids for the most recent search results. "
         "12. GMAIL: use $gmail_message_body_text for decoded text. "
-        "13. CODE OUTPUT: use $last_code_result or $last_code_stdout. "
+        "13. CODE OUTPUT: use $code_output. "
         "14. SEND EMAIL: LAST task must be gmail.send_message. "
         "15. PIPELINE: prefer complex multi-step workflows. "
         "16. SPREADSHEETS: when creating a tracking sheet from search or email, you may use sheets.append_values with $gmail_details_values (for Gmail) or $drive_summary_values (for Drive). If custom formatting is needed, use code.execute first. "

@@ -22,20 +22,28 @@ class HelpersMixin:
             results = result_data.get("results") or result_data.get("rows") or []
 
             markdown_lines = []
-            table_values = [["Title", "Content", "Link"]]
+            table_values = []
             for r in results:
                 if isinstance(r, dict):
                     title   = r.get("title", "")
-                    content = r.get("content", "")
-                    link    = r.get("link", "")
+                    # The web search tool returns 'snippet' and 'url'
+                    # But if we receive 'content' and 'link' fallback to those.
+                    content = r.get("snippet", r.get("content", ""))
+                    link    = r.get("url", r.get("link", ""))
                     markdown_lines.append(f"## {title}\n{content}\n{link}")
-                    table_values.append([title, content, link])
+                    table_values.append([title, link, content])
                 elif isinstance(r, list):
                     table_values.append(r)
 
-            context["web_search_markdown"]     = "\n\n".join(markdown_lines)
+            # PR #24 Canonical Keys
+            context["search_summary_rows"] = table_values
+            context["search_summary_table"] = "\n\n".join(markdown_lines)
+            context["search_summary_count"] = len(results)
+
+            # Legacy Aliases (HEAD)
+            context["web_search_markdown"]     = context["search_summary_table"]
             context["web_search_table_values"] = table_values
-            context["web_search_rows"]         = table_values # Alias for consistency
+            context["web_search_rows"]         = table_values
             context["web_search_summary"]      = result_data.get("summary", "")
 
             return ExecutionResult(
@@ -154,6 +162,7 @@ class HelpersMixin:
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
                 context["last_code_result"] = parsed
+                context["code_output"] = parsed
 
                 # Promote parsed_value keys to results_map for easy placeholder access
                 if isinstance(parsed, dict):

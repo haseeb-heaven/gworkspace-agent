@@ -336,12 +336,29 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             error=None,
         )
         context = dict(state.get("context", {}))
-        context["web_search_summary"] = summary
-        context["web_search_rows"] = [
-            [r.get("title", ""), r.get("content", ""), r.get("link", r.get("url", ""))]
+        rows = [
+            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
             for r in result.get("results", [])
         ]
-        context["web_search_table_values"] = context["web_search_rows"]
+
+        markdown_lines = []
+        for r in result.get("results", []):
+            title   = r.get("title", "")
+            content = r.get("snippet", r.get("content", ""))
+            link    = r.get("url", r.get("link", ""))
+            markdown_lines.append(f"## {title}\n{content}\n{link}")
+        markdown_table = "\n\n".join(markdown_lines)
+
+        # PR #24 Canonical keys
+        context["search_summary_table"] = markdown_table
+        context["search_summary_rows"] = rows
+        context["search_summary_count"] = len(result.get("results", []))
+        context["search_llm_summary"] = summary
+
+        # Legacy Aliases (HEAD)
+        context["web_search_summary"] = summary
+        context["web_search_rows"] = rows
+        context["web_search_table_values"] = rows
         return {
             "final_output": f"Web Search Result:\n\n{summary}",
             "last_result": structured,

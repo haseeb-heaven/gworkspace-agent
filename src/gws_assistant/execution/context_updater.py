@@ -15,11 +15,22 @@ class ContextUpdaterMixin:
                 break
 
         if "stdout" in data:
-            context["last_code_stdout"] = data["stdout"]
-            data["last_code_stdout"] = data["stdout"]
+            val = data["stdout"]
+            context["code_output"] = val
+            data["code_output"] = val
+
         if "parsed_value" in data:
-            context["last_code_result"] = data["parsed_value"]
-            data["last_code_result"] = data["parsed_value"]
+            val = data["parsed_value"]
+            context["code_output"] = val  # Overrides stdout if parsed_value is present (legacy behavior)
+            data["code_output"] = val
+
+        if "exit_code" in data:
+            context["code_exit_code"] = data["exit_code"]
+            data["code_exit_code"] = data["exit_code"]
+
+        if "stderr" in data:
+            context["code_error"] = data["stderr"]
+            data["code_error"] = data["stderr"]
 
         # 3. Service Specific Extractions
         if "spreadsheetId" in data:
@@ -126,7 +137,44 @@ class ContextUpdaterMixin:
                         context[f"message_id_from_task_{num}"] = m_id
                         context[f"thread_id_from_task_{num}"] = t_id
 
-                context["gmail_summary_values"] = [[m.get("id", ""), m.get("threadId", "")] for m in msgs]
+                # Enriched schema for messages summary
+                rows = []
+                for m in msgs:
+                    # m is often a sparse object during list_messages, but might have headers if partial response
+                    m_id = m.get("id", "")
+                    t_id = m.get("threadId", "")
+                    # Extract potential payload headers if available (from partial list or mock)
+                    h_dict = {}
+                    payload = m.get("payload", {})
+                    if "headers" in payload:
+                        headers = payload["headers"]
+                        if isinstance(headers, list):
+                            h_dict = {str(h.get("name", "")).lower(): h.get("value", "") for h in headers}
+                        else:
+                            h_dict = {str(k).lower(): v for k, v in headers.items()}
+
+                    sender = h_dict.get("from", "Unknown")
+                    subject = h_dict.get("subject", "No Subject")
+                    date_val = h_dict.get("date", "Unknown Date")
+
+                    # If we don't have payload, use ID/Thread fallback to ensure structure matches
+                    # Or try snippet if available
+                    if not payload and "snippet" in m:
+                        subject = m.get("snippet", subject)
+
+                    rows.append([sender, subject, date_val, m_id, t_id])
+
+                context["gmail_summary_rows"] = rows
+                context["gmail_summary_values"] = rows
+
+                table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
+                for r in rows:
+                    # Sanitize cells
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |")
+                context["gmail_summary_table"] = "\n".join(table_lines)
+                context["gmail_summary_count"] = len(msgs)
+
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
 
                 if task:
@@ -144,7 +192,21 @@ class ContextUpdaterMixin:
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
-                context["drive_summary_values"] = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+
+                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+                context["drive_metadata_rows"] = rows
+                context["drive_summary_rows"] = rows
+
+                table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+                context["drive_metadata_table"] = "\n".join(table_lines)
+                context["drive_summary_table"] = "\n".join(table_lines)
+
+                context["drive_file_count"] = len(files)
+                context["drive_summary_count"] = len(files)
+
                 if len(files) > 0:
                     if "mimeType" in files[0]:
                         context["last_file_mime"] = files[0]["mimeType"]
@@ -195,8 +257,26 @@ class ContextUpdaterMixin:
                      else:
                          context[key] = rows
 
-            lines = [" | ".join(str(c) for c in row) for row in rows]
-            context["sheet_email_body"] = "\n".join(lines)
+            context["sheet_summary_rows"] = rows
+
+            if rows:
+                cols = max(len(r) for r in rows)
+
+                def pad_row(row_list, length):
+                    safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
+                    return safe_row + [""] * (length - len(safe_row))
+
+                header_row = pad_row(rows[0], cols)
+                table_lines = ["| " + " | ".join(header_row) + " |"]
+                table_lines.append("|" + "|".join(["---"] * cols) + "|")
+
+                for r in rows[1:]:
+                    padded_r = pad_row(r, cols)
+                    table_lines.append("| " + " | ".join(padded_r) + " |")
+
+                context["sheet_summary_table"] = "\n".join(table_lines)
+            else:
+                context["sheet_summary_table"] = ""
 
         # ------------------------------------------------------------------
         # FINAL: Store everything in results_map for {task-N} resolution

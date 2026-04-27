@@ -6,6 +6,57 @@ from typing import Any
 _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
 logger = logging.getLogger(__name__)
 
+LEGACY_PLACEHOLDER_MAP = {
+    "$last_spreadsheet_id":     "last_spreadsheet_id",
+    "$last_spreadsheet_url":    "last_spreadsheet_url",
+    "$last_document_id":        "last_document_id",
+    "$last_document_url":       "last_document_url",
+    "$gmail_message_body":      "gmail_message_body",
+    "$gmail_message_ids":       "gmail_message_ids",
+    "$gmail_details_values":    "gmail_details_values",
+    "$calendar_events":         "calendar_events",
+    "$calendar_items":          "calendar_events",
+    "$drive_file_ids":          "drive_file_ids",
+    "$last_folder_id":          "last_folder_id",
+    "$last_folder_url":         "last_folder_url",
+    "$drive_export_content":    "drive_export_content",
+    "$drive_export_file":       "drive_export_content",
+    "$drive_export_path":       "drive_export_path",
+    "$last_export_file_content": "last_export_file_content",
+    "$last_export_content":      "last_export_file_content",
+    "$last_file_content":        "last_export_file_content",
+
+    # Standardized output contracts mapping (legacy -> new)
+    "$drive_summary_values":    "drive_metadata_rows",
+    "$last_code_stdout":        "code_output",
+    "$last_code_result":        "code_output",
+    "$gmail_summary_values":    "gmail_summary_rows",
+    "$web_search_table_values": "search_summary_rows",
+    "$web_search_markdown":     "search_summary_table",
+    "$web_search_rows":         "search_summary_rows",
+    "$web_search_summary":      "search_summary_table",
+    "$sheet_email_body":        "sheet_summary_table",
+
+    # Include the new standardized ones too to resolve if called explicitly
+    "$drive_metadata_rows":     "drive_metadata_rows",
+    "$drive_file_count":        "drive_file_count",
+    "$drive_metadata_table":    "drive_metadata_table",
+    "$code_output":             "code_output",
+    "$code_exit_code":          "code_exit_code",
+    "$code_error":              "code_error",
+    "$drive_summary_rows":      "drive_summary_rows",
+    "$drive_summary_table":     "drive_summary_table",
+    "$drive_summary_count":     "drive_summary_count",
+    "$gmail_summary_rows":      "gmail_summary_rows",
+    "$gmail_summary_table":     "gmail_summary_table",
+    "$gmail_summary_count":     "gmail_summary_count",
+    "$search_summary_rows":     "search_summary_rows",
+    "$search_summary_table":    "search_summary_table",
+    "$search_summary_count":    "search_summary_count",
+    "$sheet_summary_rows":      "sheet_summary_rows",
+    "$sheet_summary_table":     "sheet_summary_table",
+}
+
 class ResolverMixin:
     def _expand_task(self, task: Any, context: dict) -> list:
         """Expand a single task into a list of executable tasks.
@@ -165,42 +216,12 @@ class ResolverMixin:
 
             logger.debug(f"DEBUG: resolving '{val}' with context keys: {list(context.keys())}")
             # 1. Legacy $ placeholders
-            legacy_map = {
-                "$last_spreadsheet_id":     "last_spreadsheet_id",
-                "$last_spreadsheet_url":    "last_spreadsheet_url",
-                "$last_document_id":        "last_document_id",
-                "$last_document_url":       "last_document_url",
-                "$gmail_message_body":      "gmail_message_body",
-                "$gmail_summary_values":    "gmail_summary_values",
-                "$drive_summary_values":    "drive_summary_values",
-                "$web_search_markdown":     "web_search_markdown",
-                "$web_search_table_values": "web_search_table_values",
-                "$web_search_rows":         "web_search_rows",
-                "$web_search_summary":      "web_search_summary",
-                "$calendar_events":         "calendar_events",
-                "$calendar_items":          "calendar_events",
-                "$sheet_email_body":        "sheet_email_body",
-                "$gmail_message_ids":       "gmail_message_ids",
-                "$gmail_details_values":    "gmail_details_values",
-                "$drive_file_ids":          "drive_file_ids",
-                "$last_folder_id":          "last_folder_id",
-                "$last_folder_url":         "last_folder_url",
-                "$last_code_stdout":        "last_code_stdout",
-                "$last_code_result":        "last_code_result",
-                "$drive_export_content":    "drive_export_content",
-                "$drive_export_file":       "drive_export_content",
-                "$drive_export_path":       "drive_export_path",
-                "$last_export_file_content": "last_export_file_content",
-                "$last_export_content":      "last_export_file_content",
-                "$last_file_content":        "last_export_file_content",
-            }
-
             results_map = context.get("task_results", {})
             logger.debug(f"DEBUG: results_map keys: {list(results_map.keys())}")
 
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
-            if val in legacy_map and legacy_map[val] in context:
-                res = context[legacy_map[val]]
+            if val in LEGACY_PLACEHOLDER_MAP and LEGACY_PLACEHOLDER_MAP[val] in context:
+                res = context[LEGACY_PLACEHOLDER_MAP[val]]
                 if res is None:
                     return ""
                 # If we are in code context, we might want repr, but for expansion we want the raw list.
@@ -285,15 +306,16 @@ class ResolverMixin:
                 return _UNRESOLVED_MARKER
 
             # 3. Partial string replacement
-            for placeholder, ctx_key in legacy_map.items():
-                if placeholder in val and ctx_key in context:
-                    res = context[ctx_key]
-                    if res is None:
-                        val = val.replace(placeholder, _UNRESOLVED_MARKER)
-                    elif use_repr_for_complex and isinstance(res, (dict, list)):
-                        val = val.replace(placeholder, repr(res))
-                    else:
-                        val = val.replace(placeholder, str(res))
+            if "$" in val:
+                for placeholder, ctx_key in LEGACY_PLACEHOLDER_MAP.items():
+                    if placeholder in val and ctx_key in context:
+                        res = context[ctx_key]
+                        if res is None:
+                            val = val.replace(placeholder, _UNRESOLVED_MARKER)
+                        elif use_repr_for_complex and isinstance(res, (dict, list)):
+                            val = val.replace(placeholder, repr(res))
+                        else:
+                            val = val.replace(placeholder, str(res))
 
             def replace_match(match):
                 # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...

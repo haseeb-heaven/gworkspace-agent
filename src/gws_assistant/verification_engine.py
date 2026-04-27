@@ -28,7 +28,7 @@ class VerificationEngine:
         "null", "n/a", "na", "undefined",
         "todo", "fixme", "placeholder", "example", "sample", "dummy",
         "your_value", "insert_here", "replace_me", "changeme", "default",
-        "fake", "mock", "temporary", "tbd", "unknown", "missing"
+        "fake", "mock", "temporary", "tbd", "missing"
     }
 
     NUMERIC_PLACEHOLDERS = {

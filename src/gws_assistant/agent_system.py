@@ -243,7 +243,17 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = self.config.default_recipient_email
 
-        body_content = """Hi,
+        exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
+        skip_export = any(word in lowered for word in exclusion_words)
+
+        if skip_export:
+            body_content = """Hi,
+
+Here are the files found:
+
+$drive_metadata_table"""
+        else:
+            body_content = """Hi,
 
 Please find the content below:
                                                                               
