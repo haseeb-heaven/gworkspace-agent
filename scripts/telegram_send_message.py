@@ -14,6 +14,20 @@ except ImportError:
 
 
 def send_telegram_message(message: str):
+    """
+    Send a message to Telegram with basic validation.
+    The message must be a string, not empty, and <= 4096 characters.
+    """
+    if not isinstance(message, str):
+        raise TypeError("Message must be a string.")
+
+    message = message.strip()
+    if not message:
+        raise ValueError("Message cannot be empty.")
+
+    if len(message) > 4096:
+        raise ValueError(f"Message too long: {len(message)} characters. Max allowed is 4096.")
+
     # Determine the root directory and find the .env file
     root_dir = Path(__file__).resolve().parents[1]
     env_path = root_dir / ".env"
@@ -53,4 +67,9 @@ if __name__ == "__main__":
     if not message:
         print('Usage: python telegram_send_message.py "Message text"', file=sys.stderr)
         sys.exit(1)
-    send_telegram_message(message)
+
+    try:
+        send_telegram_message(message)
+    except (TypeError, ValueError) as e:
+        print(f"Validation error: {e}", file=sys.stderr)
+        sys.exit(1)
