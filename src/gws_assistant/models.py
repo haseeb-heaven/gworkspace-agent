@@ -63,6 +63,13 @@ class AppConfigModel:
         os.environ["OPENAI_API_KEY"] = new_key
         return new_key
 
+    def api_model_name(self) -> str:
+        """Strips the LiteLLM provider prefix from the model name."""
+        for prefix in ("openrouter/", "groq/", "ollama/"):
+            if self.model.startswith(prefix):
+                return self.model[len(prefix):]
+        return self.model
+
 
 @dataclass(slots=True)
 class Intent:

@@ -12,7 +12,7 @@ from .models import AppConfigModel
 from .model_registry import TOOL_CAPABLE_MODELS, validate_tool_model
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_DEFAULT_MODEL = "openrouter/nvidia/nemotron-super-49b-v1:free"
+OPENROUTER_DEFAULT_MODEL = "openrouter/free"
 
 
 def _to_bool(value: str | None, default: bool) -> bool:
@@ -55,22 +55,20 @@ class AppConfig:
         ).strip()
 
         # Resolve fallback models
-        # Resolve fallback models
-        fallback_env_vars = [
-            ("LLM_FALLBACK_MODEL", os.getenv("LLM_FALLBACK_MODEL") or ""),
-            ("LLM_FALLBACK_MODEL2", os.getenv("LLM_FALLBACK_MODEL2") or ""),
-            ("LLM_FALLBACK_MODEL3", os.getenv("LLM_FALLBACK_MODEL3") or ""),
+        fallback_raw = [
+            os.getenv("LLM_FALLBACK_MODEL") or "",
+            os.getenv("LLM_FALLBACK_MODEL2") or "",
+            os.getenv("LLM_FALLBACK_MODEL3") or "",
         ]
-        llm_fallback_models = [m.strip() for _, m in fallback_env_vars if m.strip()]
+        llm_fallback_models = [m.strip() for m in fallback_raw if m.strip()]
 
         # Enforce tool-calling support on primary model
         validate_tool_model(model, "LLM_MODEL")
 
         # Enforce tool-calling support on each fallback model
-        for env_label, fb_model in fallback_env_vars:
-            fb_model = fb_model.strip()
-            if fb_model:
-                validate_tool_model(fb_model, env_label)
+        for idx, fb_model in enumerate(llm_fallback_models):
+            env_label = "LLM_FALLBACK_MODEL" if idx == 0 else f"LLM_FALLBACK_MODEL{idx + 1}"
+            validate_tool_model(fb_model, env_label)
 
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 

@@ -7,9 +7,10 @@ import time
 from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_community.chat_models import ChatLiteLLM
 
 from .models import AppConfigModel, PlannedTask, RequestPlan
+from .model_registry import validate_tool_model
 from .service_catalog import SERVICES
 
 _DEFAULT_CONFIDENCE = 0.9
@@ -297,21 +298,39 @@ def create_agent(
     config: AppConfigModel,
     logger: logging.Logger,
     model_override: str | None = None,
-) -> ChatOpenAI | None:
+) -> ChatLiteLLM | None:
     api_key = config.api_key
     if not api_key or not str(api_key).strip():
-        logger.warning("create_agent: API key is missing or empty. Cannot create ChatOpenAI agent.")
+        logger.warning("create_agent: API key is missing or empty. Cannot create ChatLiteLLM agent.")
         return None
 
+    model_to_use = model_override or config.model
+
     try:
-        return ChatOpenAI(
-            model=model_override or config.model,
-            api_key=api_key,  # type: ignore[arg-type]
-            base_url=config.base_url,
+        # Guard at agent init time
+        validate_tool_model(model_to_use, "LLM_MODEL")
+
+        # Build provider-specific kwargs
+        extra_kwargs: dict = {}
+        if model_to_use.startswith("openrouter/"):
+            extra_kwargs["api_base"] = config.base_url
+        elif model_to_use.startswith("ollama/"):
+            extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
+
+        # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
+        model_name = config.api_model_name() if model_override is None else model_override
+        if model_name.startswith("openrouter/"):
+            model_name = model_name[len("openrouter/"):]
+
+        return ChatLiteLLM(
+            model=model_name,
+            api_key=api_key,
             temperature=0,
+            request_timeout=config.timeout_seconds,
+            **extra_kwargs,
         )
     except Exception as e:
-        logger.error("Failed to create ChatOpenAI agent: %s", e)
+        logger.error("Failed to create ChatLiteLLM agent: %s", e)
         return None
 
 
