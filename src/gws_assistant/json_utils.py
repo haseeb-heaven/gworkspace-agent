@@ -1,10 +1,10 @@
-
 import json
 import logging
 import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
 
 def extract_json(text: str) -> Any:
     """
@@ -29,7 +29,7 @@ def extract_json(text: str) -> Any:
     ]
     for pattern in prefixes:
         cleaned = re.sub(pattern, "", cleaned).strip()
-    
+
     try:
         if cleaned:
             return json.loads(cleaned)
@@ -47,16 +47,17 @@ def extract_json(text: str) -> Any:
             # like "Footer message" after the JSON
             # We search for the LAST } that makes it a valid JSON
             for i in range(len(candidate), 0, -1):
-                if candidate[i-1] in ('}', ']'):
+                if candidate[i - 1] in ("}", "]"):
                     try:
                         return json.loads(candidate[:i])
                     except json.JSONDecodeError:
                         continue
-    
+
     # If all fails, raise the original error or return as is?
     # For compatibility with existing callers, we might want to return the string
     # but the goal is to fix parsing.
     raise ValueError(f"Could not extract valid JSON from text: {text[:100]}...")
+
 
 def safe_json_loads(text: str, fallback_to_string: bool = False) -> Any:
     """

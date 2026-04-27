@@ -14,8 +14,12 @@ RE_INTENT_GMAIL_GET = re.compile(r"([a-zA-Z0-9_-]{35,65})")
 RE_INTENT_QUOTED_KV = re.compile(r"([a-zA-Z0-9_-]+)=(['\"])(.+?)\2")
 RE_INTENT_UNQUOTED_KV = re.compile(r"([a-zA-Z0-9_-]+)=([^\s\"']+)")
 RE_INTENT_ID_MATCH = re.compile(r"\b([a-zA-Z0-9_-]{35,65})\b")
-RE_INTENT_QUERY_MATCH_QUOTED = re.compile(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+['\"](.+?)['\"]", re.IGNORECASE)
-RE_INTENT_QUERY_MATCH_UNQUOTED = re.compile(r"(?:about|for|matching|with|named|find|list|show|all|my)\s+([a-zA-Z0-9 _.-]{3,60})", re.IGNORECASE)
+RE_INTENT_QUERY_MATCH_QUOTED = re.compile(
+    r"(?:about|for|matching|with|named|find|list|show|all|my)\s+['\"](.+?)['\"]", re.IGNORECASE
+)
+RE_INTENT_QUERY_MATCH_UNQUOTED = re.compile(
+    r"(?:about|for|matching|with|named|find|list|show|all|my)\s+([a-zA-Z0-9 _.-]{3,60})", re.IGNORECASE
+)
 RE_INTENT_QUERY_CLEAN_MYALL = re.compile(r"^(my|all)\s+", re.IGNORECASE)
 RE_INTENT_QUERY_CLEAN_IN = re.compile(r"\s+in\s+(gmail|drive|google\s+docs?|sheets?)$", re.IGNORECASE)
 RE_INTENT_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract)\s+", re.IGNORECASE)
@@ -26,6 +30,7 @@ RE_INTENT_SUBJECT_MATCH = re.compile(r"subject ['\"](.+?)['\"]")
 
 try:
     from openai import OpenAI
+
     HAS_OPENAI_SDK = True
 except Exception:  # pragma: no cover
     HAS_OPENAI_SDK = False
@@ -105,7 +110,7 @@ class IntentParser:
                 content = completion.choices[0].message.content or "{}"
                 data = json.loads(content)
                 service = normalize_service(str(data.get("service") or "").strip())
-                action = (str(data.get("action") or "").strip() or None)
+                action = str(data.get("action") or "").strip() or None
                 parameters = data.get("parameters") if isinstance(data.get("parameters"), dict) else {}
                 confidence = float(data.get("confidence") or 0.0)
                 needs_clarification = bool(data.get("needs_clarification") or False)
@@ -127,17 +132,19 @@ class IntentParser:
                 is_rate_limit = "429" in msg or "rate limit" in msg or "quota" in msg
                 if is_rate_limit and attempt < max_retries - 1:
                     import time
+
                     delay = 2**attempt
-                    self.logger.warning("LLM rate limit detected in IntentParser. Rotating key and retrying in %ds...", delay)
+                    self.logger.warning(
+                        "LLM rate limit detected in IntentParser. Rotating key and retrying in %ds...", delay
+                    )
                     self.config.rotate_api_key()
-                    self.client = self._build_client() # Re-init client with new key
+                    self.client = self._build_client()  # Re-init client with new key
                     time.sleep(delay)
                     continue
 
                 self.logger.warning("LLM parsing failed, using heuristic fallback: %s", exc)
                 return None
         return None
-
 
     def parse_heuristically(self, text: str) -> Intent:
         service = self._detect_service(text)
@@ -219,7 +226,7 @@ class IntentParser:
             if any(kw in lowered for kw in ("read", "fetch", "get", "show", "values", "data", "search")):
                 # Prefer get_values for data retrieval, but could be get_spreadsheet
                 if "id" in lowered and "spreadsheet" in lowered:
-                     return "get_spreadsheet"
+                    return "get_spreadsheet"
                 return "get_values"
 
         if service == "drive":
@@ -242,8 +249,9 @@ class IntentParser:
         best_action = None
         best_score = -999
         for action_key, action_spec in actions.items():
-            score = sum(2 if keyword in lowered.split() else 1 if keyword in lowered else 0
-                        for keyword in action_spec.keywords)
+            score = sum(
+                2 if keyword in lowered.split() else 1 if keyword in lowered else 0 for keyword in action_spec.keywords
+            )
 
             # Penalize list actions if 'send' is present (generic)
             if "list" in action_key and "send" in lowered:
@@ -317,10 +325,10 @@ class IntentParser:
         # 4. Extract Values (for Sheets)
         values_match = RE_INTENT_VALUES_MATCH.search(text)
         if values_match:
-             try:
-                 params["values"] = json.loads(values_match.group(1).replace("'", '"'))
-             except Exception:
-                 params["values"] = values_match.group(1)
+            try:
+                params["values"] = json.loads(values_match.group(1).replace("'", '"'))
+            except Exception:
+                params["values"] = values_match.group(1)
 
         # 5. Handle specific Gmail fields
         if " to " in lowered:

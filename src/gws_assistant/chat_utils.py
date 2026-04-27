@@ -9,6 +9,7 @@ from .models import AppConfigModel
 
 logger = logging.getLogger(__name__)
 
+
 async def get_chat_response(text: str, config: AppConfigModel) -> str:
     """Get a direct response from the LLM without the heavy agent loop.
     Implements API key rotation on rate limits (429).
@@ -23,7 +24,7 @@ async def get_chat_response(text: str, config: AppConfigModel) -> str:
             client = AsyncOpenAI(
                 api_key=config.api_key,
                 base_url=config.base_url,
-                timeout=15.0 # Slightly longer for stability
+                timeout=15.0,  # Slightly longer for stability
             )
 
             system_prompt = (
@@ -34,12 +35,9 @@ async def get_chat_response(text: str, config: AppConfigModel) -> str:
 
             response = await client.chat.completions.create(
                 model=config.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text}
-                ],
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
                 max_tokens=200,
-                temperature=0.7
+                temperature=0.7,
             )
 
             return response.choices[0].message.content or "I couldn't generate a response."
@@ -55,7 +53,7 @@ async def get_chat_response(text: str, config: AppConfigModel) -> str:
                 await asyncio.sleep(delay)
                 continue
 
-            logger.error(f"Chat completion failed after {attempt+1} attempts: {e}")
+            logger.error(f"Chat completion failed after {attempt + 1} attempts: {e}")
             return f"I encountered an error while trying to chat: {str(e)}"
 
     return "I'm sorry, I reached my rate limit and couldn't get a response after several attempts."

@@ -27,9 +27,7 @@ def execute_with_e2b(code: str, api_key: str, timeout: int = 30) -> StructuredTo
         return StructuredToolResult(
             success=False,
             output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
-            error=(
-                "E2B is not installed. Run: pip install e2b-code-interpreter"
-            ),
+            error=("E2B is not installed. Run: pip install e2b-code-interpreter"),
         )
 
     try:
@@ -46,6 +44,7 @@ def execute_with_e2b(code: str, api_key: str, timeout: int = 30) -> StructuredTo
                 # e2b results expose .value (Python repr) and .json (str)
                 try:
                     import json as _json
+
                     parsed_value = _json.loads(last.json) if last.json else last.value
                 except Exception:
                     parsed_value = str(last.value) if last.value is not None else None

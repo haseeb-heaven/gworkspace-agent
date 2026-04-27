@@ -36,14 +36,17 @@ def recall_similar(goal: str, max_results: int = 3) -> list[dict]:
     global _cached_backend
     if _cached_backend is None:
         from .config import AppConfig
+
         config = AppConfig.from_env()
         _cached_backend = get_memory_backend(config)
     return _cached_backend.recall_similar(goal, max_results)
+
 
 def save_episode(goal: str, tasks: list[dict], outcome: str):
     global _cached_backend
     if _cached_backend is None:
         from .config import AppConfig
+
         config = AppConfig.from_env()
         _cached_backend = get_memory_backend(config)
     _cached_backend.save_episode(goal, tasks, outcome)

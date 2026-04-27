@@ -42,14 +42,16 @@ _BARE_DQUOTE_RE = re.compile(r'^"([^"]+)"$')
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _escape_gmail_value(value: str) -> str:
     """Strip characters that break Gmail query syntax."""
-    return value.replace('"', '').strip()
+    return value.replace('"', "").strip()
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def sanitize_gmail_query(raw: str) -> str:
     """Normalise an LLM-generated Gmail search query.
@@ -79,8 +81,8 @@ def sanitize_gmail_query(raw: str) -> str:
     # Step 2 — strip redundant quotes from operator:"value" -> operator:value
     # (Gmail handles unquoted values fine; quoted values with spaces are OK too)
     def _fix_quoted_op(m: re.Match) -> str:
-        op = m.group(1)          # e.g. "subject:"
-        val = m.group(2).strip() # strip inner whitespace only
+        op = m.group(1)  # e.g. "subject:"
+        val = m.group(2).strip()  # strip inner whitespace only
         # Keep quotes when value contains spaces (Gmail needs them).
         if " " in val:
             return f'{op}"{val}"'

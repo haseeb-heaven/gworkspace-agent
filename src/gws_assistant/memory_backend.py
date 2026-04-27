@@ -20,7 +20,9 @@ class MemoryBackend(ABC):
         pass
 
     @abstractmethod
-    def add(self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None) -> None:
+    def add(
+        self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None
+    ) -> None:
         pass
 
     @abstractmethod
@@ -75,13 +77,57 @@ class LocalMemory(MemoryBackend):
             self.memory_file = Path.home() / ".gws_agent" / "memory.jsonl"
 
         self._max_episodes = 500
-        self._stop_words = frozenset({
-            "a", "an", "the", "is", "it", "its", "in", "on", "at", "to", "for",
-            "of", "and", "or", "but", "my", "me", "i", "you", "we", "they",
-            "this", "that", "with", "from", "by", "as", "be", "do", "get",
-            "all", "some", "any", "can", "into", "up", "out", "use", "have",
-            "has", "not", "no", "so", "if", "then", "about", "also",
-        })
+        self._stop_words = frozenset(
+            {
+                "a",
+                "an",
+                "the",
+                "is",
+                "it",
+                "its",
+                "in",
+                "on",
+                "at",
+                "to",
+                "for",
+                "of",
+                "and",
+                "or",
+                "but",
+                "my",
+                "me",
+                "i",
+                "you",
+                "we",
+                "they",
+                "this",
+                "that",
+                "with",
+                "from",
+                "by",
+                "as",
+                "be",
+                "do",
+                "get",
+                "all",
+                "some",
+                "any",
+                "can",
+                "into",
+                "up",
+                "out",
+                "use",
+                "have",
+                "has",
+                "not",
+                "no",
+                "so",
+                "if",
+                "then",
+                "about",
+                "also",
+            }
+        )
 
     def _tokenize(self, text: str) -> set[str]:
         return {w for w in text.lower().split() if w not in self._stop_words and len(w) > 1}
@@ -128,16 +174,17 @@ class LocalMemory(MemoryBackend):
         try:
             lines = self.memory_file.read_text(encoding="utf-8").splitlines(keepends=True)
             if len(lines) > self._max_episodes:
-                self.memory_file.write_text("".join(lines[-self._max_episodes:]), encoding="utf-8")
+                self.memory_file.write_text("".join(lines[-self._max_episodes :]), encoding="utf-8")
         except Exception:
             pass
 
-    def add(self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None) -> None:
+    def add(
+        self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None
+    ) -> None:
         pass  # Semantic memory not supported in pure LocalMemory
 
     def search(self, query: str, user_id: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         return []
-
 
     def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
         return []
@@ -150,6 +197,7 @@ class Mem0Memory(LocalMemory):
         if config.mem0_api_key or config.mem0_host:
             try:
                 from mem0 import MemoryClient
+
                 kwargs = {}
                 if config.mem0_api_key:
                     kwargs["api_key"] = config.mem0_api_key
@@ -164,6 +212,7 @@ class Mem0Memory(LocalMemory):
         else:
             try:
                 from mem0 import Memory
+
                 self.client = Memory()
                 self.logger.info("Mem0 long-term memory client initialized (local).")
             except ImportError:
@@ -174,7 +223,9 @@ class Mem0Memory(LocalMemory):
     def _default_user_id(self, user_id: str | None = None) -> str:
         return user_id or self.config.mem0_user_id or "default_user"
 
-    def add(self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None) -> None:
+    def add(
+        self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None
+    ) -> None:
         if not self.client:
             return
 
@@ -198,6 +249,7 @@ class Mem0Memory(LocalMemory):
             try:
                 from mem0 import MemoryClient
                 import io, sys, contextlib
+
                 # Suppress httpx stderr noise ("HTTP error occurred: ...")
                 with contextlib.redirect_stderr(io.StringIO()):
                     if isinstance(self.client, MemoryClient):
@@ -210,6 +262,7 @@ class Mem0Memory(LocalMemory):
                 if "429" in msg or "quota" in msg.lower():
                     if attempt < max_attempts - 1:
                         import time
+
                         delay = 1.0 * (attempt + 1)
                         self.logger.info("Mem0 rate-limited, retrying in %.0fs...", delay)
                         time.sleep(delay)
@@ -228,6 +281,7 @@ class Mem0Memory(LocalMemory):
         resolved_user_id = self._default_user_id(user_id)
         try:
             from mem0 import MemoryClient
+
             if isinstance(self.client, MemoryClient):
                 filters = self._build_filters(resolved_user_id)
                 response = self.client.get_all(version="v2", filters=filters)

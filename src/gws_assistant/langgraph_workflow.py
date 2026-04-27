@@ -98,7 +98,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return result.to_structured_result()
         return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
 
-    def _log_step(tool_name: str, normalized_input: Any, normalized_output: StructuredToolResult | ReflectionDecision | dict[str, Any]) -> None:
+    def _log_step(
+        tool_name: str,
+        normalized_input: Any,
+        normalized_output: StructuredToolResult | ReflectionDecision | dict[str, Any],
+    ) -> None:
         if config.verbose:
             logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
 
@@ -181,8 +185,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     storage_payload = payload
             elif isinstance(payload, list):
                 storage_payload = [
-                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
-                    for item in payload
+                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload
                 ]
             else:
                 storage_payload = payload
@@ -192,10 +195,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
             # Always also store by sequential index (task-1, task-2, etc.) to
             # support LLMs that refer to tasks by their order regardless of name.
-            seq_id = f"task-{idx+1}"
+            seq_id = f"task-{idx + 1}"
             results_map[seq_id] = storage_payload
-            results_map[str(idx+1)] = storage_payload
-            results_map[f"t{idx+1}"] = storage_payload
+            results_map[str(idx + 1)] = storage_payload
+            results_map[f"t{idx + 1}"] = storage_payload
 
             # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
             t_id = str(task.id)
@@ -221,13 +224,15 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     results_map[t_id] = {"content": content}
                     if t_id.startswith("task-"):
                         results_map[t_id.removeprefix("task-")] = {"content": content}
-            thought_trace.append({
-                "step": idx + 1,
-                "action": f"{resolved.service}.{resolved.action}",
-                "observation": str(latest["output"].get("stdout", ""))[:300],
-                "success": result.success,
-                "reason": resolved.reason,
-            })
+            thought_trace.append(
+                {
+                    "step": idx + 1,
+                    "action": f"{resolved.service}.{resolved.action}",
+                    "observation": str(latest["output"].get("stdout", ""))[:300],
+                    "success": result.success,
+                    "reason": resolved.reason,
+                }
+            )
             _log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
             if not result.success:
                 task_error = result.error or result.stderr or "Task execution failed"
@@ -252,12 +257,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         attempts = state.get("current_attempt", 0)
         context = dict(state.get("context", {}))
         updates: dict[str, Any] = {}
-        
+
         decision, abort_plan = executor.reflect_on_error(error, attempts, config.max_retries)
-        
+
         if abort_plan:
             updates["abort_plan"] = True
-            
+
         if decision.action == "replan":
             if state.get("plan") and context.get("replan_count", 0) < config.max_replans:
                 context["replan_count"] = int(context.get("replan_count", 0)) + 1
@@ -311,7 +316,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             report = state.get("final_output") or state.get("error") or "No result produced."
 
         # Guard: if report is still empty and there was an error in state, use it.
-        if (not report or report == "No result produced."):
+        if not report or report == "No result produced.":
             err = state.get("error")
             if err:
                 report = err
@@ -336,16 +341,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             error=None,
         )
         context = dict(state.get("context", {}))
-        rows = [
-            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
-            for r in result.get("results", [])
-        ]
+        rows = [[r.get("title", ""), r.get("url", ""), r.get("snippet", "")] for r in result.get("results", [])]
 
         markdown_lines = []
         for r in result.get("results", []):
-            title   = r.get("title", "")
+            title = r.get("title", "")
             content = r.get("snippet", r.get("content", ""))
-            link    = r.get("url", r.get("link", ""))
+            link = r.get("url", r.get("link", ""))
             markdown_lines.append(f"## {title}\n{content}\n{link}")
         markdown_table = "\n\n".join(markdown_lines)
 
@@ -422,14 +424,18 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         )
         model = create_agent(config, logger)
         lowered = state["user_text"].lower()
-        is_computation = any(kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers"))
+        is_computation = any(
+            kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers")
+        )
 
         if not model:
             if not config.use_heuristic_fallback or not is_computation:
                 msg = "Unable to generate code because no LLM is configured" if not model else "LLM failed"
                 return {
                     "error": f"{msg} and request is not a simple computation.",
-                    "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error="code_generation_unavailable"),
+                    "last_result": StructuredToolResult(
+                        success=False, output={"prompt": prompt}, error="code_generation_unavailable"
+                    ),
                 }
             extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
             generated = f"result = {extracted or '0'}\nprint(result)"
@@ -448,12 +454,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
                 }
             import re
+
             numbers = re.findall(r"\b\d+\b", state["user_text"])
             lowered = state["user_text"].lower()
             if len(numbers) >= 2 and ("from" in lowered or "between" in lowered):
                 start, end = numbers[0], numbers[1]
                 rev = "True" if "reverse" in lowered or "descending" in lowered else "False"
-                generated = f"result = list(range({start}, {int(end)+1}))\nif {rev}: result.reverse()\nprint(result)"
+                generated = f"result = list(range({start}, {int(end) + 1}))\nif {rev}: result.reverse()\nprint(result)"
             else:
                 # Basic math extraction
                 extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
@@ -539,7 +546,9 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     def route_after_task(state: AgentState) -> Literal["reflect_node"]:
         return "reflect_node"
 
-    def route_after_reflection(state: AgentState) -> Literal["update_context", "execute_task", "generate_plan", "format_output", "generate_code"]:
+    def route_after_reflection(
+        state: AgentState,
+    ) -> Literal["update_context", "execute_task", "generate_plan", "format_output", "generate_code"]:
         decision = state.get("reflection")
         if not decision:
             return "format_output"
@@ -559,7 +568,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if plan and idx < len(plan.tasks):
             return "execute_task"
         return "format_output"
-
 
     workflow = StateGraph(AgentState)
     workflow.add_node("generate_plan", plan_node)
@@ -585,7 +593,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "generate_plan": "generate_plan",
             "format_output": "format_output",
             "generate_code": "generate_code",
-        }
+        },
     )
     workflow.add_conditional_edges("update_context", route_after_context)
     workflow.add_conditional_edges("web_search", route_after_web_search)

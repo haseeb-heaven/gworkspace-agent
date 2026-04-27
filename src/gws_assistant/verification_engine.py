@@ -4,6 +4,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 class VerificationError(Exception):
     def __init__(self, tool: str, reason: str, field: str | None = None, severity: str = "ERROR"):
         self.tool = tool
@@ -25,24 +26,33 @@ class VerificationEngine:
     ]
 
     EXACT_PLACEHOLDERS = {
-        "null", "n/a", "na", "undefined",
-        "todo", "fixme", "placeholder", "example", "sample", "dummy",
-        "your_value", "insert_here", "replace_me", "changeme", "default",
-        "fake", "mock", "temporary", "tbd", "missing"
+        "null",
+        "n/a",
+        "na",
+        "undefined",
+        "todo",
+        "fixme",
+        "placeholder",
+        "example",
+        "sample",
+        "dummy",
+        "your_value",
+        "insert_here",
+        "replace_me",
+        "changeme",
+        "default",
+        "fake",
+        "mock",
+        "temporary",
+        "tbd",
+        "missing",
     }
 
-    NUMERIC_PLACEHOLDERS = {
-        "0000", "1234", "9999", "00000000"
-    }
+    NUMERIC_PLACEHOLDERS = {"0000", "1234", "9999", "00000000"}
 
-    EXACT_EMAILS = {
-        "test@example.com", "user@example.com", "example@gmail.com",
-        "noreply@example.com"
-    }
+    EXACT_EMAILS = {"test@example.com", "user@example.com", "example@gmail.com", "noreply@example.com"}
 
-    EMAIL_PLACEHOLDER_DOMAINS = [
-        "@example.com", "@test.com"
-    ]
+    EMAIL_PLACEHOLDER_DOMAINS = ["@example.com", "@test.com"]
 
     SPECIAL_CHARS_ONLY = re.compile(r"^[^a-zA-Z0-9\s]+$")
 
@@ -105,7 +115,7 @@ class VerificationEngine:
                 if to is None or to == [] or cls._is_placeholder(str(to)) or not cls._is_valid_email(str(to)):
                     # Allow common test emails used in our test suite
                     if str(to) not in ["strict-default@example.com", "test@example.com", "user@example.com"]:
-                         raise VerificationError(tool_name, "Invalid 'to' email address", "to")
+                        raise VerificationError(tool_name, "Invalid 'to' email address", "to")
 
                 for field in ["cc", "bcc"]:
                     val = params.get(field)
@@ -119,9 +129,11 @@ class VerificationEngine:
                                 raise VerificationError(tool_name, f"Invalid {field} email address", field)
 
                 subject = params.get("subject")
-                if "reply" not in tool_name and "forward" not in tool_name: # Reply/Forward might not need subject
+                if "reply" not in tool_name and "forward" not in tool_name:  # Reply/Forward might not need subject
                     if not subject or cls._is_placeholder(str(subject)) or len(str(subject).strip()) < 2:
-                        raise VerificationError(tool_name, "Subject must not be empty or placeholder, min 2 chars", "subject")
+                        raise VerificationError(
+                            tool_name, "Subject must not be empty or placeholder, min 2 chars", "subject"
+                        )
 
                 body = params.get("body")
                 if not body or cls._is_placeholder(str(body)) or len(str(body).strip()) < 5:
@@ -135,8 +147,14 @@ class VerificationEngine:
                     if isinstance(att, dict):
                         file_id = att.get("file_id")
                         file_path = att.get("file_path")
-                        if (file_id is None and file_path is None) or (file_id is not None and cls._is_placeholder(str(file_id))) or (file_path is not None and cls._is_placeholder(str(file_path))):
-                            raise VerificationError(tool_name, "Attachment must have valid file_id or file_path", "attachments")
+                        if (
+                            (file_id is None and file_path is None)
+                            or (file_id is not None and cls._is_placeholder(str(file_id)))
+                            or (file_path is not None and cls._is_placeholder(str(file_path)))
+                        ):
+                            raise VerificationError(
+                                tool_name, "Attachment must have valid file_id or file_path", "attachments"
+                            )
                         filename = att.get("filename")
                         if not filename or cls._is_placeholder(str(filename)):
                             raise VerificationError(tool_name, "Attachment must have filename", "attachments")
@@ -200,7 +218,9 @@ class VerificationEngine:
                 if not str(sheet_range).strip():
                     raise VerificationError(tool_name, "Range cannot be empty", "range")
                 # Updated pattern to support single cells like A1, Sheet1!A1, ranges like A1:B2, and $last_spreadsheet_id, {{message_id}}
-                range_pattern = re.compile(r"^(?:(?:'[^']*'|[a-zA-Z0-9_ ]+)!)?[a-zA-Z]+[0-9]*(?::[a-zA-Z]+[0-9]*)?$|^(?:[$<\[{].*)$")
+                range_pattern = re.compile(
+                    r"^(?:(?:'[^']*'|[a-zA-Z0-9_ ]+)!)?[a-zA-Z]+[0-9]*(?::[a-zA-Z]+[0-9]*)?$|^(?:[$<\[{].*)$"
+                )
                 if not range_pattern.match(str(sheet_range)):
                     raise VerificationError(tool_name, "Invalid range format", "range")
 
@@ -209,7 +229,7 @@ class VerificationEngine:
                 if values is None or values == [] or values == [[]]:
                     # Allow empty values for clear/delete/get
                     if all(x not in tool_name for x in ("clear", "delete", "get")):
-                         raise VerificationError(tool_name, "Values cannot be empty", "values")
+                        raise VerificationError(tool_name, "Values cannot be empty", "values")
 
                 # Check for placeholder in cells
                 if isinstance(values, list):
@@ -243,7 +263,7 @@ class VerificationEngine:
 
                 if end and not cls._is_valid_iso8601(end):
                     if cls._is_placeholder(str(end)):
-                         raise VerificationError(tool_name, "Valid end date required", "end")
+                        raise VerificationError(tool_name, "Valid end date required", "end")
 
                 if start and end and cls._is_valid_iso8601(start) and cls._is_valid_iso8601(end):
                     if not cls._end_is_after_start(start, end):
@@ -317,7 +337,6 @@ class VerificationEngine:
                 if cls._is_placeholder(str(contact_id)):
                     raise VerificationError(tool_name, "Invalid contact_id", "contact_id")
 
-
     @classmethod
     def verify_result(cls, tool_name: str, params: dict, result: Any) -> None:
         # CATEGORY 8 - GENERAL
@@ -359,7 +378,19 @@ class VerificationEngine:
                         raise VerificationError(tool_name, "Result is exactly the same as params", severity="WARNING")
 
             if "create" in tool_name.lower() or "insert" in tool_name.lower():
-                has_id = any(k in result for k in ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name"])
+                has_id = any(
+                    k in result
+                    for k in [
+                        "id",
+                        "documentId",
+                        "spreadsheetId",
+                        "fileId",
+                        "messageId",
+                        "resourceName",
+                        "threadId",
+                        "name",
+                    ]
+                )
                 if not has_id:
                     raise VerificationError(tool_name, "Create operation result missing ID")
 
@@ -375,7 +406,13 @@ class VerificationEngine:
                     pass
                 else:
                     msg_id = result.get("id") or result.get("messageId")
-                    if not msg_id and "draft" not in tool_name and "send" not in tool_name and "delete" not in tool_name and "trash" not in tool_name:
+                    if (
+                        not msg_id
+                        and "draft" not in tool_name
+                        and "send" not in tool_name
+                        and "delete" not in tool_name
+                        and "trash" not in tool_name
+                    ):
                         raise VerificationError(tool_name, "Result missing id or message_id")
 
                 if "send" in tool_name:
@@ -385,13 +422,18 @@ class VerificationEngine:
         # CATEGORY 3 - DRIVE / DOCS
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if isinstance(result, dict):
-                if "list" not in action and "export" not in action and "files" not in result and "saved_file" not in result:
+                if (
+                    "list" not in action
+                    and "export" not in action
+                    and "files" not in result
+                    and "saved_file" not in result
+                ):
                     doc_id = result.get("id") or result.get("documentId")
                     if not doc_id and "tabs" in result and isinstance(result["tabs"], list) and len(result["tabs"]) > 0:
                         # Tab-based document. Extract tabId as a fallback if documentId is missing at root
                         tab_props = result["tabs"][0].get("tabProperties", {})
                         doc_id = tab_props.get("tabId")
-                    
+
                     if not doc_id or cls._is_placeholder(str(doc_id)) or len(str(doc_id)) < 1:
                         raise VerificationError(tool_name, "Result missing valid id", "id")
 
@@ -427,10 +469,12 @@ class VerificationEngine:
                 parts = payload.get("parts", []) if isinstance(payload, dict) else []
                 if not parts:
                     parts = result.get("attachments", [])
-                
+
                 # If no parts/attachments are found in the result, it's a failure.
                 if not parts:
-                     raise VerificationError("verify_attachment", "Attachment declared in params but not confirmed in result")
+                    raise VerificationError(
+                        "verify_attachment", "Attachment declared in params but not confirmed in result"
+                    )
 
     @classmethod
     def verify_document_not_empty(cls, tool_name: str, params: dict, result: Any) -> None:
@@ -488,17 +532,22 @@ class VerificationEngine:
     @classmethod
     def _is_valid_drive_id(cls, value: str) -> bool:
         val_str = str(value)
-        if any(val_str.startswith(prefix) for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "m", "t", "$", "{{"]):
+        if any(
+            val_str.startswith(prefix)
+            for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "m", "t", "$", "{{"]
+        ):
             return True
         return bool(re.match(r"^[a-zA-Z0-9_-]+$", val_str)) and len(val_str) >= 1
 
     @classmethod
     def _end_is_after_start(cls, start: Any, end: Any) -> bool:
         from datetime import datetime
+
         def extract_date(v):
             if isinstance(v, dict):
                 return v.get("dateTime") or v.get("date")
             return v
+
         s = extract_date(start)
         e = extract_date(end)
         if not s or not e:

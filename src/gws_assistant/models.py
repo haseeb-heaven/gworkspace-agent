@@ -61,8 +61,6 @@ class AppConfigModel:
         return new_key
 
 
-
-
 @dataclass(slots=True)
 class Intent:
     raw_text: str
@@ -176,12 +174,16 @@ class ExecutionResult:
     output: Any = None
 
     def to_structured_result(self) -> StructuredToolResult:
-        payload = self.output if self.output is not None else {
-            "command": self.command,
-            "stdout": self.stdout,
-            "stderr": self.stderr,
-            "return_code": self.return_code,
-        }
+        payload = (
+            self.output
+            if self.output is not None
+            else {
+                "command": self.command,
+                "stdout": self.stdout,
+                "stderr": self.stderr,
+                "return_code": self.return_code,
+            }
+        )
         return StructuredToolResult(success=self.success, output=payload, error=self.error)
 
 

@@ -38,7 +38,7 @@ _REQUEST_PLAN_SCHEMA = {
                         "parameters": {
                             "type": "object",
                             "description": "Key-value pairs for the action. MUST include all required parameters from the catalog.",
-                            "additionalProperties": True
+                            "additionalProperties": True,
                         },
                         "reason": {"type": "string"},
                     },
@@ -54,8 +54,16 @@ _REQUEST_PLAN_SCHEMA = {
 }
 
 _EMAIL_SEND_KEYWORDS = (
-    "send email", "send invoice", "send mail", "email me", "mail me",
-    "send me", "invoice email", "send a mail", "send an email", "email to",
+    "send email",
+    "send invoice",
+    "send mail",
+    "email me",
+    "mail me",
+    "send me",
+    "invoice email",
+    "send a mail",
+    "send an email",
+    "email to",
 )
 
 _EMAIL_BODY_PLACEHOLDERS = (
@@ -109,6 +117,7 @@ def _plan_has_send_task(tasks: list[dict]) -> bool:
 def _extract_explicit_email(text: str) -> str:
     # Use more robust extraction that handles spaces, consistent with heuristic planner
     from .agent_system import RE_EXTRACT_EMAIL
+
     matches = RE_EXTRACT_EMAIL.findall(text)
     if matches:
         # Try to find one preceded by 'to ' (case-insensitive)
@@ -211,7 +220,9 @@ def is_valid_plan(plan_data: Any) -> bool:
                         found = True
                         break
                 if not found:
-                    logging.info("Plan invalid: task %s.%s missing required parameter '%s'", service, action, p_spec.name)
+                    logging.info(
+                        "Plan invalid: task %s.%s missing required parameter '%s'", service, action, p_spec.name
+                    )
                     return False
     return True
 
@@ -239,12 +250,18 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
         return False
 
     # If user wants to send email but plan has no send_message → incomplete
-    if any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to")) and "send_message" not in actions_in_plan:
+    if (
+        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to"))
+        and "send_message" not in actions_in_plan
+    ):
         logging.info("Plan incomplete: user wants to send email but plan has no send_message.")
         return False
 
     # If user mentions creating a doc/document but plan has no docs task → incomplete
-    if any(kw in lowered for kw in ("create doc", "create document", "new doc", "google doc")) and "docs" not in services_in_plan:
+    if (
+        any(kw in lowered for kw in ("create doc", "create document", "new doc", "google doc"))
+        and "docs" not in services_in_plan
+    ):
         logging.info("Plan incomplete: user mentions docs but plan has no docs task.")
         return False
 
@@ -350,7 +367,10 @@ def _invoke_with_backoff(
             if result is not None and not is_valid_plan(result):
                 logger.info(
                     "Model '%s': plan failed validation on attempt %d/%d. Raw: %s",
-                    model_name, attempt + 1, max_retries, result,
+                    model_name,
+                    attempt + 1,
+                    max_retries,
+                    result,
                 )
                 result = None
 
@@ -358,7 +378,9 @@ def _invoke_with_backoff(
             if result is not None and not _is_plan_complete(result, request_text):
                 logger.info(
                     "Model '%s': plan incomplete (missing services user asked for) on attempt %d/%d.",
-                    model_name, attempt + 1, max_retries,
+                    model_name,
+                    attempt + 1,
+                    max_retries,
                 )
                 result = None
 
@@ -369,7 +391,9 @@ def _invoke_with_backoff(
             if attempt < max_retries - 1:
                 logger.info(
                     "Model '%s': structured output None/invalid on attempt %d/%d — retrying.",
-                    model_name, attempt + 1, max_retries,
+                    model_name,
+                    attempt + 1,
+                    max_retries,
                 )
                 time.sleep(1)
         except Exception as exc:
@@ -382,7 +406,10 @@ def _invoke_with_backoff(
                     logger.info(
                         "Model '%s' rate-limited (attempt %d/%d, HTTP 429). "
                         "Rotating API key and backing off %.0fs before retry.",
-                        model_name, attempt + 1, max_retries, delay,
+                        model_name,
+                        attempt + 1,
+                        max_retries,
+                        delay,
                     )
                     config.rotate_api_key()
                     time.sleep(delay)
@@ -453,21 +480,12 @@ def plan_with_langchain(
 
     if memory_hint:
         memory_hint_escaped = memory_hint.replace("{", "{{{{").replace("}", "}}}}")
-        system_prompt = (
-            "Relevant past task context:\n"
-            + memory_hint_escaped + "\n\n"
-            + system_prompt
-        )
+        system_prompt = "Relevant past task context:\n" + memory_hint_escaped + "\n\n" + system_prompt
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("user", "{request}")
-    ])
+    prompt = ChatPromptTemplate.from_messages([("system", system_prompt), ("user", "{request}")])
 
     primary_model = config.model or ""
-    models_to_try: list[str] = [primary_model] + [
-        m for m in _MODEL_FALLBACK_CHAIN if m != primary_model
-    ]
+    models_to_try: list[str] = [primary_model] + [m for m in _MODEL_FALLBACK_CHAIN if m != primary_model]
 
     plan_data: Any = None
     for model_idx, model_name in enumerate(models_to_try):
@@ -475,7 +493,10 @@ def plan_with_langchain(
         if is_fallback:
             logger.info(
                 "Primary model '%s' exhausted. Trying fallback model %d/%d: '%s'.",
-                primary_model, model_idx, len(models_to_try) - 1, model_name,
+                primary_model,
+                model_idx,
+                len(models_to_try) - 1,
+                model_name,
             )
         try:
             plan_data = _invoke_with_backoff(
@@ -498,9 +519,7 @@ def plan_with_langchain(
 
         if plan_data is not None:
             if is_fallback:
-                logger.info(
-                    "Plan generated successfully using fallback model '%s'.", model_name
-                )
+                logger.info("Plan generated successfully using fallback model '%s'.", model_name)
             break
 
     if plan_data is None:
@@ -533,15 +552,19 @@ def plan_with_langchain(
             if isinstance(t, dict):
                 params = t.get("parameters") or {}
                 if not params:
-                    params = {k: v for k, v in t.items() if k not in ("id", "service", "action", "parameters", "reason")}
+                    params = {
+                        k: v for k, v in t.items() if k not in ("id", "service", "action", "parameters", "reason")
+                    }
 
-                tasks.append(PlannedTask(
-                    id=str(t.get("id", f"task-{len(tasks)+1}")),
-                    service=str(t.get("service", "")),
-                    action=str(t.get("action", "")),
-                    parameters=params,
-                    reason=str(t.get("reason", ""))
-                ))
+                tasks.append(
+                    PlannedTask(
+                        id=str(t.get("id", f"task-{len(tasks) + 1}")),
+                        service=str(t.get("service", "")),
+                        action=str(t.get("action", "")),
+                        parameters=params,
+                        reason=str(t.get("reason", "")),
+                    )
+                )
         return RequestPlan(
             raw_text=text,
             tasks=tasks,

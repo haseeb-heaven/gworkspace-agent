@@ -63,7 +63,7 @@ class ContextUpdaterMixin:
             payload = data.get("payload", data if is_gmail_get else {})
             if isinstance(payload, dict):
                 payload = [payload]
-            
+
             for p_item in payload:
                 if not isinstance(p_item, dict):
                     continue
@@ -92,6 +92,7 @@ class ContextUpdaterMixin:
                     if b.get("data"):
                         try:
                             import base64
+
                             return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
                         except Exception:
                             return ""
@@ -101,7 +102,7 @@ class ContextUpdaterMixin:
                             if res:
                                 return res
                     return ""
-                
+
                 body = find_body(p_item)
                 if body:
                     data["body"] = body
@@ -117,7 +118,7 @@ class ContextUpdaterMixin:
                 email_addr = email_match.group(1) if email_match else sender
 
                 row = [sender, subject, date_val, email_addr]
-                data["row"] = row # For {task-N.row} access
+                data["row"] = row  # For {task-N.row} access
 
                 # We want to build a cumulative list if this is part of an expansion
                 details_list = context.setdefault("gmail_details_values", [])
@@ -217,8 +218,7 @@ class ContextUpdaterMixin:
             context["last_folder_id"] = data["id"]
             url = data.get("webViewLink") or f"https://drive.google.com/drive/folders/{data['id']}"
             context["last_folder_url"] = url
-            data["webViewLink"] = url # Ensure it's in the data for {task-N.webViewLink}
-
+            data["webViewLink"] = url  # Ensure it's in the data for {task-N.webViewLink}
 
         if "drive_export_content" in data:
             val = data["drive_export_content"]
@@ -240,22 +240,22 @@ class ContextUpdaterMixin:
 
             # Semantic extraction for tests - handle aggregation for all expanded tasks
             if task:
-                 task_id = str(task.id)
-                 # Extract base ID (e.g. '2' from 'task-2-1' or 'task-2')
-                 m = re.match(r"(?:task-)?(\d+)", task_id)
-                 if m:
-                     base_num = m.group(1)
-                     key = f"company_names_from_task_{base_num}"
-                     if "-" in task_id: # it's a subtask or task-N
-                         current = context.setdefault(key, [])
-                         if isinstance(current, list):
-                             # Avoid double-wrapping if already a list of rows
-                             if rows and isinstance(rows[0], list):
-                                 current.extend(rows)
-                             else:
-                                 current.append(rows)
-                     else:
-                         context[key] = rows
+                task_id = str(task.id)
+                # Extract base ID (e.g. '2' from 'task-2-1' or 'task-2')
+                m = re.match(r"(?:task-)?(\d+)", task_id)
+                if m:
+                    base_num = m.group(1)
+                    key = f"company_names_from_task_{base_num}"
+                    if "-" in task_id:  # it's a subtask or task-N
+                        current = context.setdefault(key, [])
+                        if isinstance(current, list):
+                            # Avoid double-wrapping if already a list of rows
+                            if rows and isinstance(rows[0], list):
+                                current.extend(rows)
+                            else:
+                                current.append(rows)
+                    else:
+                        context[key] = rows
 
             context["sheet_summary_rows"] = rows
 
@@ -318,25 +318,25 @@ class ContextUpdaterMixin:
                     # 2. Action name and service_action aggregation
                     for key in (action_name, svc_action):
                         if key not in results_map or not isinstance(results_map[key], list):
-                             results_map[key] = []
+                            results_map[key] = []
                         results_map[key].append(data)
 
                     # Map semantic keys like company_names_from_task_2
                     if "values" in data and isinstance(data["values"], list):
-                         key = f"company_names_from_task_{b_num}"
-                         current = context.setdefault(key, [])
-                         if isinstance(current, list):
-                             rows = data["values"]
-                             if rows and isinstance(rows[0], list):
-                                 current.extend(rows)
-                             else:
-                                 current.append(rows)
+                        key = f"company_names_from_task_{b_num}"
+                        current = context.setdefault(key, [])
+                        if isinstance(current, list):
+                            rows = data["values"]
+                            if rows and isinstance(rows[0], list):
+                                current.extend(rows)
+                            else:
+                                current.append(rows)
                     elif "row" in data:
-                         key = f"company_names_from_task_{b_num}"
-                         current = context.setdefault(key, [])
-                         if isinstance(current, list):
-                             current.append(data["row"])
-            
+                        key = f"company_names_from_task_{b_num}"
+                        current = context.setdefault(key, [])
+                        if isinstance(current, list):
+                            current.append(data["row"])
+
             if not is_subtask:
                 results_map[action_name] = data
                 results_map[svc_action] = data
@@ -388,4 +388,4 @@ class ContextUpdaterMixin:
                     results_map[f"{seq_num}.id"] = first_id
 
         if "values" in data and isinstance(data["values"], list):
-             results_map["values"] = data["values"] # Direct alias for the most recent values
+            results_map["values"] = data["values"]  # Direct alias for the most recent values

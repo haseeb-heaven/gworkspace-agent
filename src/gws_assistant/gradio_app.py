@@ -1,4 +1,5 @@
 """Browser-based GUI using Gradio."""
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,10 @@ class GradioAssistant:
             return "Enter a request to continue.", ""
 
         from .langgraph_workflow import run_workflow
-        output = run_workflow(text, config=AppConfig.from_env(), system=self.agent_system, executor=self.executor, logger=self.logger)
+
+        output = run_workflow(
+            text, config=AppConfig.from_env(), system=self.agent_system, executor=self.executor, logger=self.logger
+        )
         return output, "Plan tracking handled by LangGraph workflow."
 
 
@@ -50,8 +54,7 @@ def create_interface() -> gr.Blocks:
     runner = GWSRunner(config.gws_binary_path, logger=logger, config=config)
     if not runner.validate_binary():
         logger.warning(
-            f"gws binary not found at {config.gws_binary_path}. "
-            "GWS commands will fail, but the UI will still start."
+            f"gws binary not found at {config.gws_binary_path}. GWS commands will fail, but the UI will still start."
         )
 
     planner = CommandPlanner()

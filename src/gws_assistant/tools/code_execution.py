@@ -114,17 +114,22 @@ def get_safe_globals() -> dict[str, Any]:
         def __init__(self, _getattr_=None):
             self.txt = []
             self._getattr_ = _getattr_
+
         def write(self, text):
             self.txt.append(text)
+
         def __call__(self):
             return "".join(self.txt).strip()
+
         def _call_print(self, *args, **kwargs):
             import builtins
+
             if kwargs.get("file", None) is None:
                 kwargs["file"] = self
             builtins.print(*args, **kwargs)
 
     collector = SimpleCollector()
+
     def _print_factory(_getattr_=None):
         collector._getattr_ = _getattr_
         return collector
@@ -139,30 +144,32 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_write_"] = lambda obj: obj
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
+
     def _inplacevar(op, target, expr):
-        if op == '+=':
+        if op == "+=":
             return target + expr
-        if op == '-=':
+        if op == "-=":
             return target - expr
-        if op == '*=':
+        if op == "*=":
             return target * expr
-        if op == '/=':
+        if op == "/=":
             return target / expr
         return expr
+
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
     safe_g.update(_SAFE_MODULES)
 
     # Pre-inject common datetime classes for AI robustness
-    safe_g["datetime"]  = datetime.datetime
-    safe_g["date"]      = datetime.date
+    safe_g["datetime"] = datetime.datetime
+    safe_g["date"] = datetime.date
     safe_g["timedelta"] = datetime.timedelta
-    safe_g["now"]       = datetime.datetime.now()
+    safe_g["now"] = datetime.datetime.now()
 
     # AI Robustness: Pre-inject common lowercase aliases often emitted by LLMs
-    safe_g["true"]  = True
+    safe_g["true"] = True
     safe_g["false"] = False
-    safe_g["null"]  = None
+    safe_g["null"] = None
     safe_g["quote"] = lambda x: json.dumps(x, ensure_ascii=True)
 
     return safe_g
@@ -190,7 +197,9 @@ def _validate_submitted_code(code: str) -> str | None:
     return None
 
 
-def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult], extra_globals: dict | None = None) -> None:
+def _run_in_thread_sandbox(
+    code: str, result_holder: list[CodeExecutionResult], extra_globals: dict | None = None
+) -> None:
     """Execute *code* inside RestrictedPython, storing a CodeExecutionResult in result_holder[0]."""
     exec_result = CodeExecutionResult(code=code)
     try:
@@ -216,7 +225,9 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult], 
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:
-            exec_result.stdout = f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
+            exec_result.stdout = (
+                f"{exec_result.stdout}\n{buffer_val}".strip() if exec_result.stdout else buffer_val.strip()
+            )
 
         # --- PARSE RETURN VALUE ---
         # 1. Best case: user explicitly assigned to 'result'
@@ -234,13 +245,18 @@ def _run_in_thread_sandbox(code: str, result_holder: list[CodeExecutionResult], 
 
         # 3. Fallback: capture all variables from sandbox_globals
         else:
+
             def is_json_serializable(v):
                 return isinstance(v, (str, int, float, bool, list, dict, type(None)))
 
             results_vars = {
-                k: v for k, v in sandbox_globals.items()
-                if not k.startswith("_") and k != "__builtins__" and not callable(v)
-                and k not in _SAFE_MODULES and is_json_serializable(v)
+                k: v
+                for k, v in sandbox_globals.items()
+                if not k.startswith("_")
+                and k != "__builtins__"
+                and not callable(v)
+                and k not in _SAFE_MODULES
+                and is_json_serializable(v)
             }
             exec_result.return_value = results_vars
 
@@ -272,6 +288,7 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
     """Execute code in an E2B cloud sandbox using the latest Sandbox API."""
     try:
         from e2b_code_interpreter import Sandbox
+
         with Sandbox.create(api_key=api_key) as sandbox:
             execution = sandbox.run_code(code)
             stdout = "\n".join(str(log.text) if hasattr(log, "text") else str(log) for log in execution.logs.stdout)
@@ -296,7 +313,7 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
-    code = re.sub(r'\\\s*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
     validation_error = _validate_submitted_code(code)
     if validation_error:
         return StructuredToolResult(
@@ -332,6 +349,7 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
 
 def code_execution_tool_with_config(config, logger: Any):
     """Factory to create a config-aware code execution tool for LangChain."""
+
     @tool
     def code_execution_tool(code: str) -> dict[str, Any]:
         """Execute Python in a restricted sandbox or cloud (E2B) with normalized results.
@@ -350,6 +368,7 @@ def code_execution_tool_with_config(config, logger: Any):
             "stderr": output.get("stderr", ""),
             "parsed_value": output.get("parsed_value"),
         }
+
     return code_execution_tool
 
 
