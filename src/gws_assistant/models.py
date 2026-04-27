@@ -45,6 +45,10 @@ class AppConfigModel:
     llm_fallback_models: list[str] = field(default_factory=list)
     groq_api_key: str | None = None
     ollama_api_base: str | None = None
+    dry_run: bool = False
+    no_confirm: bool = False
+    force_dangerous: bool = False
+    is_telegram: bool = False
     # NOTE: Must NOT use a leading underscore here.
     # @dataclass(slots=True) does not persist mutations to underscore-prefixed
     # fields between method calls — the slot write is silently dropped, causing
