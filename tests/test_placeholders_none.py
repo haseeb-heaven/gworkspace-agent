@@ -1,4 +1,3 @@
-
 import logging
 import os
 import sys
@@ -14,11 +13,8 @@ def test_none_resolution():
     executor = PlanExecutor(planner=None, runner=None)
 
     context = {
-        "task_results": {
-            "task-1": {"id": None, "value": "foo"},
-            "task-2": {"content": "None"}
-        },
-        "last_code_result": None
+        "task_results": {"task-1": {"id": None, "value": "foo"}, "task-2": {"content": "None"}},
+        "last_code_result": None,
     }
 
     # Case 1: Resolved value is None
@@ -36,6 +32,7 @@ def test_none_resolution():
     # Case 4: Scalar None in context
     res4 = executor._resolve_placeholders("$last_code_result", context)
     print(f"Case 4 (Scalar None): $last_code_result -> {res4}")
+
 
 if __name__ == "__main__":
     test_none_resolution()

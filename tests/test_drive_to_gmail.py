@@ -28,8 +28,9 @@ def test_drive_to_gmail_workflow():
     mock_gmail.send_email.assert_called_with(
         to=os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
         subject="Document: Shibuz",
-        body="Content of Shibuz"
+        body="Content of Shibuz",
     )
+
 
 def test_drive_to_gmail_invalid_email():
     mock_drive = MagicMock()
@@ -38,6 +39,7 @@ def test_drive_to_gmail_invalid_email():
 
     with pytest.raises(ValueError, match="Invalid email address"):
         workflow.execute(query="Shibuz", email="invalid-email")
+
 
 def test_drive_to_gmail_file_not_found():
     mock_drive = MagicMock()

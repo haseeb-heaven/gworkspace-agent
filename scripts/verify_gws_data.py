@@ -7,16 +7,25 @@ import sys
 def run_gws_command(task):
     """Run a gws_cli task and return the output."""
     python_exe = os.environ.get("PYTHON_EXE") or sys.executable
-    result = subprocess.run([python_exe, "gws_cli.py", "--task", task], capture_output=True, text=True, encoding="utf-8")
+    result = subprocess.run(
+        [python_exe, "gws_cli.py", "--task", task], capture_output=True, text=True, encoding="utf-8"
+    )
     return result.stdout, result.stderr
+
 
 def check_content(content, source_name):
     """Check content for common invalid patterns."""
     invalid_patterns = [
         "___UNRESOLVED_PLACEHOLDER___",
-        "{{", "}}",  # common template markers
-        "None", "null", "NaN", "N/A", "empty",
-        "unknown", "undefined"
+        "{{",
+        "}}",  # common template markers
+        "None",
+        "null",
+        "NaN",
+        "N/A",
+        "empty",
+        "unknown",
+        "undefined",
     ]
 
     issues = []
@@ -31,6 +40,7 @@ def check_content(content, source_name):
             issues.append(f"[{source_name}] Found suspicious pattern: '{pattern}'")
 
     return issues
+
 
 def verify_sheet(sheet_id_or_name):
     print(f"Verifying Sheet: {sheet_id_or_name}")
@@ -48,15 +58,18 @@ def verify_sheet(sheet_id_or_name):
 
     return check_content(content, f"Sheet:{sheet_id_or_name}")
 
+
 def verify_doc(doc_name):
     print(f"Verifying Doc: {doc_name}")
     stdout, stderr = run_gws_command(f"Read Google Doc '{doc_name}' and return content")
     return check_content(stdout, f"Doc:{doc_name}")
 
+
 def verify_gmail(query):
     print(f"Verifying Gmail search: {query}")
     stdout, stderr = run_gws_command(f"Search Gmail for '{query}' and return the latest message body")
     return check_content(stdout, f"Gmail:{query}")
+
 
 def main():
     if len(sys.argv) < 3:
@@ -71,7 +84,7 @@ def main():
     # Triple check logic: we run the verification 3 times (or check 3 different ways if possible)
     # Here we'll just run it once but very thoroughly.
     for i in range(3):
-        print(f"Pass {i+1}/3...")
+        print(f"Pass {i + 1}/3...")
         if v_type == "sheet":
             issues = verify_sheet(identifier)
         elif v_type == "doc":
@@ -95,6 +108,7 @@ def main():
     else:
         print("\n--- VERIFICATION PASSED ---")
         sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

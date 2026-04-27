@@ -247,8 +247,10 @@ class Mem0Memory(LocalMemory):
         max_attempts = 2
         for attempt in range(max_attempts):
             try:
+                import contextlib
+                import io
+
                 from mem0 import MemoryClient
-                import io, sys, contextlib
 
                 # Suppress httpx stderr noise ("HTTP error occurred: ...")
                 with contextlib.redirect_stderr(io.StringIO()):

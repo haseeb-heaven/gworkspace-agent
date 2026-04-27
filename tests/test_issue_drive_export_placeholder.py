@@ -15,7 +15,9 @@ from gws_assistant.planner import CommandPlanner
 
 class FakeRunner(GWSRunner):
     def __init__(self) -> None:
-        super().__init__(Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test"))
+        super().__init__(
+            Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test")
+        )
         self.commands: list[list[str]] = []
 
     def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
@@ -39,7 +41,12 @@ class FakeRunner(GWSRunner):
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"id":"sent-1", "labelIds": ["SENT"]}',
             )
-        return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
+        return ExecutionResult(
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
+            stdout="{}",
+        )
+
 
 @pytest.fixture
 def mock_export_file(tmp_path, mocker):
@@ -51,6 +58,7 @@ def mock_export_file(tmp_path, mocker):
 
     # Mock open() to return our fake content when reading the exported file
     original_open = open
+
     def special_open(file, mode="r", *args, **kwargs):
         if "download_f1" in str(file):
             return original_open(export_path, mode, *args, **kwargs)
@@ -58,6 +66,7 @@ def mock_export_file(tmp_path, mocker):
 
     mocker.patch("builtins.open", side_effect=special_open)
     return export_path
+
 
 def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     runner = FakeRunner()
@@ -68,12 +77,21 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     plan = RequestPlan(
         raw_text="export and email",
         tasks=[
-            PlannedTask(id="task-1", service="drive", action="export_file", parameters={"file_id": "f1", "mime_type": "text/plain"}),
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="export_file",
+                parameters={"file_id": "f1", "mime_type": "text/plain"},
+            ),
             PlannedTask(
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com", "subject": "Export", "body": "Content: $drive_export_file"}
+                parameters={
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
+                    "subject": "Export",
+                    "body": "Content: $drive_export_file",
+                },
             ),
         ],
     )
@@ -91,10 +109,12 @@ def test_drive_export_placeholder_resolution(mock_export_file, mocker):
     gmail_cmd = runner.commands[1]
     raw_json = json.loads(gmail_cmd[gmail_cmd.index("--json") + 1])
     import base64
+
     decoded = base64.urlsafe_b64decode(raw_json["raw"]).decode("utf-8")
 
     # This is expected to FAIL before the fix because $drive_export_file is not in legacy_map
     assert "Content: Exported Content" in decoded
+
 
 def test_drive_export_folders_raises_validation_error():
     runner = FakeRunner()
@@ -105,6 +125,7 @@ def test_drive_export_folders_raises_validation_error():
 
     # Building the command for a folder should now raise a ValidationError
     from gws_assistant.exceptions import ValidationError
+
     with pytest.raises(ValidationError) as excinfo:
         executor.planner.build_command("drive", "export_file", params)
 

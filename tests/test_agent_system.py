@@ -4,11 +4,9 @@ import logging
 import os
 from pathlib import Path
 
-from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem, _detect_services_in_order
 import pytest
 
-from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem
-
+from gws_assistant.agent_system import NO_SERVICE_MESSAGE, WorkspaceAgentSystem, _detect_services_in_order
 from gws_assistant.models import AppConfigModel
 
 
@@ -28,7 +26,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         max_retries=3,
         langchain_enabled=True,
         use_heuristic_fallback=True,
-        default_recipient_email=os.getenv("DEFAULT_RECIPIENT_EMAIL")
+        default_recipient_email=os.getenv("DEFAULT_RECIPIENT_EMAIL"),
     )
 
 
@@ -69,6 +67,7 @@ def test_agent_disables_heuristics_when_flag_false(tmp_path):
     assert plan.no_service_detected is True
     assert "disabled" in plan.summary.lower()
 
+
 def test_metadata_drive_phrases_prevent_export(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
     phrases = ["count", "table", "metadata only", "names only", "do not download", "no file content"]
@@ -81,6 +80,7 @@ def test_metadata_drive_phrases_prevent_export(tmp_path):
         assert "send_message" in actions
         assert actions.index("list_files") < actions.index("send_message")
         assert "export_file" not in actions, f"export_file should be omitted when phrase '{phrase}' is present"
+
 
 def test_qvm_scenario_regression(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
@@ -96,6 +96,7 @@ def test_qvm_scenario_regression(tmp_path):
 
     list_task = next(t for t in plan.tasks if t.action == "list_files")
     assert ".qvm" in list_task.parameters.get("q", "")
+
 
 def test_strict_service_detection():
     # Strict services should not be detected from substrings.
@@ -122,6 +123,8 @@ def test_strict_service_detection():
     assert "admin" in services_strict
     assert "modelarmor" in services_strict
     assert "events" in services_strict
+
+
 @pytest.mark.drive
 def test_agent_plans_metadata_only_count_by_extension(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
@@ -132,6 +135,7 @@ def test_agent_plans_metadata_only_count_by_extension(tmp_path):
     assert "list_files" in actions
     assert "export_file" not in actions
     assert "send_message" in actions
+
 
 @pytest.mark.drive
 def test_agent_plans_metadata_only_list_names_table(tmp_path):
@@ -144,6 +148,7 @@ def test_agent_plans_metadata_only_list_names_table(tmp_path):
     assert "export_file" not in actions
     assert "send_message" in actions
 
+
 @pytest.mark.drive
 def test_agent_plans_metadata_only_no_download(tmp_path):
     agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
@@ -154,6 +159,7 @@ def test_agent_plans_metadata_only_no_download(tmp_path):
     assert "list_files" in actions
     assert "export_file" not in actions
     assert "send_message" in actions
+
 
 @pytest.mark.drive
 def test_agent_plans_metadata_only_summary_no_content(tmp_path):
@@ -177,6 +183,7 @@ def test_agent_plans_content_extraction_when_requested(tmp_path):
     assert "list_files" in actions
     assert "export_file" in actions
     assert "send_message" in actions
+
 
 @pytest.mark.drive
 def test_agent_plans_ambiguous_prompt_forbidding_download(tmp_path):

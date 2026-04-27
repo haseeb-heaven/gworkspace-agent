@@ -1,11 +1,13 @@
 import logging
 from pathlib import Path
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from gws_assistant.execution import PlanExecutor
-from gws_assistant.models import AppConfigModel, PlannedTask, RequestPlan
+from gws_assistant.models import AppConfigModel, PlannedTask
 from gws_assistant.planner import CommandPlanner
+
 
 @pytest.fixture
 def mock_config():
@@ -45,10 +47,10 @@ def executor(mock_config, mock_runner):
 @pytest.mark.drive
 def test_readonly_mode_blocks_delete(mock_config, mock_runner, executor):
     mock_config.read_only_mode = True
-    
+
     task = PlannedTask(id="1", service="drive", action="delete_file", parameters={"file_id": "file123"})
     result = executor.execute_single_task(task, {})
-    
+
     assert result.success is False
     assert "blocked" in result.error
     mock_runner.run.assert_not_called()
@@ -57,12 +59,12 @@ def test_readonly_mode_blocks_delete(mock_config, mock_runner, executor):
 def test_sandbox_mode_declined(mock_config, mock_runner, executor):
     mock_config.read_only_mode = False
     mock_config.sandbox_enabled = True
-    
+
     task = PlannedTask(id="1", service="drive", action="delete_file", parameters={"file_id": "file123"})
-    
+
     with patch('builtins.input', return_value='n'):
         result = executor.execute_single_task(task, {})
-        
+
     assert result.success is False
     assert "declined" in result.error
     mock_runner.run.assert_not_called()
@@ -71,22 +73,22 @@ def test_sandbox_mode_declined(mock_config, mock_runner, executor):
 def test_sandbox_mode_accepted(mock_config, mock_runner, executor):
     mock_config.read_only_mode = False
     mock_config.sandbox_enabled = True
-    
+
     task = PlannedTask(id="1", service="drive", action="delete_file", parameters={"file_id": "file123"})
-    
+
     with patch('builtins.input', return_value='y'):
         result = executor.execute_single_task(task, {})
-        
+
     assert result.success is True
     mock_runner.run.assert_called_once()
 
 @pytest.mark.drive
 def test_write_action_blocked_in_readonly(mock_config, mock_runner, executor):
     mock_config.read_only_mode = True
-    
+
     task = PlannedTask(id="1", service="sheets", action="create_spreadsheet", parameters={"title": "Test"})
     result = executor.execute_single_task(task, {})
-    
+
     assert result.success is False
     assert "blocked" in result.error
     mock_runner.run.assert_not_called()

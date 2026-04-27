@@ -109,7 +109,15 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
 
     memory = get_memory_backend(config)
     calls: list[dict] = []
-    memory.client = type("Client", (), {"add": lambda self, data, user_id, metadata=None: calls.append({"data": data, "user_id": user_id, "metadata": metadata})})()
+    memory.client = type(
+        "Client",
+        (),
+        {
+            "add": lambda self, data, user_id, metadata=None: calls.append(
+                {"data": data, "user_id": user_id, "metadata": metadata}
+            )
+        },
+    )()
 
     memory.add_bug_fix(
         bug_id="BUG-123",
@@ -135,6 +143,7 @@ def test_live_scenario_grouping_and_python_env(monkeypatch, tmp_path):
 
     try:
         import run_live_scenarios
+
         runner = importlib.reload(run_live_scenarios)
     except ImportError:
         pytest.skip("run_live_scenarios module is not present")
@@ -164,6 +173,7 @@ def test_live_task_log_redacts_secrets_and_records_attempt(monkeypatch, tmp_path
 
     try:
         import run_live_scenarios
+
         runner = importlib.reload(run_live_scenarios)
     except ImportError:
         pytest.skip("run_live_scenarios module is not present")

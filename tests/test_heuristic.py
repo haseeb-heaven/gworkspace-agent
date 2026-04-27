@@ -30,4 +30,3 @@ def test_heuristic_plans_drive_sheet_email(monkeypatch, tmp_path):
 
     assert plan.tasks
     assert any(task.service == "gmail" and task.action == "send_message" for task in plan.tasks)
-

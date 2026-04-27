@@ -1,9 +1,9 @@
+import argparse
+import json
 import os
 import sys
-import json
-import urllib.request
 import urllib.error
-import argparse
+import urllib.request
 from pathlib import Path
 
 # Try to import dotenv, fallback gracefully

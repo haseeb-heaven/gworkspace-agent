@@ -50,7 +50,11 @@ def test_build_gmail_send_message_command():
     args = planner.build_command(
         "gmail",
         "send_message",
-        {"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com", "subject": "Hello", "body": "Test message"},
+        {
+            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
+            "subject": "Hello",
+            "body": "Test message",
+        },
     )
     assert args[:4] == ["gmail", "users", "messages", "send"]
     assert "--json" in args
