@@ -139,7 +139,7 @@ class ContextUpdaterMixin:
             files = data["files"]
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
-                context["drive_summary_values"] = summary_data["table"]
+                context["drive_summary_values"] = summary_data["summary_rows"]
                 context["drive_summary_table"] = summary_data["table"]
                 if len(files) > 0:
                     if "mimeType" in files[0]:
