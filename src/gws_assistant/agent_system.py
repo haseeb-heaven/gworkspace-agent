@@ -250,7 +250,7 @@ class WorkspaceAgentSystem:
         if "count" in lowered:
             code_script = "data = $drive_summary_values\nprint(f'Counted {len(data)} files matching the query.')"
         elif "table" in lowered or "summary" in lowered:
-            code_script = "data = $drive_summary_values\nif len(data) == 0:\n    print('No files found.')\nelse:\n    print('Files Summary:')\n    for row in data:\n        print(f'- {row[0]} ({row[1]})')"
+            code_script = "data = $drive_summary_values\nif len(data) == 0:\n    print('No files found.')\nelse:\n    print('Files Summary:')\n    for row in data:\n        print('- ' + str(row[0]) + ' (' + str(row[1]) + ')')"
 
         tasks = [
             PlannedTask(
