@@ -12,7 +12,7 @@ from .models import AppConfigModel
 from .model_registry import TOOL_CAPABLE_MODELS, validate_tool_model
 
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_DEFAULT_MODEL = "openrouter/free"
+OPENROUTER_DEFAULT_MODEL = "openrouter/nvidia/nemotron-super-49b-v1:free"
 
 
 def _to_bool(value: str | None, default: bool) -> bool:
