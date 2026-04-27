@@ -435,8 +435,8 @@ def test_gmail_details_accumulation():
     assert isinstance(values, list)
     # We expect 2 rows from the 2 get_message tasks
     assert len(values) == 2
-    assert values[0][1] == "No Subject" # In the FakeRunner list_messages stub, payload doesn't exist
-    assert values[1][1] == "No Subject"
+    assert values[0][1] == "Job offer m1"
+    assert values[1][1] == "Job offer m2"
 
 
 def test_code_output_resolution():
