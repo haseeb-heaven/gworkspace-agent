@@ -318,7 +318,7 @@ def create_agent(
             extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
 
         # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
-        model_name = config.api_model_name() if model_override is None else model_override
+        model_name = model_to_use
         if model_name.startswith("openrouter/"):
             model_name = model_name[len("openrouter/"):]
 
