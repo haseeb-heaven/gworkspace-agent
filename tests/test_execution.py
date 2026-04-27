@@ -321,8 +321,8 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
 
     append_cmd = runner.commands[3]
     sheet_payload = json.loads(append_cmd[append_cmd.index("--json") + 1])
-    assert sheet_payload["values"][1][0] == "LangGraph"
-    assert sheet_payload["values"][2][0] == "CrewAI"
+    assert sheet_payload["values"][0][0] == "LangGraph"
+    assert sheet_payload["values"][1][0] == "CrewAI"
 
     send_cmd = runner.commands[4]
     raw_json = json.loads(send_cmd[send_cmd.index("--json") + 1])

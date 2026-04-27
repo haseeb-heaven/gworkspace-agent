@@ -22,14 +22,16 @@ class HelpersMixin:
             results = result_data.get("results") or result_data.get("rows") or []
 
             markdown_lines = []
-            table_values = [["Title", "Content", "Link"]]
+            table_values = []
             for r in results:
                 if isinstance(r, dict):
                     title   = r.get("title", "")
-                    content = r.get("content", "")
-                    link    = r.get("link", "")
+                    # The web search tool returns 'snippet' and 'url'
+                    # But if we receive 'content' and 'link' fallback to those.
+                    content = r.get("snippet", r.get("content", ""))
+                    link    = r.get("url", r.get("link", ""))
                     markdown_lines.append(f"## {title}\n{content}\n{link}")
-                    table_values.append([title, content, link])
+                    table_values.append([title, link, content])
                 elif isinstance(r, list):
                     table_values.append(r)
 
