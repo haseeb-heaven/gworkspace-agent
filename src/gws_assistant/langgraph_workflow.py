@@ -335,8 +335,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
             for r in result.get("results", [])
         ]
-        context["web_search_summary"] = summary
-        context["web_search_rows"] = rows
 
         # New canonical keys
         context["search_summary_table"] = summary

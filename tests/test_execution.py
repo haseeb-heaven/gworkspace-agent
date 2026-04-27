@@ -29,7 +29,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"messages":[{"id":"m1","threadId":"t1"}, {"id":"m2","threadId":"t2"}],"resultSizeEstimate":2}',
+                stdout='{"messages":[{"id":"m1","threadId":"t1","payload":{"headers":[{"name":"Subject","value":"Job offer m1"}]}}, {"id":"m2","threadId":"t2","payload":{"headers":[{"name":"Subject","value":"Job offer m2"}]}}],"resultSizeEstimate":2}',
             )
         if args[:3] == ["sheets", "spreadsheets", "create"]:
             import json as _json
@@ -366,8 +366,8 @@ def test_gmail_details_accumulation():
     assert isinstance(values, list)
     # We expect 2 rows from the 2 get_message tasks
     assert len(values) == 2
-    assert values[0][1] == "No Subject" # In the FakeRunner list_messages stub, payload doesn't exist
-    assert values[1][1] == "No Subject"
+    assert values[0][1] == "Job offer m1"
+    assert values[1][1] == "Job offer m2"
 
 def test_code_output_resolution():
     runner = FakeRunner()
