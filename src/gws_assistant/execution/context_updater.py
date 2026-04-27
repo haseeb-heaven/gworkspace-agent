@@ -49,60 +49,68 @@ class ContextUpdaterMixin:
         # Gmail Body Extraction (Recursive base64 decode)
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
         if is_gmail_get or "payload" in data:
-            payload = data.get("payload", {})
+            payload = data.get("payload", data if is_gmail_get else {})
+            if isinstance(payload, dict):
+                payload = [payload]
+            
+            for p_item in payload:
+                if not isinstance(p_item, dict):
+                    continue
 
-            # Extract headers into top-level keys for easy access (e.g. {task-2.from})
-            headers = payload.get("headers", [])
-            headers_dict = {}
-            if isinstance(headers, list):
-                for h in headers:
-                    name = str(h.get("name", "")).lower()
-                    if name:
-                        headers_dict[name] = h.get("value")
-            else:
-                headers_dict = {str(k).lower(): v for k, v in headers.items()}
+                # Extract headers into top-level keys for easy access (e.g. {task-2.from})
+                headers = p_item.get("headers", [])
+                headers_dict = {}
+                if isinstance(headers, list):
+                    for h in headers:
+                        if isinstance(h, dict):
+                            name = str(h.get("name", "")).lower()
+                            if name:
+                                headers_dict[name] = h.get("value")
+                else:
+                    headers_dict = {str(k).lower(): v for k, v in headers.items()}
 
-            for name, value in headers_dict.items():
-                if name in ("from", "subject", "date", "to", "cc", "bcc"):
-                    data[name] = value
-                    # Also store in context for legacy/global access if this is the latest get_message
-                    if is_gmail_get:
-                        context[f"gmail_{name}"] = value
+                for name, value in headers_dict.items():
+                    if name in ("from", "subject", "date", "to", "cc", "bcc"):
+                        data[name] = value
+                        # Also store in context for legacy/global access if this is the latest get_message
+                        if is_gmail_get:
+                            context[f"gmail_{name}"] = value
 
-            def find_body(p):
-                b = p.get("body", {})
-                if b.get("data"):
-                    try:
-                        import base64
-                        return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
-                    except Exception:
-                        return ""
-                if "parts" in p:
-                    for part in p["parts"]:
-                        res = find_body(part)
-                        if res:
-                            return res
-                return ""
-            body = find_body(payload)
-            if body:
-                data["body"] = body
-                context["gmail_message_body_text"] = body
+                def find_body(p):
+                    b = p.get("body", {})
+                    if b.get("data"):
+                        try:
+                            import base64
+                            return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
+                        except Exception:
+                            return ""
+                    if "parts" in p:
+                        for part in p["parts"]:
+                            res = find_body(part)
+                            if res:
+                                return res
+                    return ""
+                
+                body = find_body(p_item)
+                if body:
+                    data["body"] = body
+                    context["gmail_message_body_text"] = body
 
-            # Populate gmail_details_values for Sheets extraction
-            sender = headers_dict.get("from", "Unknown")
-            subject = headers_dict.get("subject", "No Subject")
-            date_val = headers_dict.get("date", "Unknown Date")
+                # Populate gmail_details_values for Sheets extraction
+                sender = headers_dict.get("from", "Unknown")
+                subject = headers_dict.get("subject", "No Subject")
+                date_val = headers_dict.get("date", "Unknown Date")
 
-            # Extract just email from "Name <email@example.com>"
-            email_match = re.search(r"<(.+?)>", str(sender))
-            email_addr = email_match.group(1) if email_match else sender
+                # Extract just email from "Name <email@example.com>"
+                email_match = re.search(r"<(.+?)>", str(sender))
+                email_addr = email_match.group(1) if email_match else sender
 
-            row = [sender, subject, date_val, email_addr]
-            data["row"] = row # For {task-N.row} access
+                row = [sender, subject, date_val, email_addr]
+                data["row"] = row # For {task-N.row} access
 
-            # We want to build a cumulative list if this is part of an expansion
-            details_list = context.setdefault("gmail_details_values", [])
-            details_list.append(row)
+                # We want to build a cumulative list if this is part of an expansion
+                details_list = context.setdefault("gmail_details_values", [])
+                details_list.append(row)
 
         if "messages" in data:
             msgs = data["messages"]
@@ -199,21 +207,17 @@ class ContextUpdaterMixin:
             num = task_id.removeprefix("task-")
             seq_num = str(getattr(task, "sequence_index", num))
             action_name = str(task.action)
+            service_name = str(task.service)
+            svc_action = f"{service_name}_{action_name}"
 
-            # Map the full task result object (now enriched with IDs, URLs, headers, etc.)
+            # Map the full task result object
             results_map[task_id] = data
             results_map[num] = data
             results_map[f"task-{num}"] = data
             results_map[seq_num] = data
             results_map[f"task-{seq_num}"] = data
-            results_map[action_name] = data
 
-            # Map under 'output' for placeholders like {{task-1.output.spreadsheetId}}
-            if "output" not in data:
-                # Do not self-reference dictionary as it causes RecursionError in _resolve_placeholders
-                data["output"] = {k: v for k, v in data.items() if k != "output"}
-
-            # If this is a subtask (e.g. task-2-1), also append to the base task's list (e.g. task-2)
+            # Handle subtasks (expanded tasks) by aggregating them into lists
             is_subtask = False
             if "-" in task_id:
                 # Extract base ID (e.g. 'task-2' from 'task-2-1')
@@ -221,20 +225,23 @@ class ContextUpdaterMixin:
                 if m:
                     b_id = m.group(1)
                     is_subtask = True
-                    # Initialize list if not already present or if it's currently a dict (from a different task)
+                    # 1. Base task ID aggregation (task-N)
                     if b_id not in results_map or not isinstance(results_map[b_id], list):
                         results_map[b_id] = []
-
                     results_map[b_id].append(data)
-                    # self.logger.debug(f"DEBUG: Appended result to base task list '{b_id}' (size: {len(results_map[b_id])})")
 
                     # Also map the numeric base ID (e.g. '2' from 'task-2-1')
                     b_num = b_id.removeprefix("task-")
                     results_map[b_num] = results_map[b_id]
                     results_map[f"task-{b_num}"] = results_map[b_id]
 
+                    # 2. Action name and service_action aggregation
+                    for key in (action_name, svc_action):
+                        if key not in results_map or not isinstance(results_map[key], list):
+                             results_map[key] = []
+                        results_map[key].append(data)
+
                     # Map semantic keys like company_names_from_task_2
-                    # If this subtask produced a 'values' or 'row', ensure it's in the base list
                     if "values" in data and isinstance(data["values"], list):
                          key = f"company_names_from_task_{b_num}"
                          current = context.setdefault(key, [])
@@ -249,6 +256,10 @@ class ContextUpdaterMixin:
                          current = context.setdefault(key, [])
                          if isinstance(current, list):
                              current.append(data["row"])
+            
+            if not is_subtask:
+                results_map[action_name] = data
+                results_map[svc_action] = data
 
             # Map individual fields (if they exist)
             for k, v in data.items():

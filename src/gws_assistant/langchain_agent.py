@@ -69,12 +69,8 @@ _EMAIL_BODY_PLACEHOLDERS = (
 # Model fallback chain — updated to currently-available OpenRouter endpoints.
 # ---------------------------------------------------------------------------
 _MODEL_FALLBACK_CHAIN: list[str] = [
-    "google/gemini-2.0-flash-lite-preview-02-05:free",
-    "qwen/qwen-2.5-coder-32b-instruct:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
-    "google/gemini-2.0-flash-exp:free",
-    "deepseek/deepseek-r1:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
     "openrouter/free",
 ]
 
@@ -111,6 +107,18 @@ def _plan_has_send_task(tasks: list[dict]) -> bool:
 
 
 def _extract_explicit_email(text: str) -> str:
+    # Use more robust extraction that handles spaces, consistent with heuristic planner
+    from .agent_system import RE_EXTRACT_EMAIL
+    matches = RE_EXTRACT_EMAIL.findall(text)
+    if matches:
+        # Try to find one preceded by 'to ' (case-insensitive)
+        for m in matches:
+            if re.search(rf"to\s+{re.escape(m)}", text, re.IGNORECASE):
+                return m.replace(" ", "")
+        # Fallback to last match (usually the recipient in 'Search ... then send to ...' flows)
+        return matches[-1].replace(" ", "")
+
+    # Fallback to simple regex
     m = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text)
     return m.group(0) if m else ""
 
@@ -205,6 +213,41 @@ def is_valid_plan(plan_data: Any) -> bool:
                 if not found:
                     logging.info("Plan invalid: task %s.%s missing required parameter '%s'", service, action, p_spec.name)
                     return False
+    return True
+
+
+def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
+    """Check if the LLM plan covers all major steps implied by the user request.
+
+    Returns False if the user clearly expects certain services/actions but the
+    plan omits them.  This forces the planner to reject weak single-task plans
+    from low-quality fallback models and lets the heuristic fallback handle them.
+    """
+    if not isinstance(plan_data, dict):
+        return True  # Nothing to check
+    tasks = plan_data.get("tasks", [])
+    if not tasks:
+        return True  # Already rejected by is_valid_plan
+
+    services_in_plan = {str(t.get("service", "")).lower() for t in tasks if isinstance(t, dict)}
+    actions_in_plan = {str(t.get("action", "")).lower() for t in tasks if isinstance(t, dict)}
+    lowered = request_text.lower()
+
+    # If user mentions sheets/spreadsheet but plan has no sheets task → incomplete
+    if any(kw in lowered for kw in ("sheet", "spreadsheet")) and "sheets" not in services_in_plan:
+        logging.info("Plan incomplete: user mentions sheets but plan has no sheets task.")
+        return False
+
+    # If user wants to send email but plan has no send_message → incomplete
+    if any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to")) and "send_message" not in actions_in_plan:
+        logging.info("Plan incomplete: user wants to send email but plan has no send_message.")
+        return False
+
+    # If user mentions creating a doc/document but plan has no docs task → incomplete
+    if any(kw in lowered for kw in ("create doc", "create document", "new doc", "google doc")) and "docs" not in services_in_plan:
+        logging.info("Plan incomplete: user mentions docs but plan has no docs task.")
+        return False
+
     return True
 
 
@@ -311,6 +354,14 @@ def _invoke_with_backoff(
                 )
                 result = None
 
+            # Completeness check: reject plans that miss services the user asked for
+            if result is not None and not _is_plan_complete(result, request_text):
+                logger.info(
+                    "Model '%s': plan incomplete (missing services user asked for) on attempt %d/%d.",
+                    model_name, attempt + 1, max_retries,
+                )
+                result = None
+
             if result is not None:
                 logger.info("Model '%s' succeeded on attempt %d", model_name, attempt + 1)
                 return result
@@ -388,12 +439,16 @@ def plan_with_langchain(
         "13. CODE OUTPUT: use $last_code_result or $last_code_stdout. "
         "14. SEND EMAIL: LAST task must be gmail.send_message. "
         "15. PIPELINE: prefer complex multi-step workflows. "
-        "16. SPREADSHEETS: when creating a tracking sheet from search or email, ALWAYS use code.execute first to format the data into a clean list of lists (rows). For each row, do NOT just copy snippets; write an actual descriptive title and a concise summary of the key information. Then pass $last_code_result to sheets.append_values. "
-        "17. STRING QUOTING: use placeholders for large text. "
-        "17. MULTIPLE TABS: use distinct range names. "
-        "18. PARAMETER BINDING: auto-links IDs between tasks. "
-        "19. CURRENCY: wrap symbols in string quotes."
-        "20. SUMMARIZATION: When writing to a Doc or Sheet from search results, synthesize and summarize the information. Do NOT include raw search snippets like 'Jan 1, 2024 ...' in the final output."
+        "16. SPREADSHEETS: when creating a tracking sheet from search or email, you may use sheets.append_values with $gmail_details_values (for Gmail) or $drive_summary_values (for Drive). If custom formatting is needed, use code.execute first. "
+        "17. CODE EXECUTION: in code.execute, variables DO NOT magically appear. You MUST explicitly assign them at the top of your python script using {{{{task-N}}}} placeholders (e.g., `messages = {{{{task-2}}}}`). If task N was a bulk operation (like get_message for multiple IDs), {{{{task-N}}}} will be injected as a list of result objects. ALWAYS assign your final output to a variable named 'result'. NEVER use '$' shorthands inside Python code blocks; use explicit {{{{task-N}}}} binding instead. "
+        "18. PYTHON SYNTAX: Use standard Python only. Do NOT use JavaScript 'const', 'let', or 'return' at the top level. Use 'result = ...' to return data. Do NOT assume variables exist in the global scope without assigning them first via placeholders."
+        "19. STRING QUOTING: use placeholders for large text. "
+        "19. MULTIPLE TABS: use distinct range names. "
+        "20. PARAMETER BINDING: auto-links IDs between tasks. "
+        "21. CURRENCY: wrap symbols in string quotes. "
+        "22. PLAN COMPLETENESS: Your plan MUST include every requested step: (1) search, (2) extract/format data (via code.execute), (3) create spreadsheet, (4) append data to sheet, (5) send email. NEVER omit the spreadsheet or email steps; if you only see one task, you have failed. "
+        "23. SUMMARIZATION: Include a 'summary' field that lists the full sequence of actions to be taken (e.g., '1. List messages, 2. Fetch details, 3. Create Sheet, 4. Append Data, 5. Send Email')."
+        "24. SUMMARIZATION: When writing to a Doc or Sheet from search results, synthesize and summarize the information. Do NOT include raw search snippets like 'Jan 1, 2024 ...' in the final output."
     )
 
     if memory_hint:

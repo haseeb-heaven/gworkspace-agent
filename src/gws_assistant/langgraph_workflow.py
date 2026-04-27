@@ -173,9 +173,17 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             # as expected by LLM for list_messages tasks.
             if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
                 if len(payload["messages"]) > 0:
-                    storage_payload = payload["messages"]
+                    storage_payload = [
+                        item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
+                        for item in payload["messages"]
+                    ]
                 else:
                     storage_payload = payload
+            elif isinstance(payload, list):
+                storage_payload = [
+                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
+                    for item in payload
+                ]
             else:
                 storage_payload = payload
 

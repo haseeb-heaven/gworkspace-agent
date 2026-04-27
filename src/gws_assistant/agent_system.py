@@ -599,8 +599,15 @@ def _extract_id(text: str) -> str | None:
 
 
 def _extract_email(text: str) -> str | None:
-    match = RE_EXTRACT_EMAIL.search(text)
-    return match.group(1).replace(" ", "") if match else None
+    matches = RE_EXTRACT_EMAIL.findall(text)
+    if matches:
+        # Try to find one preceded by 'to ' (case-insensitive)
+        for m in matches:
+            if re.search(rf"to\s+{re.escape(m)}", text, re.IGNORECASE):
+                return m.replace(" ", "")
+        # Fallback to last match (usually the recipient)
+        return matches[-1].replace(" ", "")
+    return None
 
 
 def _extract_quoted(text: str) -> str | None:

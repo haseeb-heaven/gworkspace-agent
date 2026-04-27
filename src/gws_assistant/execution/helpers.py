@@ -108,6 +108,7 @@ class HelpersMixin:
 
             extra_globals = {
                 "task_results": results_with_numeric,
+                "__injected_vars__": context.get("__injected_vars__", []),
                 "any": any,
                 "all": all,
                 "sum": sum,

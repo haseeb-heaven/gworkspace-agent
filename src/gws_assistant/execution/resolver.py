@@ -196,6 +196,7 @@ class ResolverMixin:
             }
 
             results_map = context.get("task_results", {})
+            logger.debug(f"DEBUG: results_map keys: {list(results_map.keys())}")
 
             # Optimized: check if the entire string is a single legacy placeholder (type-preserving)
             if val in legacy_map and legacy_map[val] in context:
@@ -216,7 +217,7 @@ class ResolverMixin:
             elif stripped.startswith("{") and stripped.endswith("}"):
                 # Single braces: only resolve if it looks like a task path (e.g. {task-1} or {create_doc})
                 potential_path = stripped[1:-1].strip()
-                if "task-" in potential_path.lower() or potential_path in results_map:
+                if "task-" in potential_path.lower() or potential_path in results_map or potential_path.startswith(":"):
                     path = potential_path
                 elif potential_path in context:
                     # Also resolve plain context keys like {last_code_result}
@@ -224,17 +225,48 @@ class ResolverMixin:
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
 
+            def resolve_shorthand(shorthand_path):
+                shorthand_tokens = [t for t in shorthand_path.lower().split("_") if t]
+                # Look for the most recent task that matches these tokens
+                # We iterate backwards through the results_map to find the latest relevant result.
+                best_match = None
+                max_matches = -1
+                
+                for key, val_item in reversed(list(results_map.items())):
+                    # Skip numeric keys and task-N keys for shorthand matching to avoid noise
+                    if re.match(r"^task-\d+$|^\d+$", str(key)):
+                        continue
+                        
+                    key_tokens = str(key).lower().split("_")
+                    matches = 0
+                    for st in shorthand_tokens:
+                        # Check exact, plural, or synonyms
+                        is_match = any(st == kt or st + "s" == kt or kt + "s" == st or
+                                     (st == "sheet" and kt == "spreadsheet") or
+                                     (st == "doc" and kt == "document") or
+                                     (st == "msg" and kt == "message") or
+                                     (st == "mail" and kt == "message") for kt in key_tokens)
+                        if is_match:
+                            matches += 1
+                    
+                    if matches > 0 and matches >= len(shorthand_tokens):
+                        # If we have a perfect or better match, take it. 
+                        # Since we are reversed, this is the most recent one.
+                        return val_item
+                return None
+
             if path:
+                logger.debug(f"DEBUG: Found path='{path}'")
                 if path in context:
                     res = context[path]
                     if res is not None:
                         return res
-                    logger.warning(
-                        f"Placeholder '{path}' resolved to None in context. "
-                        f"Available context keys: {list(context.keys())}"
-                    )
-                    return _UNRESOLVED_MARKER
-                resolved = self._get_value_by_path(results_map, path)
+                
+                resolved = None
+                if path.startswith(":"):
+                    resolved = resolve_shorthand(path[1:])
+                else:
+                    resolved = self._get_value_by_path(results_map, path)
 
                 # Smart unwrap:
                 # 1. If the resolved value is a dict with 'content', promote the content.
@@ -271,7 +303,18 @@ class ResolverMixin:
 
                 res = context.get(p)
                 if res is None:
-                    res = self._get_value_by_path(results_map, p)
+                    # Semantic/Shorthand resolution: if it starts with a colon like :get_message
+                    if p.startswith(":"):
+                        shorthand = p[1:].lower().replace("_", "")
+                        # Try to find a match in results_map keys
+                        for key, val in results_map.items():
+                            norm_key = str(key).lower().replace("_", "")
+                            # Direct match or containment
+                            if shorthand == norm_key or norm_key in shorthand or shorthand in norm_key:
+                                res = val
+                                break
+                    else:
+                        res = self._get_value_by_path(results_map, p)
 
                 if p in context and context[p] is None:
                     return ""
@@ -283,7 +326,11 @@ class ResolverMixin:
                         res = res["content"]
 
                     if use_repr_for_complex:
-                        return repr(res)
+                        if "__injected_vars__" not in context:
+                            context["__injected_vars__"] = []
+                        context["__injected_vars__"].append(res)
+                        idx = len(context["__injected_vars__"]) - 1
+                        return f"__injected_vars__[{idx}]"
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)
@@ -292,7 +339,7 @@ class ResolverMixin:
                 # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
                 # This prevents accidental corruption of JSON payloads containing single braces.
                 is_explicit = bool(match.group(1) or match.group(3))
-                is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map)))
+                is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":")))
 
                 if is_explicit or is_task_token:
                     return _UNRESOLVED_MARKER
@@ -301,7 +348,8 @@ class ResolverMixin:
 
             # 4. Partial string replacement with regex
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
-            val = re.sub(r'\{\{([\w\-\.\[\]]+)\}\}|\{([\w\-\.\[\]]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
+            # Added ':' to support shorthand like {{:get_message}}
+            val = re.sub(r'\{\{([\w\-\.\[\]:]+)\}\}|\{([\w\-\.\[\]:]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)', replace_match, val)
             return val
 
         elif isinstance(val, list):

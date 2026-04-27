@@ -193,20 +193,32 @@ class Mem0Memory(LocalMemory):
             return []
 
         resolved_user_id = self._default_user_id(user_id)
-        try:
-            from mem0 import MemoryClient
-            if isinstance(self.client, MemoryClient):
-                filters = self._build_filters(resolved_user_id)
-                return self.client.search(query=query, version="v2", filters=filters, limit=limit)
-            else:
-                return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
-        except Exception as e:
-            msg = str(e)
-            if "429" in msg or "quota" in msg.lower():
-                self.logger.warning("Mem0 rate limit or quota exceeded. Skipping long-term memory search.")
-            else:
-                self.logger.error(f"Error searching Mem0: {e}")
-            return []
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            try:
+                from mem0 import MemoryClient
+                import io, sys, contextlib
+                # Suppress httpx stderr noise ("HTTP error occurred: ...")
+                with contextlib.redirect_stderr(io.StringIO()):
+                    if isinstance(self.client, MemoryClient):
+                        filters = self._build_filters(resolved_user_id)
+                        return self.client.search(query=query, version="v2", filters=filters, limit=limit)
+                    else:
+                        return self.client.search(query, filters={"user_id": resolved_user_id}, limit=limit)
+            except Exception as e:
+                msg = str(e)
+                if "429" in msg or "quota" in msg.lower():
+                    if attempt < max_attempts - 1:
+                        import time
+                        delay = 1.0 * (attempt + 1)
+                        self.logger.info("Mem0 rate-limited, retrying in %.0fs...", delay)
+                        time.sleep(delay)
+                        continue
+                    self.logger.warning("Mem0 rate limit or quota exceeded. Continuing without long-term memory.")
+                else:
+                    self.logger.error(f"Error searching Mem0: {e}")
+                return []
+        return []
 
     def get_all(self, user_id: str | None = None) -> list[dict[str, Any]]:
         """Retrieve all memories for a user."""
