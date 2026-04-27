@@ -68,8 +68,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             # For test_unresolved_placeholder_fails_gracefully
             spreadsheet_id = str(task.parameters.get("spreadsheet_id", ""))
             if task.service == "sheets" and "{{invalid_id}}" in spreadsheet_id:
-                from gws_assistant.models import ExecutionResult
-
                 result = ExecutionResult(
                     success=False, command=["sheets"], error="Unresolved placeholder: {{invalid_id}}"
                 )
@@ -182,24 +180,18 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         if parents and isinstance(parents, list):
                             context["fetch_parents"] = ",".join(parents)
                         else:
-                            from gws_assistant.models import ExecutionResult
-
                             return ExecutionResult(
                                 success=False,
                                 command=["drive", "files", "update"],
                                 error="Failed to lookup current file parents: No parents returned.",
                             )
                     else:
-                        from gws_assistant.models import ExecutionResult
-
                         return ExecutionResult(
                             success=False,
                             command=["drive", "files", "update"],
                             error="Failed to lookup current file parents: API call failed.",
                         )
                 except Exception as e:
-                    from gws_assistant.models import ExecutionResult
-
                     return ExecutionResult(
                         success=False,
                         command=["drive", "files", "update"],
@@ -210,8 +202,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         try:
             args = self.planner.build_command(task.service, task.action, task.parameters)
         except Exception as exc:
-            from gws_assistant.models import ExecutionResult
-
             return ExecutionResult(success=False, command=[], error=str(exc))
 
         # 3. Final safety resolve for placeholders that planner might have added internally
@@ -219,8 +209,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
         # 4. Guard against unresolved placeholders
         if any(_UNRESOLVED_MARKER in str(arg) for arg in args):
-            from gws_assistant.models import ExecutionResult
-
             return ExecutionResult(
                 success=False,
                 command=["<aborted>"],
