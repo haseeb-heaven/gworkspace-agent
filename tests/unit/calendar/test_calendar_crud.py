@@ -11,11 +11,7 @@ class TestCalendarCRUD:
 
     def test_insert_event(self):
         """Verify create_event maps to 'insert' command."""
-        params = {
-            "summary": "Meeting",
-            "start_date": "2026-04-18",
-            "description": "Project sync"
-        }
+        params = {"summary": "Meeting", "start_date": "2026-04-18", "description": "Project sync"}
         args = self.planner.build_command("calendar", "create_event", params)
         assert args[0:3] == ["calendar", "events", "insert"]
 
@@ -28,10 +24,7 @@ class TestCalendarCRUD:
 
     def test_get_event(self):
         """Verify get_event maps to 'get' command."""
-        params = {
-            "event_id": "event123",
-            "calendar_id": "primary"
-        }
+        params = {"event_id": "event123", "calendar_id": "primary"}
         args = self.planner.build_command("calendar", "get_event", params)
         assert args[0:3] == ["calendar", "events", "get"]
 
@@ -43,10 +36,7 @@ class TestCalendarCRUD:
 
     def test_update_event(self):
         """Verify update_event maps to 'patch' command."""
-        params = {
-            "event_id": "event123",
-            "summary": "Updated Meeting"
-        }
+        params = {"event_id": "event123", "summary": "Updated Meeting"}
         args = self.planner.build_command("calendar", "update_event", params)
         assert args[0:3] == ["calendar", "events", "patch"]
 
@@ -57,9 +47,7 @@ class TestCalendarCRUD:
 
     def test_delete_event(self):
         """Verify delete_event maps to 'delete' command."""
-        params = {
-            "event_id": "event123"
-        }
+        params = {"event_id": "event123"}
         args = self.planner.build_command("calendar", "delete_event", params)
         assert args[0:3] == ["calendar", "events", "delete"]
 
@@ -67,7 +55,7 @@ class TestCalendarCRUD:
         params_idx = args.index("--params")
         p = json.loads(args[params_idx + 1])
         assert p["eventId"] == "event123"
-        assert p["calendarId"] == "primary" # Default
+        assert p["calendarId"] == "primary"  # Default
 
     def test_missing_event_id_fails(self):
         """Verify get_event fails without event_id."""

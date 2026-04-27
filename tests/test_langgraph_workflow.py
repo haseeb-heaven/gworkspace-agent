@@ -34,6 +34,7 @@ def test_reflection_retry_then_success(config):
     system = MagicMock()
     executor = MagicMock()
     from gws_assistant.models import ReflectionDecision
+
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
 
     task = PlannedTask(id="1", service="drive", action="list_files")
@@ -64,6 +65,7 @@ def test_replan_path_retains_history(config):
     system = MagicMock()
     executor = MagicMock()
     from gws_assistant.models import ReflectionDecision
+
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
 
     first_task = PlannedTask(id="1", service="drive", action="list_files")
@@ -111,6 +113,7 @@ def test_silent_failure_guard(config):
     system = MagicMock()
     executor = MagicMock()
     from gws_assistant.models import ReflectionDecision
+
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
 
     task = PlannedTask(id="1", service="drive", action="list_files")
@@ -128,6 +131,7 @@ def test_history_trimming(config):
     system = MagicMock()
     executor = MagicMock()
     from gws_assistant.models import ReflectionDecision
+
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
     task = PlannedTask(id="1", service="drive", action="list_files")
     system.plan.return_value = RequestPlan(raw_text="x", tasks=[task], no_service_detected=False)
@@ -154,6 +158,7 @@ def test_computation_routes_generate_code_and_executes(config):
     system = MagicMock()
     executor = MagicMock()
     from gws_assistant.models import ReflectionDecision
+
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
     system.plan.return_value = RequestPlan(raw_text="compute 2+2", tasks=[], no_service_detected=True)
     config.use_heuristic_fallback = True
@@ -168,6 +173,7 @@ def test_code_execution_respects_config_flag(config):
     system = MagicMock()
     executor = MagicMock()
     from gws_assistant.models import ReflectionDecision
+
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
     config.code_execution_enabled = False
     config.use_heuristic_fallback = True

@@ -20,7 +20,9 @@ from gws_assistant.planner import CommandPlanner
 
 class FakeRunner(GWSRunner):
     def __init__(self) -> None:
-        super().__init__(Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test"))
+        super().__init__(
+            Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test")
+        )
         self.commands: list[list[str]] = []
 
     def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
@@ -33,6 +35,7 @@ class FakeRunner(GWSRunner):
             )
         if args[:3] == ["sheets", "spreadsheets", "create"]:
             import json as _json
+
             json_idx = args.index("--json") if "--json" in args else -1
             title = "Sheet"
             if json_idx >= 0:
@@ -44,12 +47,14 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=_json.dumps({
-                    "spreadsheetId": "sheet-1",
-                    "spreadsheetUrl": "https://example.test/sheet",
-                    "properties": {"title": title},
-                    "sheets": [{"properties": {"title": title}}],
-                }),
+                stdout=_json.dumps(
+                    {
+                        "spreadsheetId": "sheet-1",
+                        "spreadsheetUrl": "https://example.test/sheet",
+                        "properties": {"title": title},
+                        "sheets": [{"properties": {"title": title}}],
+                    }
+                ),
             )
         if args[:4] == ["sheets", "spreadsheets", "values", "get"]:
             return ExecutionResult(
@@ -81,12 +86,13 @@ class FakeRunner(GWSRunner):
             )
         if args[:4] == ["gmail", "users", "messages", "get"]:
             import json as _json
+
             msg_id = "m1"
             # Extract ID from params if possible
             for i, arg in enumerate(args):
                 if arg == "--params":
                     try:
-                        p_data = _json.loads(args[i+1])
+                        p_data = _json.loads(args[i + 1])
                         msg_id = p_data.get("id") or p_data.get("messageId") or msg_id
                     except (IndexError, _json.JSONDecodeError, ValueError):
                         pass
@@ -131,7 +137,12 @@ class FakeRunner(GWSRunner):
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"items":[{"id":"evt-1","summary":"Review Data","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
             )
-        return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{"updates":{"updatedRows":2}}')
+        return ExecutionResult(
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
+            stdout='{"updates":{"updatedRows":2}}',
+        )
+
 
 @pytest.fixture(autouse=True)
 def mock_react(mocker):
@@ -148,13 +159,19 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
     plan = RequestPlan(
         raw_text="tickets",
         tasks=[
-            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}),
+            PlannedTask(
+                id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}
+            ),
             PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Tickets"}),
             PlannedTask(
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_rows"},
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": "$gmail_summary_rows",
+                },
             ),
         ],
     )
@@ -170,8 +187,15 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
     plan = RequestPlan(
         raw_text="jobs",
         tasks=[
-            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 10}),
-            PlannedTask(id="task-2", service="gmail", action="get_message", parameters={"message_id": "{{message_id_from_task_1}}"}),
+            PlannedTask(
+                id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 10}
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="get_message",
+                parameters={"message_id": "{{message_id_from_task_1}}"},
+            ),
             PlannedTask(id="task-3", service="sheets", action="create_spreadsheet", parameters={"title": "Jobs"}),
             PlannedTask(
                 id="task-4",
@@ -218,7 +242,11 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-2",
                 service="gmail",
                 action="send_message",
-                    parameters={"to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com", "subject": "Sheet data", "body": "$sheet_email_body"},
+                parameters={
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
+                    "subject": "Sheet data",
+                    "body": "$sheet_email_body",
+                },
             ),
         ],
     )
@@ -235,7 +263,9 @@ def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
     plan = RequestPlan(
         raw_text="save gmail body to sheet",
         tasks=[
-            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}),
+            PlannedTask(
+                id="task-1", service="gmail", action="list_messages", parameters={"q": "ticket", "max_results": 10}
+            ),
             PlannedTask(id="task-2", service="sheets", action="create_spreadsheet", parameters={"title": "Tickets"}),
             PlannedTask(
                 id="task-3",
@@ -252,6 +282,7 @@ def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
     report = executor.execute(plan)
     assert report.success is True
     assert "m1" in runner.commands[2][runner.commands[2].index("--json") + 1]
+
 
 def test_execute_single_task(tmp_path):
     runner = FakeRunner()
@@ -274,9 +305,21 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
             invoke=lambda payload: {
                 "query": "top 3 agentic ai frameworks",
                 "results": [
-                    {"title": "LangGraph", "content": "Graph-based agent orchestration", "link": "https://example.com/langgraph"},
-                    {"title": "CrewAI", "content": "Multi-agent workflow framework", "link": "https://example.com/crewai"},
-                    {"title": "AutoGen", "content": "Conversational multi-agent framework", "link": "https://example.com/autogen"},
+                    {
+                        "title": "LangGraph",
+                        "content": "Graph-based agent orchestration",
+                        "link": "https://example.com/langgraph",
+                    },
+                    {
+                        "title": "CrewAI",
+                        "content": "Multi-agent workflow framework",
+                        "link": "https://example.com/crewai",
+                    },
+                    {
+                        "title": "AutoGen",
+                        "content": "Conversational multi-agent framework",
+                        "link": "https://example.com/autogen",
+                    },
                 ],
                 "error": None,
             }
@@ -286,15 +329,33 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     plan = RequestPlan(
         raw_text="Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to user@example.com",
         tasks=[
-            PlannedTask(id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}),
-            PlannedTask(id="task-2", service="docs", action="create_document", parameters={"title": "Agentic Ai Frameworks"}),
-            PlannedTask(id="task-3", service="docs", action="batch_update", parameters={"document_id": "$last_document_id", "text": "$web_search_markdown"}),
-            PlannedTask(id="task-4", service="sheets", action="create_spreadsheet", parameters={"title": "Agentic Ai Frameworks"}),
+            PlannedTask(
+                id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}
+            ),
+            PlannedTask(
+                id="task-2", service="docs", action="create_document", parameters={"title": "Agentic Ai Frameworks"}
+            ),
+            PlannedTask(
+                id="task-3",
+                service="docs",
+                action="batch_update",
+                parameters={"document_id": "$last_document_id", "text": "$web_search_markdown"},
+            ),
+            PlannedTask(
+                id="task-4",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": "Agentic Ai Frameworks"},
+            ),
             PlannedTask(
                 id="task-5",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$web_search_table_values"},
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": "$web_search_table_values",
+                },
             ),
             PlannedTask(
                 id="task-6",
@@ -330,17 +391,25 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     assert "https://docs.google.com/document/d/doc-1/edit" in decoded
     assert "https://example.test/sheet" in decoded
 
+
 def test_gmail_details_accumulation():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
     plan = RequestPlan(
         raw_text="extract jobs",
         tasks=[
-            PlannedTask(id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 2}),
+            PlannedTask(
+                id="task-1", service="gmail", action="list_messages", parameters={"q": "jobs", "max_results": 2}
+            ),
             # task-1 will expand into task-1-1 and task-1-2 in some future logic,
             # but currently expand_task handles specific actions.
             # Let's simulate expansion by providing get_message with a list.
-            PlannedTask(id="task-2", service="gmail", action="get_message", parameters={"message_id": "{{message_id_from_task_1}}"}),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="get_message",
+                parameters={"message_id": "{{message_id_from_task_1}}"},
+            ),
             PlannedTask(
                 id="task-3",
                 service="sheets",
@@ -369,6 +438,7 @@ def test_gmail_details_accumulation():
     assert values[0][1] == "Job offer m1"
     assert values[1][1] == "Job offer m2"
 
+
 def test_code_output_resolution():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
@@ -378,8 +448,13 @@ def test_code_output_resolution():
         raw_text="run code and send",
         tasks=[
             PlannedTask(id="task-1", service="code", action="execute", parameters={"code": "print('hello world')"}),
-            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"}),
-        ]
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"},
+            ),
+        ],
     )
 
     # We need to mock _handle_code_execution_task to simulate the updated code outputs
@@ -388,6 +463,7 @@ def test_code_output_resolution():
 
     def fake_code_execute(task, context):
         from gws_assistant.models import ExecutionResult
+
         # Mimic context updater directly since the real handler calls runner
         result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
         context["code_output"] = result_data["parsed_value"]
@@ -417,9 +493,10 @@ def test_code_output_resolution():
 
 
 def test_legacy_placeholder_resolution():
+    import logging
+
     from gws_assistant.execution.executor import PlanExecutor
     from gws_assistant.planner import CommandPlanner
-    import logging
 
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
@@ -427,7 +504,7 @@ def test_legacy_placeholder_resolution():
     context = {
         "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
         "code_output": "test_output_123",
-        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |"
+        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |",
     }
 
     # Should resolve correctly mapping from legacy to new

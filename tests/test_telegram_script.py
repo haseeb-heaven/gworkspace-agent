@@ -1,12 +1,13 @@
-import unittest
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
 
 # Add the root directory to sys.path to import the script
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import scripts.telegram_send_message as telegram_script
+
 
 class TestTelegramSendMessage(unittest.TestCase):
 

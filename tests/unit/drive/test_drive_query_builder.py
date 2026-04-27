@@ -1,5 +1,7 @@
 import pytest
+
 from gws_assistant.drive_query_builder import sanitize_drive_query
+
 
 @pytest.mark.parametrize("raw, expected", [
     # Basic text queries

@@ -142,8 +142,8 @@ class WorkspaceAgentSystem:
 
         # Pattern B: Gmail -> Sheets -> Email (Extraction)
         if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
-             tasks = self._gmail_to_sheets_tasks(text, lowered)
-             return RequestPlan(
+            tasks = self._gmail_to_sheets_tasks(text, lowered)
+            return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
@@ -153,10 +153,15 @@ class WorkspaceAgentSystem:
             )
 
         # Pattern A1: Drive Metadata Only (e.g. counts, tables, summaries)
-        if "drive" in services and _is_metadata_only_request(lowered) and not ('gmail' in services and _is_drive_to_email_request(lowered)) and not _is_drive_folder_move_request(lowered):
-             tasks = self._drive_metadata_computation_tasks(text, lowered)
-             task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-             return RequestPlan(
+        if (
+            "drive" in services
+            and _is_metadata_only_request(lowered)
+            and not ("gmail" in services and _is_drive_to_email_request(lowered))
+            and not _is_drive_folder_move_request(lowered)
+        ):
+            tasks = self._drive_metadata_computation_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: {task_chain}",
@@ -165,11 +170,37 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern A-Metadata: Drive Metadata -> Code -> Gmail
+        if "drive" in services and "gmail" in services and _is_drive_metadata_to_email_request(lowered):
+            tasks = self._drive_metadata_to_gmail_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern A-Metadata: Drive Metadata -> Code -> Gmail
+        if "drive" in services and "gmail" in services and _is_drive_metadata_to_email_request(lowered):
+            tasks = self._drive_metadata_to_gmail_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
-             tasks = self._drive_to_gmail_tasks(text, lowered)
-             task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-             return RequestPlan(
+            tasks = self._drive_to_gmail_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: {task_chain}",
@@ -180,8 +211,8 @@ class WorkspaceAgentSystem:
 
         # Pattern C: Drive Folder & Move
         if "drive" in services and _is_drive_folder_move_request(lowered):
-             tasks = self._drive_folder_move_tasks(text, lowered)
-             return RequestPlan(
+            tasks = self._drive_folder_move_tasks(text, lowered)
+            return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: drive.create_folder -> drive.list_files -> drive.move_file",
@@ -192,8 +223,8 @@ class WorkspaceAgentSystem:
 
         # Pattern D: Sheet Creation & Data
         if "sheets" in services and _is_sheet_creation_request(lowered):
-             tasks = self._sheets_creation_tasks(text, lowered)
-             return RequestPlan(
+            tasks = self._sheets_creation_tasks(text, lowered)
+            return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: sheets.create_spreadsheet -> sheets.append_values -> sheets.get_values -> code.execute",
@@ -220,8 +251,8 @@ class WorkspaceAgentSystem:
 
         # Pattern G: Sheet -> Email
         if "sheets" in services and "gmail" in services and _is_sheet_to_email_request(lowered):
-             tasks = self._sheet_to_email_tasks(text, lowered)
-             return RequestPlan(
+            tasks = self._sheet_to_email_tasks(text, lowered)
+            return RequestPlan(
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: sheets.get_values -> gmail.send_message",
@@ -258,17 +289,15 @@ class WorkspaceAgentSystem:
                 service="drive",
                 action="list_files",
                 parameters={"q": query, "page_size": 50},
-                reason="Search for files to retrieve metadata."
+                reason="Search for files to retrieve metadata.",
             ),
             PlannedTask(
                 id="task-2",
                 service="code",
                 action="execute",
-                parameters={
-                    "code": code_script
-                },
-                reason="Compute over metadata."
-            )
+                parameters={"code": code_script},
+                reason="Compute over metadata.",
+            ),
         ]
 
         return tasks
@@ -290,14 +319,9 @@ $drive_metadata_table"""
             body_content = """Hi,
 
 Please find the content below:
-                                                                              
 $last_export_file_content"""
 
-        send_params: dict[str, Any] = {
-            "to_email": recipient,
-            "subject": f"Document: {query}",
-            "body": body_content
-        }
+        send_params: dict[str, Any] = {"to_email": recipient, "subject": f"Document: {query}", "body": body_content}
 
         if "attach" in lowered:
             send_params["attachments"] = ["{{task-1.id}}"]
@@ -308,7 +332,7 @@ $last_export_file_content"""
                 service="drive",
                 action="list_files",
                 parameters={"q": query, "page_size": 50},
-                reason="Search for the requested document."
+                reason="Search for the requested document.",
             )
         ]
 
@@ -319,7 +343,7 @@ $last_export_file_content"""
                     service="drive",
                     action="export_file",
                     parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
-                    reason="Extract content for the email."
+                    reason="Extract content for the email.",
                 )
             )
 
@@ -329,13 +353,57 @@ $last_export_file_content"""
                 service="gmail",
                 action="send_message",
                 parameters=send_params,
-                reason="Email the extracted content."
+                reason="Email the extracted content.",
             )
         )
 
         return tasks
 
+    def _drive_metadata_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Drive metadata with explicit email intent: list files -> compute table -> send email."""
+        query = _drive_query_from_text(text)
+        recipient = self.config.default_recipient_email
+        page_size = _first_int(lowered) or 50
 
+        code = (
+            "files = {{task-1.files}}\n"
+            "count = len(files)\n"
+            'table = "Name | ID | MimeType\\n"\n'
+            'table += "-" * 50 + "\\n"\n'
+            "for f in files:\n"
+            "    table += f\"{f.get('name', 'N/A')} | {f.get('id', 'N/A')} | {f.get('mimeType', 'N/A')}\\n\"\n"
+            "\n"
+            'summary = f"Total matching files: {count}\\n\\n{table}"\n'
+            "print(summary)"
+        )
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": page_size},
+                reason="Search for the requested document metadata.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="code",
+                action="execute",
+                parameters={"code": code},
+                reason="Compute summary table from drive metadata.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Drive Metadata Summary: {query}",
+                    "body": "Here is the summary you requested:\n\n{{task-2.stdout}}",
+                },
+                reason="Email the metadata summary table.",
+            ),
+        ]
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
@@ -346,21 +414,21 @@ $last_export_file_content"""
                 service="gmail",
                 action="list_messages",
                 parameters={"q": query, "max_results": 10},
-                reason="Search Gmail messages."
+                reason="Search Gmail messages.",
             ),
             PlannedTask(
                 id="task-2",
                 service="gmail",
                 action="get_message",
                 parameters={"message_id": "$gmail_message_ids"},
-                reason="Fetch full message details."
+                reason="Fetch full message details.",
             ),
             PlannedTask(
                 id="task-3",
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": f"Results: {query}"},
-                reason="Create spreadsheet for results."
+                reason="Create spreadsheet for results.",
             ),
             PlannedTask(
                 id="task-4",
@@ -369,9 +437,9 @@ $last_export_file_content"""
                 parameters={
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
-                    "values": "$gmail_details_values"
+                    "values": "$gmail_details_values",
                 },
-                reason="Save detailed results to Sheets."
+                reason="Save detailed results to Sheets.",
             ),
             PlannedTask(
                 id="task-5",
@@ -382,10 +450,10 @@ $last_export_file_content"""
                     "subject": f"Processed: {query}",
                     "body": """Hi,
 
-Please find the spreadsheet here: $last_spreadsheet_url"""
+Please find the spreadsheet here: $last_spreadsheet_url""",
                 },
-                reason="Email the final spreadsheet link."
-            )
+                reason="Email the final spreadsheet link.",
+            ),
         ]
 
     def _sheet_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
@@ -397,7 +465,7 @@ Please find the spreadsheet here: $last_spreadsheet_url"""
                 service="sheets",
                 action="get_values",
                 parameters={"spreadsheet_id": s_id or "{{spreadsheet_id}}", "range": "Sheet1!A1:Z500"},
-                reason="Read data from the spreadsheet."
+                reason="Read data from the spreadsheet.",
             ),
             PlannedTask(
                 id="task-2",
@@ -410,10 +478,10 @@ Please find the spreadsheet here: $last_spreadsheet_url"""
 
 Please find the spreadsheet data below:
 
-$last_spreadsheet_values"""
+$last_spreadsheet_values""",
                 },
-                reason="Email the spreadsheet data."
-            )
+                reason="Email the spreadsheet data.",
+            ),
         ]
 
     def _drive_folder_move_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
@@ -427,21 +495,21 @@ $last_spreadsheet_values"""
                 service="drive",
                 action="create_folder",
                 parameters={"folder_name": folder_name},
-                reason=f"Create folder '{folder_name}'."
+                reason=f"Create folder '{folder_name}'.",
             ),
             PlannedTask(
                 id="task-2",
                 service="drive",
                 action="list_files",
                 parameters={"q": query, "page_size": 20},
-                reason="List files to move."
+                reason="List files to move.",
             ),
             PlannedTask(
                 id="task-3",
                 service="drive",
                 action="move_file",
                 parameters={"file_id": "$drive_file_ids", "folder_id": "{{task-1.id}}"},
-                reason="Move files into the folder."
+                reason="Move files into the folder.",
             ),
             PlannedTask(
                 id="task-4",
@@ -452,10 +520,10 @@ $last_spreadsheet_values"""
                     "subject": "Drive Files Organized",
                     "body": f"""Hi,
 
-Files moved to '{folder_name}'. Link: $last_folder_url"""
+Files moved to '{folder_name}'. Link: $last_folder_url""",
                 },
-                reason="Notify user."
-            )
+                reason="Notify user.",
+            ),
         ]
 
     def _sheets_creation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
@@ -466,18 +534,15 @@ Files moved to '{folder_name}'. Link: $last_folder_url"""
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": title},
-                reason=f"Create spreadsheet '{title}'."
+                reason=f"Create spreadsheet '{title}'.",
             ),
             PlannedTask(
                 id="task-2",
                 service="sheets",
                 action="append_values",
-                parameters={
-                    "spreadsheet_id": "{{task-1.id}}",
-                    "values": _extract_data_rows(text)
-                },
-                reason="Add data rows to the sheet."
-            )
+                parameters={"spreadsheet_id": "{{task-1.id}}", "values": _extract_data_rows(text)},
+                reason="Add data rows to the sheet.",
+            ),
         ]
 
     def _single_service_task(self, service: str, lowered: str, index: int) -> PlannedTask:
@@ -544,15 +609,15 @@ print('Processing task: {lowered}')"""
                 service="gmail",
                 action="list_messages",
                 parameters={"q": query, "max_results": 10},
-                reason="Search Gmail messages."
+                reason="Search Gmail messages.",
             ),
             PlannedTask(
                 id="task-2",
                 service="gmail",
                 action="get_message",
                 parameters={"message_id": "$gmail_message_ids"},
-                reason="Fetch full message details."
-            )
+                reason="Fetch full message details.",
+            ),
         ]
 
 
@@ -713,7 +778,10 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
 def _is_metadata_only_request(text: str) -> bool:
     """Detect Drive metadata-only requests that do NOT require emailing (counts, tables, summaries)."""
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
-    has_metadata_intent = any(t in text for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list"))
+    has_metadata_intent = any(
+        t in text
+        for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list")
+    )
     has_email_intent = any(t in text for t in ("email", "send", "mail"))
     return has_drive_intent and has_metadata_intent and not has_email_intent
 
@@ -733,12 +801,6 @@ def _is_sheet_to_email_request(text: str) -> bool:
 def _is_drive_folder_move_request(text: str) -> bool:
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
 
-
-def _is_metadata_only_request(text: str) -> bool:
-    """Detect requests that combine Drive search/listing with metadata-only intent."""
-    has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
-    has_metadata_intent = any(t in text for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group"))
-    return has_drive_intent and has_metadata_intent
 
 def _is_sheet_creation_request(text: str) -> bool:
     # Avoid matching "create email" or "create doc"
@@ -763,7 +825,7 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
 
     # If no rows found in quotes, try to find patterns like 'Score1, 100'
     if not rows:
-         for m in RE_EXTRACT_DATA_PATTERN.finditer(text):
-             rows.append([m.group(1).strip(), m.group(2).strip()])
+        for m in RE_EXTRACT_DATA_PATTERN.finditer(text):
+            rows.append([m.group(1).strip(), m.group(2).strip()])
 
     return rows if rows else [["Data", "Value"], ["Item1", "10"]]

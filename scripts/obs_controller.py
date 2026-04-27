@@ -1,7 +1,7 @@
 import ctypes
-import time
-import subprocess
 import os
+import subprocess
+import time
 
 # Windows Virtual Key Codes
 VK_CONTROL = 0x11
@@ -35,7 +35,7 @@ def ensure_obs_running():
     """Check for 'obs64.exe' and if not found, start it."""
     obs_process = "obs64.exe"
     obs_path = r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"
-    
+
     try:
         output = subprocess.check_output('tasklist /FI "IMAGENAME eq obs64.exe"', shell=True).decode(errors='ignore')
         if obs_process.lower() not in output.lower():
@@ -67,18 +67,18 @@ def verify_recording(prev_files):
     if not os.path.exists(video_dir):
         print(f"OBS: ERROR - Video directory not found: {video_dir}")
         return False, prev_files
-    
+
     # Check multiple times over 5 seconds for slow disk writes
     for _ in range(5):
         current_files = set(os.listdir(video_dir))
         new_files = current_files - prev_files
         new_videos = [f for f in new_files if f.lower().endswith(('.mp4', '.mkv', '.mov', '.flv'))]
-        
+
         if new_videos:
             print(f"OBS: SUCCESS! New recording found: {new_videos[0]}")
             return True, current_files
         time.sleep(1)
-        
+
     print("OBS: WARNING - No new video file detected in C:\\Users\\hasee\\Videos")
     return False, prev_files
 

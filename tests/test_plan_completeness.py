@@ -5,7 +5,6 @@ the user clearly asked for (e.g., user asks for sheets + email but
 LLM only returns gmail.list_messages).
 """
 
-import pytest
 from gws_assistant.langchain_agent import _is_plan_complete
 
 

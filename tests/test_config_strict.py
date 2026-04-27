@@ -1,4 +1,3 @@
-
 import pytest
 
 from gws_assistant.config import AppConfig
@@ -7,12 +6,14 @@ from gws_assistant.config import AppConfig
 @pytest.fixture(autouse=True)
 def mock_load_dotenv(monkeypatch):
     import gws_assistant.config
+
     monkeypatch.setattr(gws_assistant.config, "load_dotenv", lambda **kwargs: None)
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)
+
 
 def test_config_raises_value_error_if_recipient_email_missing(monkeypatch):
     """Test that ValueError is raised if DEFAULT_RECIPIENT_EMAIL is missing."""
@@ -22,6 +23,7 @@ def test_config_raises_value_error_if_recipient_email_missing(monkeypatch):
     with pytest.raises(ValueError, match="DEFAULT_RECIPIENT_EMAIL must be set in .env"):
         AppConfig.from_env()
 
+
 def test_config_accepts_recipient_email_if_present(monkeypatch):
     """Test that config loads correctly if DEFAULT_RECIPIENT_EMAIL is present."""
     monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "test@example.com")
@@ -30,6 +32,7 @@ def test_config_accepts_recipient_email_if_present(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     config = AppConfig.from_env()
     assert config.default_recipient_email == "test@example.com"
+
 
 def test_config_raises_value_error_if_gws_binary_missing(monkeypatch):
     """Test that ValueError is raised if GWS_BINARY_PATH is missing."""

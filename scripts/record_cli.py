@@ -1,8 +1,7 @@
 
-import os
-import time
-import subprocess
 import ctypes
+import time
+
 
 def press_key(key_code):
     ctypes.windll.user32.keybd_event(key_code, 0, 0, 0)
@@ -38,16 +37,16 @@ def run_cli_demo():
     print("DEMO STARTING IN 5 SECONDS...")
     print("Switch to your terminal window NOW!")
     time.sleep(5)
-    
+
     start_obs_recording()
     time.sleep(1)
-    
+
     type_string("python gws_cli.py --task \"List my drive files\"")
     press_key(0x0D) # Enter
-    
+
     # Wait for execution
     time.sleep(8)
-    
+
     stop_obs_recording()
     print("CLI Demo Recorded.")
 

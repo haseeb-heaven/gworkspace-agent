@@ -9,7 +9,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
-from gws_assistant.exceptions import APIErrorType, classify_api_error
 from gws_assistant.langchain_agent import create_agent
 from gws_assistant.models import (
     AgentState,
