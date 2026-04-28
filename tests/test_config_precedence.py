@@ -24,18 +24,20 @@ def mock_env():
 @pytest.mark.drive
 def test_config_reads_env_true(mock_env):
     with patch("pathlib.Path.exists", return_value=False):  # Force no .env file
-        config = AppConfig.from_env()
-        assert config.sandbox_enabled is True
-        assert config.read_only_mode is True
+        with patch("gws_assistant.config.load_dotenv"):
+            config = AppConfig.from_env()
+            assert config.sandbox_enabled is True
+            assert config.read_only_mode is True
 
 
 @pytest.mark.drive
 def test_config_reads_env_false(mock_env):
     with patch.dict(os.environ, {"SANDBOX_ENABLED": "false", "READ_ONLY_MODE": "false"}):
         with patch("pathlib.Path.exists", return_value=False):
-            config = AppConfig.from_env()
-            assert config.sandbox_enabled is False
-            assert config.read_only_mode is False
+            with patch("gws_assistant.config.load_dotenv"):
+                config = AppConfig.from_env()
+                assert config.sandbox_enabled is False
+                assert config.read_only_mode is False
 
 
 @pytest.mark.drive
