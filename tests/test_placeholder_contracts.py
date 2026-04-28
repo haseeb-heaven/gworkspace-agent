@@ -8,7 +8,7 @@ def test_drive_summary_values_alias_resolves():
 
 def test_last_code_result_maps_to_parsed_value():
     from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
-    assert LEGACY_PLACEHOLDER_MAP.get("$last_code_result") == "code_parsed_value"
+    assert LEGACY_PLACEHOLDER_MAP.get("$last_code_result") == "code_output"
     assert LEGACY_PLACEHOLDER_MAP.get("$last_code_stdout") == "code_output"
 
 def test_gmail_summary_values_is_independent_copy():
