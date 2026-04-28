@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from gws_assistant.config import AppConfig
 
 

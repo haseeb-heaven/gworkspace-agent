@@ -14,18 +14,27 @@ sys.path.append(os.getcwd())
 try:
     from run_live_scenarios import TASKS
 except ImportError:
-    TASKS = [] # Fallback if import fails
+    TASKS = []  # Fallback if import fails
+
 
 def python_exe():
     return os.environ.get("PYTHON_EXE") or sys.executable
 
+
 def send_telegram(message):
     subprocess.run([python_exe(), "gws_cli.py", "--send-telegram", message], env=os.environ.copy())
 
+
 def verify_data(v_type, identifier):
     # Run verify script and capture output
-    result = subprocess.run([python_exe(), "scripts/verify_gws_data.py", v_type, identifier], capture_output=True, text=True, env=os.environ.copy())
+    result = subprocess.run(
+        [python_exe(), "scripts/verify_gws_data.py", v_type, identifier],
+        capture_output=True,
+        text=True,
+        env=os.environ.copy(),
+    )
     return result.returncode == 0, result.stdout + result.stderr
+
 
 def run_single_task(index, task):
     max_retries = 3
@@ -52,7 +61,7 @@ def run_single_task(index, task):
                 text=True,
                 encoding="utf-8",
                 env=os.environ.copy(),
-                bufsize=1
+                bufsize=1,
             )
 
             # Monitor stdout/stderr in real-time
@@ -117,6 +126,7 @@ def run_single_task(index, task):
             send_telegram(f"❌ [Agent {index}] FINAL FAILURE: {task[:50]}\nError: {stderr[-200:]}")
             return index, False, stderr
 
+
 def main():
     print(f"Running {len(TASKS)} tasks throttled (max_workers=3, 45s spawn delay)...")
 
@@ -130,7 +140,7 @@ def main():
         for i, task in enumerate(TASKS):
             futures.append(executor.submit(run_single_task, i, task))
             if i < len(TASKS) - 1:
-                print(f"Waiting {spawn_delay}s before spawning Agent {i+1}...")
+                print(f"Waiting {spawn_delay}s before spawning Agent {i + 1}...")
                 time.sleep(spawn_delay)
 
         for future in as_completed(futures):
@@ -140,6 +150,7 @@ def main():
     success_count = sum(1 for _, success, _ in all_results if success)
     print(f"\nFinal Results: {success_count}/{len(TASKS)} passed.")
     send_telegram(f"🏁 ALL TASKS COMPLETED. Results: {success_count}/{len(TASKS)} passed.")
+
 
 if __name__ == "__main__":
     main()

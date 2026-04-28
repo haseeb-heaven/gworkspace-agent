@@ -8,12 +8,13 @@ def test_drive_validation():
     executor = get_executor()
     if not executor.runner.validate_binary():
         import pytest
+
         pytest.skip(f"gws binary not found at {executor.runner.gws_binary_path}, skipping validation test.")
     context = {}
 
     # 1. Create Folder
     folder_name = "Systematic Validation Folder"
-    task = create_task('drive', 'create_folder', {'folder_name': folder_name})
+    task = create_task("drive", "create_folder", {"folder_name": folder_name})
     res = executor.execute_single_task(task, context)
 
     # We expect a failure if not authenticated, which helps us verify the tool is actually running
@@ -22,6 +23,7 @@ def test_drive_validation():
 
     if not res.success:
         import pytest
+
         pytest.skip("Drive tool is working but unauthenticated. Skipping further validation.")
 
     assert res.stdout and res.success, f"Drive validation failed: {res.stderr}"
@@ -31,6 +33,6 @@ def test_drive_validation():
     print(f"Folder created: {folder_id}")
 
     # 2. Delete Folder (cleanup)
-    task = create_task('drive', 'delete_file', {'file_id': folder_id})
+    task = create_task("drive", "delete_file", {"file_id": folder_id})
     res = executor.execute_single_task(task, context)
     assert res.success, f"Failed to delete folder: {res.stderr}"

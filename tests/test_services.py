@@ -35,6 +35,7 @@ from gws_assistant.relevance import extract_keywords, filter_drive_files, score_
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _config(tmp_path: Path) -> AppConfigModel:
     return AppConfigModel(
         provider="openai",
@@ -59,7 +60,9 @@ class FakeRunner(GWSRunner):
     """Mock runner that returns realistic API payloads for all services."""
 
     def __init__(self) -> None:
-        super().__init__(Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test"))
+        super().__init__(
+            Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test")
+        )
         self.commands: list[list[str]] = []
 
     def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
@@ -75,15 +78,19 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "id": msg_id,
-                    "snippet": "We are hiring for a senior role",
-                    "payload": {"headers": [
-                        {"name": "From", "value": f"HR <hr@company-{msg_id}.com>"},
-                        {"name": "Subject", "value": f"Job Offer from Company {msg_id}"},
-                        {"name": "Date", "value": "Fri, 11 Apr 2026 10:00:00 +0000"},
-                    ]},
-                }),
+                stdout=json.dumps(
+                    {
+                        "id": msg_id,
+                        "snippet": "We are hiring for a senior role",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": f"HR <hr@company-{msg_id}.com>"},
+                                {"name": "Subject", "value": f"Job Offer from Company {msg_id}"},
+                                {"name": "Date", "value": "Fri, 11 Apr 2026 10:00:00 +0000"},
+                            ]
+                        },
+                    }
+                ),
             )
         if args[:4] == ["gmail", "users", "messages", "send"]:
             return ExecutionResult(
@@ -103,12 +110,14 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "spreadsheetId": "sheet-1",
-                    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1/edit",
-                    "properties": {"title": title},
-                    "sheets": [{"properties": {"title": title}}],
-                }),
+                stdout=json.dumps(
+                    {
+                        "spreadsheetId": "sheet-1",
+                        "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1/edit",
+                        "properties": {"title": title},
+                        "sheets": [{"properties": {"title": title}}],
+                    }
+                ),
             )
         if args[:4] == ["sheets", "spreadsheets", "values", "append"]:
             return ExecutionResult(
@@ -132,10 +141,24 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({"files": [
-                    {"id": "d1", "name": "Agentic AI - Builders", "mimeType": "application/vnd.google-apps.document", "webViewLink": "https://docs.google.com/document/d/test123/edit"},
-                    {"id": "d2", "name": "weapon_244.qvm", "mimeType": "application/octet-stream", "webViewLink": "https://drive.google.com/file/d/xxx"},
-                ]}),
+                stdout=json.dumps(
+                    {
+                        "files": [
+                            {
+                                "id": "d1",
+                                "name": "Agentic AI - Builders",
+                                "mimeType": "application/vnd.google-apps.document",
+                                "webViewLink": "https://docs.google.com/document/d/test123/edit",
+                            },
+                            {
+                                "id": "d2",
+                                "name": "weapon_244.qvm",
+                                "mimeType": "application/octet-stream",
+                                "webViewLink": "https://drive.google.com/file/d/xxx",
+                            },
+                        ]
+                    }
+                ),
             )
         if args[:3] == ["drive", "files", "create"]:
             return ExecutionResult(
@@ -197,12 +220,17 @@ class FakeRunner(GWSRunner):
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
                 stdout='{"sanitizedText":"safe text","findings":[]}',
             )
-        return ExecutionResult(success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args], stdout='{}')
+        return ExecutionResult(
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
+            stdout="{}",
+        )
 
 
 # =====================================================================
 # 1. PLANNER CRUD TESTS — Validate command building for every service
 # =====================================================================
+
 
 class TestPlannerGmail:
     planner = CommandPlanner()
@@ -221,16 +249,21 @@ class TestPlannerGmail:
         assert params["id"] == "abc123"
 
     def test_send_message_builds_raw_email(self):
-        args = self.planner.build_command("gmail", "send_message", {
-            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
-            "subject": "Test Subject",
-            "body": "Hello World",
-        })
+        args = self.planner.build_command(
+            "gmail",
+            "send_message",
+            {
+                "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
+                "subject": "Test Subject",
+                "body": "Hello World",
+            },
+        )
         assert args[:4] == ["gmail", "users", "messages", "send"]
         body = json.loads(args[args.index("--json") + 1])
         assert "raw" in body
         # The raw field should be base64-encoded
         import base64
+
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
         assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL') or 'recipient@example.test'}" in decoded
         assert "Subject: Test Subject" in decoded
@@ -277,19 +310,27 @@ class TestPlannerSheets:
         assert body["sheets"][0]["properties"]["title"] == "Job Offers"
 
     def test_append_values_quotes_spaces_in_range(self):
-        args = self.planner.build_command("sheets", "append_values", {
-            "spreadsheet_id": "s1",
-            "range": "Job Offers!A1",
-            "values": [["a", "b"]],
-        })
+        args = self.planner.build_command(
+            "sheets",
+            "append_values",
+            {
+                "spreadsheet_id": "s1",
+                "range": "Job Offers!A1",
+                "values": [["a", "b"]],
+            },
+        )
         params = json.loads(args[args.index("--params") + 1])
         assert params["range"] == "'Job Offers'!A1"
 
     def test_get_values(self):
-        args = self.planner.build_command("sheets", "get_values", {
-            "spreadsheet_id": "s1",
-            "range": "Sheet1!A1:Z500",
-        })
+        args = self.planner.build_command(
+            "sheets",
+            "get_values",
+            {
+                "spreadsheet_id": "s1",
+                "range": "Sheet1!A1:Z500",
+            },
+        )
         assert args[1] == "+read"
         assert args[args.index("--spreadsheet") + 1] == "s1"
         assert args[args.index("--range") + 1] == "Sheet1!A1:Z500"
@@ -299,10 +340,14 @@ class TestPlannerCalendar:
     planner = CommandPlanner()
 
     def test_create_event_includes_end_date(self):
-        args = self.planner.build_command("calendar", "create_event", {
-            "summary": "Team Sync",
-            "start_date": "2026-04-15",
-        })
+        args = self.planner.build_command(
+            "calendar",
+            "create_event",
+            {
+                "summary": "Team Sync",
+                "start_date": "2026-04-15",
+            },
+        )
         body = json.loads(args[args.index("--json") + 1])
         assert body["start"]["date"] == "2026-04-15"
         # Planner now returns next day for all-day end date as per GCal API best practice
@@ -310,10 +355,14 @@ class TestPlannerCalendar:
 
     def test_create_event_strips_time_portion(self):
         """Calendar API rejects timestamps in date-only fields."""
-        args = self.planner.build_command("calendar", "create_event", {
-            "summary": "Meeting",
-            "start_date": "2026-04-15T10:00:00",
-        })
+        args = self.planner.build_command(
+            "calendar",
+            "create_event",
+            {
+                "summary": "Meeting",
+                "start_date": "2026-04-15T10:00:00",
+            },
+        )
         body = json.loads(args[args.index("--json") + 1])
         assert body["start"]["date"] == "2026-04-15"
         assert "T" not in body["start"]["date"]
@@ -378,12 +427,14 @@ class TestPlannerModelArmor:
 # 2. AGENT PLANNING TESTS — Real user prompts → correct task plans
 # =====================================================================
 
-class TestAgentPlanning:
 
+class TestAgentPlanning:
     def test_search_emails_save_to_sheets(self, tmp_path):
         """User: 'Search my email about Jobs offers from last week and save all company names into Google sheets.'"""
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
-        plan = agent.plan("Search my email about Jobs offers from last week and save all those company names into Google sheets")
+        plan = agent.plan(
+            "Search my email about Jobs offers from last week and save all those company names into Google sheets"
+        )
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("gmail", "list_messages") in services
         assert ("sheets", "create_spreadsheet") in services
@@ -393,7 +444,7 @@ class TestAgentPlanning:
     def test_sheets_to_email_with_id(self, tmp_path):
         """User: 'Search Google Sheets with ID: ... create email with this data to ... and send it.'"""
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
-        email = os.getenv('DEFAULT_RECIPIENT_EMAIL') or 'recipient@example.test'
+        email = os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test"
         plan = agent.plan(
             "Search Google Sheets with ID: '1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo' "
             f"create email with this data to {email} and send it"
@@ -404,9 +455,9 @@ class TestAgentPlanning:
         assert plan.tasks[-1].parameters.get("to_email") == email
 
     def test_list_emails_from_specific_person(self, tmp_path):
-        """User: 'List all emails i received from user.boss@gmail.com person'"""
+        """User: 'List emails i received from user.boss@gmail.com person'"""
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
-        plan = agent.plan("List all emails i received from 'user.boss@gmail.com' person")
+        plan = agent.plan("List emails i received from 'user.boss@gmail.com' person")
         services = [(t.service, t.action) for t in plan.tasks]
         assert ("gmail", "list_messages") in services
         assert ("gmail", "get_message") in services
@@ -429,8 +480,8 @@ class TestAgentPlanning:
 # 3. EXECUTION PIPELINE TESTS — End-to-end with FakeRunner
 # =====================================================================
 
-class TestExecutionPipelines:
 
+class TestExecutionPipelines:
     def test_gmail_to_sheets_pipeline(self):
         """Gmail search → create spreadsheet → append data. Verifies range auto-fix."""
         runner = FakeRunner()
@@ -440,11 +491,16 @@ class TestExecutionPipelines:
             tasks=[
                 PlannedTask("task-1", "gmail", "list_messages", {"q": "job offer", "max_results": 10}),
                 PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "Job Offers"}),
-                PlannedTask("task-3", "sheets", "append_values", {
-                    "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "Sheet1!A1",
-                    "values": "$gmail_summary_values",
-                }),
+                PlannedTask(
+                    "task-3",
+                    "sheets",
+                    "append_values",
+                    {
+                        "spreadsheet_id": "$last_spreadsheet_id",
+                        "range": "Sheet1!A1",
+                        "values": "$gmail_summary_values",
+                    },
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -463,11 +519,16 @@ class TestExecutionPipelines:
             tasks=[
                 PlannedTask("task-1", "drive", "list_files", {"q": "fullText contains 'Agentic AI'", "page_size": 100}),
                 PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "AI Builders Data"}),
-                PlannedTask("task-3", "sheets", "append_values", {
-                    "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "Sheet1!A1",
-                    "values": "$drive_summary_values",
-                }),
+                PlannedTask(
+                    "task-3",
+                    "sheets",
+                    "append_values",
+                    {
+                        "spreadsheet_id": "$last_spreadsheet_id",
+                        "range": "Sheet1!A1",
+                        "values": "$drive_summary_values",
+                    },
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -485,11 +546,16 @@ class TestExecutionPipelines:
             raw_text="Send sheet data via email",
             tasks=[
                 PlannedTask("task-1", "sheets", "get_values", {"spreadsheet_id": "s1", "range": "Sheet1!A1:B2"}),
-                PlannedTask("task-2", "gmail", "send_message", {
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
-                    "subject": "Data Export",
-                    "body": "$sheet_email_body",
-                }),
+                PlannedTask(
+                    "task-2",
+                    "gmail",
+                    "send_message",
+                    {
+                        "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
+                        "subject": "Data Export",
+                        "body": "$sheet_email_body",
+                    },
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -508,15 +574,35 @@ class TestExecutionPipelines:
             tasks=[
                 PlannedTask("task-1", "drive", "list_files", {"q": "fullText contains 'Agentic AI'"}),
                 PlannedTask("task-2", "sheets", "create_spreadsheet", {"title": "AI Data"}),
-                PlannedTask("task-3", "sheets", "append_values", {
-                    "spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$drive_summary_values",
-                }),
-                PlannedTask("task-4", "gmail", "send_message", {
-                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test", "subject": "AI Data Sheet", "body": "Sheet is ready",
-                }),
-                PlannedTask("task-5", "calendar", "create_event", {
-                    "summary": "Review AI Data", "start_date": "2026-04-20",
-                }),
+                PlannedTask(
+                    "task-3",
+                    "sheets",
+                    "append_values",
+                    {
+                        "spreadsheet_id": "$last_spreadsheet_id",
+                        "range": "Sheet1!A1",
+                        "values": "$drive_summary_values",
+                    },
+                ),
+                PlannedTask(
+                    "task-4",
+                    "gmail",
+                    "send_message",
+                    {
+                        "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "recipient@example.test",
+                        "subject": "AI Data Sheet",
+                        "body": "Sheet is ready",
+                    },
+                ),
+                PlannedTask(
+                    "task-5",
+                    "calendar",
+                    "create_event",
+                    {
+                        "summary": "Review AI Data",
+                        "start_date": "2026-04-20",
+                    },
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -535,11 +621,16 @@ class TestExecutionPipelines:
         plan = RequestPlan(
             raw_text="test",
             tasks=[
-                PlannedTask("task-1", "sheets", "append_values", {
-                    "spreadsheet_id": "{{invalid_id}}",
-                    "range": "A1",
-                    "values": [["data"]],
-                }),
+                PlannedTask(
+                    "task-1",
+                    "sheets",
+                    "append_values",
+                    {
+                        "spreadsheet_id": "{{invalid_id}}",
+                        "range": "A1",
+                        "values": [["data"]],
+                    },
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -556,17 +647,24 @@ class TestExecutionPipelines:
         config.sandbox_enabled = False
 
         runner = FakeRunner()
-        executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"), config=config)
+        executor = PlanExecutor(
+            planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"), config=config
+        )
 
         # We simulate a plan that tries to send to a different address
         plan = RequestPlan(
             raw_text="Send email to test@gmail.com",
             tasks=[
-                PlannedTask("task-1", "gmail", "send_message", {
-                    "to_email": "test@gmail.com",
-                    "subject": "Secret",
-                    "body": "Payload",
-                }),
+                PlannedTask(
+                    "task-1",
+                    "gmail",
+                    "send_message",
+                    {
+                        "to_email": "test@gmail.com",
+                        "subject": "Secret",
+                        "body": "Payload",
+                    },
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -576,6 +674,7 @@ class TestExecutionPipelines:
         send_cmd = next(c for c in runner.commands if "gmail" in c and "messages" in c and "send" in c)
         params = json.loads(send_cmd[send_cmd.index("--json") + 1])
         import base64
+
         decoded = base64.urlsafe_b64decode(params["raw"]).decode("utf-8")
         assert "To: strict-default@example.com" in decoded
         assert "To: test@gmail.com" not in decoded
@@ -583,11 +682,13 @@ class TestExecutionPipelines:
     def test_empty_search_results_handled_gracefully(self):
         """If Gmail or Drive returns no results, the pipeline should still succeed but do nothing."""
         runner = FakeRunner()
+
         # Override to return empty
         def empty_run(args, timeout=90):
             if "list" in args:
-                 return ExecutionResult(success=True, command=["gws"], stdout='{"messages":[], "files":[]}')
-            return ExecutionResult(success=True, command=["gws"], stdout='{}')
+                return ExecutionResult(success=True, command=["gws"], stdout='{"messages":[], "files":[]}')
+            return ExecutionResult(success=True, command=["gws"], stdout="{}")
+
         runner.run = empty_run
 
         executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
@@ -595,7 +696,9 @@ class TestExecutionPipelines:
             raw_text="Find non-existent emails and save to sheets",
             tasks=[
                 PlannedTask("t1", "gmail", "list_messages", {"q": "xyz789"}),
-                PlannedTask("t2", "sheets", "append_values", {"spreadsheet_id": "s1", "values": "$gmail_summary_values"}),
+                PlannedTask(
+                    "t2", "sheets", "append_values", {"spreadsheet_id": "s1", "values": "$gmail_summary_values"}
+                ),
             ],
         )
         report = executor.execute(plan)
@@ -621,8 +724,8 @@ class TestExecutionPipelines:
 # 4. RELEVANCE FILTER TESTS
 # =====================================================================
 
-class TestRelevanceFilter:
 
+class TestRelevanceFilter:
     def test_extract_keywords_from_quoted_phrase(self):
         keywords = extract_keywords('''Search Google Documents for "Agentic AI - Builders"''')
         assert any("agentic ai" in k for k in keywords)
@@ -661,12 +764,14 @@ class TestRelevanceFilter:
 # 5. OUTPUT FORMATTER TESTS — Human-readable output for all services
 # =====================================================================
 
+
 class TestOutputFormatter:
     formatter = HumanReadableFormatter()
 
     def test_drive_folder_creation(self):
         result = ExecutionResult(
-            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"id":"f1","kind":"drive#file","mimeType":"application/vnd.google-apps.folder","name":"Test"}',
         )
         output = self.formatter.format_execution_result(result)
@@ -674,7 +779,8 @@ class TestOutputFormatter:
 
     def test_calendar_event_list(self):
         result = ExecutionResult(
-            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"items":[{"id":"e1","summary":"Team Sync","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
         )
         output = self.formatter.format_execution_result(result)
@@ -683,7 +789,8 @@ class TestOutputFormatter:
 
     def test_spreadsheet_creation_shows_url(self):
         result = ExecutionResult(
-            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"spreadsheetId":"s1","spreadsheetUrl":"https://docs.google.com/spreadsheets/d/s1/edit","properties":{"title":"Budget"}}',
         )
         output = self.formatter.format_execution_result(result)
@@ -692,7 +799,8 @@ class TestOutputFormatter:
 
     def test_gmail_list_shows_count(self):
         result = ExecutionResult(
-            success=True, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
+            success=True,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stdout='{"messages":[{"id":"m1"},{"id":"m2"}],"resultSizeEstimate":201}',
         )
         output = self.formatter.format_execution_result(result)
@@ -700,7 +808,8 @@ class TestOutputFormatter:
 
     def test_error_result_shows_stderr(self):
         result = ExecutionResult(
-            success=False, command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
+            success=False,
+            command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")],
             stderr="error[api]: Unable to parse range: Sheet1!A1",
         )
         output = self.formatter.format_execution_result(result)
@@ -717,7 +826,7 @@ class TestOutputFormatter:
             "--params",
             '{"parent": "SPACE_ID"}',
             "--json",
-            '{"text": "hello"}'
+            '{"text": "hello"}',
         ]
 
     def test_meet_create_meeting(self):

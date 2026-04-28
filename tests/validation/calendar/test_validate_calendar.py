@@ -1,4 +1,3 @@
-
 import pytest
 
 from ..base import create_task, get_executor
@@ -12,15 +11,15 @@ def test_calendar_creation(default_email):
     context = {}
     # Create a calendar event
     task = create_task(
-        'calendar',
-        'create_event',
+        "calendar",
+        "create_event",
         {
-            'summary': 'Testing Framework',
-            'description': f'Email details to {default_email}',
-            'start_date': '2026-04-20',
-            'start_time': 'tomorrow at 10am',
-            'end_time': 'tomorrow at 11am'
-        }
+            "summary": "Testing Framework",
+            "description": f"Email details to {default_email}",
+            "start_date": "2026-04-20",
+            "start_time": "tomorrow at 10am",
+            "end_time": "tomorrow at 11am",
+        },
     )
 
     res = executor.execute_single_task(task, context)

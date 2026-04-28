@@ -1,4 +1,3 @@
-
 import argparse
 import os
 import sys
@@ -27,9 +26,9 @@ def main():
     if not (args.cli or args.gui or args.webui_dev or args.webui_pyauto):
         args.cli = args.gui = args.webui_pyauto = True
 
-    print("="*40)
+    print("=" * 40)
     print("      REAL-WORLD DEMO ORCHESTRATOR")
-    print("="*40)
+    print("=" * 40)
 
     print("\nEnsuring OBS Studio is running...")
     obs_controller.ensure_obs_running()
@@ -57,7 +56,7 @@ def main():
         res = record_gui_auto.run(task=task)
         if not res:
             print("\n[!] FAILURE: GUI Demo failed during execution.")
-            obs_controller.stop_recording() # Failsafe
+            obs_controller.stop_recording()  # Failsafe
             sys.exit(1)
 
         success, _ = obs_controller.verify_recording(prev_files)
@@ -106,11 +105,12 @@ def main():
             sys.exit(1)
         print("\n[✓] Web GUI DevTools Demo Success.")
 
-    print("\n" + "="*40)
+    print("\n" + "=" * 40)
     print("      ALL SELECTED DEMOS COMPLETED")
-    print("="*40)
+    print("=" * 40)
 
     print("Check 'C:\\Users\\hasee\\Videos' for your recordings.")
+
 
 if __name__ == "__main__":
     main()

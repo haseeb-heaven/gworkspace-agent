@@ -71,7 +71,7 @@ class AppConfigModel:
         """Strips the LiteLLM provider prefix from the model name."""
         for prefix in ("openrouter/", "groq/", "ollama/"):
             if self.model.startswith(prefix):
-                return self.model[len(prefix):]
+                return self.model[len(prefix) :]
         return self.model
 
 

@@ -191,19 +191,6 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern A-Metadata: Drive Metadata -> Code -> Gmail
-        if "drive" in services and "gmail" in services and _is_drive_metadata_to_email_request(lowered):
-            tasks = self._drive_metadata_to_gmail_tasks(text, lowered)
-            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: {task_chain}",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
         # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
             tasks = self._drive_to_gmail_tasks(text, lowered)

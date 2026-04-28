@@ -1,5 +1,7 @@
 import pytest
+
 from gws_assistant.execution.drive_metadata import summarize
+
 
 @pytest.mark.drive
 def test_summarize_count():
@@ -11,6 +13,7 @@ def test_summarize_count():
     }
     result = summarize(payload)
     assert result["count"] == 2
+
 
 @pytest.mark.drive
 def test_summarize_table_headers():
@@ -24,13 +27,15 @@ def test_summarize_table_headers():
     assert "Type" in result["table"]
     assert "Link" in result["table"]
 
+
 @pytest.mark.drive
 def test_summarize_empty_files():
     payload = {"files": []}
     result = summarize(payload)
     assert result["count"] == 0
-    assert "Found 0 Drive files." in result["table"] # _format_drive_files behavior
+    assert "Found 0 Drive files." in result["table"]  # _format_drive_files behavior
     assert result["summary_rows"] == []
+
 
 @pytest.mark.drive
 def test_full_agent_path():

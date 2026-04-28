@@ -31,9 +31,10 @@ def mock_config():
         max_retries=3,
         langchain_enabled=True,
         telegram_bot_token="test_bot_token",
-        telegram_chat_id="12345"
+        telegram_chat_id="12345",
     )
     return config
+
 
 @pytest.fixture
 def mock_update():
@@ -45,20 +46,24 @@ def mock_update():
     update.effective_message = message
     return update
 
+
 @pytest.fixture
 def mock_context(mock_config):
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.bot_data = {"config": mock_config}
     return context
 
+
 @pytest.mark.asyncio
 async def test_auth_check_allowed(mock_update, mock_context):
     assert await auth_check(mock_update, mock_context) is True
+
 
 @pytest.mark.asyncio
 async def test_auth_check_denied(mock_update, mock_context):
     mock_update.effective_chat.id = 99999
     assert await auth_check(mock_update, mock_context) is False
+
 
 @pytest.mark.asyncio
 async def test_auth_check_no_config(mock_update):
@@ -66,10 +71,12 @@ async def test_auth_check_no_config(mock_update):
     context.bot_data = {}
     assert await auth_check(mock_update, context) is False
 
+
 @pytest.mark.asyncio
 async def test_split_and_send_short(mock_update):
     await split_and_send(mock_update, "short message")
     mock_update.effective_message.reply_text.assert_called_once_with("short message")
+
 
 @pytest.mark.asyncio
 async def test_split_and_send_long(mock_update):
@@ -81,10 +88,12 @@ async def test_split_and_send_long(mock_update):
     assert calls[0][0][0].strip() == "A" * 4000
     assert calls[1][0][0].strip() == "B" * 1000
 
+
 @pytest.mark.asyncio
 async def test_split_and_send_empty(mock_update):
     await split_and_send(mock_update, "")
     mock_update.effective_message.reply_text.assert_called_once_with("No output returned.")
+
 
 @pytest.mark.asyncio
 @patch("gws_assistant.telegram_app.asyncio.create_subprocess_exec")
@@ -104,6 +113,7 @@ async def test_run_gws_task_success(mock_create_subprocess, mock_update, mock_co
     calls = mock_update.effective_message.reply_text.call_args_list
     assert any("mock stdout" in call[0][0] for call in calls)
 
+
 @pytest.mark.asyncio
 @patch("gws_assistant.telegram_app.asyncio.create_subprocess_exec")
 async def test_run_gws_task_stderr_fallback(mock_create_subprocess, mock_update, mock_context):
@@ -118,12 +128,14 @@ async def test_run_gws_task_stderr_fallback(mock_create_subprocess, mock_update,
     assert any("mock stderr" in call[0][0] for call in calls)
     assert any("Task failed with exit code 1" in call[0][0] for call in calls)
 
+
 @pytest.mark.asyncio
 async def test_handle_text(mock_update, mock_context):
     with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
         mock_update.effective_message.text = "send email"
         await handle_text(mock_update, mock_context)
         mock_run_task.assert_called_once_with(mock_update, mock_context, "send email")
+
 
 @pytest.mark.asyncio
 async def test_handle_text_unauthorized(mock_update, mock_context):
@@ -132,12 +144,14 @@ async def test_handle_text_unauthorized(mock_update, mock_context):
         await handle_text(mock_update, mock_context)
         mock_run_task.assert_not_called()
 
+
 @pytest.mark.asyncio
 async def test_handle_service_command(mock_update, mock_context):
     with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
         mock_update.effective_message.text = "/docs Create a doc"
         await handle_service_command(mock_update, mock_context)
         mock_run_task.assert_called_once_with(mock_update, mock_context, "docs Create a doc")
+
 
 @pytest.mark.asyncio
 async def test_auth_rejects_wrong_chat_id(mock_update, mock_context):
@@ -149,6 +163,7 @@ async def test_auth_rejects_wrong_chat_id(mock_update, mock_context):
         mock_run_task.assert_not_called()
         mock_update.effective_message.reply_text.assert_not_called()
 
+
 @pytest.mark.asyncio
 async def test_auth_accepts_correct_chat_id(mock_update, mock_context):
     mock_context.bot_data["config"].telegram_chat_id = "111111"
@@ -158,6 +173,7 @@ async def test_auth_accepts_correct_chat_id(mock_update, mock_context):
     with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
         await handle_text(mock_update, mock_context)
         mock_run_task.assert_called_once_with(mock_update, mock_context, "send email")
+
 
 @pytest.mark.asyncio
 async def test_auth_rejects_when_chat_id_env_missing(mock_update, mock_context):

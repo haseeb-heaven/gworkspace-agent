@@ -30,5 +30,6 @@ def main():
         logger.exception("Failed to start Telegram Bot")
         sys.exit(1)
 
+
 if __name__ == "__main__":
     main()

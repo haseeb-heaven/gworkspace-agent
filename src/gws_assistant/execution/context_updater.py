@@ -195,6 +195,7 @@ class ContextUpdaterMixin:
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
                 from gws_assistant.execution.drive_metadata import summarize
+
                 summary_data = summarize(data)
 
                 # Consistently map all expected metadata keys
@@ -277,7 +278,6 @@ class ContextUpdaterMixin:
                 for r in rows[1:]:
                     padded_r = pad_row(r, cols)
                     table_lines.append("| " + " | ".join(padded_r) + " |")
-
                 context["sheet_summary_table"] = "\n".join(table_lines)
             else:
                 context["sheet_summary_table"] = ""
@@ -348,6 +348,7 @@ class ContextUpdaterMixin:
             # Map individual fields (if they exist)
             for k, v in data.items():
                 results_map[f"{task_id}.{k}"] = v
+                results_map[f"{task_id}.output.{k}"] = v
                 # ONLY map N.key and task-N.key if this is NOT an expansion subtask,
                 # or if it's the first subtask (to provide some default).
                 # Actually, if it's a subtask, we want task-N.key to be a list if possible?
@@ -355,11 +356,16 @@ class ContextUpdaterMixin:
                 # unless they are the primary ID.
                 if not is_subtask:
                     results_map[f"{num}.{k}"] = v
+                    results_map[f"{num}.output.{k}"] = v
                     results_map[f"task-{num}.{k}"] = v
+                    results_map[f"task-{num}.output.{k}"] = v
 
                 results_map[f"{seq_num}.{k}"] = v
+                results_map[f"{seq_num}.output.{k}"] = v
                 results_map[f"task-{seq_num}.{k}"] = v
+                results_map[f"task-{seq_num}.output.{k}"] = v
                 results_map[f"{action_name}.{k}"] = v
+                results_map[f"{action_name}.output.{k}"] = v
 
             # Special case: promote first item's ID for files/messages
             if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:

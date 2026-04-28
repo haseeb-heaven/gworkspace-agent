@@ -1,4 +1,5 @@
 """Gradio launcher."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,4 +21,5 @@ def _parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = _parse_args()
     from gws_assistant.gradio_app import main
+
     main(host=args.host, port=args.port, share=args.share)

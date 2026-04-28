@@ -20,7 +20,9 @@ EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
 SECRET_RE = re.compile(r"\b(?:sk|or|m0)-[A-Za-z0-9._-]{16,}\b")
 WINDOWS_PYTHON_RE = re.compile(r"[A-Za-z]:\\[^\"'\s]+\\python\.exe", re.IGNORECASE)
 GWS_EXE_RE = re.compile(r"gws\.exe", re.IGNORECASE)
-NON_FREE_MODEL_RE = re.compile(r"(?:gpt-4|gpt-5|openai/gpt|gpt-4o|claude-[A-Za-z0-9.-]+)(?![^\"'\s]*:free)", re.IGNORECASE)
+NON_FREE_MODEL_RE = re.compile(
+    r"(?:gpt-4|gpt-5|openai/gpt|gpt-4o|claude-[A-Za-z0-9.-]+)(?![^\"'\s]*:free)", re.IGNORECASE
+)
 
 ALLOW_NON_FREE_MODEL_FILES = {
     "tests",

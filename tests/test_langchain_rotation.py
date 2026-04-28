@@ -12,6 +12,7 @@ from gws_assistant.models import AppConfigModel
 def mock_logger():
     return MagicMock(spec=logging.Logger)
 
+
 @pytest.fixture
 def config():
     return AppConfigModel(
@@ -28,8 +29,9 @@ def config():
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
-        openrouter_api_keys=["key1", "key2", "key3"]
+        openrouter_api_keys=["key1", "key2", "key3"],
     )
+
 
 @patch("gws_assistant.langchain_agent.create_agent")
 def test_langchain_rotates_on_429(mock_create_agent, mock_logger, config):
@@ -48,23 +50,20 @@ def test_langchain_rotates_on_429(mock_create_agent, mock_logger, config):
         mock_structured_output.invoke.side_effect = [
             Exception("Rate limit reached (429)"),
             {
-                "tasks": [{
-                    "id": "t1",
-                    "service": "gmail",
-                    "action": "send_message",
-                    "parameters": {
-                        "to_email": "test@example.com",
-                        "subject": "Test",
-                        "body": "Hello"
+                "tasks": [
+                    {
+                        "id": "t1",
+                        "service": "gmail",
+                        "action": "send_message",
+                        "parameters": {"to_email": "test@example.com", "subject": "Test", "body": "Hello"},
                     }
-                }],
-                "summary": "done"
-            }
+                ],
+                "summary": "done",
+            },
         ]
 
-        with patch("time.sleep"), patch("gws_assistant.langchain_agent._MODEL_FALLBACK_CHAIN", [config.model]):
+        with patch("time.sleep"):
             plan = plan_with_langchain("send email to test@example.com", config, mock_logger)
-
 
         assert plan is not None
 
@@ -75,5 +74,8 @@ def test_langchain_rotates_on_429(mock_create_agent, mock_logger, config):
         assert mock_llm.with_structured_output.return_value.invoke.call_count == 2
         mock_logger.info.assert_any_call(
             "Model '%s' rate-limited (attempt %d/%d, HTTP 429). Rotating API key and backing off %.0fs before retry.",
-            "google/gemini-2.0-flash-exp:free", 1, 3, 2.0
+            "google/gemini-2.0-flash-exp:free",
+            1,
+            3,
+            2.0,
         )

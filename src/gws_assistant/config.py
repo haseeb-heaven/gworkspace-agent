@@ -49,9 +49,7 @@ class AppConfig:
 
         # Resolve primary model — prefer LLM_MODEL, fall back to OPENROUTER_MODEL alias
         model = (
-            os.getenv("LLM_MODEL")
-            or os.getenv("OPENROUTER_MODEL")
-            or "openrouter/nvidia/nemotron-super-49b-v1:free"
+            os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or "openrouter/nvidia/nemotron-super-49b-v1:free"
         ).strip()
 
         if provider == "openrouter" and not model.startswith("openrouter/"):

@@ -23,6 +23,7 @@ ALLOWED_COMMANDS = ["mail", "docs", "sheet", "calendar", "notes"]
 # Dictionary to hold pending confirmations: chat_id -> asyncio.Future
 pending_confirmations = {}
 
+
 async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Check if the user is allowed to interact with the bot based on TELEGRAM_CHAT_ID."""
     if not update.effective_chat:
@@ -136,19 +137,26 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                             await update.effective_message.reply_text("Proceeding...")
                             # Re-run with --force-dangerous
                             process2 = await asyncio.create_subprocess_exec(
-                                sys.executable, "gws_cli.py", "--task", task_text, "--force-dangerous", "--is-telegram",
+                                sys.executable,
+                                "gws_cli.py",
+                                "--task",
+                                task_text,
+                                "--force-dangerous",
+                                "--is-telegram",
                                 stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE
+                                stderr=asyncio.subprocess.PIPE,
                             )
                             stdout_bytes2, stderr_bytes2 = await asyncio.wait_for(
                                 process2.communicate(), timeout=timeout
                             )
-                            stdout2 = stdout_bytes2.decode('utf-8', errors='replace').strip()
-                            stderr2 = stderr_bytes2.decode('utf-8', errors='replace').strip()
+                            stdout2 = stdout_bytes2.decode("utf-8", errors="replace").strip()
+                            stderr2 = stderr_bytes2.decode("utf-8", errors="replace").strip()
 
                             if process2.returncode != 0:
                                 logger.error(f"Task failed with exit code {process2.returncode}. Stderr: {stderr2}")
-                                await update.effective_message.reply_text(f"Task failed with exit code {process2.returncode}.")
+                                await update.effective_message.reply_text(
+                                    f"Task failed with exit code {process2.returncode}."
+                                )
                             output2 = stdout2 if stdout2 else stderr2
                             await split_and_send(update, output2)
                         else:

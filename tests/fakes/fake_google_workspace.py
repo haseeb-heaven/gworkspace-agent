@@ -57,7 +57,7 @@ class FakeGoogleWorkspace(GWSRunner):
                 action = "export_file"
             elif "files" in args and "get" in args:
                 action = "get_file"
-            elif "list" in args: # heuristic planner might output basic args
+            elif "list" in args:  # heuristic planner might output basic args
                 action = "list_files"
         elif service == "docs":
             if "documents" in args and "create" in args:
@@ -74,24 +74,19 @@ class FakeGoogleWorkspace(GWSRunner):
         for i in range(2, len(args)):
             if args[i] == "--params" and i + 1 < len(args):
                 try:
-                    params.update(json.loads(args[i+1]))
+                    params.update(json.loads(args[i + 1]))
                 except Exception:
                     pass
             elif args[i] == "--json" and i + 1 < len(args):
                 try:
-                    params.update(json.loads(args[i+1]))
+                    params.update(json.loads(args[i + 1]))
                 except Exception:
                     pass
-            elif args[i].startswith("--") and i + 1 < len(args) and not args[i+1].startswith("--"):
+            elif args[i].startswith("--") and i + 1 < len(args) and not args[i + 1].startswith("--"):
                 key = args[i][2:]
-                params[key] = args[i+1]
+                params[key] = args[i + 1]
 
-        self.call_log.append({
-            "service": service,
-            "action": action,
-            "args": args,
-            "params": params
-        })
+        self.call_log.append({"service": service, "action": action, "args": args, "params": params})
 
         if self.should_fail_on_first_call and self.call_count == 1:
             return ExecutionResult(
@@ -99,7 +94,7 @@ class FakeGoogleWorkspace(GWSRunner):
                 command=args,
                 error="Injected transient error for testing",
                 return_code=500,
-                stderr="Injected transient error for testing"
+                stderr="Injected transient error for testing",
             )
 
         if self.next_error:
@@ -127,36 +122,41 @@ class FakeGoogleWorkspace(GWSRunner):
                         "headers": [
                             {"name": "From", "value": "Jane Doe <jane.doe@gmail.com>"},
                             {"name": "Subject", "value": "Real Invoice Data"},
-                            {"name": "Date", "value": "2023-10-01"}
+                            {"name": "Date", "value": "2023-10-01"},
                         ],
-                        "body": {"data": "SGk="}
+                        "body": {"data": "SGk="},
                     },  # Base64 for "Hi"
-                    "body_text": "Full message content about invoice 100$"
+                    "body_text": "Full message content about invoice 100$",
                 }
             elif action == "send_message":
                 output = {"id": "sent_msg_123", "threadId": "sent_th_123", "labelIds": ["SENT"]}
 
         elif service == "sheets":
             if action == "create_spreadsheet":
-                output = {"spreadsheetId": "fake_sheet_id_123", "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/fake_sheet_id_123"}
+                output = {
+                    "spreadsheetId": "fake_sheet_id_123",
+                    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/fake_sheet_id_123",
+                }
             elif action == "append_values":
-                output = {"spreadsheetId": params.get("spreadsheet_id", "fake_sheet_id_123"), "updates": {"updatedRows": 3}}
+                output = {
+                    "spreadsheetId": params.get("spreadsheet_id", "fake_sheet_id_123"),
+                    "updates": {"updatedRows": 3},
+                }
             elif action == "get_values":
                 output = {"values": [["Row1", "Data1"], ["Row2", "Data2"]]}
             elif action == "get_spreadsheet":
-                output = {"spreadsheetId": params.get("spreadsheetId", "fake_sheet_id_123"), "properties": {"title": "Test Sheet"}}
+                output = {
+                    "spreadsheetId": params.get("spreadsheetId", "fake_sheet_id_123"),
+                    "properties": {"title": "Test Sheet"},
+                }
 
         elif service == "drive":
             if action == "list_files":
-                output = {
-                    "files": [
-                        {"id": "file123", "name": "Report Document.pdf", "mimeType": "application/pdf"}
-                    ]
-                }
+                output = {"files": [{"id": "file123", "name": "Report Document.pdf", "mimeType": "application/pdf"}]}
             elif action == "export_file" or action == "get_file":
                 output = {
                     "saved_file": "/tmp/fake_exported_file.pdf",
-                    "content": "Fake content of exported file: extracted data 42"
+                    "content": "Fake content of exported file: extracted data 42",
                 }
 
         elif service == "docs":
@@ -168,10 +168,4 @@ class FakeGoogleWorkspace(GWSRunner):
         if key in self.mocked_responses:
             output = self.mocked_responses[key]
 
-        return ExecutionResult(
-            success=True,
-            command=args,
-            stdout=json.dumps(output),
-            output=output,
-            return_code=0
-        )
+        return ExecutionResult(success=True, command=args, stdout=json.dumps(output), output=output, return_code=0)

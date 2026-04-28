@@ -18,6 +18,7 @@ class SimplePlanner:
     def build_command(self, service, action, params):
         return CommandPlanner().build_command(service, action, params)
 
+
 def get_executor():
     try:
         config = AppConfig.from_env()
@@ -31,9 +32,10 @@ def get_executor():
 
     logger = setup_logging(config)
     # Correct path to gws binary in project root
-    gws_path = Path(os.getenv('GWS_BINARY_PATH', 'gws'))
+    gws_path = Path(os.getenv("GWS_BINARY_PATH", "gws"))
     runner = GWSRunner(gws_binary_path=gws_path, logger=logger, config=config)
     return PlanExecutor(planner=SimplePlanner(), runner=runner, config=config)
 
+
 def create_task(service, action, parameters):
-    return type('Task', (), {'service': service, 'action': action, 'parameters': parameters})
+    return type("Task", (), {"service": service, "action": action, "parameters": parameters})

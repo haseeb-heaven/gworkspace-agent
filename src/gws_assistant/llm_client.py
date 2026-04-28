@@ -35,15 +35,13 @@ def _build_api_kwargs(model: str, config: Any) -> dict:
     kwargs: dict = {}
 
     if model.startswith("openrouter/"):
-        kwargs["api_key"] = config.api_key          # first key from rotation
-        kwargs["api_base"] = config.base_url         # https://openrouter.ai/api/v1
+        kwargs["api_key"] = config.api_key  # first key from rotation
+        kwargs["api_base"] = config.base_url  # https://openrouter.ai/api/v1
 
     elif model.startswith("groq/"):
         kwargs["api_key"] = config.groq_api_key
         if not kwargs["api_key"]:
-            raise ValueError(
-                f"Model '{model}' requires GROQ_API_KEY in .env"
-            )
+            raise ValueError(f"Model '{model}' requires GROQ_API_KEY in .env")
 
     elif model.startswith("ollama/"):
         base = config.ollama_api_base or "http://localhost:11434"
@@ -75,17 +73,13 @@ def call_llm(
     Returns: litellm ModelResponse object (OpenAI-compatible).
     Raises: RuntimeError if ALL models and keys are exhausted.
     """
-    model_chain = [config.model] + [
-        m for m in config.llm_fallback_models
-    ]
+    model_chain = [config.model] + [m for m in config.llm_fallback_models]
 
     last_error: Exception | None = None
 
     for model in model_chain:
         api_keys_to_try = (
-            config.openrouter_api_keys
-            if model.startswith("openrouter/") and config.openrouter_api_keys
-            else [None]
+            config.openrouter_api_keys if model.startswith("openrouter/") and config.openrouter_api_keys else [None]
         )
 
         for api_key in api_keys_to_try:
@@ -120,18 +114,12 @@ def call_llm(
                 continue
 
             except AuthenticationError as e:
-                logger.error(
-                    f"[LLM] AuthenticationError on model={model}. "
-                    f"Check your API key. Trying next model."
-                )
+                logger.error(f"[LLM] AuthenticationError on model={model}. Check your API key. Trying next model.")
                 last_error = e
                 break  # wrong key — skip remaining keys for this model
 
             except APIConnectionError as e:
-                logger.error(
-                    f"[LLM] APIConnectionError on model={model}. "
-                    f"Cannot reach provider. Trying next model."
-                )
+                logger.error(f"[LLM] APIConnectionError on model={model}. Cannot reach provider. Trying next model.")
                 last_error = e
                 break
 

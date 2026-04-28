@@ -5,6 +5,7 @@ from .logger import setup_framework_logger
 
 logger = setup_framework_logger("cli_runner")
 
+
 class GWSCLIRunner:
     def __init__(self, binary_path: str):
         self.binary_path = binary_path

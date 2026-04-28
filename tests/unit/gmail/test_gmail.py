@@ -27,15 +27,20 @@ class TestGmailUnit:
         assert params["id"] == "abc123"
 
     def test_send_message_builds_raw_email(self):
-        args = self.planner.build_command("gmail", "send_message", {
-            "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
-            "subject": "Test Subject",
-            "body": "Hello World",
-        })
+        args = self.planner.build_command(
+            "gmail",
+            "send_message",
+            {
+                "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
+                "subject": "Test Subject",
+                "body": "Hello World",
+            },
+        )
         assert args[:4] == ["gmail", "users", "messages", "send"]
         body = json.loads(args[args.index("--json") + 1])
         assert "raw" in body
         import base64
+
         decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
         assert f"To: {os.getenv('DEFAULT_RECIPIENT_EMAIL') or 'test@example.com'}" in decoded
         assert "Subject: Test Subject" in decoded
