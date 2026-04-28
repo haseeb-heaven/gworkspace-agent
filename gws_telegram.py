@@ -3,8 +3,8 @@
 import sys
 from pathlib import Path
 
-# Ensure src/ is in the PYTHONPATH before importing our module
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+# Ensure the package is in the PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gws_assistant.config import AppConfig
 from gws_assistant.logging_utils import setup_logging

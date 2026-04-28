@@ -50,5 +50,5 @@ def validate_tool_model(model: str, env_var: str = "LLM_MODEL") -> None:
             f"This agent requires tool-calling (function calling) support.\n"
             f"Permitted models:\n  {allowed}\n\n"
             f"To add a new model, edit TOOL_CAPABLE_MODELS in "
-            f"src/gws_assistant/model_registry.py\n"
+            f"gws_assistant/model_registry.py\n"
         )

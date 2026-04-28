@@ -124,7 +124,7 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                 data = json.loads(stdout)
                 if data.get("status") == "confirmation_required":
                     chat_id = update.effective_chat.id
-                    prompt_msg = f"⚠️ Confirmation Required ⚠️\n\nAction: {data.get('action')}\nDetails: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
+                    prompt_msg = f"️Confirmation Required \n\nAction: {data.get('action')}\nDetails: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
                     await update.effective_message.reply_text(prompt_msg)
 
                     loop = asyncio.get_running_loop()

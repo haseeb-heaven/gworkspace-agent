@@ -39,13 +39,13 @@ gws-assistant-gui = "gws_assistant.gui_app:main"
 gws-assistant-gradio = "gws_assistant.gradio_app:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
 [tool.ruff]

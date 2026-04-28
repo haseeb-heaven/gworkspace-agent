@@ -98,7 +98,7 @@ class TaskRunner:
 
 
 def run_multi_agent_test(services: list[str], agents_per_service: int = 10):
-    logger.info(f"🚀 Starting Multi-Agent Testing: {len(services)} services, {agents_per_service} runners each.")
+    logger.info(f"Starting Multi-Agent Testing: {len(services)} services, {agents_per_service} runners each.")
 
     os.makedirs("artifacts", exist_ok=True)
 

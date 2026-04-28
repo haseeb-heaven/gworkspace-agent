@@ -437,6 +437,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(
                         success=False, output={"prompt": prompt}, error="code_generation_unavailable"
                     ),
+                    "current_attempt": state.get("current_attempt", 0) + 1,
                 }
             extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
             generated = f"result = {extracted or '0'}\nprint(result)"
@@ -453,6 +454,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 return {
                     "error": f"LLM code generation failed and request is not a simple computation: {exc}",
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
+                    "current_attempt": state.get("current_attempt", 0) + 1,
                 }
             import re
 
@@ -492,6 +494,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     output={"prompt": prompt, "response": generated_code},
                     error="llm_refusal",
                 ),
+                "current_attempt": state.get("current_attempt", 0) + 1,
             }
 
         context = dict(state.get("context", {}))

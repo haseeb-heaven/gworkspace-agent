@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     results = triple_check(data)
     if results:
-        print("❌ TRIPLE CHECK FAILED:")
+        print(" TRIPLE CHECK FAILED:")
         for issue in results:
             print(f"- {issue}")
         sys.exit(1)

@@ -125,7 +125,7 @@ class SafetyGuard:
             raise SafetyConfirmationRequired(msg, action_name=f"{service}.{action}", details=str(task.parameters))
 
         # Standard CLI confirmation
-        print(f"\n⚠️ WARNING: You are about to perform a destructive action: {item_desc}")
+        print(f"\n WARNING: You are about to perform a destructive action: {item_desc}")
         user_input = input("Are you sure you want to proceed? (y/n): ").strip().lower()
         if user_input in ("y", "yes"):
             cls._log_audit(action, service, task.parameters, True)

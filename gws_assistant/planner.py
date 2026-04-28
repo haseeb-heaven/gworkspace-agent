@@ -301,7 +301,7 @@ class CommandPlanner:
             requested_mime = str(params.get("mime_type") or "").strip()
             source_mime = str(params.get("source_mime") or "").strip()
 
-            # 🔥 PRIMARY: use source_mime if available to determine best export format
+            # PRIMARY: use source_mime if available to determine best export format
             # Only certain types support the 'export' endpoint.
             # Folders, Shortcuts, Scripts, and regular files MUST use 'get' with 'alt=media'.
             exportable_mimes = {
