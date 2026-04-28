@@ -313,9 +313,7 @@ def create_agent(
             return None
 
         # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
-        model_name = config.api_model_name() if model_override is None else model_override
-        if model_name.startswith("openrouter/"):
-            model_name = model_name[len("openrouter/") :]
+        model_name = model_override or config.model
 
         return ChatLiteLLM(
             model=model_name,

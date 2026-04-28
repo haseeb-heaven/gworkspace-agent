@@ -27,7 +27,7 @@ class AppConfig:
     @staticmethod
     def from_env() -> AppConfigModel:
         env_file_path = Path(".env").expanduser().resolve()
-        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
+        load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
 
         gws_binary_value = (os.getenv("GWS_BINARY_PATH") or "").strip()
         if not gws_binary_value:

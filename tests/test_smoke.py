@@ -65,7 +65,7 @@ def test_gws_binary_help_smoke():
 
 
 def test_gradio_launcher_help_smoke():
-    result = _run_command([sys.executable, "gws_gradio.py", "--help"])
+    result = _run_command([sys.executable, "gws_gui_web.py", "--help"])
     output = f"{result.stdout}\n{result.stderr}"
     assert result.returncode == 0
     assert "Run Google Workspace Assistant in Gradio" in output

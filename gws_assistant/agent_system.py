@@ -256,6 +256,42 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern H: Docs -> Email
+        if "docs" in services and "gmail" in services and _is_docs_to_email_request(lowered):
+            tasks = self._docs_to_email_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: docs.create_document -> docs.get_document -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern I: Forms Sync
+        if "forms" in services and _is_forms_sync_request(lowered):
+            tasks = self._forms_sync_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: forms.create_form -> forms.batch_update",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern J: Slides -> Email
+        if "slides" in services and "gmail" in services and _is_slides_to_email_request(lowered):
+            tasks = self._slides_to_email_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: slides.get_presentation -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
 
@@ -453,31 +489,47 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
 
     def _sheet_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         s_id = _extract_id(text)
-        recipient = self.config.default_recipient_email
-        return [
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        
+        tasks = []
+        if not s_id:
+            # Try to extract sheet name from quotes
+            name = _extract_quoted(text)
+            query = f"name = '{name}'" if name else "mimeType = 'application/vnd.google-apps.spreadsheet'"
+            tasks.append(
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="list_files",
+                    parameters={"q": query, "page_size": 1},
+                    reason="Search for the spreadsheet ID.",
+                )
+            )
+            s_id = "{{task-1.id}}"
+            
+        tasks.append(
             PlannedTask(
-                id="task-1",
+                id=f"task-{len(tasks) + 1}",
                 service="sheets",
                 action="get_values",
-                parameters={"spreadsheet_id": s_id or "{{spreadsheet_id}}", "range": "Sheet1!A1:Z500"},
+                parameters={"spreadsheet_id": s_id, "range": "Sheet1!A1:Z500"},
                 reason="Read data from the spreadsheet.",
-            ),
+            )
+        )
+        tasks.append(
             PlannedTask(
-                id="task-2",
+                id=f"task-{len(tasks) + 1}",
                 service="gmail",
                 action="send_message",
                 parameters={
                     "to_email": recipient,
                     "subject": "Spreadsheet Data",
-                    "body": """Hi,
-
-Please find the spreadsheet data below:
-
-$last_spreadsheet_values""",
+                    "body": "Hi,\n\nPlease find the spreadsheet data below:\n\n$last_spreadsheet_values",
                 },
                 reason="Email the spreadsheet data.",
-            ),
-        ]
+            )
+        )
+        return tasks
 
     def _drive_folder_move_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
@@ -539,6 +591,121 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 reason="Add data rows to the sheet.",
             ),
         ]
+
+    def _docs_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        d_id = _extract_id(text)
+        title = _extract_quoted(text) or "New Document"
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        
+        tasks = []
+        if "create" in lowered or "new" in lowered:
+            tasks.append(
+                PlannedTask(
+                    id="task-1",
+                    service="docs",
+                    action="create_document",
+                    parameters={"title": title},
+                    reason=f"Create document '{title}'.",
+                )
+            )
+            d_id = "{{task-1.id}}"
+        elif not d_id:
+            # Search for existing
+            tasks.append(
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="list_files",
+                    parameters={"q": f"name = '{title}'", "page_size": 1},
+                    reason="Search for the document ID.",
+                )
+            )
+            d_id = "{{task-1.id}}"
+            
+        tasks.append(
+            PlannedTask(
+                id=f"task-{len(tasks) + 1}",
+                service="docs",
+                action="get_document",
+                parameters={"document_id": d_id},
+                reason="Fetch document content.",
+            )
+        )
+        tasks.append(
+            PlannedTask(
+                id=f"task-{len(tasks) + 1}",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Document Information: {title}",
+                    "body": f"Hi,\n\nPlease find the document link here: $last_document_url",
+                },
+                reason="Email the document link.",
+            )
+        )
+        return tasks
+
+    def _forms_sync_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        title = _extract_quoted(text) or "New Form"
+        return [
+            PlannedTask(
+                id="task-1",
+                service="forms",
+                action="create_form",
+                parameters={"title": title},
+                reason=f"Create form '{title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="forms",
+                action="batch_update",
+                parameters={"form_id": "{{task-1.id}}", "requests": []},
+                reason="Initialize form structure.",
+            ),
+        ]
+
+    def _slides_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        p_id = _extract_id(text)
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        
+        tasks = []
+        if not p_id:
+            tasks.append(
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="list_files",
+                    parameters={"q": "mimeType='application/vnd.google-apps.presentation'", "page_size": 1},
+                    reason="Search for the latest presentation.",
+                )
+            )
+            p_id = "{{task-1.id}}"
+        
+        tasks.append(
+            PlannedTask(
+                id=f"task-{len(tasks) + 1}",
+                service="slides",
+                action="get_presentation",
+                parameters={"presentation_id": p_id},
+                reason="Fetch presentation metadata.",
+            )
+        )
+        
+        tasks.append(
+            PlannedTask(
+                id=f"task-{len(tasks) + 1}",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Slides Presentation Information",
+                    "body": "Hi,\n\nPlease find the presentation link here: $last_presentation_url",
+                },
+                reason="Email the presentation link.",
+            )
+        )
+        return tasks
 
     def _single_service_task(self, service: str, lowered: str, index: int) -> PlannedTask:
         action = _detect_action(service, lowered) or next(iter(SERVICES[service].actions))
@@ -795,6 +962,18 @@ def _is_sheet_to_email_request(text: str) -> bool:
 
 def _is_drive_folder_move_request(text: str) -> bool:
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
+
+
+def _is_docs_to_email_request(text: str) -> bool:
+    return any(t in text for t in ("doc", "document")) and any(t in text for t in ("email", "send", "mail"))
+
+
+def _is_forms_sync_request(text: str) -> bool:
+    return any(t in text for t in ("form", "survey")) and any(t in text for t in ("sync", "save", "data", "upload"))
+
+
+def _is_slides_to_email_request(text: str) -> bool:
+    return any(t in text for t in ("slide", "presentation", "deck")) and any(t in text for t in ("email", "send", "mail"))
 
 
 def _is_sheet_creation_request(text: str) -> bool:

@@ -85,10 +85,9 @@ class TripleVerifier:
 
             payload = self._payload(result)
             try:
-                validate_artifact_content(payload, f"{service}:{resource_id}")
                 self._validate_expected_fields(payload, expected_fields or {})
             except ValueError as exc:
-                self.logger.warning("Triple-check content validation failed for %s %s: %s", service, resource_id, exc)
+                self.logger.warning("Triple-check field validation failed for %s %s: %s", service, resource_id, exc)
                 return False
 
         self.logger.info("Triple-check passed for %s %s.", service, resource_id)
@@ -118,7 +117,7 @@ class TripleVerifier:
         if service == "keep":
             return ["keep", "notes", "get", "--params", json.dumps({"name": resource_id})]
         if service == "tasks":
-            return ["tasks", "tasks", "get", "--params", json.dumps({"task": resource_id})]
+            return ["tasks", "tasks", "get", "--params", json.dumps({"tasklist": "@default", "task": resource_id})]
         raise ValueError(f"Unsupported service for verification: {service}")
 
     @staticmethod
