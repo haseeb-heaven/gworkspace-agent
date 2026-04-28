@@ -27,8 +27,13 @@ class ContextUpdaterMixin:
 
         if "parsed_value" in data:
             val = data["parsed_value"]
-            context["code_output"] = val  # Overrides stdout if parsed_value is present (legacy behavior)
-            data["code_output"] = val
+            if val is not None:
+                context["code_parsed_value"] = val
+                context["last_code_result"] = val
+                if "code_output" not in data:
+                    data["code_output"] = val
+                if "code_output" not in context:
+                    context["code_output"] = val
 
         if "exit_code" in data:
             context["code_exit_code"] = data["exit_code"]
@@ -70,6 +75,22 @@ class ContextUpdaterMixin:
             if isinstance(payload, dict):
                 payload = [payload]
 
+            def find_body(p):
+                b = p.get("body", {})
+                if b.get("data"):
+                    try:
+                        import base64
+
+                        return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
+                    except Exception:
+                        return ""
+                if "parts" in p:
+                    for part in p["parts"]:
+                        res = find_body(part)
+                        if res:
+                            return res
+                return ""
+
             for p_item in payload:
                 if not isinstance(p_item, dict):
                     continue
@@ -96,22 +117,6 @@ class ContextUpdaterMixin:
                         # Also store in context for legacy/global access if this is the latest get_message
                         if is_gmail_get:
                             context[f"gmail_{name}"] = value
-
-                def find_body(p):
-                    b = p.get("body", {})
-                    if b.get("data"):
-                        try:
-                            import base64
-
-                            return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
-                        except Exception:
-                            return ""
-                    if "parts" in p:
-                        for part in p["parts"]:
-                            res = find_body(part)
-                            if res:
-                                return res
-                    return ""
 
                 body = find_body(p_item)
                 if body:
@@ -176,7 +181,7 @@ class ContextUpdaterMixin:
                     rows.append([sender, subject, date_val, m_id, t_id])
 
                 context["gmail_summary_rows"] = rows
-                context["gmail_summary_values"] = list(rows)
+                context["gmail_summary_values"] = [r.copy() for r in rows]
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
                 for r in rows:
@@ -207,6 +212,7 @@ class ContextUpdaterMixin:
                 rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
                 context["drive_metadata_rows"] = rows
                 context["drive_summary_rows"] = rows
+                context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
 
                 table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
                 for r in rows:
@@ -392,7 +398,6 @@ class ContextUpdaterMixin:
                     results_map[f"{num}.id"] = first_id
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
-                    results_map[f"{seq_num}.id"] = first_id
 
             if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")
@@ -400,7 +405,6 @@ class ContextUpdaterMixin:
                     results_map[f"{task_id}.id"] = first_id
                     results_map[f"{num}.id"] = first_id
                     results_map[f"task-{num}.id"] = first_id
-                    results_map[f"{seq_num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
 
         if "values" in data and isinstance(data["values"], list):
