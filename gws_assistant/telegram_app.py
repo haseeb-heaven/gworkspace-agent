@@ -291,7 +291,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not has_gws_intent and len(task_text.split()) < 5:
         config = context.bot_data.get("config")
         if config:
-            from .chat_utils import get_chat_response
+            from gws_assistant.chat_utils import get_chat_response
 
             response = await get_chat_response(task_text, config)
             await update.effective_message.reply_text(response)
