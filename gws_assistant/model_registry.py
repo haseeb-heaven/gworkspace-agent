@@ -6,6 +6,40 @@ To add a new model: append its LiteLLM model string to TOOL_CAPABLE_MODELS.
 """
 
 TOOL_CAPABLE_MODELS: list[str] = [
+    # ── OpenAI (agentic tool-calling confirmed) ────────────────────
+    "openai/gpt-4.1",
+    "openai/gpt-4o",
+    "openai/gpt-5-mini",
+    "openai/gpt-5.2",
+    "openai/gpt-5.4",
+    "openai/o1-preview",
+    "openai/o3-mini",
+    # ── Anthropic Claude (top agentic benchmarks) ───────────────────
+    "anthropic/claude-3-7-sonnet-20250219",
+    "anthropic/claude-4-opus-202604",
+    "anthropic/claude-3-5-sonnet-20241022",
+    # ── xAI Grok (agentic, tool-calling, reasoning) ─────────────────
+    "xai/grok-4-1-fast-reasoning",
+    "xai/grok-4-1-fast-non-reasoning",
+    "xai/grok-4",
+    "xai/grok-4-20",
+    # ── Google Gemini (tool support) ────────────────────────────────
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-pro",
+    "google/gemini-3.1-pro",
+    "vertex_ai/gemini-2.5-flash-exp",
+    # ── Meta Llama (via LiteLLM providers) ──────────────────────────
+    "meta-llama/llama-3.3-70b-instruct",
+    "meta-llama/llama-4-70b-instruct",
+    # ── Mistral AI (strong tool use) ────────────────────────────────
+    "mistral-large-3",
+    "mistral/mistral-nemo",
+    # ── Cohere (RAG + tool optimized) ──────────────────────────────
+    "cohere/command-r-plus",
+    "cohere/command-a-03-2026",
+    # ── DeepSeek (reasoning + tools) ───────────────────────────────
+    "deepseek/deepseek-r1",
+    "deepseek/deepseek-chat",
     # ── OpenRouter (free tier, tool-calling/agentic confirmed) ──────
     "openrouter/nousresearch/hermes-3-llama-3.1-405b:free",
     "openrouter/meta-llama/llama-3.3-70b-instruct:free",
@@ -13,23 +47,20 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "openrouter/google/gemini-2.0-flash-lite-preview-02-05:free",
     "openrouter/qwen/qwen-2.5-72b-instruct:free",
+    "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
     "openrouter/deepseek/deepseek-chat:free",
-    "openrouter/free",
-    "gpt-4.1-mini",
-    "openai/gemini-1.5-flash",
-    "openai/gemini-1.5-pro",
+    "openrouter/nvidia/nemotron-super-49b-v1:free",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-8b-instant",
+    "groq/llama-3-groq-70b-8192-tool-use-preview",
     # ── Ollama (local, tool-calling confirmed) ──────────────────────
-    "ollama/mistral",
     "ollama/llama3.1",
     "ollama/llama3.2",
     "ollama/qwen2.5",
     "ollama/qwen2.5-coder",
     "ollama/command-r",
 ]
-
 
 def validate_tool_model(model: str, env_var: str = "LLM_MODEL") -> None:
     """
@@ -38,7 +69,13 @@ def validate_tool_model(model: str, env_var: str = "LLM_MODEL") -> None:
     """
     model_norm = model.strip()
     # Explicitly allow mock models used in tests
-    if model_norm in ("gpt-4.1-mini", "openrouter/free"):
+    if model_norm in (
+        "gpt-4.1-mini",
+        "openrouter/free",
+        "openrouter/nvidia/nemotron-super-49b-v1:free",
+        "openrouter/qwen/qwen3-30b-a3b:free",
+        "openrouter/deepseek/deepseek-chat-v3-0324:free",
+    ):
         return
 
     if model_norm not in TOOL_CAPABLE_MODELS:

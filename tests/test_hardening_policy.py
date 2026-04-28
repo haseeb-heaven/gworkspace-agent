@@ -28,7 +28,8 @@ def test_config_defaults_to_openrouter_free_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     with patch("gws_assistant.config.load_dotenv"):
-        config = AppConfig.from_env()
+        with patch("pathlib.Path.exists", return_value=False):
+            config = AppConfig.from_env()
 
     assert config.provider == "openrouter"
     assert config.model == "openrouter/nvidia/nemotron-super-49b-v1:free"
@@ -38,8 +39,10 @@ def test_config_rejects_non_tool_capable_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
 
-    with pytest.raises(ValueError, match="tool-capable model allowlist"):
-        AppConfig.from_env()
+    with patch("gws_assistant.config.load_dotenv"):
+        with patch("pathlib.Path.exists", return_value=False):
+            with pytest.raises(ValueError, match="tool-capable model allowlist"):
+                AppConfig.from_env()
 
 
 def test_artifact_content_validation_rejects_invalid_values():
@@ -96,6 +99,7 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
         langchain_enabled=True,
         mem0_api_key="test-key",
         mem0_user_id="agent-user",
+        memory_type="mem0",
     )
 
     memory = get_memory_backend(config)

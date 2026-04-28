@@ -11,7 +11,7 @@ def test_last_code_result_maps_to_parsed_value():
     resolver = ResolverMixin()
     context = {"code_output": "test_output", "last_code_result": "test_parsed"}
 
-    assert resolver._resolve_placeholders("$last_code_result", context, False) == "test_output"
+    assert resolver._resolve_placeholders("$last_code_result", context, False) == "test_parsed"
     assert resolver._resolve_placeholders("$last_code_stdout", context, False) == "test_output"
 
 def test_gmail_summary_values_is_independent_copy():

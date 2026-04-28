@@ -491,8 +491,10 @@ def test_legacy_placeholder_resolution():
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
 
     context = {
+        "drive_summary_rows": [["file1.txt", "text/plain", "link1"]],
         "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
         "code_output": "test_output_123",
+        "last_code_result": "test_output_123",
         "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |"
     }
 
