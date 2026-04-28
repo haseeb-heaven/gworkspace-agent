@@ -27,7 +27,7 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_file_content":        "last_export_file_content",
 
     # Standardized output contracts mapping (legacy -> new)
-    "$drive_summary_values":    "drive_metadata_rows",
+    "$drive_summary_values":    "drive_summary_rows",
     "$last_code_stdout":        "code_output",
     "$last_code_result":        "code_output",
     "$gmail_summary_values":    "gmail_summary_rows",
@@ -346,11 +346,11 @@ class ResolverMixin:
                     if p.startswith(":"):
                         shorthand = p[1:].lower().replace("_", "")
                         # Try to find a match in results_map keys
-                        for key, val in results_map.items():
+                        for key, val_item in results_map.items():
                             norm_key = str(key).lower().replace("_", "")
                             # Direct match or containment
                             if shorthand == norm_key or norm_key in shorthand or shorthand in norm_key:
-                                res = val
+                                res = val_item
                                 break
                     else:
                         res = self._get_value_by_path(results_map, p)

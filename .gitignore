@@ -76,3 +76,4 @@ download.html
 !README.md
 !framework/
 !tests/
+*.orig
