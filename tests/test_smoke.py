@@ -84,7 +84,7 @@ def test_openrouter_chat_completion_smoke():
         or env_file.get("OPENROUTER_SMOKE_MODEL")
         or os.getenv("OPENROUTER_MODEL")
         or env_file.get("OPENROUTER_MODEL")
-        or "openrouter/free"
+        or "openrouter/nvidia/nemotron-super-49b-v1:free"
     )
     base_url = (
         os.getenv("OPENROUTER_BASE_URL") or env_file.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"

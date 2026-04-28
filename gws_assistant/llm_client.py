@@ -80,9 +80,13 @@ def call_llm(
     last_error: Exception | None = None
 
     for model in model_chain:
-        api_keys_to_try = (
-            config.openrouter_api_keys if model.startswith("openrouter/") and config.openrouter_api_keys else [None]
-        )
+        # Determine which keys to rotate through for this model
+        if model.startswith("openrouter/") and config.openrouter_api_keys:
+            api_keys_to_try = config.openrouter_api_keys
+        elif config.llm_api_keys:
+            api_keys_to_try = config.llm_api_keys
+        else:
+            api_keys_to_try = [None]
 
         for api_key in api_keys_to_try:
             try:
@@ -111,29 +115,31 @@ def call_llm(
                 return response
 
             except RateLimitError as e:
-                logger.warning(
-                    f"[LLM] RateLimitError on model={model} "
+                msg = str(e).lower()
+                is_quota = any(k in msg for k in ("quota", "billing", "insufficient_quota", "insufficient_quota_available", "out_of_quota"))
+                level = logging.ERROR if is_quota else logging.WARNING
+                logger.log(
+                    level,
+                    f"[LLM] {'Quota' if is_quota else 'RateLimit'} error on model={model} "
                     f"key=...{str(api_key)[-6:] if api_key else 'N/A'}. "
-                    f"Trying next key/model."
+                    f"Trying next key."
                 )
                 last_error = e
                 continue
 
             except AuthenticationError as e:
-                logger.error(f"[LLM] AuthenticationError on model={model}. Check your API key. Trying next model.")
+                logger.error(f"[LLM] AuthenticationError on model={model}. key=...{str(api_key)[-6:] if api_key else 'N/A'}. Trying next key.")
                 last_error = e
-                break  # wrong key — skip remaining keys for this model
+                continue  # Try next key in case this one is just invalid/expired
 
-            except APIConnectionError as e:
-                logger.error(f"[LLM] APIConnectionError on model={model}. Cannot reach provider. Trying next model.")
-                last_error = e
-                break
-
-            except BadRequestError as e:
-                logger.error(
-                    f"[LLM] BadRequestError on model={model}: {e}. "
-                    f"Model may not support tool-calling. Trying next model."
-                )
+            except (APIConnectionError, BadRequestError) as e:
+                msg = str(e).lower()
+                if "quota" in msg:
+                    logger.error(f"[LLM] Quota exceeded on model={model} (BadRequest). Trying next key.")
+                    last_error = e
+                    continue
+                
+                logger.error(f"[LLM] {type(e).__name__} on model={model}: {e}. Trying next model.")
                 last_error = e
                 break
 

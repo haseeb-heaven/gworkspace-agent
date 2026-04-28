@@ -33,6 +33,7 @@ class AppConfigModel:
     gws_timeout_seconds: int = 180
     gws_max_retries: int = 3
     openrouter_api_keys: list[str] = field(default_factory=list)
+    llm_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
     mem0_api_key: str | None = None
@@ -59,13 +60,15 @@ class AppConfigModel:
     current_key_idx: int = 0
 
     def rotate_api_key(self) -> str | None:
-        if not self.openrouter_api_keys:
+        keys = self.llm_api_keys if self.llm_api_keys else self.openrouter_api_keys
+        if not keys:
             return self.api_key
 
-        self.current_key_idx = (self.current_key_idx + 1) % len(self.openrouter_api_keys)
-        new_key = self.openrouter_api_keys[self.current_key_idx]
+        self.current_key_idx = (self.current_key_idx + 1) % len(keys)
+        new_key = keys[self.current_key_idx]
         self.api_key = new_key
-        # Sync with environment so LangChain/OpenAI clients pick it up
+        # Sync with environment so LiteLLM/OpenAI clients pick it up
+        os.environ["LLM_API_KEY"] = new_key
         os.environ["OPENROUTER_API_KEY"] = new_key
         os.environ["OPENAI_API_KEY"] = new_key
         return new_key

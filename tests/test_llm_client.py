@@ -13,11 +13,14 @@ def _make_config(model, fallbacks=None, keys=None):
     cfg.model = model
     cfg.llm_fallback_models = fallbacks or []
     cfg.openrouter_api_keys = keys or ["test-key"]
+    cfg.llm_api_keys = keys or ["test-key"]
     cfg.api_key = "test-key"
     cfg.base_url = "https://openrouter.ai/api/v1"
     cfg.groq_api_key = None
     cfg.ollama_api_base = None
     cfg.timeout_seconds = 10
+    cfg.temperature = 0.0
+    cfg.max_tokens = None
     return cfg
 
 
@@ -37,7 +40,7 @@ def test_fallback_on_rate_limit(mock_completion):
     ]
     cfg = _make_config(
         "openrouter/nvidia/nemotron-super-49b-v1:free",
-        fallbacks=["groq/llama3-groq-70b-8192-tool-use-preview"],
+        fallbacks=["groq/llama-3-groq-70b-8192-tool-use-preview"],
     )
     cfg.groq_api_key = "groq-test-key"
     call_llm([{"role": "user", "content": "hi"}], cfg)

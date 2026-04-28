@@ -50,6 +50,7 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
     "openrouter/deepseek/deepseek-chat:free",
     "openrouter/nvidia/nemotron-super-49b-v1:free",
+    "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-8b-instant",
@@ -72,9 +73,6 @@ def validate_tool_model(model: str, env_var: str = "LLM_MODEL") -> None:
     if model_norm in (
         "gpt-4.1-mini",
         "openrouter/free",
-        "openrouter/nvidia/nemotron-super-49b-v1:free",
-        "openrouter/qwen/qwen3-30b-a3b:free",
-        "openrouter/deepseek/deepseek-chat-v3-0324:free",
     ):
         return
 

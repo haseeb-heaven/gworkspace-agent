@@ -107,6 +107,14 @@ class AppConfig:
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "0").strip())
         gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
 
+        # Support multiple API keys for rotation
+        llm_api_keys_list = [
+            os.getenv("LLM_API_KEY"),
+            os.getenv("LLM_API_KEY2"),
+            os.getenv("LLM_API_KEY3"),
+        ]
+        llm_api_keys = [k.strip() for k in llm_api_keys_list if k and k.strip()]
+
         # Support multiple API keys for rotation (only for openrouter)
         openrouter_api_keys = []
         if provider == "openrouter":
@@ -119,6 +127,9 @@ class AppConfig:
             openrouter_api_keys = [k.strip() for k in openrouter_api_keys_list if k and k.strip()]
         if not openrouter_api_keys and api_key:
             openrouter_api_keys = [api_key]
+
+        if not llm_api_keys and api_key:
+            llm_api_keys = [api_key]
 
         max_snippet_len = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
@@ -158,6 +169,7 @@ class AppConfig:
             gws_timeout_seconds=gws_timeout_seconds,
             gws_max_retries=gws_max_retries,
             openrouter_api_keys=openrouter_api_keys,
+            llm_api_keys=llm_api_keys,
             max_context_snippet_len=max_snippet_len,
             default_recipient_email=default_recipient_email,
             mem0_api_key=mem0_api_key,
