@@ -29,7 +29,7 @@ LEGACY_PLACEHOLDER_MAP = {
     # Standardized output contracts mapping (legacy -> new)
     "$drive_summary_values":    "drive_summary_rows",
     "$last_code_stdout":        "code_output",
-    "$last_code_result":        "code_parsed_value",
+    "$last_code_result":        "code_output",
     "$gmail_summary_values":    "gmail_summary_rows",
     "$web_search_table_values": "search_summary_rows",
     "$web_search_markdown":     "search_summary_table",
