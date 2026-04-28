@@ -26,26 +26,10 @@ class VerificationEngine:
     ]
 
     EXACT_PLACEHOLDERS = {
-        "null",
-        "n/a",
-        "na",
-        "undefined",
-        "todo",
-        "fixme",
-        "placeholder",
-        "example",
-        "sample",
-        "dummy",
-        "your_value",
-        "insert_here",
-        "replace_me",
-        "changeme",
-        "default",
-        "fake",
-        "mock",
-        "temporary",
-        "tbd",
-        "missing",
+        "none", "null", "n/a", "na", "undefined",
+        "todo", "fixme", "placeholder", "example", "sample", "dummy",
+        "your_value", "insert_here", "replace_me", "changeme", "default",
+        "fake", "mock", "temporary", "tbd", "missing"
     }
 
     NUMERIC_PLACEHOLDERS = {"0000", "1234", "9999", "00000000"}

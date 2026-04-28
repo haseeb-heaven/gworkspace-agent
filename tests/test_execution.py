@@ -167,11 +167,7 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                parameters={
-                    "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "Sheet1!A1",
-                    "values": "$gmail_summary_rows",
-                },
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_rows"},
             ),
         ],
     )
@@ -438,7 +434,6 @@ def test_gmail_details_accumulation():
     assert values[0][1] == "Job offer m1"
     assert values[1][1] == "Job offer m2"
 
-
 def test_code_output_resolution():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
@@ -448,13 +443,8 @@ def test_code_output_resolution():
         raw_text="run code and send",
         tasks=[
             PlannedTask(id="task-1", service="code", action="execute", parameters={"code": "print('hello world')"}),
-            PlannedTask(
-                id="task-2",
-                service="gmail",
-                action="send_message",
-                parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"},
-            ),
-        ],
+            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"}),
+        ]
     )
 
     # We need to mock _handle_code_execution_task to simulate the updated code outputs
@@ -463,7 +453,6 @@ def test_code_output_resolution():
 
     def fake_code_execute(task, context):
         from gws_assistant.models import ExecutionResult
-
         # Mimic context updater directly since the real handler calls runner
         result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
         context["code_output"] = result_data["parsed_value"]
@@ -504,7 +493,7 @@ def test_legacy_placeholder_resolution():
     context = {
         "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
         "code_output": "test_output_123",
-        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |",
+        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |"
     }
 
     # Should resolve correctly mapping from legacy to new

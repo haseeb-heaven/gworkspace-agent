@@ -234,9 +234,7 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("to_email", "Recipient email address", "person@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
-                    ParameterSpec(
-                        "attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False
-                    ),
+                    ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
                 ),
             ),
         },

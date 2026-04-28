@@ -27,26 +27,19 @@ class HelpersMixin:
             table_values = []
             for r in results:
                 if isinstance(r, dict):
-                    title = r.get("title", "")
+                    title   = r.get("title", "")
                     # The web search tool returns 'snippet' and 'url'
                     # But if we receive 'content' and 'link' fallback to those.
                     content = r.get("snippet", r.get("content", ""))
-                    link = r.get("url", r.get("link", ""))
+                    link    = r.get("url", r.get("link", ""))
                     markdown_lines.append(f"## {title}\n{content}\n{link}")
                     table_values.append([title, link, content])
                 elif isinstance(r, list):
                     table_values.append(r)
 
-            # PR #24 Canonical Keys
             context["search_summary_rows"] = table_values
             context["search_summary_table"] = "\n\n".join(markdown_lines)
             context["search_summary_count"] = len(results)
-
-            # Legacy Aliases (HEAD)
-            context["web_search_markdown"] = context["search_summary_table"]
-            context["web_search_table_values"] = table_values
-            context["web_search_rows"] = table_values
-            context["web_search_summary"] = result_data.get("summary", "")
 
             return ExecutionResult(
                 success=True, command=["web_search", query], stdout=json.dumps(result_data), output=result_data

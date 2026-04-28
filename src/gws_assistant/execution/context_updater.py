@@ -194,24 +194,19 @@ class ContextUpdaterMixin:
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
-                from gws_assistant.execution.drive_metadata import summarize
-
-                summary_data = summarize(data)
-
-                # Consistently map all expected metadata keys
-                rows = summary_data["summary_rows"]
-                table = summary_data["table"]
-                count = summary_data["count"]
-
+                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
                 context["drive_metadata_rows"] = rows
                 context["drive_summary_rows"] = rows
-                context["drive_summary_values"] = rows
 
-                context["drive_metadata_table"] = table
-                context["drive_summary_table"] = table
+                table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+                context["drive_metadata_table"] = "\n".join(table_lines)
+                context["drive_summary_table"] = "\n".join(table_lines)
 
-                context["drive_file_count"] = count
-                context["drive_summary_count"] = count
+                context["drive_file_count"] = len(files)
+                context["drive_summary_count"] = len(files)
 
                 if len(files) > 0:
                     if "mimeType" in files[0]:
@@ -278,6 +273,7 @@ class ContextUpdaterMixin:
                 for r in rows[1:]:
                     padded_r = pad_row(r, cols)
                     table_lines.append("| " + " | ".join(padded_r) + " |")
+
                 context["sheet_summary_table"] = "\n".join(table_lines)
             else:
                 context["sheet_summary_table"] = ""

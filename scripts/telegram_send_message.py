@@ -10,7 +10,7 @@ from pathlib import Path
 try:
     from dotenv import dotenv_values
 except ImportError:
-    dotenv_values = lambda path: {}
+    def dotenv_values(path): return {}
 
 
 def send_telegram_message(message: str):
