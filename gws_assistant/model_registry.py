@@ -27,6 +27,9 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "google/gemini-2.5-flash",
     "google/gemini-2.5-pro",
     "google/gemini-3.1-pro",
+    "gemini/gemini-2.0-flash-exp",
+    "gemini/gemini-1.5-flash",
+    "gemini/gemini-1.5-pro",
     "vertex_ai/gemini-2.5-flash-exp",
     # ── Meta Llama (via LiteLLM providers) ──────────────────────────
     "meta-llama/llama-3.3-70b-instruct",
