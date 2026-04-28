@@ -413,7 +413,7 @@ class VerificationEngine:
                 parts = payload.get("parts", []) if isinstance(payload, dict) else []
                 if not parts:
                     parts = result.get("attachments", [])
-                
+
                 # If no parts/attachments are found in the result, it's a failure.
                 if not parts:
                      raise VerificationError("verify_attachment", "Attachment declared in params but not confirmed in result")

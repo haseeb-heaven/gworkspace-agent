@@ -417,9 +417,10 @@ def test_code_output_resolution():
 
 
 def test_legacy_placeholder_resolution():
+    import logging
+
     from gws_assistant.execution.executor import PlanExecutor
     from gws_assistant.planner import CommandPlanner
-    import logging
 
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
