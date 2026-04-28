@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SCAN_PATHS = [
     ROOT / "run_live_scenarios.py",
-    ROOT / "src",
+    ROOT / "gws_assistant",
     ROOT / "scripts",
     ROOT / "framework",
     ROOT / ".agent" / "skills" / "telegram-update" / "scripts",

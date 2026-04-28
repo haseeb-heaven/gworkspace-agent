@@ -64,9 +64,9 @@ class TaskRunner:
         _pytest_exe = shutil.which("pytest") or "pytest"
 
         try:
-            # Set up environment with src in PYTHONPATH
+            # Set up environment with root in PYTHONPATH
             env = os.environ.copy()
-            env["PYTHONPATH"] = "src" + os.pathsep + env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = "." + os.pathsep + env.get("PYTHONPATH", "")
 
             # Use sys.executable to run pytest module to ensure same environment
             # IMPORTANT: We MUST exclude live_integration and manual markers to prevent real side-effects (like sending emails)

@@ -2,8 +2,8 @@ import logging
 import os
 import sys
 
-# Add src to path
-sys.path.append(os.path.join(os.getcwd(), "src"))
+# Add root to path
+sys.path.append(os.getcwd())
 
 from gws_assistant.execution import PlanExecutor
 

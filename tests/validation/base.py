@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+# Add root to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from gws_assistant.config import AppConfig
 from gws_assistant.execution import PlanExecutor

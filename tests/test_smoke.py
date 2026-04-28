@@ -37,7 +37,7 @@ def _clean_output(text: str) -> str:
 @pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
 def test_cli_module_help_smoke():
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path("src").resolve())
+    env["PYTHONPATH"] = str(Path(".").resolve())
     result = _run_command([sys.executable, "-m", "gws_assistant.cli_app", "--help"], env=env)
     output = _clean_output(f"{result.stdout}\n{result.stderr}")
     assert result.returncode == 0
