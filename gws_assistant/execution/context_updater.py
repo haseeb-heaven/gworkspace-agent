@@ -166,7 +166,7 @@ class ContextUpdaterMixin:
                     rows.append([sender, subject, date_val, m_id, t_id])
 
                 context["gmail_summary_rows"] = rows
-                context["gmail_summary_values"] = rows
+                context["gmail_summary_values"] = list(rows)
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
                 for r in rows:
