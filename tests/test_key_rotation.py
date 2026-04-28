@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.gws_assistant.intent_parser import IntentParser
-from src.gws_assistant.models import AppConfigModel
+from gws_assistant.intent_parser import IntentParser
+from gws_assistant.models import AppConfigModel
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 import logging
 
-from src.gws_assistant.tools.code_execution import execute_generated_code
+from gws_assistant.tools.code_execution import execute_generated_code
 
 logger = logging.getLogger(__name__)
 

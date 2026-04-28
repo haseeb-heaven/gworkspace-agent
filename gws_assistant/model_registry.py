@@ -8,6 +8,7 @@ To add a new model: append its LiteLLM model string to TOOL_CAPABLE_MODELS.
 TOOL_CAPABLE_MODELS: list[str] = [
     # ── OpenRouter (free tier, tool-calling confirmed) ──────────────
     "openrouter/nvidia/nemotron-super-49b-v1:free",
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
     "openrouter/mistralai/mistral-7b-instruct:free",
     "openrouter/microsoft/phi-3-mini-128k-instruct:free",
     "openrouter/qwen/qwen3-235b-a22b:free",
