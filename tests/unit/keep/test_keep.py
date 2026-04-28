@@ -13,4 +13,10 @@ class TestKeepUnit:
 
     def test_create_note(self):
         args = self.planner.build_command("keep", "create_note", {"title": "Test Note", "body": "Test Body"})
-        assert args == ["keep", "notes", "create", "--json", json.dumps({"title": "Test Note", "body": {"text": {"text": "Test Body"}}})]
+        assert args == [
+            "keep",
+            "notes",
+            "create",
+            "--json",
+            json.dumps({"title": "Test Note", "body": {"text": {"text": "Test Body"}}}),
+        ]

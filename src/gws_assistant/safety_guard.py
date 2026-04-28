@@ -20,9 +20,16 @@ DESTRUCTIVE_ACTIONS = {
 
 # Keywords that indicate a bulk destruction attempt
 BULK_KEYWORDS = [
-    "all files", "everything", "entire drive", "all emails",
-    "all documents", "all spreadsheets", "wipe", "purge"
+    "all files",
+    "everything",
+    "entire drive",
+    "all emails",
+    "all documents",
+    "all spreadsheets",
+    "wipe",
+    "purge",
 ]
+
 
 class SafetyGuard:
     @staticmethod
@@ -60,7 +67,7 @@ class SafetyGuard:
             if action in ("search_files", "search_messages"):
                 # simplified check
                 if not task.parameters or task.parameters.get("query") in ("*", "", None):
-                     search_all_present = True
+                    search_all_present = True
 
             if service in DESTRUCTIVE_ACTIONS and action in DESTRUCTIVE_ACTIONS[service]:
                 destructive_count += 1
@@ -76,10 +83,17 @@ class SafetyGuard:
             msg = "Plan combines search_all with delete. Blocked for safety."
             cls._log_audit("plan_block", "system", {"reason": "search_all + delete"}, False)
             if not force_dangerous:
-                 raise SafetyBlockedError(msg)
+                raise SafetyBlockedError(msg)
 
     @classmethod
-    def check_action(cls, task, is_dry_run: bool = False, no_confirm: bool = False, is_telegram: bool = False, force_dangerous: bool = False) -> str | ExecutionResult:
+    def check_action(
+        cls,
+        task,
+        is_dry_run: bool = False,
+        no_confirm: bool = False,
+        is_telegram: bool = False,
+        force_dangerous: bool = False,
+    ) -> str | ExecutionResult:
         """
         Check if an individual action is safe to execute.
         Returns "SAFE" if it can proceed normally, or an ExecutionResult if it's a dry-run mock response.
@@ -96,7 +110,9 @@ class SafetyGuard:
             msg = f"[DRY-RUN] Would execute: {service}.{action} with params: {task.parameters}"
             logger.info(msg)
             print(msg)
-            return ExecutionResult(success=True, command=["mock"], output={"mock_success": True, "message": "Dry-run mode active"})
+            return ExecutionResult(
+                success=True, command=["mock"], output={"mock_success": True, "message": "Dry-run mode active"}
+            )
 
         item_desc = f"{service}.{action} with {task.parameters}"
 
@@ -111,7 +127,7 @@ class SafetyGuard:
         # Standard CLI confirmation
         print(f"\n⚠️ WARNING: You are about to perform a destructive action: {item_desc}")
         user_input = input("Are you sure you want to proceed? (y/n): ").strip().lower()
-        if user_input in ('y', 'yes'):
+        if user_input in ("y", "yes"):
             cls._log_audit(action, service, task.parameters, True)
             return "SAFE"
         else:

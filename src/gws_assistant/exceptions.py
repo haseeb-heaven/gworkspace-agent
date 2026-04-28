@@ -63,6 +63,7 @@ class SafetyBlockedError(Exception):
 
 class SafetyConfirmationRequired(Exception):
     """Raised when a destructive action requires user confirmation (e.g. over Telegram)."""
+
     def __init__(self, message: str, action_name: str = "", details: str = ""):
         super().__init__(message)
         self.action_name = action_name

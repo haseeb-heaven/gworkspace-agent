@@ -87,9 +87,7 @@ def test_openrouter_chat_completion_smoke():
         or "openrouter/free"
     )
     base_url = (
-        os.getenv("OPENROUTER_BASE_URL")
-        or env_file.get("OPENROUTER_BASE_URL")
-        or "https://openrouter.ai/api/v1"
+        os.getenv("OPENROUTER_BASE_URL") or env_file.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
     ).rstrip("/")
 
     payload = json.dumps(

@@ -8,8 +8,9 @@ FORBIDDEN_PATTERNS = [
     r"\$last_export_file_content",
     r"\$gmail_message_body",
     r"\{task-\d+\}",
-    r"\{[a-zA-Z0-9_\-\.\[\]]+\}"
+    r"\{[a-zA-Z0-9_\-\.\[\]]+\}",
 ]
+
 
 def triple_check(content):
     issues = []
@@ -21,6 +22,7 @@ def triple_check(content):
         issues.append("Content is empty or whitespace.")
 
     return issues
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

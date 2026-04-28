@@ -189,8 +189,12 @@ def run(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Log destructive actions without executing them."),
     no_confirm: bool = typer.Option(False, "--no-confirm", help="Skip confirmation prompts for destructive actions."),
-    force_dangerous: bool = typer.Option(False, "--force-dangerous", help="Allow plans with multiple destructive actions."),
-    is_telegram: bool = typer.Option(False, "--is-telegram", hidden=True, help="Internal flag: denotes running from Telegram."),
+    force_dangerous: bool = typer.Option(
+        False, "--force-dangerous", help="Allow plans with multiple destructive actions."
+    ),
+    is_telegram: bool = typer.Option(
+        False, "--is-telegram", hidden=True, help="Internal flag: denotes running from Telegram."
+    ),
 ) -> None:
     """Default command: run app. Use --setup to configure it."""
     # resilient_parsing is True during --help rendering and shell-completion;
@@ -224,11 +228,7 @@ def run(
             is_telegram=is_telegram,
         )
     except SafetyConfirmationRequired as e:
-        print(
-            json.dumps(
-                {"status": "confirmation_required", "action": e.action_name, "details": e.details}
-            )
-        )
+        print(json.dumps({"status": "confirmation_required", "action": e.action_name, "details": e.details}))
         sys.exit(2)
 
 

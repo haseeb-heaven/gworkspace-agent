@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -26,8 +27,8 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 def test_config_defaults_to_openrouter_free_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
     monkeypatch.delenv("LLM_MODEL", raising=False)
-
-    config = AppConfig.from_env()
+    with patch("gws_assistant.config.load_dotenv"):
+        config = AppConfig.from_env()
 
     assert config.provider == "openrouter"
     assert config.model == "openrouter/nvidia/nemotron-super-49b-v1:free"

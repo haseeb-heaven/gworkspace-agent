@@ -315,7 +315,7 @@ def create_agent(
         # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
         model_name = config.api_model_name() if model_override is None else model_override
         if model_name.startswith("openrouter/"):
-            model_name = model_name[len("openrouter/"):]
+            model_name = model_name[len("openrouter/") :]
 
         return ChatLiteLLM(
             model=model_name,
@@ -499,9 +499,7 @@ def plan_with_langchain(
     prompt = ChatPromptTemplate.from_messages([("system", system_prompt), ("user", "{request}")])
 
     primary_model = config.model or ""
-    models_to_try: list[str] = [primary_model] + [
-        m for m in config.llm_fallback_models if m != primary_model
-    ]
+    models_to_try: list[str] = [primary_model] + [m for m in config.llm_fallback_models if m != primary_model]
 
     plan_data: Any = None
     for model_idx, model_name in enumerate(models_to_try):

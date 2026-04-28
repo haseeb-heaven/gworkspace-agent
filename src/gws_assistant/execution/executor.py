@@ -144,11 +144,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     return safety_result  # Dry-run or similar mock response
             except SafetyBlockedError as e:
                 self.logger.warning(f"SAFETY BLOCK: {e}")
-                return ExecutionResult(
-                    success=False,
-                    command=["<blocked>"],
-                    error=str(e)
-                )
+                return ExecutionResult(success=False, command=["<blocked>"], error=str(e))
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 

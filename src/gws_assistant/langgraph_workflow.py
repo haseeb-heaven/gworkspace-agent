@@ -356,16 +356,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         context["search_summary_count"] = len(result.get("results", []))
         context["search_llm_summary"] = summary
 
-<<<<<<< HEAD
         # Legacy Aliases (HEAD)
         context["web_search_summary"] = summary
         context["web_search_rows"] = rows
         context["web_search_table_values"] = rows
-=======
-        # We can still store the LLM summary for use if needed
-        context["search_llm_summary"] = summary
-
->>>>>>> c6b1322 (Standardize web search result formatting across executors)
         return {
             "final_output": f"Web Search Result:\n\n{summary}",
             "last_result": structured,

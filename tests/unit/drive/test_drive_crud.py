@@ -24,7 +24,9 @@ class TestDriveCRUD:
         assert body["parents"] == ["fld_123"]
 
     def test_update_file_metadata(self):
-        args = self.planner.build_command("drive", "update_file_metadata", {"file_id": "fid_123", "name": "New Name", "description": "New Desc"})
+        args = self.planner.build_command(
+            "drive", "update_file_metadata", {"file_id": "fid_123", "name": "New Name", "description": "New Desc"}
+        )
         assert args[:3] == ["drive", "files", "update"]
         params = json.loads(args[args.index("--params") + 1])
         assert params["fileId"] == "fid_123"

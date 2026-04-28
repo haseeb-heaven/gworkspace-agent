@@ -20,8 +20,9 @@ class TestSearchUnit:
     def test_web_search_tool_no_ddg(self, mocker):
         # Mock community import failure
         import gws_assistant.tools.web_search as ws
-        mocker.patch.object(ws, 'HAS_DDG', False)
-        mocker.patch.object(ws, 'HAS_TAVILY', False)
+
+        mocker.patch.object(ws, "HAS_DDG", False)
+        mocker.patch.object(ws, "HAS_TAVILY", False)
 
         result = web_search_tool.invoke({"query": "test"})
         assert result["error"] is not None

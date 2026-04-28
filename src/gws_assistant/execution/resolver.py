@@ -54,6 +54,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$sheet_summary_rows": "sheet_summary_rows",
     "$sheet_summary_table": "sheet_summary_table",
 }
+
+
 class ResolverMixin:
     def _expand_task(self, task: Any, context: dict) -> list:
         """Expand a single task into a list of executable tasks.

@@ -20,17 +20,10 @@ class TestSlidesUnit:
 
     def test_format_slides(self):
         from gws_assistant.models import ExecutionResult
-        payload = {
-            "slides": [{}, {}],
-            "title": "My Deck",
-            "presentationId": "p123"
-        }
+
+        payload = {"slides": [{}, {}], "title": "My Deck", "presentationId": "p123"}
         result = ExecutionResult(
-            success=True,
-            command=["slides", "get"],
-            stdout=json.dumps(payload),
-            stderr="",
-            return_code=0
+            success=True, command=["slides", "get"], stdout=json.dumps(payload), stderr="", return_code=0
         )
         output = self.formatter.format_execution_result(result)
         assert "Presentation: My Deck" in output

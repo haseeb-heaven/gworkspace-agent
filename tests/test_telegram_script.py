@@ -4,16 +4,15 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 # Add the root directory to sys.path to import the script
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import scripts.telegram_send_message as telegram_script
 
 
 class TestTelegramSendMessage(unittest.TestCase):
-
-    @patch('scripts.telegram_send_message.dotenv_values')
-    @patch('scripts.telegram_send_message.urllib.request.urlopen')
-    @patch('scripts.telegram_send_message.os.environ.get')
+    @patch("scripts.telegram_send_message.dotenv_values")
+    @patch("scripts.telegram_send_message.urllib.request.urlopen")
+    @patch("scripts.telegram_send_message.os.environ.get")
     def test_send_telegram_message_validation(self, mock_env_get, mock_urlopen, mock_dotenv):
         # Mock configuration
         mock_dotenv.return_value = {"TELEGRAM_BOT_TOKEN": "bot123", "TELEGRAM_CHAT_ID": "chat123"}
@@ -45,6 +44,7 @@ class TestTelegramSendMessage(unittest.TestCase):
         # 4. Test with valid message (should not raise)
         telegram_script.send_telegram_message("Valid message")
         self.assertEqual(mock_urlopen.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

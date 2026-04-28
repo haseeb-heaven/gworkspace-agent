@@ -14,9 +14,11 @@ def runner():
     bin_path = os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")
     return GWSRunner(Path(bin_path), logging.getLogger("test"))
 
+
 @pytest.fixture
 def verifier(runner):
     return TripleVerifier(runner)
+
 
 @pytest.mark.live_integration
 class TestFullCRUD:
@@ -67,7 +69,13 @@ class TestFullCRUD:
     def test_drive_folder_crud_lifecycle(self, runner, verifier):
         # 1. Create Folder
         name = "CRUD Test Folder"
-        create_args = ["drive", "files", "create", "--json", json.dumps({"name": name, "mimeType": "application/vnd.google-apps.folder"})]
+        create_args = [
+            "drive",
+            "files",
+            "create",
+            "--json",
+            json.dumps({"name": name, "mimeType": "application/vnd.google-apps.folder"}),
+        ]
         res = runner.run(create_args)
         assert res.success
         folder_id = json.loads(res.stdout)["id"]

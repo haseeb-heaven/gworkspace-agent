@@ -21,7 +21,9 @@ class TestSheetsUnit:
         assert args == ["sheets", "+read", "--spreadsheet", "sid_123", "--range", "A1:B2"]
 
     def test_append_values(self):
-        args = self.planner.build_command("sheets", "append_values", {"spreadsheet_id": "sid_123", "range": "A1", "values": [["x", "y"]]})
+        args = self.planner.build_command(
+            "sheets", "append_values", {"spreadsheet_id": "sid_123", "range": "A1", "values": [["x", "y"]]}
+        )
         assert args[0:4] == ["sheets", "spreadsheets", "values", "append"]
         params = json.loads(args[args.index("--params") + 1])
         assert params["spreadsheetId"] == "sid_123"

@@ -13,9 +13,10 @@ from .logger import setup_framework_logger
 from .validator import OutputValidator
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 framework_logger = setup_framework_logger("task_runner")
+
 
 class TaskRunner:
     def __init__(self, agent_id: int = 0, service: str = "", max_retries: int = 3):
@@ -55,7 +56,9 @@ class TaskRunner:
     def run_tests(self):
         self.status = "RUNNING"
         self.attempt_count += 1
-        logger.info(f"Runner {self.agent_id} starting tests for {self.service} (Attempt {self.attempt_count}/{self.max_retries})")
+        logger.info(
+            f"Runner {self.agent_id} starting tests for {self.service} (Attempt {self.attempt_count}/{self.max_retries})"
+        )
 
         # Use shutil.which to find pytest executable
         _pytest_exe = shutil.which("pytest") or "pytest"
@@ -70,7 +73,7 @@ class TaskRunner:
             marker_expr = f"{self.service} and not live_integration and not manual"
             cmd = [sys.executable, "-m", "pytest", "-v", "-m", marker_expr]
 
-            process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == 'nt')
+            process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == "nt")
 
             if process.returncode == 0:
                 self.status = "PASSED"
@@ -93,6 +96,7 @@ class TaskRunner:
         logger.info(f"Runner {self.agent_id} ({self.service}) applied auto-fix. Retrying...")
         self.run_tests()
 
+
 def run_multi_agent_test(services: list[str], agents_per_service: int = 10):
     logger.info(f"🚀 Starting Multi-Agent Testing: {len(services)} services, {agents_per_service} runners each.")
 
@@ -112,6 +116,7 @@ def run_multi_agent_test(services: list[str], agents_per_service: int = 10):
                 logger.error(f"Worker thread crashed: {e}")
 
     logger.info("🏁 Multi-Agent Testing Completed.")
+
 
 if __name__ == "__main__":
     services_to_test = ["gmail", "docs", "sheets", "drive", "calendar"]

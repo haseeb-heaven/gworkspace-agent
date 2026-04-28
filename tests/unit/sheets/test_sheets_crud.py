@@ -24,58 +24,47 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=args,
-                stdout=json.dumps({
-                    "spreadsheetId": "sheet-1234567890",
-                    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1234567890/edit",
-                    "title": "Test Sheet"
-                })
+                stdout=json.dumps(
+                    {
+                        "spreadsheetId": "sheet-1234567890",
+                        "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet-1234567890/edit",
+                        "title": "Test Sheet",
+                    }
+                ),
             )
 
         if args[:3] == ["sheets", "spreadsheets", "get"]:
             return ExecutionResult(
                 success=True,
                 command=args,
-                stdout=json.dumps({
-                    "spreadsheetId": "sheet-1234567890",
-                    "title": "Test Sheet"
-                })
+                stdout=json.dumps({"spreadsheetId": "sheet-1234567890", "title": "Test Sheet"}),
             )
 
         if args[:4] == ["sheets", "spreadsheets", "values", "append"]:
-            return ExecutionResult(
-                success=True,
-                command=args,
-                stdout=json.dumps({"updates": {"updatedRows": 1}})
-            )
+            return ExecutionResult(success=True, command=args, stdout=json.dumps({"updates": {"updatedRows": 1}}))
 
         if args[:2] == ["sheets", "+read"]:
-            return ExecutionResult(
-                success=True,
-                command=args,
-                stdout=json.dumps({"values": [["Data1", "Data2"]]})
-            )
+            return ExecutionResult(success=True, command=args, stdout=json.dumps({"values": [["Data1", "Data2"]]}))
 
         if args[:4] == ["sheets", "spreadsheets", "values", "clear"]:
             return ExecutionResult(
                 success=True,
                 command=args,
-                stdout=json.dumps({"spreadsheetId": "sheet-1234567890", "clearedRange": "Sheet1!A1:Z100"})
+                stdout=json.dumps({"spreadsheetId": "sheet-1234567890", "clearedRange": "Sheet1!A1:Z100"}),
             )
 
         if args[:3] == ["drive", "files", "delete"]:
-            return ExecutionResult(
-                success=True,
-                command=args,
-                stdout=""
-            )
+            return ExecutionResult(success=True, command=args, stdout="")
 
         return ExecutionResult(success=True, command=args, stdout="{}")
+
 
 @pytest.fixture(autouse=True)
 def mock_react(mocker):
     mocker.patch("gws_assistant.execution.PlanExecutor._think", return_value="Thought")
     mocker.patch("gws_assistant.execution.PlanExecutor._should_replan", return_value=False)
     mocker.patch("gws_assistant.execution.PlanExecutor.verify_resource", return_value=True)
+
 
 def test_sheets_lifecycle_crud():
     runner = FakeRunner()
@@ -87,18 +76,34 @@ def test_sheets_lifecycle_crud():
             # 1. Create
             PlannedTask(id="t1", service="sheets", action="create_spreadsheet", parameters={"title": "Lifecycle Test"}),
             # 2. Append
-            PlannedTask(id="t2", service="sheets", action="append_values",
-                        parameters={"spreadsheet_id": "$last_spreadsheet_id", "values": [["A", "B"]]}),
+            PlannedTask(
+                id="t2",
+                service="sheets",
+                action="append_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "values": [["A", "B"]]},
+            ),
             # 3. Get
-            PlannedTask(id="t3", service="sheets", action="get_values",
-                        parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1:B1"}),
+            PlannedTask(
+                id="t3",
+                service="sheets",
+                action="get_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1:B1"},
+            ),
             # 4. Clear
-            PlannedTask(id="t4", service="sheets", action="clear_values",
-                        parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1:B1"}),
+            PlannedTask(
+                id="t4",
+                service="sheets",
+                action="clear_values",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1:B1"},
+            ),
             # 5. Delete
-            PlannedTask(id="t5", service="sheets", action="delete_spreadsheet",
-                        parameters={"spreadsheet_id": "$last_spreadsheet_id"}),
-        ]
+            PlannedTask(
+                id="t5",
+                service="sheets",
+                action="delete_spreadsheet",
+                parameters={"spreadsheet_id": "$last_spreadsheet_id"},
+            ),
+        ],
     )
 
     report = executor.execute(plan)

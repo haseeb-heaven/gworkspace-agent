@@ -40,4 +40,3 @@ def test_runner_timeout(monkeypatch):
     result = runner.run(["drive"], timeout_seconds=1)
     assert result.success is False
     assert "timed out" in (result.error or "").lower()
-

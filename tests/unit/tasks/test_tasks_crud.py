@@ -24,7 +24,15 @@ class TestTasksCRUD:
     def test_planner_builds_tasks_commands(self, planner):
         # Create
         args = planner.build_command("tasks", "create_task", {"title": "Buy milk", "notes": "2% fat"})
-        assert args == ["tasks", "tasks", "insert", "--params", json.dumps({"tasklist": "@default"}), "--json", json.dumps({"title": "Buy milk", "notes": "2% fat"})]
+        assert args == [
+            "tasks",
+            "tasks",
+            "insert",
+            "--params",
+            json.dumps({"tasklist": "@default"}),
+            "--json",
+            json.dumps({"title": "Buy milk", "notes": "2% fat"}),
+        ]
 
         # Get
         args = planner.build_command("tasks", "get_task", {"task_id": "t123"})
@@ -32,7 +40,15 @@ class TestTasksCRUD:
 
         # Update
         args = planner.build_command("tasks", "update_task", {"task_id": "t123", "status": "completed"})
-        assert args == ["tasks", "tasks", "update", "--params", json.dumps({"tasklist": "@default", "task": "t123"}), "--json", json.dumps({"status": "completed"})]
+        assert args == [
+            "tasks",
+            "tasks",
+            "update",
+            "--params",
+            json.dumps({"tasklist": "@default", "task": "t123"}),
+            "--json",
+            json.dumps({"status": "completed"}),
+        ]
 
         # Delete
         args = planner.build_command("tasks", "delete_task", {"task_id": "t123"})

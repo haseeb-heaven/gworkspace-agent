@@ -463,6 +463,7 @@ def test_code_output_resolution():
 
     def fake_code_execute(task, context):
         from gws_assistant.models import ExecutionResult
+
         # Mimic context updater directly since the real handler calls runner
         result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
         context["code_output"] = result_data["parsed_value"]

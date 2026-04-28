@@ -1,9 +1,12 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from litellm.exceptions import RateLimitError, AuthenticationError
+from litellm.exceptions import RateLimitError
+
 from gws_assistant.llm_client import call_llm
 
 pytestmark = pytest.mark.llm
+
 
 def _make_config(model, fallbacks=None, keys=None):
     cfg = MagicMock()
@@ -17,12 +20,14 @@ def _make_config(model, fallbacks=None, keys=None):
     cfg.timeout_seconds = 10
     return cfg
 
+
 @patch("gws_assistant.llm_client.completion")
 def test_successful_call(mock_completion):
     mock_completion.return_value = MagicMock()
     cfg = _make_config("openrouter/nvidia/nemotron-super-49b-v1:free")
     result = call_llm([{"role": "user", "content": "hi"}], cfg)
     assert result is not None
+
 
 @patch("gws_assistant.llm_client.completion")
 def test_fallback_on_rate_limit(mock_completion):
@@ -38,11 +43,10 @@ def test_fallback_on_rate_limit(mock_completion):
     result = call_llm([{"role": "user", "content": "hi"}], cfg)
     assert mock_completion.call_count == 2
 
+
 @patch("gws_assistant.llm_client.completion")
 def test_all_models_exhausted_raises(mock_completion):
-    mock_completion.side_effect = RateLimitError(
-        "rate limited", llm_provider="openrouter", model="x"
-    )
+    mock_completion.side_effect = RateLimitError("rate limited", llm_provider="openrouter", model="x")
     cfg = _make_config("openrouter/nvidia/nemotron-super-49b-v1:free")
     with pytest.raises(RuntimeError, match="All LLM models exhausted"):
         call_llm([{"role": "user", "content": "hi"}], cfg)

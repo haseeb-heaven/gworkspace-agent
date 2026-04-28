@@ -2,6 +2,7 @@ from .logger import setup_framework_logger
 
 logger = setup_framework_logger("validator")
 
+
 class OutputValidator:
     @staticmethod
     def validate_success(result) -> bool:
