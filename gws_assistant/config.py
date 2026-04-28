@@ -52,7 +52,7 @@ class AppConfig:
             os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or "openrouter/nvidia/nemotron-super-49b-v1:free"
         ).strip()
 
-        if provider == "openrouter" and not model.startswith("openrouter/"):
+        if provider == "openrouter" and not model.startswith("openrouter/") and "/" not in model:
             model = f"openrouter/{model}"
 
         # Resolve fallback models
