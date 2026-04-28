@@ -6,27 +6,21 @@ To add a new model: append its LiteLLM model string to TOOL_CAPABLE_MODELS.
 """
 
 TOOL_CAPABLE_MODELS: list[str] = [
-    # ── OpenRouter (free tier, tool-calling confirmed) ──────────────
-    "openrouter/nvidia/nemotron-super-49b-v1:free",
-    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "openrouter/mistralai/mistral-7b-instruct:free",
-    "openrouter/microsoft/phi-3-mini-128k-instruct:free",
-    "openrouter/qwen/qwen3-235b-a22b:free",
-    "openrouter/qwen/qwen3-30b-a3b:free",
-    "openrouter/google/gemini-2.0-flash-exp:free",
-    "openrouter/google/gemini-2.0-flash-thinking-exp:free",
-    "openrouter/nvidia/llama-3.1-nemotron-70b-instruct:free",
+    # ── OpenRouter (free tier, tool-calling/agentic confirmed) ──────
+    "openrouter/nousresearch/hermes-3-llama-3.1-405b:free",
     "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-    "openrouter/deepseek/deepseek-chat-v3-0324:free",
+    "openrouter/meta-llama/llama-3.1-70b-instruct:free",
+    "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "openrouter/google/gemini-2.0-flash-lite-preview-02-05:free",
+    "openrouter/qwen/qwen-2.5-72b-instruct:free",
+    "openrouter/deepseek/deepseek-chat:free",
     "openrouter/free",
     "gpt-4.1-mini",
     "openai/gemini-1.5-flash",
     "openai/gemini-1.5-pro",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
-    "groq/llama3-70b-8192",
-    "groq/llama3-groq-70b-8192-tool-use-preview",
-    "groq/llama-3.1-70b-versatile",
-    "groq/mixtral-8x7b-32768",
+    "groq/llama-3.3-70b-versatile",
+    "groq/llama-3.1-8b-instant",
     # ── Ollama (local, tool-calling confirmed) ──────────────────────
     "ollama/mistral",
     "ollama/llama3.1",

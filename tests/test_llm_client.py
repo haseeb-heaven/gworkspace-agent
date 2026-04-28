@@ -40,7 +40,7 @@ def test_fallback_on_rate_limit(mock_completion):
         fallbacks=["groq/llama3-groq-70b-8192-tool-use-preview"],
     )
     cfg.groq_api_key = "groq-test-key"
-    result = call_llm([{"role": "user", "content": "hi"}], cfg)
+    call_llm([{"role": "user", "content": "hi"}], cfg)
     assert mock_completion.call_count == 2
 
 

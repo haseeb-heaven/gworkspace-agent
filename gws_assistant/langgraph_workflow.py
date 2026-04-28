@@ -198,6 +198,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             results_map[seq_id] = storage_payload
             results_map[str(idx + 1)] = storage_payload
             results_map[f"t{idx + 1}"] = storage_payload
+            logger.debug(f"DEBUG: Saved result to results_map keys: {seq_id}, {idx + 1}, t{idx + 1}")
 
             # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
             t_id = str(task.id)
@@ -321,6 +322,22 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 report = err
         if any(not item.result.success for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
+        # Save to episodic memory if successful
+        if any(item.result.success for item in executions):
+            try:
+                from .memory import save_episode
+                save_episode(state["user_text"], [e.task.parameters for e in executions], report)
+            except Exception as e:
+                logger.warning(f"Failed to save episode to memory: {e}")
+
+        # Also add a semantic memory fact if successful
+        if all(item.result.success for item in executions):
+            try:
+                memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
+                system.memory.add(memory_text, metadata={"type": "task_completion"})
+            except Exception as e:
+                logger.warning(f"Failed to add semantic memory: {e}")
+
         return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
 
     def web_search_node(state: AgentState) -> dict[str, Any]:

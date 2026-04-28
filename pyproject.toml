@@ -25,6 +25,7 @@ dependencies = [
     "customtkinter>=5.2.2",
     "gradio>=5.27.0",
     "e2b-code-interpreter>=1.0.0",
+    "mem0ai>=0.1.33",
 ]
 
 [project.optional-dependencies]
@@ -60,3 +61,21 @@ ignore = ["E501"]
 # Ignore E402 (import not at top) in tests because we often call load_dotenv() before imports
 "tests/**/*.py" = ["E402"]
 "test_heuristic.py" = ["E402"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114", # missing-module-docstring
+    "C0115", # missing-class-docstring
+    "C0116", # missing-function-docstring
+    "C0103", # invalid-name
+    "R0903", # too-few-public-methods
+    "W0511", # fixme
+]
+max-line-length = 120
+
+[tool.pyright]
+include = ["gws_assistant"]
+exclude = ["**/__pycache__", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+

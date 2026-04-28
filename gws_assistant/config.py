@@ -80,6 +80,9 @@ class AppConfig:
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 
         timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
+        max_tokens_val = (os.getenv("LLM_MAX_TOKENS") or "").strip()
+        max_tokens = int(max_tokens_val) if max_tokens_val else None
+        temperature = float((os.getenv("LLM_TEMPERATURE") or "0.0").strip())
 
         log_dir = Path(os.getenv("APP_LOG_DIR", "logs")).expanduser().resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -126,6 +129,7 @@ class AppConfig:
         telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
         groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip() or None
         ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
+        memory_type = (os.getenv("MEMORY_TYPE") or "local").strip().lower()
 
         sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
         read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=True)
@@ -136,6 +140,8 @@ class AppConfig:
             api_key=api_key,
             base_url=base_url,
             timeout_seconds=timeout_seconds,
+            max_tokens=max_tokens,
+            temperature=temperature,
             gws_binary_path=gws_binary_path,
             log_file_path=log_file_path,
             log_level=log_level,
@@ -165,6 +171,7 @@ class AppConfig:
             llm_fallback_models=llm_fallback_models,
             groq_api_key=groq_api_key,
             ollama_api_base=ollama_api_base,
+            memory_type=memory_type,
         )
 
 

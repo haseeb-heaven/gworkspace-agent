@@ -108,9 +108,15 @@ class HelpersMixin:
                     except (ValueError, IndexError):
                         pass
 
+            # Ensure injected_vars is a list to prevent KeyError: 0
+            injected_vars = context.get("injected_vars", [])
+            if not isinstance(injected_vars, list):
+                logger.warning("injected_vars was a %s, forcing to list", type(injected_vars))
+                injected_vars = []
+
             extra_globals = {
                 "task_results": results_with_numeric,
-                "__injected_vars__": context.get("__injected_vars__", []),
+                "injected_vars": injected_vars,
                 "any": any,
                 "all": all,
                 "sum": sum,

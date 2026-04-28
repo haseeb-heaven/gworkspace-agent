@@ -198,7 +198,7 @@ SERVICES: dict[str, ServiceSpec] = {
             "get_message": ActionSpec(
                 key="get_message",
                 label="Get message details",
-                description="Fetch the full content of a Gmail message by id. Returns: {id, subject, from, to, date, snippet, body}. The executor auto-resolves message_id from the preceding list_messages result — you may omit it.",
+                description="Fetch the full content of a Gmail message. Returns a dictionary: {id, subject, from, to, date, snippet, body}. NOTE: If this task was expanded (e.g. following list_messages), the placeholder resolves to a flat LIST of these dictionaries. Use 'for msg in messages:' to iterate, NOT 'messages['messages']'.",
                 keywords=("get", "open", "message", "email"),
                 negative_keywords=("send", "list", "search"),
                 parameters=(

@@ -78,7 +78,7 @@ class WorkspaceAgentSystem:
         memory_hint_parts = []
         if past:
             self.logger.info("Local Memory: found %d similar past episodes", len(past))
-            interactions = "\n".join([f"- Goal: '{ep['goal'][:80]}' -> Outcome: {ep['outcome']}" for ep in past[:3]])
+            interactions = "\n".join([f"- Goal: '{ep['goal'][:80]}' -> Outcome: {ep['outcome']}" for ep in past[:5]])
             memory_hint_parts.append(f"Recent similar interactions:\n{interactions}")
 
         if semantic_memories:
@@ -490,7 +490,7 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
     def _sheet_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         s_id = _extract_id(text)
         recipient = _extract_email(text) or self.config.default_recipient_email
-        
+
         tasks = []
         if not s_id:
             # Try to extract sheet name from quotes
@@ -506,7 +506,7 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
                 )
             )
             s_id = "{{task-1.id}}"
-            
+
         tasks.append(
             PlannedTask(
                 id=f"task-{len(tasks) + 1}",
@@ -596,7 +596,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         d_id = _extract_id(text)
         title = _extract_quoted(text) or "New Document"
         recipient = _extract_email(text) or self.config.default_recipient_email
-        
+
         tasks = []
         if "create" in lowered or "new" in lowered:
             tasks.append(
@@ -621,7 +621,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 )
             )
             d_id = "{{task-1.id}}"
-            
+
         tasks.append(
             PlannedTask(
                 id=f"task-{len(tasks) + 1}",
@@ -639,7 +639,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 parameters={
                     "to_email": recipient,
                     "subject": f"Document Information: {title}",
-                    "body": f"Hi,\n\nPlease find the document link here: $last_document_url",
+                    "body": "Hi,\n\nPlease find the document link here: $last_document_url",
                 },
                 reason="Email the document link.",
             )
@@ -668,7 +668,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
     def _slides_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         p_id = _extract_id(text)
         recipient = _extract_email(text) or self.config.default_recipient_email
-        
+
         tasks = []
         if not p_id:
             tasks.append(
@@ -681,7 +681,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 )
             )
             p_id = "{{task-1.id}}"
-        
+
         tasks.append(
             PlannedTask(
                 id=f"task-{len(tasks) + 1}",
@@ -691,7 +691,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 reason="Fetch presentation metadata.",
             )
         )
-        
+
         tasks.append(
             PlannedTask(
                 id=f"task-{len(tasks) + 1}",

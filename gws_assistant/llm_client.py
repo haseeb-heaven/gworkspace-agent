@@ -57,6 +57,7 @@ def call_llm(
     config: Any,
     tools: list[dict] | None = None,
     tool_choice: str = "auto",
+    model_override: str | None = None,
 ) -> Any:
     """
     Call the LLM using LiteLLM with automatic fallback.
@@ -73,7 +74,8 @@ def call_llm(
     Returns: litellm ModelResponse object (OpenAI-compatible).
     Raises: RuntimeError if ALL models and keys are exhausted.
     """
-    model_chain = [config.model] + [m for m in config.llm_fallback_models]
+    primary_model = model_override or config.model
+    model_chain = [primary_model] + [m for m in config.llm_fallback_models if m != primary_model]
 
     last_error: Exception | None = None
 
@@ -94,8 +96,12 @@ def call_llm(
                     model=model,
                     messages=messages,
                     timeout=config.timeout_seconds,
+                    temperature=config.temperature,
                     **kwargs,
                 )
+                if config.max_tokens is not None:
+                    call_kwargs["max_tokens"] = config.max_tokens
+
                 if tools:
                     call_kwargs["tools"] = tools
                     call_kwargs["tool_choice"] = tool_choice

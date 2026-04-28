@@ -10,8 +10,14 @@ class ContextUpdaterMixin:
 
         for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
             if id_field in data:
-                data["id"] = data[id_field]
-                context["id"] = data[id_field]
+                val = data[id_field]
+                data["id"] = val
+                context["id"] = val
+                # Add aliases
+                if id_field == "documentId":
+                    data["document_id"] = val
+                if id_field == "spreadsheetId":
+                    data["spreadsheet_id"] = val
                 break
 
         if "stdout" in data:
@@ -79,6 +85,10 @@ class ContextUpdaterMixin:
                                 headers_dict[name] = h.get("value")
                 else:
                     headers_dict = {str(k).lower(): v for k, v in headers.items()}
+
+                # Initialize default keys to prevent KeyError in generated code
+                for name in ("from", "subject", "date", "to", "cc", "bcc"):
+                    data.setdefault(name, "")
 
                 for name, value in headers_dict.items():
                     if name in ("from", "subject", "date", "to", "cc", "bcc"):

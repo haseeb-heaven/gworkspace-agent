@@ -254,13 +254,13 @@ class ResolverMixin:
                 path = stripped[1:].strip()
 
             def resolve_shorthand(shorthand_path):
-                shorthand_tokens = [t for t in shorthand_path.lower().split("_") if t]
+                shorthand_tokens = [t for t in re.split(r"[._]", shorthand_path.lower()) if t]
                 for key, val_item in reversed(list(results_map.items())):
                     # Skip numeric keys and task-N keys for shorthand matching to avoid noise
                     if re.match(r"^task-\d+$|^\d+$", str(key)):
                         continue
 
-                    key_tokens = str(key).lower().split("_")
+                    key_tokens = [t for t in re.split(r"[._]", str(key).lower()) if t]
                     matches = 0
                     for st in shorthand_tokens:
                         # Check exact, plural, or synonyms
@@ -295,6 +295,19 @@ class ResolverMixin:
                     resolved = resolve_shorthand(path[1:])
                 else:
                     resolved = self._get_value_by_path(results_map, path)
+
+                    # Fallback: if {{task-N.key}} failed, try to find 'key' in ANY task.
+                    # This handles LLM off-by-one errors in task indexing.
+                    if resolved is None and "." in path:
+                        parts = path.split(".")
+                        if parts[0].startswith("task-") or parts[0].isdigit():
+                            key_to_find = parts[-1]
+                            self.logger.info(f"RESOLVER: '{path}' failed. Trying fallback for '{key_to_find}'...")
+                            resolved = resolve_shorthand(key_to_find)
+
+                    if resolved is None:
+                         keys_summary = {k: type(v).__name__ for k, v in results_map.items()}
+                         self.logger.warning(f"RESOLVER: Failed to resolve '{val}'. Path: '{path}'. Available keys/types: {keys_summary}")
 
                 # Smart unwrap:
                 # 1. If the resolved value is a dict with 'content', promote the content.
@@ -365,11 +378,11 @@ class ResolverMixin:
                         res = res["content"]
 
                     if use_repr_for_complex:
-                        if "__injected_vars__" not in context:
-                            context["__injected_vars__"] = []
-                        context["__injected_vars__"].append(res)
-                        idx = len(context["__injected_vars__"]) - 1
-                        return f"__injected_vars__[{idx}]"
+                        if "injected_vars" not in context:
+                            context["injected_vars"] = []
+                        context["injected_vars"].append(res)
+                        idx = len(context["injected_vars"]) - 1
+                        return f"injected_vars[{idx}]"
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)
                     return str(res)

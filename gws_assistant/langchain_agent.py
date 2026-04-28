@@ -1,14 +1,19 @@
 """LangChain-backed planning and reasoning agent."""
 
 import datetime
+import json
 import logging
 import re
 import time
 from typing import Any
 
-from langchain_community.chat_models import ChatLiteLLM
+try:
+    from langchain_litellm import ChatLiteLLM
+except ImportError:
+    from langchain_community.chat_models import ChatLiteLLM
 from langchain_core.prompts import ChatPromptTemplate
 
+from .llm_client import call_llm
 from .model_registry import validate_tool_model
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
@@ -302,8 +307,13 @@ def create_agent(
 
         if model_to_use.startswith("openrouter/"):
             extra_kwargs["api_base"] = config.base_url
+            extra_kwargs["tool_choice"] = "auto"
         elif model_to_use.startswith("groq/"):
             api_key = config.groq_api_key
+            extra_kwargs["custom_llm_provider"] = "groq"
+            # Explicitly set tool_choice to 'auto' to avoid LiteLLM/LangChain
+            # sending an incompatible object format to Groq.
+            extra_kwargs["tool_choice"] = "auto"
         elif model_to_use.startswith("ollama/"):
             extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
             api_key = "ollama"
@@ -315,13 +325,17 @@ def create_agent(
         # We need to strip the prefix for OpenRouter models because OpenRouter API expects e.g., 'nvidia/nemotron-super-49b-v1:free', not 'openrouter/...'
         model_name = model_override or config.model
 
-        return ChatLiteLLM(
-            model=model_name,
-            api_key=api_key,
-            temperature=0,
-            request_timeout=config.timeout_seconds,
+        llm_kwargs: dict = {
+            "model": model_name,
+            "api_key": api_key,
+            "temperature": config.temperature,
+            "request_timeout": config.timeout_seconds,
             **extra_kwargs,
-        )
+        }
+        if config.max_tokens is not None:
+            llm_kwargs["max_tokens"] = config.max_tokens
+
+        return ChatLiteLLM(**llm_kwargs)
     except Exception as e:
         logger.error("Failed to create ChatLiteLLM agent: %s", e)
         return None
@@ -373,8 +387,55 @@ def _invoke_with_backoff(
             return None
 
         try:
-            chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
-            result = _safe_invoke_structured_output(chain, {"request": request_text}, logger)
+            if model_name.startswith("groq/") or model_name.startswith("openrouter/"):
+                # Groq's tool-calling implementation via LangChain's with_structured_output
+                # is currently unstable (tool_choice errors). We bypass it and call LiteLLM
+                # directly with a JSON instruction.
+                formatted_messages = prompt.format_messages(request=request_text)
+                llm_messages = []
+                for m in formatted_messages:
+                    # Map LangChain message types to OpenAI/LiteLLM roles
+                    role = "user" if m.type == "human" else m.type
+                    llm_messages.append({"role": role, "content": m.content})
+
+                # Append explicit JSON instruction to user message
+                schema_json = json.dumps(_REQUEST_PLAN_SCHEMA, indent=2)
+                llm_messages[-1]["content"] += f"\n\nIMPORTANT: Return ONLY a valid JSON object matching the RequestPlan schema:\n{schema_json}"
+
+                response = call_llm(
+                    messages=llm_messages,
+                    config=config,
+                    model_override=model_name
+                )
+                raw_content = response.choices[0].message.content or ""
+
+                # Extract JSON (handles markdown blocks)
+                json_str = raw_content
+                if "```json" in raw_content:
+                    json_str = raw_content.split("```json")[1].split("```")[0].strip()
+                elif "```" in raw_content:
+                    json_str = raw_content.split("```")[1].split("```")[0].strip()
+
+                try:
+                    plan_data = json.loads(json_str)
+                    # Handle models that return the schema's outer wrapper (name/parameters)
+                    if "parameters" in plan_data and isinstance(plan_data["parameters"], dict):
+                        plan_data = plan_data["parameters"]
+
+                    # Basic validation that it has tasks
+                    if not isinstance(plan_data.get("tasks"), list):
+                        logger.warning("Model %s returned JSON without tasks list", model_name)
+                        result = None
+                    else:
+                        # Return the dict, we will convert to RequestPlan at the end of plan_with_langchain
+                        result = plan_data
+                except json.JSONDecodeError:
+                    logger.warning("Model %s returned invalid JSON: %s", model_name, raw_content)
+                    result = None
+
+            else:
+                chain = prompt | model.with_structured_output(_REQUEST_PLAN_SCHEMA)
+                result = _safe_invoke_structured_output(chain, {"request": request_text}, logger)
 
             if result is not None and not is_valid_plan(result):
                 logger.info(
@@ -488,6 +549,8 @@ def plan_with_langchain(
         "22. PLAN COMPLETENESS: Your plan MUST include every requested step: (1) search, (2) extract/format data (via code.execute), (3) create spreadsheet, (4) append data to sheet, (5) send email. NEVER omit the spreadsheet or email steps; if you only see one task, you have failed. "
         "23. SUMMARIZATION: Include a 'summary' field that lists the full sequence of actions to be taken (e.g., '1. List messages, 2. Fetch details, 3. Create Sheet, 4. Append Data, 5. Send Email')."
         "24. SUMMARIZATION: When writing to a Doc or Sheet from search results, synthesize and summarize the information. Do NOT include raw search snippets like 'Jan 1, 2024 ...' in the final output."
+        "25. SMART RESOLUTION: You can use the shorthand {{{{ :key }}}} (e.g. {{{{ :spreadsheetId }}}}) to reference the most recent occurrence of a result key from ANY previous task. This is more robust than using task-N indices. "
+        "\n\nIMPORTANT: You MUST respond with a valid JSON object matching the requested schema."
     )
 
     if memory_hint:

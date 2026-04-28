@@ -23,6 +23,8 @@ class AppConfigModel:
     setup_complete: bool
     max_retries: int
     langchain_enabled: bool
+    max_tokens: int | None = None
+    temperature: float = 0.0
     max_replans: int = 1
     use_heuristic_fallback: bool = True
     code_execution_enabled: bool = True
@@ -37,6 +39,7 @@ class AppConfigModel:
     mem0_user_id: str | None = None
     mem0_host: str | None = None
     memory_dir: Path | None = None
+    memory_type: str = "local"
     mem0_local_storage_path: str = ".gemini/memories.jsonl"
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
