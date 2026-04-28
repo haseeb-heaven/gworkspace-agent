@@ -14,6 +14,7 @@ def test_conversation_requires_service_clarification(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/free")
     monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "test@example.com")
+    monkeypatch.setenv("GWS_BINARY_PATH", "gws")
     AppConfig.from_env()
     engine = ConversationEngine(planner=CommandPlanner(), logger=logging.getLogger("test"))
     intent = Intent(raw_text="hello there", service=None, action=None)

@@ -1,8 +1,16 @@
 from __future__ import annotations
-
+import os
 from unittest.mock import patch
-
 import pytest
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_session_env():
+    """Ensure required environment variables are set for the entire test session."""
+    if not os.getenv("GWS_BINARY_PATH"):
+        os.environ["GWS_BINARY_PATH"] = "gws"
+    if not os.getenv("DEFAULT_RECIPIENT_EMAIL"):
+        os.environ["DEFAULT_RECIPIENT_EMAIL"] = "test@example.com"
 
 
 class _SimpleMocker:
