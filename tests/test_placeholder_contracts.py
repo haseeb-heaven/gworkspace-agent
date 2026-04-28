@@ -17,7 +17,11 @@ def test_gmail_summary_values_is_independent_copy():
     context = {}
     data = {"messages": [{"id": "msg1", "threadId": "t1"}]}
     updater._update_context_from_result(data, context)
-    original = context["gmail_summary_rows"]
-    context["gmail_summary_rows"].append(["mutated"])
-    assert context["gmail_summary_values"] == original, \
+    # Verify they are different objects (independent copies)
+    assert context["gmail_summary_values"] is not context["gmail_summary_rows"], \
         "gmail_summary_values should be independent copy not same list object"
+    # If above passes, also verify mutation doesn't propagate
+    original_len = len(context["gmail_summary_values"])
+    context["gmail_summary_rows"].append(["mutated"])
+    assert len(context["gmail_summary_values"]) == original_len, \
+        "gmail_summary_values should not be affected by gmail_summary_rows mutation"
