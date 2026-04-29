@@ -20,7 +20,7 @@ class ContextUpdaterMixin:
                     data["spreadsheet_id"] = val
                 break
 
-        if "stdout" in data:
+        if "stdout" in data and "parsed_value" not in data:
             val = data["stdout"]
             context["code_output"] = val
             data["code_output"] = val
@@ -71,9 +71,13 @@ class ContextUpdaterMixin:
         # Gmail Body Extraction (Recursive base64 decode)
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
         if is_gmail_get or "payload" in data:
-            payload = data.get("payload", data if is_gmail_get else {})
+            payload = data.get("payload")
+            if payload is None and is_gmail_get:
+                payload = data
             if isinstance(payload, dict):
                 payload = [payload]
+            if not isinstance(payload, list):
+                payload = []
 
             def find_body(p):
                 b = p.get("body", {})
@@ -361,23 +365,10 @@ class ContextUpdaterMixin:
             for k, v in data.items():
                 results_map[f"{task_id}.{k}"] = v
                 results_map[f"{task_id}.output.{k}"] = v
-                # ONLY map N.key and task-N.key if this is NOT an expansion subtask,
-                # or if it's the first subtask (to provide some default).
-                # Actually, if it's a subtask, we want task-N.key to be a list if possible?
-                # For now, let's keep it simple: subtasks don't overwrite task-N.key
-                # unless they are the primary ID.
                 if not is_subtask:
-                    results_map[f"{num}.{k}"] = v
-                    results_map[f"{num}.output.{k}"] = v
                     results_map[f"task-{num}.{k}"] = v
                     results_map[f"task-{num}.output.{k}"] = v
-
-                results_map[f"{seq_num}.{k}"] = v
-                results_map[f"{seq_num}.output.{k}"] = v
-                results_map[f"task-{seq_num}.{k}"] = v
-                results_map[f"task-{seq_num}.output.{k}"] = v
                 results_map[f"{action_name}.{k}"] = v
-                results_map[f"{action_name}.output.{k}"] = v
 
             # Special case: promote first item's ID for files/messages
             if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:

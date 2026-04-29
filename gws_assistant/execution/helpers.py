@@ -162,7 +162,7 @@ class HelpersMixin:
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
                 context["last_code_result"] = parsed
-                context["code_output"] = parsed
+                context["code_parsed_value"] = parsed
 
                 # Promote parsed_value keys to results_map for easy placeholder access
                 if isinstance(parsed, dict):

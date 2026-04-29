@@ -175,7 +175,7 @@ class ResolverMixin:
             task.parameters["range"] = rng_after.replace("Sheet1", quoted_title)
             self.logger.info(f"Range auto-fixed (Post): {rng_after} -> {task.parameters['range']}")
 
-        # 3. Last-resort ID fallbacks for common missing parameters
+        # 5. Last-resort ID fallbacks for common missing parameters
         # If a required ID is still missing or remains a placeholder after resolution,
         # try to pull the most recent matching ID from the global context.
         if task.service == "sheets":
@@ -380,8 +380,8 @@ class ResolverMixin:
                     if use_repr_for_complex:
                         if "injected_vars" not in context:
                             context["injected_vars"] = []
+                        idx = len(context["injected_vars"])
                         context["injected_vars"].append(res)
-                        idx = len(context["injected_vars"]) - 1
                         return f"injected_vars[{idx}]"
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)

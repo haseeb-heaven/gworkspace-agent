@@ -74,7 +74,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             else:
                 result = self.execute_single_task(task, context)
 
-            if result.output:
+            if result.output is not None:
                 self._update_context_from_result(result.output, context, task)
 
             executions.append(TaskExecution(task=task, result=result))
@@ -108,12 +108,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         task.parameters = self._resolve_placeholders(task.parameters, context)
 
         # Sandbox / Read-Only Mode Logic
-        is_delete = any(kw in task.action.lower() for kw in ("delete", "remove", "trash", "clear"))
-        is_write = any(
-            kw in task.action.lower()
-            for kw in ("create", "update", "append", "send", "upload", "copy", "move", "batch")
-        )
-
         if self.config:
             from gws_assistant.safety_guard import SafetyGuard
 
