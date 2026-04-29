@@ -303,15 +303,19 @@ jobs:
             --json closingIssuesReferences \
             -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
 
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          HEAD_REF="${{ github.head_ref }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+
           if [ -n "$ISSUE_NUM" ]; then
-            gh issue comment "$ISSUE_NUM" \
-              --body "## ⚠️ Merge Blocked on PR #${PR_NUM} — @google-labs-jules please address review comments
+            cat > /tmp/review_block_body.md << MDEOF
+## ⚠️ Merge Blocked on PR #${PR_NUM} — @google-labs-jules please address review comments
 
 There are **unresolved review comments** on this PR that must be addressed before it can be merged.
 
-**PR:** ${{ github.event.pull_request.html_url }}
-**Head Branch:** \`${{ github.head_ref }}\`
-**Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
+**PR:** ${PR_URL}
+**Head Branch:** \`${HEAD_REF}\`
+**Target Branch:** \`${BASE_REF}\`
 
 ---
 ## Unresolved Comments
@@ -322,19 +326,23 @@ ${COMMENT_DETAILS}
 **@google-labs-jules instructions:**
 1. Read each unresolved comment carefully
 2. Fix the code exactly as suggested by the reviewer
-3. Push fix to branch: \`${{ github.head_ref }}\`
-4. Do NOT resolve threads manually — CI will re-check after your push"
+3. Push fix to branch: \`${HEAD_REF}\`
+4. Do NOT resolve threads manually — CI will re-check after your push
+MDEOF
+            gh issue comment "$ISSUE_NUM" --body-file /tmp/review_block_body.md
           else
-            gh pr comment $PR_NUM \
-              --body "## ⚠️ Merge Blocked — Unresolved Review Comments
+            cat > /tmp/review_block_body.md << MDEOF
+## ⚠️ Merge Blocked — Unresolved Review Comments
 
 @google-labs-jules — please address all unresolved review comments before this PR can be merged.
 
-**Head Branch:** \`${{ github.head_ref }}\`
-**Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
+**Head Branch:** \`${HEAD_REF}\`
+**Target Branch:** \`${BASE_REF}\`
 
 ## Unresolved Comments
-${COMMENT_DETAILS}"
+${COMMENT_DETAILS}
+MDEOF
+            gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -372,7 +380,7 @@ ${COMMENT_DETAILS}"
             --auto \
             --delete-branch \
             --subject "${{ github.event.pull_request.title }}" \
-            --body "Auto-merged by CI into \`${{ github.event.pull_request.base.ref }}\`"
+            --body "Auto-merged by CI into ${{ github.event.pull_request.base.ref }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -438,8 +446,8 @@ ${COMMENT_DETAILS}"
           HEAD_BRANCH="${{ github.head_ref }}"
           BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
 
-          gh issue comment ${{ steps.find_issue.outputs.issue_number }} \
-            --body "## ❌ CI Failed on PR #${PR_NUM} — @google-labs-jules please fix
+          cat > /tmp/jules_fix_body.md << MDEOF
+## ❌ CI Failed on PR #${PR_NUM} — @google-labs-jules please fix
 
 CI pipeline failed. Fix the errors below and push to the same branch.
 
@@ -457,7 +465,9 @@ ${ERRORS}
 1. Fix all failing tests and lint errors listed above
 2. Fix source code only — do NOT modify test logic
 3. Push fix to branch: \`${HEAD_BRANCH}\`
-4. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
+4. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass
+MDEOF
+          gh issue comment ${{ steps.find_issue.outputs.issue_number }} --body-file /tmp/jules_fix_body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -469,8 +479,8 @@ ${ERRORS}
           HEAD_BRANCH="${{ github.head_ref }}"
           BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
 
-          gh pr comment ${{ github.event.pull_request.number }} \
-            --body "## ❌ CI Failed — @google-labs-jules please fix
+          cat > /tmp/jules_pr_body.md << MDEOF
+## ❌ CI Failed — @google-labs-jules please fix
 
 @google-labs-jules — CI pipeline failed. No linked Issue was found so tagging here directly.
 
@@ -484,7 +494,9 @@ ${ERRORS}
 **Instructions:**
 1. Fix all errors above
 2. Push fix to branch: \`${HEAD_BRANCH}\`
-3. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
+3. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass
+MDEOF
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/jules_pr_body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
