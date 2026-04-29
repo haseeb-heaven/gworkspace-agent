@@ -333,7 +333,8 @@ print('
           There are **unresolved review comments** on this PR that must be addressed before it can be merged.
 
           **PR:** ${{ github.event.pull_request.html_url }}
-          **Branch:** \`${{ github.head_ref }}\`
+          **Head Branch:** \`${{ github.head_ref }}\`
+          **Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
 
           ---
           ## Unresolved Comments
@@ -352,6 +353,9 @@ print('
 
           @google-labs-jules — please address all unresolved review comments before this PR can be merged.
 
+          **Head Branch:** \`${{ github.head_ref }}\`
+          **Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
+
           ## Unresolved Comments
           ${COMMENT_DETAILS}"
           fi
@@ -359,7 +363,8 @@ print('
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 6: Auto-merge (only after review-guard passes)
+  # JOB 6: Auto-merge into PR's actual base branch
+  # Uses github.event.pull_request.base.ref — NOT hardcoded main/master
   # ──────────────────────────────────────────
   auto-merge:
     name: Auto Merge PR
@@ -374,13 +379,24 @@ print('
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Checkout the PR's base branch so git history is correct
+          ref: ${{ github.event.pull_request.base.ref }}
 
-      - name: Enable auto-merge
+      - name: Log merge target
+        run: |
+          echo "Merging PR #${{ github.event.pull_request.number }}"
+          echo "Head : ${{ github.head_ref }}"
+          echo "Base : ${{ github.event.pull_request.base.ref }}"
+
+      - name: Enable auto-merge into base branch
         run: |
           gh pr merge ${{ github.event.pull_request.number }} \
             --squash \
             --auto \
-            --delete-branch
+            --delete-branch \
+            --subject "${{ github.event.pull_request.title }}" \
+            --body "Auto-merged by CI into \`${{ github.event.pull_request.base.ref }}\`"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -443,7 +459,8 @@ print('
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
           PR_NUM="${{ github.event.pull_request.number }}"
-          BRANCH="${{ github.head_ref }}"
+          HEAD_BRANCH="${{ github.head_ref }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
 
           gh issue comment ${{ steps.find_issue.outputs.issue_number }} \
             --body "## ❌ CI Failed on PR #${PR_NUM} — @google-labs-jules please fix
@@ -451,7 +468,8 @@ print('
           CI pipeline failed. Fix the errors below and push to the same branch.
 
           **PR:** ${PR_URL}
-          **Branch:** \`${BRANCH}\`
+          **Head Branch:** \`${HEAD_BRANCH}\`
+          **Target Branch:** \`${BASE_BRANCH}\`
           **Failed Run:** ${RUN_URL}
 
           ---
@@ -462,8 +480,8 @@ print('
           **@google-labs-jules instructions:**
           1. Fix all failing tests and lint errors listed above
           2. Fix source code only — do NOT modify test logic
-          3. Push fix to branch: \`${BRANCH}\`
-          4. Do NOT merge — CI will auto-merge once all checks pass"
+          3. Push fix to branch: \`${HEAD_BRANCH}\`
+          4. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -472,12 +490,16 @@ print('
         run: |
           ERRORS=$(cat /tmp/all_errors.txt)
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          HEAD_BRANCH="${{ github.head_ref }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
 
           gh pr comment ${{ github.event.pull_request.number }} \
             --body "## ❌ CI Failed — @google-labs-jules please fix
 
           @google-labs-jules — CI pipeline failed. No linked Issue was found so tagging here directly.
 
+          **Head Branch:** \`${HEAD_BRANCH}\`
+          **Target Branch:** \`${BASE_BRANCH}\`
           **Failed Run:** ${RUN_URL}
 
           ## Errors
@@ -485,8 +507,8 @@ print('
 
           **Instructions:**
           1. Fix all errors above
-          2. Push fix to branch: \`${{ github.head_ref }}\`
-          3. Do NOT merge — CI will auto-merge once all checks pass"
+          2. Push fix to branch: \`${HEAD_BRANCH}\`
+          3. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
