@@ -203,7 +203,7 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 5: Review Guard
   # Blocks merge if ANY unresolved review comment exists
-  # (from bots like Devin, or human reviewers)
+  # Tags @google-labs-jules on linked Issue to fix
   # ──────────────────────────────────────────
   review-guard:
     name: Review Guard (Block if Unresolved Comments)
@@ -225,7 +225,6 @@ jobs:
           PR_NUM=${{ github.event.pull_request.number }}
           REPO="${{ github.repository }}"
 
-          # Fetch all review threads via GraphQL
           RESPONSE=$(gh api graphql -f query='
             query($owner: String!, $repo: String!, $pr: Int!) {
               repository(owner: $owner, name: $repo) {
@@ -249,7 +248,6 @@ jobs:
             -f repo="$(echo $REPO | cut -d/ -f2)" \
             -F pr=$PR_NUM)
 
-          # Count unresolved and non-outdated threads
           UNRESOLVED=$(echo "$RESPONSE" | \
             python3 -c "
 import sys, json
@@ -263,7 +261,7 @@ print(count)
 
           if [ "$UNRESOLVED" -gt 0 ]; then
             echo "safe_to_merge=false" >> $GITHUB_OUTPUT
-            echo "::error::Merge blocked — $UNRESOLVED unresolved review thread(s) found. Resolve all comments before merging."
+            echo "::error::Merge blocked — $UNRESOLVED unresolved review thread(s) found."
             exit 1
           else
             echo "safe_to_merge=true" >> $GITHUB_OUTPUT
@@ -272,13 +270,12 @@ print(count)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify Jules about unresolved comments
+      - name: Notify @google-labs-jules about unresolved comments
         if: failure()
         run: |
           PR_NUM=${{ github.event.pull_request.number }}
           REPO="${{ github.repository }}"
 
-          # Fetch unresolved comment details
           RESPONSE=$(gh api graphql -f query='
             query($owner: String!, $repo: String!, $pr: Int!) {
               repository(owner: $owner, name: $repo) {
@@ -319,18 +316,19 @@ for t in threads:
         path = t.get('path', 'unknown file')
         line = t.get('line', '?')
         url = c.get('url', '')
-        lines.append(f'- **{path}:{line}** by @{author}: {body}\n  {url}')
-print('\n'.join(lines))
+        lines.append(f'- **{path}:{line}** by @{author}: {body}
+  {url}')
+print('
+'.join(lines))
 ")
 
-          # Find linked issue
           ISSUE_NUM=$(gh pr view $PR_NUM \
             --json closingIssuesReferences \
             -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
 
           if [ -n "$ISSUE_NUM" ]; then
             gh issue comment "$ISSUE_NUM" \
-              --body "## ⚠️ Merge Blocked on PR #${PR_NUM} — @jules please address review comments
+              --body "## ⚠️ Merge Blocked on PR #${PR_NUM} — @google-labs-jules please address review comments
 
           There are **unresolved review comments** on this PR that must be addressed before it can be merged.
 
@@ -343,16 +341,16 @@ print('\n'.join(lines))
           ${COMMENT_DETAILS}
 
           ---
-          **@jules instructions:**
+          **@google-labs-jules instructions:**
           1. Read each unresolved comment carefully
-          2. Fix the code as suggested by the reviewer
+          2. Fix the code exactly as suggested by the reviewer
           3. Push fix to branch: \`${{ github.head_ref }}\`
-          4. Do NOT resolve the threads manually — CI will check again after your push"
+          4. Do NOT resolve threads manually — CI will re-check after your push"
           else
             gh pr comment $PR_NUM \
               --body "## ⚠️ Merge Blocked — Unresolved Review Comments
 
-          **@jules** — please address all unresolved review comments before this PR can be merged.
+          @google-labs-jules — please address all unresolved review comments before this PR can be merged.
 
           ## Unresolved Comments
           ${COMMENT_DETAILS}"
@@ -387,7 +385,7 @@ print('\n'.join(lines))
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 7: Jules feedback loop on CI failure
+  # JOB 7: CI Failure — Tag @google-labs-jules to fix
   # ──────────────────────────────────────────
   jules-auto-fix:
     name: Jules Auto-Fix Loop
@@ -438,7 +436,7 @@ print('\n'.join(lines))
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Post @jules fix request on linked Issue
+      - name: Post @google-labs-jules fix request on linked Issue
         if: steps.find_issue.outputs.issue_number != ''
         run: |
           ERRORS=$(cat /tmp/all_errors.txt)
@@ -448,7 +446,7 @@ print('\n'.join(lines))
           BRANCH="${{ github.head_ref }}"
 
           gh issue comment ${{ steps.find_issue.outputs.issue_number }} \
-            --body "## ❌ CI Failed on PR #${PR_NUM} — @jules please fix
+            --body "## ❌ CI Failed on PR #${PR_NUM} — @google-labs-jules please fix
 
           CI pipeline failed. Fix the errors below and push to the same branch.
 
@@ -461,30 +459,34 @@ print('\n'.join(lines))
           ${ERRORS}
           ---
 
-          **@jules instructions:**
-          1. Fix all failing tests and lint errors above
+          **@google-labs-jules instructions:**
+          1. Fix all failing tests and lint errors listed above
           2. Fix source code only — do NOT modify test logic
           3. Push fix to branch: \`${BRANCH}\`
           4. Do NOT merge — CI will auto-merge once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fallback — post on PR if no linked Issue found
+      - name: Fallback — post on PR directly if no linked Issue found
         if: steps.find_issue.outputs.issue_number == ''
         run: |
           ERRORS=$(cat /tmp/all_errors.txt)
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "## ❌ CI Failed — No linked issue found
+            --body "## ❌ CI Failed — @google-labs-jules please fix
 
-          Could not find a linked GitHub Issue to auto-notify @jules.
-          Please manually assign this PR to Jules for fixing.
+          @google-labs-jules — CI pipeline failed. No linked Issue was found so tagging here directly.
 
           **Failed Run:** ${RUN_URL}
 
           ## Errors
-          ${ERRORS}"
+          ${ERRORS}
+
+          **Instructions:**
+          1. Fix all errors above
+          2. Push fix to branch: \`${{ github.head_ref }}\`
+          3. Do NOT merge — CI will auto-merge once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
