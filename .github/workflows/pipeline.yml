@@ -27,14 +27,107 @@ env:
 
 jobs:
   # ──────────────────────────────────────────
+  # JOB 0: Auto Conflict Resolution
+  # Detects merge conflicts on PR and auto-resolves by merging
+  # the base branch into the feature branch, then force-pushes.
+  # If unresolvable conflicts remain, posts a clear comment and fails.
+  # ──────────────────────────────────────────
+  resolve-conflicts:
+    name: Auto Resolve Conflicts
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      conflict_free: ${{ steps.merge_base.outputs.conflict_free }}
+    steps:
+      - name: Checkout PR head branch (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+
+      - name: Check if already up-to-date
+        id: check_dirty
+        run: |
+          MERGE_BASE=$(git merge-base HEAD ${{ github.base_ref }})
+          BASE_TIP=$(git rev-parse ${{ github.base_ref }})
+          if [ "$MERGE_BASE" = "$BASE_TIP" ]; then
+            echo "already_clean=true" >> $GITHUB_OUTPUT
+            echo "Branch is already up-to-date with ${{ github.base_ref }}. No conflict resolution needed."
+          else
+            echo "already_clean=false" >> $GITHUB_OUTPUT
+            echo "Branch is behind ${{ github.base_ref }}. Attempting auto-merge."
+          fi
+
+      - name: Auto-merge base into PR branch
+        id: merge_base
+        if: steps.check_dirty.outputs.already_clean == 'false'
+        run: |
+          # Try non-interactive merge with theirs strategy for pipeline files only,
+          # and ours strategy ignored — let git auto-resolve what it can.
+          if git merge origin/${{ github.base_ref }} --no-edit --strategy-option=patience; then
+            echo "conflict_free=true" >> $GITHUB_OUTPUT
+            echo "Merge succeeded cleanly."
+          else
+            echo "conflict_free=false" >> $GITHUB_OUTPUT
+
+            # Collect conflicting files
+            CONFLICTING=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+            echo "Conflicting files: $CONFLICTING"
+
+            # Abort the merge to restore clean state
+            git merge --abort
+
+            # Post a comment on the PR listing the conflicting files
+            printf '\u26a0\ufe0f **Auto Conflict Resolution Failed**\n\nThe CI attempted to merge `%s` into `%s` automatically but found unresolvable conflicts in the following files:\n\n```\n%s\n```\n\nPlease resolve these conflicts manually:\n```bash\ngit fetch origin\ngit checkout %s\ngit merge origin/%s\n# fix conflicts in the files listed above\ngit add .\ngit commit -m "chore: resolve merge conflicts with %s"\ngit push\n```' \
+              "${{ github.base_ref }}" \
+              "${{ github.head_ref }}" \
+              "$CONFLICTING" \
+              "${{ github.head_ref }}" \
+              "${{ github.base_ref }}" \
+              "${{ github.base_ref }}" > /tmp/conflict_comment.md
+
+            gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/conflict_comment.md
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push resolved branch
+        if: |
+          steps.check_dirty.outputs.already_clean == 'false' &&
+          steps.merge_base.outputs.conflict_free == 'true'
+        run: |
+          git push origin HEAD:${{ github.head_ref }}
+          echo "Pushed merged branch back to ${{ github.head_ref }} successfully."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────
   # JOB 1: Lint + Type Check
   # ──────────────────────────────────────────
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    needs: resolve-conflicts
     if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -72,6 +165,8 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -130,6 +225,8 @@ jobs:
     needs: unit-tests
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -176,6 +273,8 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -360,7 +459,6 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           BASE_REF="${{ github.event.pull_request.base.ref }}"
 
-          # Try --auto merge first (requires "Allow auto-merge" in repo settings)
           if gh pr merge $PR_NUM \
                --squash \
                --auto \
