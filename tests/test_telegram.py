@@ -26,6 +26,7 @@ def mock_config():
         gws_binary_path=None,
         log_file_path=None,
         log_level="INFO",
+        file_log_level="DEBUG",
         verbose=False,
         env_file_path=None,
         setup_complete=True,

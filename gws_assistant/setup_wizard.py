@@ -81,7 +81,8 @@ def run_setup_wizard(env_file_path: Path | None = None) -> Path:
         existing.get("CODE_EXECUTION_ENABLED") or "true",
     )
     e2b_api_key = _ask_secret("E2B API key (only needed for backend=e2b)", existing.get("E2B_API_KEY", ""))
-    log_level = _ask_text("Log level", existing.get("APP_LOG_LEVEL") or "INFO")
+    log_level = _ask_text("Log level (console)", existing.get("APP_LOG_LEVEL") or "INFO")
+    file_log_level = _ask_text("File log level", existing.get("APP_FILE_LOG_LEVEL") or "DEBUG")
     log_dir = _ask_text("Log directory", existing.get("APP_LOG_DIR") or "logs")
     timeout_seconds = _ask_text("LLM timeout seconds", existing.get("LLM_TIMEOUT_SECONDS") or "30")
     max_retries = _ask_text("Max retries", existing.get("MAX_RETRIES") or "3")
@@ -104,6 +105,7 @@ def run_setup_wizard(env_file_path: Path | None = None) -> Path:
         "E2B_API_KEY": e2b_api_key,
         "GWS_BINARY_PATH": str(Path(gws_binary_path).expanduser().resolve()),
         "APP_LOG_LEVEL": log_level.upper(),
+        "APP_FILE_LOG_LEVEL": file_log_level.upper(),
         "APP_VERBOSE": existing.get("APP_VERBOSE") or "true",
         "APP_LOG_DIR": log_dir,
         "LLM_TIMEOUT_SECONDS": timeout_seconds,
@@ -165,6 +167,7 @@ def _render_env(values: dict[str, str]) -> str:
         "# Assistant settings",
         f"GWS_BINARY_PATH={_quote(values['GWS_BINARY_PATH'])}",
         f"APP_LOG_LEVEL={_quote(values['APP_LOG_LEVEL'])}",
+        f"APP_FILE_LOG_LEVEL={_quote(values['APP_FILE_LOG_LEVEL'])}",
         f"APP_VERBOSE={_quote(values['APP_VERBOSE'])}",
         f"APP_LOG_DIR={_quote(values['APP_LOG_DIR'])}",
         f"LLM_TIMEOUT_SECONDS={_quote(values['LLM_TIMEOUT_SECONDS'])}",

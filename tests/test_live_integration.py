@@ -37,6 +37,7 @@ def test_live_workspace_sheet_and_email_flow():
         gws_binary_path=gws_binary,
         log_file_path=Path("logs/live_integration.log"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        file_log_level="DEBUG",
         verbose=True,
         env_file_path=Path(".env").resolve(),
         setup_complete=True,
