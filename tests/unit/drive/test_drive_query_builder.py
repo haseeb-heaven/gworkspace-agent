@@ -75,3 +75,7 @@ def test_sanitize_drive_query_mixed_valid_and_invalid():
     q = "trashed = false and mimeType:application/pdf"
     expected = "trashed = false and mimeType='application/pdf'"
     assert sanitize_drive_query(q) == expected
+def test_sanitize_drive_query_restored_tests():
+    assert sanitize_drive_query('parents in 12345') == "parents in '12345'"
+    assert sanitize_drive_query('fullText contains something') == "fullText contains 'something'"
+    assert sanitize_drive_query('name != budget') == "name != 'budget'"

@@ -53,7 +53,7 @@ _NAME_EQ_RE = re.compile(
     re.IGNORECASE,
 )
 
-RE_DRIVE_OP_MATCH = re.compile(r"^(name|fullText)\s+contains\s+['\"]?(.+?)['\"]?$", re.IGNORECASE)
+RE_DRIVE_OP_MATCH = re.compile(r"^(name|fullText|parents)\s+(contains|in|=|!=)\s+['\"]?(.+?)['\"]?$", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +159,8 @@ def _classify_and_fix_clause(clause: str) -> list[str]:
         # to avoid it being re-wrapped in name contains.
         op_match = RE_DRIVE_OP_MATCH.match(remainder)
         if op_match:
-            field, val = op_match.group(1), op_match.group(2).strip()
-            text_clauses.append(f"{field} contains '{_escape(val)}'")
+            field, op, val = op_match.group(1), op_match.group(2).lower(), op_match.group(3).strip()
+            text_clauses.append(f"{field} {op} '{_escape(val)}'")
             remainder = ""
 
         # Fix #5 — if remainder has no Drive operator it is bare text.
