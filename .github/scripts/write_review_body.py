@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate review-guard notification body and write to output file."""
 import argparse
-import sys
 
 
 def main():

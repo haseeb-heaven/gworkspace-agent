@@ -1,5 +1,6 @@
-import time
 import re
+import time
+
 
 def original_extract_keywords(text: str) -> list[str]:
     keywords: list[str] = []

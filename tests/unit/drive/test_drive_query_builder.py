@@ -1,10 +1,12 @@
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from gws_assistant.drive_query_builder import (
-    sanitize_drive_query,
     _classify_and_fix_clause,
+    sanitize_drive_query,
 )
+
 
 @pytest.mark.parametrize(
     "raw, expected",

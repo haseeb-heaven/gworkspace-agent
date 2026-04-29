@@ -2,6 +2,7 @@ import pytest
 
 from gws_assistant.gmail_query_builder import sanitize_gmail_query
 
+
 @pytest.mark.parametrize(
     "raw, expected",
     [
