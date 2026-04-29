@@ -3,14 +3,7 @@ name: GWorkspace Agent CI/CD
 on:
   push:
     branches:
-      - main
-      - master
-      - develop
-      - "feature/**"
-      - "fix/**"
-      - "hotfix/**"
-      - "chore/**"
-      - "refactor/**"
+      - "**"
   pull_request:
     branches: ["main", "master", "develop"]
   workflow_dispatch:
