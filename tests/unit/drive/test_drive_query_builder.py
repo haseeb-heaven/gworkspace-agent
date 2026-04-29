@@ -40,6 +40,11 @@ from gws_assistant.drive_query_builder import sanitize_drive_query
         # Conjunctions
         ("Budget and mimeType:application/pdf", "name contains 'Budget' and mimeType='application/pdf'"),
         ("Budget or Report", "name contains 'Budget' or name contains 'Report'"),
+        # Missing quotes on operators
+        ("parents in 12345", "parents in '12345'"),
+        ("fullText contains something", "fullText contains 'something'"),
+        ("name = budget", "name contains 'budget'"), # Name equality falls back to contains per _NAME_EQ_RE
+        ("name != budget", "name != 'budget'"),
         # Complex cases
         (
             "name='CcaaS' mimeType='application/vnd.google-apps.document'",
