@@ -68,6 +68,14 @@ if __name__ == "__main__":
         print('Usage: python telegram_send_message.py "Message text"', file=sys.stderr)
         sys.exit(1)
 
+    if not isinstance(message, str):
+        print("Validation error: Message must be a string.", file=sys.stderr)
+        sys.exit(1)
+
+    if len(message) > 4096:
+        print(f"Validation error: Message too long: {len(message)} characters. Max allowed is 4096.", file=sys.stderr)
+        sys.exit(1)
+
     try:
         send_telegram_message(message)
     except (TypeError, ValueError) as e:
