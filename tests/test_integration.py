@@ -23,6 +23,7 @@ def config():
         gws_binary_path=Path("/fake/gws"),
         log_file_path=Path("gws.log"),
         log_level="INFO",
+        file_log_level="DEBUG",
         verbose=False,
         env_file_path=Path(".env"),
         setup_complete=True,

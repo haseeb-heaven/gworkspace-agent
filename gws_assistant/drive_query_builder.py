@@ -53,9 +53,7 @@ _NAME_EQ_RE = re.compile(
     re.IGNORECASE,
 )
 
-RE_DRIVE_OP_MATCH = re.compile(
-    r"^(name|fullText|parents)\s+(contains|in|=|!=)\s+['\"]?(.+?)['\"]?$", re.IGNORECASE
-)
+RE_DRIVE_OP_MATCH = re.compile(r"^(name|fullText|parents)\s+(contains|in|=|!=)\s+['\"]?(.+?)['\"]?$", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------

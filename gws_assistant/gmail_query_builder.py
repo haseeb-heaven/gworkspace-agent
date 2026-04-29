@@ -58,7 +58,7 @@ def sanitize_gmail_query(raw: str) -> str:
 
     Handles:
       from=user@example.com           -> from:user@example.com
-      subject='foo bar'               -> subject:"foo bar"
+      subject='foo bar'               -> subject:foo bar
       "some topic"                    -> subject:\"some topic\" OR body:\"some topic\"
       foo bar (bare text, no op)      -> foo bar  (Gmail accepts bare text natively)
 
@@ -73,12 +73,7 @@ def sanitize_gmail_query(raw: str) -> str:
     # Step 1 — fix operator=value -> operator:value
     def _fix_eq(m: re.Match) -> str:
         op = m.group(1).lower()
-        # The value could be in group 2 (single quotes), group 3 (double quotes), or group 4 (unquoted)
-        val = next(g for g in m.groups()[1:] if g is not None)
-        val = _escape_gmail_value(val)
-        # If the value contains spaces, we need to quote it, else it is treated as a separate bare term
-        if " " in val:
-            return f'{op}:"{val}"'
+        val = _escape_gmail_value(m.group(2))
         return f"{op}:{val}"
 
     q = _EQ_OP_RE.sub(_fix_eq, q)
