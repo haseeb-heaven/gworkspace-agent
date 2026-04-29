@@ -25,7 +25,6 @@ def config():
         gws_binary_path=Path("gws"),
         log_file_path=Path("logs/test.log"),
         log_level="INFO",
-        file_log_level="DEBUG",
         verbose=True,
         env_file_path=Path(".env"),
         setup_complete=True,

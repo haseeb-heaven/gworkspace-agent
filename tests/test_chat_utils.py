@@ -19,7 +19,6 @@ def mock_config():
         gws_binary_path=None,
         log_file_path=None,
         log_level="INFO",
-        file_log_level="DEBUG",
         verbose=False,
         env_file_path=None,
         setup_complete=True,
@@ -61,3 +60,18 @@ async def test_get_chat_response_empty(mock_config):
         response = await get_chat_response("hi", mock_config)
 
         assert response == "I couldn't generate a response."
+
+@pytest.mark.asyncio
+async def test_get_chat_response_error_underlying_client(mock_config):
+    from litellm.exceptions import APIConnectionError
+
+    with patch("gws_assistant.llm_client.completion") as mock_completion:
+        # Mock completion to raise APIConnectionError, simulating a network failure.
+        # This tests that call_llm handles it, exhausts retries, raises RuntimeError,
+        # and get_chat_response catches the RuntimeError gracefully.
+        mock_completion.side_effect = APIConnectionError(message="Connection timeout", llm_provider="openrouter", model="openrouter/free")
+
+        response = await get_chat_response("hi", mock_config)
+
+        assert "I encountered an error" in response
+        assert mock_completion.call_count >= 1

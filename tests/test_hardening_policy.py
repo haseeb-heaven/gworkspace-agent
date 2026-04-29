@@ -94,7 +94,6 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
         gws_binary_path=tmp_path / "gws",
         log_file_path=tmp_path / "log.txt",
         log_level="INFO",
-        file_log_level="DEBUG",
         verbose=True,
         env_file_path=tmp_path / ".env",
         setup_complete=True,

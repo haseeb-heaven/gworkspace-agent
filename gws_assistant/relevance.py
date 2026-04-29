@@ -10,10 +10,6 @@ import re
 from typing import Any
 
 
-_QUOTED_PHRASE_RE = re.compile(r"""['"]([^'"]{2,80})['"]""")
-_WORD_RE = re.compile(r"[a-zA-Z]{3,}")
-
-
 def extract_keywords(text: str) -> list[str]:
     """Extract meaningful search keywords from user text.
 
@@ -23,7 +19,7 @@ def extract_keywords(text: str) -> list[str]:
     keywords: list[str] = []
 
     # Extract quoted phrases (highest priority)
-    for match in _QUOTED_PHRASE_RE.findall(text):
+    for match in re.findall(r"""['"]([^'"]{2,80})['"]""", text):
         keywords.append(match.strip().lower())
 
     # Extract significant words (skip stop words)
@@ -151,7 +147,7 @@ def extract_keywords(text: str) -> list[str]:
         "enforce",
     }
 
-    words = _WORD_RE.findall(text.lower())
+    words = re.findall(r"[a-zA-Z]{3,}", text.lower())
     seen_keywords = {k.lower() for k in keywords}
     for word in words:
         if word not in stop_words and word not in seen_keywords:

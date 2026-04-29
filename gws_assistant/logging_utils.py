@@ -21,19 +21,10 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
     else:
         console_level = getattr(logging, requested_level, logging.INFO)
 
-    requested_file_level = config.file_log_level.upper()
-    if requested_file_level in ("NONE", "OFF"):
-        file_level = 100
-    else:
-        file_level = getattr(logging, requested_file_level, logging.DEBUG)
-
     # The logger itself must be at least as verbose as the most verbose handler
-    logger.setLevel(min(console_level, file_level))
-
-    for h in logger.handlers[:]:
-        if isinstance(h, (RichHandler, RotatingFileHandler)):
-            logger.removeHandler(h)
-
+    # We'll keep the logger at INFO (or lower) so the file handler gets data
+    logger.setLevel(logging.DEBUG)
+    logger.handlers.clear()
     logger.propagate = False
 
     formatter = logging.Formatter(
@@ -58,8 +49,9 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
         encoding="utf-8",
     )
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(file_level)
+    # File handler stays at INFO (or requested level if more verbose)
+    file_handler.setLevel(min(console_level, logging.INFO))
     logger.addHandler(file_handler)
 
-    logger.debug(f"Logging configured: console={requested_level}, file={requested_file_level}")
+    logger.debug(f"Logging configured: console={requested_level}, file=INFO")
     return logger

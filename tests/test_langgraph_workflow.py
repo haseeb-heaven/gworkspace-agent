@@ -20,7 +20,6 @@ def config(tmp_path):
         gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
         log_file_path=tmp_path / "l.log",
         log_level="INFO",
-        file_log_level="DEBUG",
         verbose=True,
         env_file_path=tmp_path / ".env",
         setup_complete=True,
