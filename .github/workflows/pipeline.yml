@@ -270,6 +270,7 @@ jobs:
         run: |
           PR_NUM=${{ github.event.pull_request.number }}
           REPO="${{ github.repository }}"
+          HEAD_REF="${{ github.head_ref }}"
 
           RESPONSE=$(gh api graphql -f query='
             query($owner: String!, $repo: String!, $pr: Int!) {
@@ -307,28 +308,21 @@ jobs:
           python3 .github/scripts/write_review_body.py \
             --pr-num "$PR_NUM" \
             --pr-url "${{ github.event.pull_request.html_url }}" \
-            --head-ref "${{ github.head_ref }}" \
+            --head-ref "$HEAD_REF" \
             --base-ref "${{ github.event.pull_request.base.ref }}" \
             --comments "$COMMENT_DETAILS" \
             --issue-num "$ISSUE_NUM" \
             --out /tmp/review_block_body.md
 
-          # Post notification using GITHUB_TOKEN (bot comment for logs)
           if [ -n "$ISSUE_NUM" ]; then
             gh issue comment "$ISSUE_NUM" --body-file /tmp/review_block_body.md
           else
             gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
           fi
 
-          # Trigger Jules via PAT (human-identity comment — bypasses bot-to-bot restriction)
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            HEAD_REF="${{ github.head_ref }}"
-            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM \
-              --body "@google-labs-jules There are unresolved review comments on this PR that must be fixed before merging.
-
-Please read ALL the unresolved comments listed above, fix the code exactly as suggested, and push to branch: \`${HEAD_REF}\`
-
-Do NOT resolve threads manually — just push the fix and CI will verify."
+            printf '@google-labs-jules There are unresolved review comments on this PR that must be fixed before merging.\n\nPlease read ALL the unresolved comments listed above, fix the code exactly as suggested, and push to branch: %s\n\nDo NOT resolve threads manually -- just push the fix and CI will verify.' "$HEAD_REF" > /tmp/jules_trigger.md
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_trigger.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -443,10 +437,9 @@ Do NOT resolve threads manually — just push the fix and CI will verify."
 
           gh issue comment $ISSUE_NUM --body-file /tmp/jules_fix_body.md
 
-          # Jules PAT trigger on issue
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh issue comment $ISSUE_NUM \
-              --body "@google-labs-jules CI failed on PR #${PR_NUM}. Please read the error details in the comment above, fix the code, and push to branch: \`${HEAD_BRANCH}\`. Do NOT merge — CI will auto-merge once all checks pass."
+            printf '@google-labs-jules CI failed on PR #%s. Please read the error details in the comment above, fix the code, and push to branch: %s\n\nDo NOT merge -- CI will auto-merge once all checks pass.' "$PR_NUM" "$HEAD_BRANCH" > /tmp/jules_issue_trigger.md
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh issue comment $ISSUE_NUM --body-file /tmp/jules_issue_trigger.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -470,10 +463,9 @@ Do NOT resolve threads manually — just push the fix and CI will verify."
 
           gh pr comment $PR_NUM --body-file /tmp/jules_pr_body.md
 
-          # Jules PAT trigger on PR
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM \
-              --body "@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: \`${HEAD_BRANCH}\`. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass."
+            printf '@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: %s\n\nDo NOT merge -- CI will auto-merge into %s once all checks pass.' "$HEAD_BRANCH" "$BASE_BRANCH" > /tmp/jules_pr_trigger.md
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_pr_trigger.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
