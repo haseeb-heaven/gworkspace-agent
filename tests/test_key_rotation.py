@@ -31,7 +31,7 @@ def config():
         setup_complete=True,
         max_retries=3,
         langchain_enabled=True,
-        openrouter_api_keys=["key1", "key2", "key3"],
+        llm_api_keys=["key1", "key2", "key3"],
     )
 
 
