@@ -109,6 +109,7 @@ def test_resolve_placeholders_smart_pick(executor):
 
 
 def test_resolve_folder_then_file(executor):
+    """Bug 4: drive context should prefer a non-folder file for last_file_mime resolution."""
     exec_instance, runner = executor
 
     # Mock drive.list_files to return multiple folders then a file

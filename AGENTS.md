@@ -49,7 +49,7 @@ python -m gws_assistant --setup
 | `LLM_FALLBACK_MODEL2` | ❌ | Second fallback model |
 | `GWS_BINARY_PATH` | ✅* | Path to GWS CLI binary (*skipped in CI) |
 | `DEFAULT_RECIPIENT_EMAIL` | ❌ | Default email for send operations |
-| `LOG_LEVEL` | ❌ | Logging verbosity (default: `INFO`) |
+| `APP_LOG_LEVEL` | ❌ | Logging verbosity (default: `INFO`) |
 | `CI` | auto | Set by pipeline — disables binary path validation |
 
 ---
