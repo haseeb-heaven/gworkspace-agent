@@ -265,7 +265,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify about unresolved comments
+      - name: Notify and trigger Jules via PAT
         if: failure()
         run: |
           PR_NUM=${{ github.event.pull_request.number }}
@@ -313,10 +313,22 @@ jobs:
             --issue-num "$ISSUE_NUM" \
             --out /tmp/review_block_body.md
 
+          # Post notification using GITHUB_TOKEN (bot comment for logs)
           if [ -n "$ISSUE_NUM" ]; then
             gh issue comment "$ISSUE_NUM" --body-file /tmp/review_block_body.md
           else
             gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
+          fi
+
+          # Trigger Jules via PAT (human-identity comment — bypasses bot-to-bot restriction)
+          if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
+            HEAD_REF="${{ github.head_ref }}"
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM \
+              --body "@google-labs-jules There are unresolved review comments on this PR that must be fixed before merging.
+
+Please read ALL the unresolved comments listed above, fix the code exactly as suggested, and push to branch: \`${HEAD_REF}\`
+
+Do NOT resolve threads manually — just push the fix and CI will verify."
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -358,7 +370,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 7: CI Failure — Tag @google-labs-jules to fix
+  # JOB 7: CI Failure — Tag @google-labs-jules to fix via PAT
   # ──────────────────────────────────────────
   jules-auto-fix:
     name: Jules Auto-Fix Loop
@@ -412,7 +424,6 @@ jobs:
       - name: Post fix request on linked Issue
         if: steps.find_issue.outputs.issue_number != ''
         run: |
-          ERRORS=$(cat /tmp/all_errors.txt)
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
           PR_NUM="${{ github.event.pull_request.number }}"
@@ -431,6 +442,12 @@ jobs:
             --out /tmp/jules_fix_body.md
 
           gh issue comment $ISSUE_NUM --body-file /tmp/jules_fix_body.md
+
+          # Jules PAT trigger on issue
+          if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh issue comment $ISSUE_NUM \
+              --body "@google-labs-jules CI failed on PR #${PR_NUM}. Please read the error details in the comment above, fix the code, and push to branch: \`${HEAD_BRANCH}\`. Do NOT merge — CI will auto-merge once all checks pass."
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -452,6 +469,12 @@ jobs:
             --out /tmp/jules_pr_body.md
 
           gh pr comment $PR_NUM --body-file /tmp/jules_pr_body.md
+
+          # Jules PAT trigger on PR
+          if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM \
+              --body "@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: \`${HEAD_BRANCH}\`. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass."
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
