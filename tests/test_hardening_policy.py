@@ -38,6 +38,7 @@ def test_config_defaults_to_openrouter_free_model(monkeypatch, tmp_path):
 def test_config_rejects_non_tool_capable_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-3.5-turbo")
+    monkeypatch.delenv("CI", raising=False)
 
     with patch("gws_assistant.config.load_dotenv"):
         with patch("pathlib.Path.exists", return_value=False):
@@ -87,6 +88,7 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
         provider="openrouter",
         model="openrouter/nvidia/nemotron-super-49b-v1:free",
         api_key="or-test",
+        llm_fallback_models=[],
         base_url="https://openrouter.ai/api/v1",
         timeout_seconds=30,
         gws_binary_path=tmp_path / "gws",

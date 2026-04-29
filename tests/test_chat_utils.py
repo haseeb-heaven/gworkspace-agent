@@ -13,6 +13,7 @@ def mock_config():
         provider="openrouter",
         model="openrouter/free",
         api_key="test-key",
+        llm_fallback_models=[],
         base_url=None,
         timeout_seconds=30,
         gws_binary_path=None,

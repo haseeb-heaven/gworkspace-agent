@@ -15,6 +15,7 @@ def mock_config():
         provider="openrouter",
         model="meta-llama/llama-3.3-70b-instruct:free",
         api_key="fake-key",
+        llm_fallback_models=[],
         base_url="https://openrouter.ai/api/v1",
         timeout_seconds=30,
         gws_binary_path=Path("gws"),

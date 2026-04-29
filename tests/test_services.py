@@ -41,6 +41,7 @@ def _config(tmp_path: Path) -> AppConfigModel:
         provider="openai",
         model="gpt-4.1-mini",
         api_key=None,
+        llm_fallback_models=[],
         base_url=None,
         timeout_seconds=30,
         gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),

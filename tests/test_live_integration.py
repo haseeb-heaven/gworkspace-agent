@@ -31,6 +31,7 @@ def test_live_workspace_sheet_and_email_flow():
         provider=(os.getenv("LLM_PROVIDER") or "openai"),
         model=(os.getenv("LLM_MODEL") or "gpt-4.1-mini"),
         api_key=(os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip() or None,
+        llm_fallback_models=[],
         base_url=None,
         timeout_seconds=60,
         gws_binary_path=gws_binary,

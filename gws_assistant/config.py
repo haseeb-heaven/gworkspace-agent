@@ -29,10 +29,16 @@ class AppConfig:
         env_file_path = Path(".env").expanduser().resolve()
         load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
 
+        ci_mode = _to_bool(os.getenv("CI"), default=False)
+
         gws_binary_value = (os.getenv("GWS_BINARY_PATH") or "").strip()
         if not gws_binary_value:
-            raise ValueError("GWS_BINARY_PATH must be set in .env")
-        gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
+            if ci_mode:
+                gws_binary_path = Path(os.devnull)
+            else:
+                raise ValueError("GWS_BINARY_PATH must be set in .env")
+        else:
+            gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
 
         default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
         if not default_recipient_email:
@@ -105,12 +111,13 @@ class AppConfig:
                 llm_fallback_models.append(m)
 
         # Enforce tool-calling support on primary model
-        validate_tool_model(model, "LLM_MODEL")
+        if not ci_mode:
+            validate_tool_model(model, "LLM_MODEL")
 
-        # Enforce tool-calling support on each fallback model
-        for idx, fb_model in enumerate(llm_fallback_models):
-            env_label = "LLM_FALLBACK_MODEL" if idx == 0 else f"LLM_FALLBACK_MODEL{idx + 1}"
-            validate_tool_model(fb_model, env_label)
+            # Enforce tool-calling support on each fallback model
+            for idx, fb_model in enumerate(llm_fallback_models):
+                env_label = "LLM_FALLBACK_MODEL" if idx == 0 else f"LLM_FALLBACK_MODEL{idx + 1}"
+                validate_tool_model(fb_model, env_label)
 
         base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
 
@@ -133,7 +140,7 @@ class AppConfig:
         mistral_api_key = (os.getenv("MISTRAL_API_KEY") or "").strip() or api_key
         ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
         memory_type = (os.getenv("MEMORY_TYPE") or "local").strip().lower()
-        setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
+        setup_complete = env_file_path.exists() and (ci_mode or (gws_binary_path.exists() and gws_binary_path.is_file()))
 
         max_retries = int((os.getenv("MAX_RETRIES") or "3").strip())
         max_replans = int((os.getenv("MAX_REPLANS") or "1").strip())

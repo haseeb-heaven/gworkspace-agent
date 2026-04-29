@@ -19,6 +19,7 @@ def config():
         provider="openrouter",
         model="google/gemini-2.0-flash-exp:free",
         api_key="key1",
+        llm_fallback_models=[],
         base_url="https://openrouter.ai/api/v1",
         timeout_seconds=30,
         gws_binary_path=Path("gws"),

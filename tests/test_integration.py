@@ -17,6 +17,7 @@ def config():
         provider="openai",
         model="gpt-4o",
         api_key="test_key",
+        llm_fallback_models=[],
         base_url=None,
         timeout_seconds=30,
         gws_binary_path=Path("/fake/gws"),
