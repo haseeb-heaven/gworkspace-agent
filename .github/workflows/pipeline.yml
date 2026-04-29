@@ -211,7 +211,6 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 5: Review Guard
   # Blocks merge if ANY unresolved review comment exists
-  # Tags @google-labs-jules on linked Issue to fix
   # ──────────────────────────────────────────
   review-guard:
     name: Review Guard (Block if Unresolved Comments)
@@ -256,8 +255,7 @@ jobs:
             -f repo="$(echo $REPO | cut -d/ -f2)" \
             -F pr=$PR_NUM)
 
-          UNRESOLVED=$(echo "$RESPONSE" | \
-            python3 -c "
+          UNRESOLVED=$(echo "$RESPONSE" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
@@ -278,7 +276,7 @@ print(count)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify @google-labs-jules about unresolved comments
+      - name: Notify about unresolved comments
         if: failure()
         run: |
           PR_NUM=${{ github.event.pull_request.number }}
@@ -310,8 +308,7 @@ print(count)
             -f repo="$(echo $REPO | cut -d/ -f2)" \
             -F pr=$PR_NUM)
 
-          COMMENT_DETAILS=$(echo "$RESPONSE" | \
-            python3 -c "
+          COMMENT_DETAILS=$(echo "$RESPONSE" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
@@ -324,10 +321,8 @@ for t in threads:
         path = t.get('path', 'unknown file')
         line = t.get('line', '?')
         url = c.get('url', '')
-        lines.append(f'- **{path}:{line}** by @{author}: {body}
-  {url}')
-print('
-'.join(lines))
+        lines.append('- **' + str(path) + ':' + str(line) + '** by @' + author + ': ' + body + '\n  ' + url)
+print('\n'.join(lines))
 ")
 
           ISSUE_NUM=$(gh pr view $PR_NUM \
@@ -338,34 +333,34 @@ print('
             gh issue comment "$ISSUE_NUM" \
               --body "## ⚠️ Merge Blocked on PR #${PR_NUM} — @google-labs-jules please address review comments
 
-          There are **unresolved review comments** on this PR that must be addressed before it can be merged.
+There are **unresolved review comments** on this PR that must be addressed before it can be merged.
 
-          **PR:** ${{ github.event.pull_request.html_url }}
-          **Head Branch:** \`${{ github.head_ref }}\`
-          **Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
+**PR:** ${{ github.event.pull_request.html_url }}
+**Head Branch:** \`${{ github.head_ref }}\`
+**Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
 
-          ---
-          ## Unresolved Comments
+---
+## Unresolved Comments
 
-          ${COMMENT_DETAILS}
+${COMMENT_DETAILS}
 
-          ---
-          **@google-labs-jules instructions:**
-          1. Read each unresolved comment carefully
-          2. Fix the code exactly as suggested by the reviewer
-          3. Push fix to branch: \`${{ github.head_ref }}\`
-          4. Do NOT resolve threads manually — CI will re-check after your push"
+---
+**@google-labs-jules instructions:**
+1. Read each unresolved comment carefully
+2. Fix the code exactly as suggested by the reviewer
+3. Push fix to branch: \`${{ github.head_ref }}\`
+4. Do NOT resolve threads manually — CI will re-check after your push"
           else
             gh pr comment $PR_NUM \
               --body "## ⚠️ Merge Blocked — Unresolved Review Comments
 
-          @google-labs-jules — please address all unresolved review comments before this PR can be merged.
+@google-labs-jules — please address all unresolved review comments before this PR can be merged.
 
-          **Head Branch:** \`${{ github.head_ref }}\`
-          **Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
+**Head Branch:** \`${{ github.head_ref }}\`
+**Target Branch:** \`${{ github.event.pull_request.base.ref }}\`
 
-          ## Unresolved Comments
-          ${COMMENT_DETAILS}"
+## Unresolved Comments
+${COMMENT_DETAILS}"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -459,7 +454,7 @@ print('
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Post @google-labs-jules fix request on linked Issue
+      - name: Post fix request on linked Issue
         if: steps.find_issue.outputs.issue_number != ''
         run: |
           ERRORS=$(cat /tmp/all_errors.txt)
@@ -472,23 +467,23 @@ print('
           gh issue comment ${{ steps.find_issue.outputs.issue_number }} \
             --body "## ❌ CI Failed on PR #${PR_NUM} — @google-labs-jules please fix
 
-          CI pipeline failed. Fix the errors below and push to the same branch.
+CI pipeline failed. Fix the errors below and push to the same branch.
 
-          **PR:** ${PR_URL}
-          **Head Branch:** \`${HEAD_BRANCH}\`
-          **Target Branch:** \`${BASE_BRANCH}\`
-          **Failed Run:** ${RUN_URL}
+**PR:** ${PR_URL}
+**Head Branch:** \`${HEAD_BRANCH}\`
+**Target Branch:** \`${BASE_BRANCH}\`
+**Failed Run:** ${RUN_URL}
 
-          ---
-          ## Errors
-          ${ERRORS}
-          ---
+---
+## Errors
+${ERRORS}
+---
 
-          **@google-labs-jules instructions:**
-          1. Fix all failing tests and lint errors listed above
-          2. Fix source code only — do NOT modify test logic
-          3. Push fix to branch: \`${HEAD_BRANCH}\`
-          4. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
+**@google-labs-jules instructions:**
+1. Fix all failing tests and lint errors listed above
+2. Fix source code only — do NOT modify test logic
+3. Push fix to branch: \`${HEAD_BRANCH}\`
+4. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -503,19 +498,19 @@ print('
           gh pr comment ${{ github.event.pull_request.number }} \
             --body "## ❌ CI Failed — @google-labs-jules please fix
 
-          @google-labs-jules — CI pipeline failed. No linked Issue was found so tagging here directly.
+@google-labs-jules — CI pipeline failed. No linked Issue was found so tagging here directly.
 
-          **Head Branch:** \`${HEAD_BRANCH}\`
-          **Target Branch:** \`${BASE_BRANCH}\`
-          **Failed Run:** ${RUN_URL}
+**Head Branch:** \`${HEAD_BRANCH}\`
+**Target Branch:** \`${BASE_BRANCH}\`
+**Failed Run:** ${RUN_URL}
 
-          ## Errors
-          ${ERRORS}
+## Errors
+${ERRORS}
 
-          **Instructions:**
-          1. Fix all errors above
-          2. Push fix to branch: \`${HEAD_BRANCH}\`
-          3. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
+**Instructions:**
+1. Fix all errors above
+2. Push fix to branch: \`${HEAD_BRANCH}\`
+3. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
