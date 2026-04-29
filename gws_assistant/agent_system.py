@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date
 from typing import Any
 
 from .langchain_agent import plan_with_langchain
@@ -21,7 +22,7 @@ RE_DRIVE_QUERY_MATCH = re.compile(
     r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE
 )
 RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
-RE_EXTRACT_ID = re.compile(r"\b([a-zA-Z0-9_-]{25,})\b")
+RE_EXTRACT_ID = re.compile(r"(?<![a-zA-Z0-9_-])([a-zA-Z0-9_-]{33,44})(?![a-zA-Z0-9_-])")
 RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,})\b")
 RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
@@ -739,7 +740,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service == "calendar" and action == "create_event":
             parameters["summary"] = _extract_quoted(lowered) or "New Event"
-            parameters["start_date"] = "2026-04-20"  # Default to today for heuristic
+            parameters["start_date"] = date.today().isoformat()  # Default to today for heuristic
         elif service == "tasks" and action == "create_task":
             parameters["title"] = _extract_quoted(lowered) or "New Task"
         elif service in ("code", "computation"):
@@ -1002,4 +1003,4 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
         for m in RE_EXTRACT_DATA_PATTERN.finditer(text):
             rows.append([m.group(1).strip(), m.group(2).strip()])
 
-    return rows if rows else [["Data", "Value"], ["Item1", "10"]]
+    return rows
