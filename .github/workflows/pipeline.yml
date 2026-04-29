@@ -13,10 +13,18 @@ on:
         default: false
         type: boolean
 
+# Fix: Grant GITHUB_TOKEN proper permissions for auto-merge
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 env:
-  PROJECT_ID: gen-lang-client-0632693223
-  SERVICE: gworkspace-agent
-  REGION: us-central1
+  # GCP config — only used for deploy job
+  GCP_PROJECT_ID: gen-lang-client-0632693223
+  GCP_REGION: us-central1
+  # GitHub repo name used as Cloud Run service name (owner/repo → repo only)
+  GCP_SERVICE: gworkspace-agent
   PYTHON_VERSION: "3.11"
 
 jobs:
@@ -205,10 +213,13 @@ jobs:
     if: |
       github.event_name == 'pull_request' &&
       github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Auto merge if all checks pass
+      - name: Enable auto-merge
         run: |
           gh pr merge ${{ github.event.pull_request.number }} \
             --squash \
@@ -218,9 +229,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 6: FULLY AUTONOMOUS — Jules feedback loop
-  # On CI failure: collect errors, find linked issue,
-  # post @jules comment so Jules auto-fixes and re-pushes
+  # JOB 6: Jules feedback loop on CI failure
   # ──────────────────────────────────────────
   jules-auto-fix:
     name: Jules Auto-Fix Loop
@@ -230,6 +239,10 @@ jobs:
       failure() &&
       github.event_name == 'pull_request' &&
       github.actor != 'dependabot[bot]'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -240,38 +253,30 @@ jobs:
         continue-on-error: true
 
       - name: Collect all CI errors
-        id: collect_errors
         run: |
           ERROR_BODY=""
-
           for f in /tmp/artifacts/**/*.txt; do
             if [ -f "$f" ]; then
-              CONTENT=$(cat "$f" | head -80)
-              ARTIFACT_NAME=$(basename $(dirname $f))
-              ERROR_BODY="$ERROR_BODY\n### $ARTIFACT_NAME\n\`\`\`\n$CONTENT\n\`\`\`\n"
+              CONTENT=$(head -80 "$f")
+              ARTIFACT_NAME=$(basename "$(dirname "$f")")
+              ERROR_BODY="${ERROR_BODY}\n### ${ARTIFACT_NAME}\n\`\`\`\n${CONTENT}\n\`\`\`\n"
             fi
           done
-
-          # Write to file to avoid shell escaping issues
           printf "%b" "$ERROR_BODY" > /tmp/all_errors.txt
-          echo "errors_collected=true" >> $GITHUB_OUTPUT
 
       - name: Find linked Issue number from PR
         id: find_issue
         run: |
-          # Try to get closing issue references via gh
           ISSUE_NUM=$(gh pr view ${{ github.event.pull_request.number }} \
             --json closingIssuesReferences \
             -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
 
-          # Fallback: parse PR body for "Fixes #N" or "Closes #N"
           if [ -z "$ISSUE_NUM" ]; then
             PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body')
             ISSUE_NUM=$(echo "$PR_BODY" | grep -oiP '(?:fixes|closes|resolves)\s+#\K[0-9]+' | head -1)
           fi
 
           echo "issue_number=$ISSUE_NUM" >> $GITHUB_OUTPUT
-          echo "Found linked issue: $ISSUE_NUM"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -282,41 +287,41 @@ jobs:
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
           PR_NUM="${{ github.event.pull_request.number }}"
+          BRANCH="${{ github.head_ref }}"
 
           gh issue comment ${{ steps.find_issue.outputs.issue_number }} \
             --body "## ❌ CI Failed on PR #${PR_NUM} — @jules please fix
 
-          The CI pipeline failed. Please review the errors below, fix the code, and push an updated commit to the PR branch.
+          CI pipeline failed. Fix the errors below and push to the same branch.
 
           **PR:** ${PR_URL}
+          **Branch:** \`${BRANCH}\`
           **Failed Run:** ${RUN_URL}
 
           ---
-
           ## Errors
-
           ${ERRORS}
-
           ---
 
-          **Instructions for @jules:**
-          1. Fix all failing tests and lint errors listed above
-          2. Do NOT change test logic — fix the source code
-          3. Push the fix to the same PR branch: \`${{ github.head_ref }}\`
-          4. Do not merge — CI will auto-merge once all checks pass"
+          **@jules instructions:**
+          1. Fix all failing tests and lint errors above
+          2. Fix source code only — do NOT modify test logic
+          3. Push fix to branch: \`${BRANCH}\`
+          4. Do NOT merge — CI will auto-merge once all checks pass"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fallback — Post on PR if no linked Issue found
+      - name: Fallback — post on PR if no linked Issue found
         if: steps.find_issue.outputs.issue_number == ''
         run: |
           ERRORS=$(cat /tmp/all_errors.txt)
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "## ❌ CI Failed — Manual fix required
+            --body "## ❌ CI Failed — No linked issue found
 
-          Could not find a linked GitHub Issue to notify @jules automatically.
+          Could not find a linked GitHub Issue to auto-notify @jules.
+          Please manually assign this PR to Jules for fixing.
 
           **Failed Run:** ${RUN_URL}
 
@@ -383,13 +388,13 @@ jobs:
 
       - name: Build and Push Container
         run: |
-          docker build -t "gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
-          docker push "gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
+          docker build -t "gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_SERVICE }}:${{ github.sha }}" .
+          docker push "gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_SERVICE }}:${{ github.sha }}"
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.SERVICE }}
-          region: ${{ env.REGION }}
-          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+          service: ${{ env.GCP_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          image: gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_SERVICE }}:${{ github.sha }}
           flags: --allow-unauthenticated --port=8080
