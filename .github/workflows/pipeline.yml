@@ -43,10 +43,19 @@ jobs:
           pip install -e .
 
       - name: Ruff lint
-        run: ruff check .
+        id: ruff
+        run: ruff check . 2>&1 | tee /tmp/lint_errors.txt
 
       - name: Type check
-        run: mypy src --ignore-missing-imports
+        id: mypy
+        run: mypy src --ignore-missing-imports 2>&1 | tee -a /tmp/lint_errors.txt
+
+      - name: Save lint errors
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-errors
+          path: /tmp/lint_errors.txt
 
   # ──────────────────────────────────────────
   # JOB 2: Unit Tests (all mocked — no GWS)
@@ -71,6 +80,7 @@ jobs:
           pip install -e .
 
       - name: Run unit tests
+        id: unit_tests
         env:
           PYTHONPATH: src
           CI: "true"
@@ -89,7 +99,7 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-fail-under=70 \
             --tb=short \
-            -q
+            -q 2>&1 | tee /tmp/unit_test_errors.txt
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -97,6 +107,13 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
+
+      - name: Save unit test errors
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-errors
+          path: /tmp/unit_test_errors.txt
 
   # ──────────────────────────────────────────
   # JOB 3: Integration Tests (mocked GWS)
@@ -121,6 +138,7 @@ jobs:
           pip install -e .
 
       - name: Run integration tests (mocked only)
+        id: integration_tests
         env:
           PYTHONPATH: src:tests
           CI: "true"
@@ -134,7 +152,14 @@ jobs:
             --cov=gws_assistant.execution \
             --cov-report=term-missing \
             --cov-fail-under=65 \
-            --tb=short
+            --tb=short 2>&1 | tee /tmp/integration_errors.txt
+
+      - name: Save integration errors
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-errors
+          path: /tmp/integration_errors.txt
 
   # ──────────────────────────────────────────
   # JOB 4: Security Scan
@@ -152,17 +177,23 @@ jobs:
           cache: pip
 
       - name: Install security tools
-        run: |
-          pip install bandit safety pip-audit
+        run: pip install bandit safety pip-audit
 
       - name: Bandit — code security
-        run: bandit -r gws_assistant/ -ll --skip B101 -q
+        run: bandit -r gws_assistant/ -ll --skip B101 -q 2>&1 | tee /tmp/security_errors.txt || true
 
       - name: Safety — dependency vulnerabilities
-        run: safety check --full-report || true
+        run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt || true
 
       - name: pip-audit — CVE scan
-        run: pip-audit --skip-editable || true
+        run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt || true
+
+      - name: Save security errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-errors
+          path: /tmp/security_errors.txt
 
   # ──────────────────────────────────────────
   # JOB 5: Auto-merge on PR (if all pass)
@@ -187,30 +218,110 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 6: Notify Jules on failure (feedback loop)
+  # JOB 6: FULLY AUTONOMOUS — Jules feedback loop
+  # On CI failure: collect errors, find linked issue,
+  # post @jules comment so Jules auto-fixes and re-pushes
   # ──────────────────────────────────────────
-  notify-jules-on-failure:
-    name: Notify Jules on CI Failure
+  jules-auto-fix:
+    name: Jules Auto-Fix Loop
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, security]
+    needs: [lint, unit-tests, integration-tests, security]
     if: |
       failure() &&
-      github.event_name == 'pull_request'
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Post CI failure comment on PR
+      - name: Download all error artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+        continue-on-error: true
+
+      - name: Collect all CI errors
+        id: collect_errors
         run: |
+          ERROR_BODY=""
+
+          for f in /tmp/artifacts/**/*.txt; do
+            if [ -f "$f" ]; then
+              CONTENT=$(cat "$f" | head -80)
+              ARTIFACT_NAME=$(basename $(dirname $f))
+              ERROR_BODY="$ERROR_BODY\n### $ARTIFACT_NAME\n\`\`\`\n$CONTENT\n\`\`\`\n"
+            fi
+          done
+
+          # Write to file to avoid shell escaping issues
+          printf "%b" "$ERROR_BODY" > /tmp/all_errors.txt
+          echo "errors_collected=true" >> $GITHUB_OUTPUT
+
+      - name: Find linked Issue number from PR
+        id: find_issue
+        run: |
+          # Try to get closing issue references via gh
+          ISSUE_NUM=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json closingIssuesReferences \
+            -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
+
+          # Fallback: parse PR body for "Fixes #N" or "Closes #N"
+          if [ -z "$ISSUE_NUM" ]; then
+            PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body')
+            ISSUE_NUM=$(echo "$PR_BODY" | grep -oiP '(?:fixes|closes|resolves)\s+#\K[0-9]+' | head -1)
+          fi
+
+          echo "issue_number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+          echo "Found linked issue: $ISSUE_NUM"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post @jules fix request on linked Issue
+        if: steps.find_issue.outputs.issue_number != ''
+        run: |
+          ERRORS=$(cat /tmp/all_errors.txt)
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_NUM="${{ github.event.pull_request.number }}"
+
+          gh issue comment ${{ steps.find_issue.outputs.issue_number }} \
+            --body "## ❌ CI Failed on PR #${PR_NUM} — @jules please fix
+
+          The CI pipeline failed. Please review the errors below, fix the code, and push an updated commit to the PR branch.
+
+          **PR:** ${PR_URL}
+          **Failed Run:** ${RUN_URL}
+
+          ---
+
+          ## Errors
+
+          ${ERRORS}
+
+          ---
+
+          **Instructions for @jules:**
+          1. Fix all failing tests and lint errors listed above
+          2. Do NOT change test logic — fix the source code
+          3. Push the fix to the same PR branch: \`${{ github.head_ref }}\`
+          4. Do not merge — CI will auto-merge once all checks pass"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fallback — Post on PR if no linked Issue found
+        if: steps.find_issue.outputs.issue_number == ''
+        run: |
+          ERRORS=$(cat /tmp/all_errors.txt)
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "## ❌ CI Pipeline Failed
+            --body "## ❌ CI Failed — Manual fix required
 
-          One or more checks failed. Please fix the following and push an update:
+          Could not find a linked GitHub Issue to notify @jules automatically.
 
-          - **Unit Tests**: Check test failures in the Actions log
-          - **Integration Tests**: Verify mocked GWS logic is correct
-          - **Security Scan**: Fix any HIGH/CRITICAL issues found by bandit or pip-audit
+          **Failed Run:** ${RUN_URL}
 
-          **Action required**: Review the [failed workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and fix the issues."
+          ## Errors
+          ${ERRORS}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
