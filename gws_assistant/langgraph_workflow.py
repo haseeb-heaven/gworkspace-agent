@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -22,6 +23,11 @@ from gws_assistant.models import (
 from gws_assistant.output_formatter import HumanReadableFormatter
 from gws_assistant.tools.code_execution import execute_generated_code
 from gws_assistant.tools.web_search import summarize_results, web_search_tool
+
+try:
+    from .memory import save_episode
+except ImportError:
+    save_episode = None
 
 _MAX_HISTORY = 10
 
@@ -91,6 +97,17 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         history = list(state.get("conversation_history", []))
         history.append(msg)
         return _trim_history(history)
+
+    def write_task_result(results_map: dict[str, Any], idx: int, t_id: str, payload: Any) -> None:
+        """Helper to deduplicate writing task results to context."""
+        keys_to_set = {f"task-{idx + 1}", str(idx + 1), f"t{idx + 1}", t_id}
+        if t_id.startswith("task-"):
+            num = t_id.removeprefix("task-")
+            keys_to_set.update({num, f"t{num}"})
+        elif t_id.isdigit():
+            keys_to_set.update({f"task-{t_id}", f"t{t_id}"})
+        for k in keys_to_set:
+            results_map[k] = payload
 
     def _normalize_workspace_result(result: Any) -> StructuredToolResult:
         if hasattr(result, "to_structured_result"):
@@ -181,7 +198,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                         for item in payload["messages"]
                     ]
                 else:
-                    storage_payload = payload
+                    storage_payload = []
             elif isinstance(payload, list):
                 storage_payload = [
                     item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload
@@ -192,26 +209,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
             executor._update_context_from_result(payload, context, resolved)
 
-            # Always also store by sequential index (task-1, task-2, etc.) to
-            # support LLMs that refer to tasks by their order regardless of name.
-            seq_id = f"task-{idx + 1}"
-            results_map[seq_id] = storage_payload
-            results_map[str(idx + 1)] = storage_payload
-            results_map[f"t{idx + 1}"] = storage_payload
-            logger.debug(f"DEBUG: Saved result to results_map keys: {seq_id}, {idx + 1}, t{idx + 1}")
-
             # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
             t_id = str(task.id)
-            if t_id != seq_id:
-                results_map[t_id] = storage_payload
-                # Also store with numeric ID for {task-1...} vs {1...}
-                if t_id.startswith("task-"):
-                    num = t_id.removeprefix("task-")
-                    results_map[num] = storage_payload
-                    results_map[f"t{num}"] = storage_payload
-                elif t_id.isdigit():
-                    results_map[f"task-{t_id}"] = storage_payload
-                    results_map[f"t{t_id}"] = storage_payload
+            write_task_result(results_map, idx, t_id, storage_payload)
+            logger.debug(f"DEBUG: Saved result to results_map for task id {t_id} (seq {idx + 1})")
 
             if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
                 # Special handling: if we exported a file, its content (if text) is stored directly.
@@ -324,19 +325,20 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             report = f"Execution finished with failures.\n\n{report}"
         # Save to episodic memory if successful
         if any(item.result.success for item in executions):
-            try:
-                from .memory import save_episode
-                save_episode(state["user_text"], [e.task.parameters for e in executions], report)
-            except Exception as e:
-                logger.warning(f"Failed to save episode to memory: {e}")
+            if save_episode is not None:
+                try:
+                    save_episode(state["user_text"], [e.task.parameters for e in executions], report)
+                except Exception as e:
+                    logger.warning(f"Failed to save episode to memory: {e}")
 
         # Also add a semantic memory fact if successful
         if all(item.result.success for item in executions):
-            try:
-                memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
-                system.memory.add(memory_text, metadata={"type": "task_completion"})
-            except Exception as e:
-                logger.warning(f"Failed to add semantic memory: {e}")
+            if getattr(system, 'memory', None) is not None:
+                try:
+                    memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
+                    system.memory.add(memory_text, metadata={"type": "task_completion"})
+                except Exception as e:
+                    logger.warning(f"Failed to add semantic memory: {e}")
 
         return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
 
@@ -358,11 +360,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         )
         context = dict(state.get("context", {}))
 
-        rows = [
-            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
-            for r in result.get("results", [])
-        ]
-
         markdown_lines = []
         for r in result.get("results", []):
             title   = r.get("title", "")
@@ -373,7 +370,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         # New canonical keys
         context["search_summary_table"] = markdown_table
-        context["search_summary_rows"] = rows
         context["search_summary_count"] = len(result.get("results", []))
 
         # We can still store the LLM summary for use if needed
@@ -473,8 +469,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
-            import re
-
             numbers = re.findall(r"\b\d+\b", state["user_text"])
             lowered = state["user_text"].lower()
             if len(numbers) >= 2 and ("from" in lowered or "between" in lowered):
