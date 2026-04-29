@@ -329,7 +329,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 logger.warning(f"Failed to save episode to memory: {e}")
 
         # Also add a semantic memory fact if successful
-        if all(item.result.success for item in executions):
+        if executions and all(item.result.success for item in executions):
             try:
                 if getattr(system, 'memory', None) is not None:
                     memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
