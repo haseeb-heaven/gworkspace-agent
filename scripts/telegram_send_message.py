@@ -72,9 +72,9 @@ if __name__ == "__main__":
         print("Validation error: Message must be a string.", file=sys.stderr)
         sys.exit(1)
 
-    if len(message) > 4096:
+    if len(message.strip()) > 4096:
         print(
-            f"Validation error: Message too long: {len(message)} characters. Max allowed is 4096.",
+            f"Validation error: Message too long: {len(message.strip())} characters. Max allowed is 4096.",
             file=sys.stderr
         )
         sys.exit(1)

@@ -229,11 +229,13 @@ class ContextUpdaterMixin:
                 context["drive_summary_count"] = len(files)
 
                 if len(files) > 0:
+                    # Bug 1 Fix: Pick first non-folder ID if possible
                     first_file = files[0]
                     for f in files:
                         if f.get("mimeType") != "application/vnd.google-apps.folder":
                             first_file = f
                             break
+
                     if "mimeType" in first_file:
                         context["last_file_mime"] = first_file["mimeType"]
                     if "webViewLink" in first_file:
