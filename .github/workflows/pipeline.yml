@@ -76,22 +76,17 @@ jobs:
         id: merge_base
         if: steps.check_dirty.outputs.already_clean == 'false'
         run: |
-          # Try non-interactive merge with theirs strategy for pipeline files only,
-          # and ours strategy ignored — let git auto-resolve what it can.
           if git merge origin/${{ github.base_ref }} --no-edit --strategy-option=patience; then
             echo "conflict_free=true" >> $GITHUB_OUTPUT
             echo "Merge succeeded cleanly."
           else
             echo "conflict_free=false" >> $GITHUB_OUTPUT
 
-            # Collect conflicting files
             CONFLICTING=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
             echo "Conflicting files: $CONFLICTING"
 
-            # Abort the merge to restore clean state
             git merge --abort
 
-            # Post a comment on the PR listing the conflicting files
             printf '\u26a0\ufe0f **Auto Conflict Resolution Failed**\n\nThe CI attempted to merge `%s` into `%s` automatically but found unresolvable conflicts in the following files:\n\n```\n%s\n```\n\nPlease resolve these conflicts manually:\n```bash\ngit fetch origin\ngit checkout %s\ngit merge origin/%s\n# fix conflicts in the files listed above\ngit add .\ngit commit -m "chore: resolve merge conflicts with %s"\ngit push\n```' \
               "${{ github.base_ref }}" \
               "${{ github.head_ref }}" \
@@ -157,7 +152,7 @@ jobs:
           path: /tmp/lint_errors.txt
 
   # ──────────────────────────────────────────
-  # JOB 2: Unit Tests (all mocked — no GWS)
+  # JOB 2: Unit Tests (all mocked -- no GWS)
   # ──────────────────────────────────────────
   unit-tests:
     name: Unit Tests
@@ -284,13 +279,13 @@ jobs:
       - name: Install security tools
         run: pip install bandit safety pip-audit
 
-      - name: Bandit — code security
+      - name: Bandit -- code security
         run: bandit -r gws_assistant/ -ll --skip B101 -q 2>&1 | tee /tmp/security_errors.txt || true
 
-      - name: Safety — dependency vulnerabilities
+      - name: Safety -- dependency vulnerabilities
         run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt || true
 
-      - name: pip-audit — CVE scan
+      - name: pip-audit -- CVE scan
         run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt || true
 
       - name: Save security errors
@@ -303,6 +298,8 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 5: Review Guard
   # Blocks merge if ANY unresolved review comment exists
+  # GraphQL fetches ALL comments per thread (first: 20)
+  # Jules trigger embeds FULL comment content -- no truncation
   # ──────────────────────────────────────────
   review-guard:
     name: Review Guard (Block if Unresolved Comments)
@@ -329,11 +326,11 @@ jobs:
             query($owner: String!, $repo: String!, $pr: Int!) {
               repository(owner: $owner, name: $repo) {
                 pullRequest(number: $pr) {
-                  reviewThreads(first: 50) {
+                  reviewThreads(first: 100) {
                     nodes {
                       isResolved
                       isOutdated
-                      comments(first: 1) {
+                      comments(first: 20) {
                         nodes {
                           author { login }
                           body
@@ -355,7 +352,7 @@ jobs:
 
           if [ "$UNRESOLVED" -gt 0 ]; then
             echo "safe_to_merge=false" >> $GITHUB_OUTPUT
-            echo "::error::Merge blocked — $UNRESOLVED unresolved review thread(s) found."
+            echo "::error::Merge blocked -- $UNRESOLVED unresolved review thread(s) found."
             exit 1
           else
             echo "safe_to_merge=true" >> $GITHUB_OUTPUT
@@ -371,17 +368,18 @@ jobs:
           REPO="${{ github.repository }}"
           HEAD_REF="${{ github.head_ref }}"
 
+          # Fetch ALL comments per thread (first: 20), full body, no truncation
           RESPONSE=$(gh api graphql -f query='
             query($owner: String!, $repo: String!, $pr: Int!) {
               repository(owner: $owner, name: $repo) {
                 pullRequest(number: $pr) {
-                  reviewThreads(first: 50) {
+                  reviewThreads(first: 100) {
                     nodes {
                       isResolved
                       isOutdated
                       path
                       line
-                      comments(first: 1) {
+                      comments(first: 20) {
                         nodes {
                           author { login }
                           body
@@ -398,12 +396,15 @@ jobs:
             -F pr=$PR_NUM)
 
           echo "$RESPONSE" > /tmp/notify_response.json
+
+          # format_comments.py: full body, all thread comments, includes outdated
           COMMENT_DETAILS=$(python3 .github/scripts/format_comments.py /tmp/notify_response.json)
 
           ISSUE_NUM=$(gh pr view $PR_NUM \
             --json closingIssuesReferences \
             -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
 
+          # Post human-readable summary on PR or linked issue
           python3 .github/scripts/write_review_body.py \
             --pr-num "$PR_NUM" \
             --pr-url "${{ github.event.pull_request.html_url }}" \
@@ -419,8 +420,13 @@ jobs:
             gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
           fi
 
+          # Jules trigger: embed FULL comment content so Jules needs zero extra fetching
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            printf '@google-labs-jules There are unresolved review comments on this PR that must be fixed before merging.\n\nPlease read ALL the unresolved comments listed above, fix the code exactly as suggested, and push to branch: %s\n\nDo NOT resolve threads manually -- just push the fix and CI will verify.' "$HEAD_REF" > /tmp/jules_trigger.md
+            printf '@google-labs-jules Unresolved review comments on PR #%s must be fixed before merging.\n\n**Branch to push fixes to:** `%s`\n\n---\n\n## Unresolved Review Comments\n\n%s\n\n---\n\nInstructions:\n- Fix EACH comment listed above exactly as suggested\n- Push your fixes to branch: `%s`\n- Do NOT resolve threads manually -- CI will verify and auto-merge once all checks pass' \
+              "$PR_NUM" \
+              "$HEAD_REF" \
+              "$COMMENT_DETAILS" \
+              "$HEAD_REF" > /tmp/jules_trigger.md
             GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_trigger.md
           fi
         env:
@@ -478,7 +484,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 7: CI Failure — Tag @google-labs-jules to fix via PAT
+  # JOB 7: CI Failure -- Tag @google-labs-jules to fix via PAT
   # ──────────────────────────────────────────
   jules-auto-fix:
     name: Jules Auto-Fix Loop
@@ -552,13 +558,13 @@ jobs:
           gh issue comment $ISSUE_NUM --body-file /tmp/jules_fix_body.md
 
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            printf '@google-labs-jules CI failed on PR #%s. Please read the error details in the comment above, fix the code, and push to branch: %s\n\nDo NOT merge -- CI will auto-merge once all checks pass.' "$PR_NUM" "$HEAD_BRANCH" > /tmp/jules_issue_trigger.md
+            printf '@google-labs-jules CI failed on PR #%s. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- CI will auto-merge once all checks pass.' "$PR_NUM" "$HEAD_BRANCH" > /tmp/jules_issue_trigger.md
             GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh issue comment $ISSUE_NUM --body-file /tmp/jules_issue_trigger.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fallback — post on PR directly if no linked Issue found
+      - name: Fallback -- post on PR directly if no linked Issue found
         if: steps.find_issue.outputs.issue_number == ''
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -578,7 +584,7 @@ jobs:
           gh pr comment $PR_NUM --body-file /tmp/jules_pr_body.md
 
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            printf '@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: %s\n\nDo NOT merge -- CI will auto-merge into %s once all checks pass.' "$HEAD_BRANCH" "$BASE_BRANCH" > /tmp/jules_pr_trigger.md
+            printf '@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- CI will auto-merge into `%s` once all checks pass.' "$HEAD_BRANCH" "$BASE_BRANCH" > /tmp/jules_pr_trigger.md
             GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_pr_trigger.md
           fi
         env:
