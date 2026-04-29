@@ -72,6 +72,47 @@ def test_resolve_document_not_folder(executor):
     assert export_task.parameters["file_id"] == "doc_id"
 
 
+def test_resolve_folder_then_file(executor):
+    exec_instance, runner = executor
+
+    # Mock drive.list_files to return multiple folders then a file
+    runner.responses[("drive", "files", "list")] = ExecutionResult(
+        success=True,
+        command=["drive", "files", "list"],
+        stdout='{"files": ['
+        '{"id": "folder_1", "name": "Folder 1", "mimeType": "application/vnd.google-apps.folder"},'
+        '{"id": "folder_2", "name": "Folder 2", "mimeType": "application/vnd.google-apps.folder"},'
+        '{"id": "file_1", "name": "My Doc", "mimeType": "application/vnd.google-apps.document"}'
+        "]}",
+    )
+
+    plan = RequestPlan(
+        raw_text="export doc",
+        tasks=[
+            PlannedTask(id="task-1", service="drive", action="list_files", parameters={"q": "name = 'My Doc'"}),
+            PlannedTask(
+                id="task-2",
+                service="drive",
+                action="export_file",
+                parameters={
+                    "file_id": "{{task-1.id}}",
+                    "source_mime": "{{last_file_mime}}",
+                    "mime_type": "text/plain",
+                },
+            ),
+        ],
+    )
+
+    report = exec_instance.execute(plan)
+    assert report.success is True
+
+    # Check task-2 parameters after resolution
+    export_task = report.executions[1].task
+    # EXPECTATION: It should pick 'file_1', not 'folder_1' or 'folder_2'
+    assert export_task.parameters["file_id"] == "file_1"
+    assert export_task.parameters["source_mime"] == "application/vnd.google-apps.document"
+
+
 def test_expand_task_graceful_failure(executor):
     """Bug 2: _expand_task should handle missing parameters gracefully."""
     exec_instance, runner = executor

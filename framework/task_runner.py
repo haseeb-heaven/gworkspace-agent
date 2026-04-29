@@ -74,7 +74,7 @@ class TaskRunner:
             marker_expr = f"{self.service} and not live_integration and not manual"
             cmd = [sys.executable, "-m", "pytest", "-v", "-m", marker_expr]
 
-            process = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == "nt")
 
             if process.returncode == 0:
                 self.status = "PASSED"

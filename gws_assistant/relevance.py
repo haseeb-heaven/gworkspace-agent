@@ -148,11 +148,9 @@ def extract_keywords(text: str) -> list[str]:
     }
 
     words = re.findall(r"[a-zA-Z]{3,}", text.lower())
-    seen_keywords = {k.lower() for k in keywords}
     for word in words:
-        if word not in stop_words and word not in seen_keywords:
+        if word not in stop_words and word not in [k.lower() for k in keywords]:
             keywords.append(word)
-            seen_keywords.add(word)
 
     return keywords
 

@@ -298,7 +298,8 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 5: Review Guard
   # Blocks merge if ANY unresolved review comment exists
-  # Jules trigger now embeds FULL comment content for reliable context
+  # GraphQL fetches ALL comments per thread (first: 20)
+  # Jules trigger embeds FULL comment content -- no truncation
   # ──────────────────────────────────────────
   review-guard:
     name: Review Guard (Block if Unresolved Comments)
@@ -325,11 +326,11 @@ jobs:
             query($owner: String!, $repo: String!, $pr: Int!) {
               repository(owner: $owner, name: $repo) {
                 pullRequest(number: $pr) {
-                  reviewThreads(first: 50) {
+                  reviewThreads(first: 100) {
                     nodes {
                       isResolved
                       isOutdated
-                      comments(first: 1) {
+                      comments(first: 20) {
                         nodes {
                           author { login }
                           body
@@ -367,18 +368,18 @@ jobs:
           REPO="${{ github.repository }}"
           HEAD_REF="${{ github.head_ref }}"
 
-          # Fetch full review thread details including file path, line, body
+          # Fetch ALL comments per thread (first: 20), full body, no truncation
           RESPONSE=$(gh api graphql -f query='
             query($owner: String!, $repo: String!, $pr: Int!) {
               repository(owner: $owner, name: $repo) {
                 pullRequest(number: $pr) {
-                  reviewThreads(first: 50) {
+                  reviewThreads(first: 100) {
                     nodes {
                       isResolved
                       isOutdated
                       path
                       line
-                      comments(first: 1) {
+                      comments(first: 20) {
                         nodes {
                           author { login }
                           body
@@ -396,7 +397,7 @@ jobs:
 
           echo "$RESPONSE" > /tmp/notify_response.json
 
-          # format_comments.py produces structured markdown list of all unresolved comments
+          # format_comments.py: full body, all thread comments, includes outdated
           COMMENT_DETAILS=$(python3 .github/scripts/format_comments.py /tmp/notify_response.json)
 
           ISSUE_NUM=$(gh pr view $PR_NUM \
@@ -419,8 +420,7 @@ jobs:
             gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
           fi
 
-          # Trigger Jules with FULL comment content embedded directly in the message
-          # so Jules does not need to fetch or discover comments separately
+          # Jules trigger: embed FULL comment content so Jules needs zero extra fetching
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
             printf '@google-labs-jules Unresolved review comments on PR #%s must be fixed before merging.\n\n**Branch to push fixes to:** `%s`\n\n---\n\n## Unresolved Review Comments\n\n%s\n\n---\n\nInstructions:\n- Fix EACH comment listed above exactly as suggested\n- Push your fixes to branch: `%s`\n- Do NOT resolve threads manually -- CI will verify and auto-merge once all checks pass' \
               "$PR_NUM" \
