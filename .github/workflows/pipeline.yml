@@ -303,45 +303,18 @@ jobs:
             --json closingIssuesReferences \
             -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
 
-          PR_URL="${{ github.event.pull_request.html_url }}"
-          HEAD_REF="${{ github.head_ref }}"
-          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          python3 .github/scripts/write_review_body.py \
+            --pr-num "$PR_NUM" \
+            --pr-url "${{ github.event.pull_request.html_url }}" \
+            --head-ref "${{ github.head_ref }}" \
+            --base-ref "${{ github.event.pull_request.base.ref }}" \
+            --comments "$COMMENT_DETAILS" \
+            --issue-num "$ISSUE_NUM" \
+            --out /tmp/review_block_body.md
 
           if [ -n "$ISSUE_NUM" ]; then
-            cat > /tmp/review_block_body.md << MDEOF
-## ⚠️ Merge Blocked on PR #${PR_NUM} — @google-labs-jules please address review comments
-
-There are **unresolved review comments** on this PR that must be addressed before it can be merged.
-
-**PR:** ${PR_URL}
-**Head Branch:** \`${HEAD_REF}\`
-**Target Branch:** \`${BASE_REF}\`
-
----
-## Unresolved Comments
-
-${COMMENT_DETAILS}
-
----
-**@google-labs-jules instructions:**
-1. Read each unresolved comment carefully
-2. Fix the code exactly as suggested by the reviewer
-3. Push fix to branch: \`${HEAD_REF}\`
-4. Do NOT resolve threads manually — CI will re-check after your push
-MDEOF
             gh issue comment "$ISSUE_NUM" --body-file /tmp/review_block_body.md
           else
-            cat > /tmp/review_block_body.md << MDEOF
-## ⚠️ Merge Blocked — Unresolved Review Comments
-
-@google-labs-jules — please address all unresolved review comments before this PR can be merged.
-
-**Head Branch:** \`${HEAD_REF}\`
-**Target Branch:** \`${BASE_REF}\`
-
-## Unresolved Comments
-${COMMENT_DETAILS}
-MDEOF
             gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
           fi
         env:
@@ -349,7 +322,6 @@ MDEOF
 
   # ──────────────────────────────────────────
   # JOB 6: Auto-merge into PR's actual base branch
-  # Uses github.event.pull_request.base.ref — NOT hardcoded main/master
   # ──────────────────────────────────────────
   auto-merge:
     name: Auto Merge PR
@@ -445,29 +417,19 @@ MDEOF
           PR_NUM="${{ github.event.pull_request.number }}"
           HEAD_BRANCH="${{ github.head_ref }}"
           BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          ISSUE_NUM="${{ steps.find_issue.outputs.issue_number }}"
 
-          cat > /tmp/jules_fix_body.md << MDEOF
-## ❌ CI Failed on PR #${PR_NUM} — @google-labs-jules please fix
+          python3 .github/scripts/write_ci_body.py \
+            --type issue \
+            --pr-num "$PR_NUM" \
+            --pr-url "$PR_URL" \
+            --head-branch "$HEAD_BRANCH" \
+            --base-branch "$BASE_BRANCH" \
+            --run-url "$RUN_URL" \
+            --errors-file /tmp/all_errors.txt \
+            --out /tmp/jules_fix_body.md
 
-CI pipeline failed. Fix the errors below and push to the same branch.
-
-**PR:** ${PR_URL}
-**Head Branch:** \`${HEAD_BRANCH}\`
-**Target Branch:** \`${BASE_BRANCH}\`
-**Failed Run:** ${RUN_URL}
-
----
-## Errors
-${ERRORS}
----
-
-**@google-labs-jules instructions:**
-1. Fix all failing tests and lint errors listed above
-2. Fix source code only — do NOT modify test logic
-3. Push fix to branch: \`${HEAD_BRANCH}\`
-4. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass
-MDEOF
-          gh issue comment ${{ steps.find_issue.outputs.issue_number }} --body-file /tmp/jules_fix_body.md
+          gh issue comment $ISSUE_NUM --body-file /tmp/jules_fix_body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -478,25 +440,18 @@ MDEOF
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           HEAD_BRANCH="${{ github.head_ref }}"
           BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          PR_NUM="${{ github.event.pull_request.number }}"
 
-          cat > /tmp/jules_pr_body.md << MDEOF
-## ❌ CI Failed — @google-labs-jules please fix
+          python3 .github/scripts/write_ci_body.py \
+            --type pr \
+            --pr-num "$PR_NUM" \
+            --head-branch "$HEAD_BRANCH" \
+            --base-branch "$BASE_BRANCH" \
+            --run-url "$RUN_URL" \
+            --errors-file /tmp/all_errors.txt \
+            --out /tmp/jules_pr_body.md
 
-@google-labs-jules — CI pipeline failed. No linked Issue was found so tagging here directly.
-
-**Head Branch:** \`${HEAD_BRANCH}\`
-**Target Branch:** \`${BASE_BRANCH}\`
-**Failed Run:** ${RUN_URL}
-
-## Errors
-${ERRORS}
-
-**Instructions:**
-1. Fix all errors above
-2. Push fix to branch: \`${HEAD_BRANCH}\`
-3. Do NOT merge — CI will auto-merge into \`${BASE_BRANCH}\` once all checks pass
-MDEOF
-          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/jules_pr_body.md
+          gh pr comment $PR_NUM --body-file /tmp/jules_pr_body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
