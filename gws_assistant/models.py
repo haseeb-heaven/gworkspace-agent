@@ -18,7 +18,6 @@ class AppConfigModel:
     gws_binary_path: Path
     log_file_path: Path
     log_level: str
-    file_log_level: str
     verbose: bool
     env_file_path: Path
     setup_complete: bool

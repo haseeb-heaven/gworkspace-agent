@@ -130,7 +130,6 @@ class AppConfig:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / "gws_assistant.log"
         log_level = (os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
-        file_log_level = (os.getenv("APP_FILE_LOG_LEVEL") or "DEBUG").strip().upper()
         verbose = _to_bool(os.getenv("APP_VERBOSE"), default=True)
 
         # Provider specific keys
@@ -183,7 +182,6 @@ class AppConfig:
             gws_binary_path=gws_binary_path,
             log_file_path=log_file_path,
             log_level=log_level,
-            file_log_level=file_log_level,
             verbose=verbose,
             env_file_path=env_file_path,
             setup_complete=setup_complete,
