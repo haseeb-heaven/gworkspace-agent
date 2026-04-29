@@ -22,7 +22,7 @@ RE_DRIVE_QUERY_MATCH = re.compile(
     r"(?:about|for|matching|with|named|search|find)\s+([a-z0-9 _.-]{3,60})", re.IGNORECASE
 )
 RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|move)\s+", re.IGNORECASE)
-RE_EXTRACT_ID = re.compile(r"(?<![a-zA-Z0-9_-])([a-zA-Z0-9_-]{33,44})(?![a-zA-Z0-9_-])")
+RE_EXTRACT_ID = re.compile(r"(?<![a-zA-Z0-9_-])([a-zA-Z0-9_-]{25,44})(?![a-zA-Z0-9_-])")
 RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,})\b")
 RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
