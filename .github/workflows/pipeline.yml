@@ -2,7 +2,15 @@ name: GWorkspace Agent CI/CD
 
 on:
   push:
-    branches: ["main", "master", "develop", "feature/**"]
+    branches:
+      - main
+      - master
+      - develop
+      - "feature/**"
+      - "fix/**"
+      - "hotfix/**"
+      - "chore/**"
+      - "refactor/**"
   pull_request:
     branches: ["main", "master", "develop"]
   workflow_dispatch:
@@ -380,7 +388,6 @@ print('
     steps:
       - uses: actions/checkout@v4
         with:
-          # Checkout the PR's base branch so git history is correct
           ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Log merge target
