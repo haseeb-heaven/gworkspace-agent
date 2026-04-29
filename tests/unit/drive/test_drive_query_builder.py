@@ -1,7 +1,10 @@
 import pytest
+from unittest.mock import patch
 
-from gws_assistant.drive_query_builder import sanitize_drive_query
-
+from gws_assistant.drive_query_builder import (
+    sanitize_drive_query,
+    _classify_and_fix_clause,
+)
 
 @pytest.mark.parametrize(
     "raw, expected",
@@ -40,6 +43,11 @@ from gws_assistant.drive_query_builder import sanitize_drive_query
         # Conjunctions
         ("Budget and mimeType:application/pdf", "name contains 'Budget' and mimeType='application/pdf'"),
         ("Budget or Report", "name contains 'Budget' or name contains 'Report'"),
+        # Missing quotes on operators
+        ("parents in 12345", "parents in '12345'"),
+        ("fullText contains something", "fullText contains 'something'"),
+        ("name = budget", "name contains 'budget'"), # Name equality falls back to contains per _NAME_EQ_RE
+        ("name != budget", "name != 'budget'"),
         # Complex cases
         (
             "name='CcaaS' mimeType='application/vnd.google-apps.document'",
@@ -75,7 +83,33 @@ def test_sanitize_drive_query_mixed_valid_and_invalid():
     q = "trashed = false and mimeType:application/pdf"
     expected = "trashed = false and mimeType='application/pdf'"
     assert sanitize_drive_query(q) == expected
-def test_sanitize_drive_query_restored_tests():
-    assert sanitize_drive_query('parents in 12345') == "parents in '12345'"
-    assert sanitize_drive_query('fullText contains something') == "fullText contains 'something'"
-    assert sanitize_drive_query('name != budget') == "name != 'budget'"
+
+
+def test_sanitize_drive_query_empty_clause():
+    assert _classify_and_fix_clause("   ") == []
+
+
+def test_sanitize_drive_query_already_operator():
+    assert sanitize_drive_query("name contains budget") == "name contains 'budget'"
+    assert sanitize_drive_query("fullText contains 'budget'") == "fullText contains 'budget'"
+
+
+def test_sanitize_drive_query_invalid_operator():
+    assert sanitize_drive_query("trashed yes") == "name contains 'trashed yes'"
+    assert sanitize_drive_query("properties = true") == "name contains 'properties = true'"
+
+
+def test_sanitize_drive_query_empty_result():
+    assert sanitize_drive_query('""') == "name contains ''"
+    assert sanitize_drive_query('" "') == "name contains ''"
+
+
+def test_sanitize_drive_query_fallback():
+    with patch("gws_assistant.drive_query_builder._classify_and_fix_clause", return_value=["just some text without op"]):
+        assert sanitize_drive_query("fake input") == "name contains 'just some text without op'"
+
+
+def test_sanitize_drive_query_valid_operator_missing_quotes():
+    # Tests that when an already-valid subclause (like `trashed=false`) is
+    # part of a broader invalid clause (due to missing "and"), it is correctly extracted.
+    assert sanitize_drive_query("trashed=false mimeType:application/pdf") == "trashed=false and mimeType='application/pdf'"
