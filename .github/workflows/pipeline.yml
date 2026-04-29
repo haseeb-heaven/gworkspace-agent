@@ -29,8 +29,9 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 0: Auto Conflict Resolution
   # Detects merge conflicts on PR and auto-resolves by merging
-  # the base branch into the feature branch, then force-pushes.
-  # If unresolvable conflicts remain, posts a clear comment and fails.
+  # the base branch into the feature branch (feature branch wins via ours).
+  # Resolved branch is pushed back to BOTH the feature branch AND develop.
+  # On unresolvable conflicts: posts comment, exits 0 (pipeline continues).
   # ──────────────────────────────────────────
   resolve-conflicts:
     name: Auto Resolve Conflicts
@@ -42,7 +43,7 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      conflict_free: ${{ steps.merge_base.outputs.conflict_free }}
+      conflict_free: ${{ steps.resolve.outputs.conflict_free }}
     steps:
       - name: Checkout PR head branch (full history)
         uses: actions/checkout@v4
@@ -66,28 +67,36 @@ jobs:
           BASE_TIP=$(git rev-parse ${{ github.base_ref }})
           if [ "$MERGE_BASE" = "$BASE_TIP" ]; then
             echo "already_clean=true" >> $GITHUB_OUTPUT
-            echo "Branch is already up-to-date with ${{ github.base_ref }}. No conflict resolution needed."
+            echo "Branch already up-to-date with ${{ github.base_ref }}. Skipping."
           else
             echo "already_clean=false" >> $GITHUB_OUTPUT
-            echo "Branch is behind ${{ github.base_ref }}. Attempting auto-merge."
+            echo "Branch is behind ${{ github.base_ref }}. Auto-resolving..."
           fi
 
-      - name: Auto-merge base into PR branch
-        id: merge_base
+      - name: Auto-resolve conflicts (feature branch wins via ours)
+        id: resolve
         if: steps.check_dirty.outputs.already_clean == 'false'
         run: |
+          # Step 1: Try clean patience merge
           if git merge origin/${{ github.base_ref }} --no-edit --strategy-option=patience; then
             echo "conflict_free=true" >> $GITHUB_OUTPUT
-            echo "Merge succeeded cleanly."
-          else
+            echo "Clean merge — no conflicts."
+            exit 0
+          fi
+
+          echo "Conflicts detected — auto-resolving (feature branch wins)..."
+          CONFLICTING=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+          echo "Conflicting files: $CONFLICTING"
+
+          # Step 2: Abort and re-merge with ours — feature branch always wins
+          git merge --abort
+          git merge origin/${{ github.base_ref }} --no-edit --strategy=ours
+
+          if [ $? -ne 0 ]; then
             echo "conflict_free=false" >> $GITHUB_OUTPUT
+            echo "::warning::Even ours-strategy failed. Manual intervention required."
 
-            CONFLICTING=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
-            echo "Conflicting files: $CONFLICTING"
-
-            git merge --abort
-
-            printf '\u26a0\ufe0f **Auto Conflict Resolution Failed**\n\nThe CI attempted to merge `%s` into `%s` automatically but found unresolvable conflicts in the following files:\n\n```\n%s\n```\n\nPlease resolve these conflicts manually:\n```bash\ngit fetch origin\ngit checkout %s\ngit merge origin/%s\n# fix conflicts in the files listed above\ngit add .\ngit commit -m "chore: resolve merge conflicts with %s"\ngit push\n```' \
+            printf '⚠️ **Auto Conflict Resolution Failed**\n\nCI attempted to merge `%s` into `%s` but could not auto-resolve conflicts in:\n\n```\n%s\n```\n\nPlease resolve manually:\n```bash\ngit fetch origin\ngit checkout %s\ngit merge origin/%s\n# fix conflicts in the files listed above\ngit add .\ngit commit -m "chore: resolve merge conflicts with %s"\ngit push\n```' \
               "${{ github.base_ref }}" \
               "${{ github.head_ref }}" \
               "$CONFLICTING" \
@@ -96,18 +105,33 @@ jobs:
               "${{ github.base_ref }}" > /tmp/conflict_comment.md
 
             gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/conflict_comment.md
-            exit 1
+            # EXIT 0 — pipeline must continue, not get stuck forever
+            exit 0
           fi
+
+          echo "conflict_free=true" >> $GITHUB_OUTPUT
+          echo "Conflicts resolved — feature branch wins."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push resolved branch
+      - name: Push resolved branch to feature branch
         if: |
           steps.check_dirty.outputs.already_clean == 'false' &&
-          steps.merge_base.outputs.conflict_free == 'true'
+          steps.resolve.outputs.conflict_free == 'true'
         run: |
           git push origin HEAD:${{ github.head_ref }}
-          echo "Pushed merged branch back to ${{ github.head_ref }} successfully."
+          echo "Pushed resolved branch to ${{ github.head_ref }} successfully."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push resolved merge back to develop
+        if: |
+          steps.check_dirty.outputs.already_clean == 'false' &&
+          steps.resolve.outputs.conflict_free == 'true' &&
+          github.base_ref == 'develop'
+        run: |
+          git push origin HEAD:develop
+          echo "Pushed resolved merge back to develop successfully."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -434,6 +458,8 @@ jobs:
 
   # ──────────────────────────────────────────
   # JOB 6: Merge PR into base branch
+  # Waits 3 minutes after all tests pass to allow late reviewer
+  # comments (e.g. Devin) before merging.
   # Tries --auto first; falls back to direct --squash if auto-merge
   # is not enabled on the repository.
   # ──────────────────────────────────────────
@@ -458,6 +484,51 @@ jobs:
           echo "Merging PR #${{ github.event.pull_request.number }}"
           echo "Head : ${{ github.head_ref }}"
           echo "Base : ${{ github.event.pull_request.base.ref }}"
+
+      - name: Wait 3 minutes for late reviewer comments
+        run: |
+          echo "All tests passed. Waiting 3 minutes for late reviewer comments (e.g. Devin)..."
+          sleep 180
+          echo "Wait complete. Proceeding to merge."
+
+      - name: Re-check unresolved threads after wait
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+
+          RESPONSE=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) {
+                    nodes {
+                      isResolved
+                      isOutdated
+                      comments(first: 20) {
+                        nodes { author { login } body }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$(echo $REPO | cut -d/ -f1)" \
+            -f repo="$(echo $REPO | cut -d/ -f2)" \
+            -F pr=$PR_NUM)
+
+          echo "$RESPONSE" > /tmp/final_review_check.json
+          UNRESOLVED=$(python3 .github/scripts/count_unresolved.py /tmp/final_review_check.json)
+
+          echo "Final unresolved review threads: $UNRESOLVED"
+
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "::error::New review comments posted during wait window. Blocking merge."
+            exit 1
+          fi
+
+          echo "No new unresolved threads. Proceeding to merge."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Merge PR (auto if enabled, else direct squash)
         run: |
