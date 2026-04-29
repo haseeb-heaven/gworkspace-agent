@@ -325,6 +325,7 @@ jobs:
   # Blocks merge if ANY unresolved review comment exists
   # GraphQL fetches ALL comments per thread (first: 20)
   # Jules trigger embeds FULL comment content -- no truncation
+  # Only ONE comment is posted (via JULES_TRIGGER_PAT) to avoid duplicates
   # ──────────────────────────────────────────
   review-guard:
     name: Review Guard (Block if Unresolved Comments)
@@ -425,27 +426,9 @@ jobs:
           # format_comments.py: full body, all thread comments, includes outdated
           COMMENT_DETAILS=$(python3 .github/scripts/format_comments.py /tmp/notify_response.json)
 
-          ISSUE_NUM=$(gh pr view $PR_NUM \
-            --json closingIssuesReferences \
-            -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
-
-          # Post human-readable summary on PR or linked issue
-          python3 .github/scripts/write_review_body.py \
-            --pr-num "$PR_NUM" \
-            --pr-url "${{ github.event.pull_request.html_url }}" \
-            --head-ref "$HEAD_REF" \
-            --base-ref "${{ github.event.pull_request.base.ref }}" \
-            --comments "$COMMENT_DETAILS" \
-            --issue-num "$ISSUE_NUM" \
-            --out /tmp/review_block_body.md
-
-          if [ -n "$ISSUE_NUM" ]; then
-            gh issue comment "$ISSUE_NUM" --body-file /tmp/review_block_body.md
-          else
-            gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
-          fi
-
           # Jules trigger: embed FULL comment content so Jules needs zero extra fetching
+          # NOTE: Only one comment posted here (via JULES_TRIGGER_PAT) to avoid duplicates
+          # with the github-actions[bot] comment that write_review_body.py would produce.
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
             printf '@google-labs-jules Unresolved review comments on PR #%s must be fixed before merging.\n\n**Branch to push fixes to:** `%s`\n\n---\n\n## Unresolved Review Comments\n\n%s\n\n---\n\nInstructions:\n- Fix EACH comment listed above exactly as suggested\n- Push your fixes to branch: `%s`\n- Do NOT resolve threads manually -- CI will verify and auto-merge once all checks pass' \
               "$PR_NUM" \
