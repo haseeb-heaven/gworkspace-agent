@@ -469,10 +469,10 @@ jobs:
           echo "Head : ${{ github.head_ref }}"
           echo "Base : ${{ github.event.pull_request.base.ref }}"
 
-      - name: Wait 5 minutes for late reviewer comments
+      - name: Wait 10 minutes for late reviewer comments
         run: |
-          echo "All tests passed. Waiting 5 minutes for late reviewer comments (e.g. Devin)..."
-          sleep 300
+          echo "All tests passed. Waiting 10 minutes for late reviewer comments (e.g. Devin)..."
+          sleep 600
           echo "Wait complete. Proceeding to merge."
 
       - name: Re-check unresolved threads after wait

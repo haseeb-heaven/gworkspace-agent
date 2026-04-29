@@ -29,7 +29,11 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
 
     # The logger itself must be at least as verbose as the most verbose handler
     logger.setLevel(min(console_level, file_level))
-    logger.handlers.clear()
+
+    for h in logger.handlers[:]:
+        if isinstance(h, (RichHandler, RotatingFileHandler)):
+            logger.removeHandler(h)
+
     logger.propagate = False
 
     formatter = logging.Formatter(
