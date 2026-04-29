@@ -50,7 +50,10 @@ class HumanReadableFormatter:
             cell_count = sum(len(row) for row in rows if isinstance(row, list))
             range_name = payload.get("range") or "the requested range"
             preview = _tabular_preview(rows)
-            summary = f"Read {row_count} row{'s' if row_count != 1 else ''} and {cell_count} cell{'s' if cell_count != 1 else ''} from {range_name}."
+            summary = (
+                f"Read {row_count} row{'s' if row_count != 1 else ''} and "
+                f"{cell_count} cell{'s' if cell_count != 1 else ''} from {range_name}."
+            )
             return f"{summary}\n{preview}" if preview else summary
         if "updates" in payload:
             updates = payload.get("updates") or {}
@@ -58,14 +61,20 @@ class HumanReadableFormatter:
             updated_rows = updates.get("updatedRows")
             target = updates.get("updatedRange") or payload.get("tableRange") or "the spreadsheet"
             if cells or updated_rows:
-                return f"Saved {updated_rows or 0} row{'s' if updated_rows != 1 else ''} and {cells or 0} cell{'s' if cells != 1 else ''} to {target}."
+                return (
+                    f"Saved {updated_rows or 0} row{'s' if updated_rows != 1 else ''} and "
+                    f"{cells or 0} cell{'s' if cells != 1 else ''} to {target}."
+                )
             return f"Saved rows to {target}."
         if "spreadsheetId" in payload:
             title = _nested(payload, "properties", "title") or "spreadsheet"
             url = payload.get("spreadsheetUrl")
             if url:
                 return f"Created {title} in Google Sheets: {url}"
-            return f"Created {title} in Google Sheets. Spreadsheet ID: {payload.get('spreadsheetId')}"
+            return (
+                f"Created {title} in Google Sheets. "
+                f"Spreadsheet ID: {payload.get('spreadsheetId')}"
+            )
         if "id" in payload and payload.get("mimeType") == "application/vnd.google-apps.folder":
             return f"Created folder {payload.get('name')} with ID: {payload.get('id')}"
         if "id" in payload and "labelIds" in payload:

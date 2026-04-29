@@ -3,7 +3,39 @@ from typing import Any
 
 
 class ContextUpdaterMixin:
-    def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
+    """Mixin to provide context update functionality from task execution results."""
+
+    def _get_first_non_folder(self, files: list[dict[str, Any]]) -> dict[str, Any]:
+        """Return the first non-folder file object from a list, or the first file if all are folders."""
+        if not files:
+            return {}
+        return next(
+            (f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"),
+            files[0]
+        )
+
+    def _mask_pii(self, text: str) -> str:
+        """Redacts PII from text, specifically email addresses (e.g., u***@example.com)."""
+        if not text or not isinstance(text, str):
+            return text
+
+        def repl(match):
+            email = match.group(0)
+            if "@" not in email:
+                return email
+            parts = email.split("@")
+            user = parts[0]
+            domain = "@".join(parts[1:])
+            if user:
+                return f"{user[0]}***@{domain}"
+            return f"***@{domain}"
+
+        # Simple email regex
+        return re.sub(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", repl, text)
+
+    def _update_context_from_result(
+        self, data: dict[str, Any], context: dict[str, Any], task: Any = None
+    ) -> None:
         """Extract known artifact keys from a task result and store in context."""
         if not isinstance(data, dict):
             return
@@ -47,12 +79,18 @@ class ContextUpdaterMixin:
         if "spreadsheetId" in data:
             context["last_spreadsheet_id"] = data["spreadsheetId"]
             if "spreadsheetUrl" not in data:
-                data["spreadsheetUrl"] = f"https://docs.google.com/spreadsheets/d/{data['spreadsheetId']}/edit"
+                url = f"https://docs.google.com/spreadsheets/d/{data['spreadsheetId']}/edit"
+                data["spreadsheetUrl"] = url
             context["last_spreadsheet_url"] = data["spreadsheetUrl"]
 
             # Capture title for Sheet1 auto-fix
             title = data.get("properties", {}).get("title")
-            if not title and task and task.service == "sheets" and task.action == "create_spreadsheet":
+            if (
+                not title
+                and task
+                and task.service == "sheets"
+                and task.action == "create_spreadsheet"
+            ):
                 title = task.parameters.get("title")
             if title:
                 context["last_spreadsheet_title"] = title
@@ -60,7 +98,8 @@ class ContextUpdaterMixin:
         if "documentId" in data:
             context["last_document_id"] = data["documentId"]
             if "documentUrl" not in data:
-                data["documentUrl"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
+                url = f"https://docs.google.com/document/d/{data['documentId']}/edit"
+                data["documentUrl"] = url
             context["last_document_url"] = data["documentUrl"]
 
             # Capture document title
@@ -79,8 +118,12 @@ class ContextUpdaterMixin:
             if not isinstance(payload, list):
                 payload = []
 
-            def find_body(p):
+            def find_body(p: dict) -> str:
+                if not isinstance(p, dict):
+                    return ""
                 b = p.get("body", {})
+                if not isinstance(b, dict):
+                    b = {}
                 if b.get("data"):
                     try:
                         import base64
@@ -88,8 +131,9 @@ class ContextUpdaterMixin:
                         return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
                     except Exception:
                         return ""
-                if "parts" in p:
-                    for part in p["parts"]:
+                parts = p.get("parts")
+                if isinstance(parts, list):
+                    for part in parts:
                         res = find_body(part)
                         if res:
                             return res
@@ -120,12 +164,16 @@ class ContextUpdaterMixin:
                         data[name] = value
                         # Also store in context for legacy/global access if this is the latest get_message
                         if is_gmail_get:
-                            context[f"gmail_{name}"] = value
+                            # Apply PII masking for specific headers
+                            if name in ("from", "to", "cc", "bcc"):
+                                context[f"gmail_{name}"] = self._mask_pii(value)
+                            else:
+                                context[f"gmail_{name}"] = value
 
                 body = find_body(p_item)
                 if body:
                     data["body"] = body
-                    context["gmail_message_body_text"] = body
+                    context["gmail_message_body_text"] = self._mask_pii(body)
 
                 # Populate gmail_details_values for Sheets extraction
                 sender = headers_dict.get("from", "Unknown")
@@ -141,7 +189,9 @@ class ContextUpdaterMixin:
 
                 # We want to build a cumulative list if this is part of an expansion
                 details_list = context.setdefault("gmail_details_values", [])
-                details_list.append(row)
+                # Store masked row in context
+                masked_row = [self._mask_pii(sender), subject, date_val, self._mask_pii(email_addr)]
+                details_list.append(masked_row)
 
         if "messages" in data:
             msgs = data["messages"]
@@ -150,7 +200,7 @@ class ContextUpdaterMixin:
                     m_id = msgs[0].get("id", "")
                     t_id = msgs[0].get("threadId", "")
                     context["message_id"] = m_id
-                    context["gmail_message_body"] = m_id
+                    context["gmail_message_id"] = m_id
                     if task:
                         task_id = str(task.id)
                         num = task_id.removeprefix("task-")
@@ -191,7 +241,9 @@ class ContextUpdaterMixin:
                 for r in rows:
                     # Sanitize cells
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
-                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |")
+                    table_lines.append(
+                        f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |"
+                    )
                 context["gmail_summary_table"] = "\n".join(table_lines)
                 context["gmail_summary_count"] = len(msgs)
 
@@ -213,10 +265,15 @@ class ContextUpdaterMixin:
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
-                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+                rows = [
+                    [f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")]
+                    for f in files
+                ]
                 context["drive_metadata_rows"] = rows
                 context["drive_summary_rows"] = rows
-                context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
+                context["drive_summary_values"] = [
+                    r.copy() if isinstance(r, list) else r for r in rows
+                ]
 
                 table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
                 for r in rows:
@@ -230,10 +287,7 @@ class ContextUpdaterMixin:
 
                 if len(files) > 0:
                     # Pick first non-folder file if possible
-                    first_file = next(
-                        (f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"),
-                        files[0]
-                    )
+                    first_file = self._get_first_non_folder(files)
                     if "mimeType" in first_file:
                         context["last_file_mime"] = first_file["mimeType"]
                     if "webViewLink" in first_file:
@@ -252,7 +306,12 @@ class ContextUpdaterMixin:
             context["last_export_file_content"] = val
             context["last_export_content"] = val
             context["last_file_content"] = val
-        elif "content" in data and task and task.service == "drive" and task.action in ("export_file", "get_file"):
+        elif (
+            "content" in data
+            and task
+            and task.service == "drive"
+            and task.action in ("export_file", "get_file")
+        ):
             val = data["content"]
             context["drive_export_content"] = val
             context["drive_export_file"] = val
@@ -288,7 +347,10 @@ class ContextUpdaterMixin:
                 cols = max(len(r) for r in rows)
 
                 def pad_row(row_list, length):
-                    safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
+                    safe_row = [
+                        str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|")
+                        for c in row_list
+                    ]
                     return safe_row + [""] * (length - len(safe_row))
 
                 header_row = pad_row(rows[0], cols)
@@ -378,16 +440,8 @@ class ContextUpdaterMixin:
             # Special case: promote first item's ID for files/messages
             if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
                 # Bug 1 Fix: Pick first non-folder ID if possible
-                files = data["files"]
-                first_id = files[0].get("id")
-
-                # If the first item is a folder, try to find a document
-                if files[0].get("mimeType") == "application/vnd.google-apps.folder":
-                    for f in files:
-                        if f.get("mimeType") != "application/vnd.google-apps.folder":
-                            first_id = f.get("id")
-                            # self.logger.info(f"DEBUG: Skipping folder '{files[0].get('id')}' for document ID '{first_id}'")
-                            break
+                first_file = self._get_first_non_folder(data["files"])
+                first_id = first_file.get("id")
 
                 if first_id:
                     results_map[f"{task_id}.id"] = first_id

@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMixin, ReflectorMixin):
+class PlanExecutor(
+    ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMixin, ReflectorMixin
+):
     planner: Any
     runner: Any
     logger: Any = field(default_factory=lambda: logging.getLogger(__name__))
@@ -55,7 +57,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 # Re-fetch the first expanded task for this iteration
                 task = task_queue[i]
             elif len(expanded) == 0:
-                self.logger.warning(f"DEBUG: Task {i} ({task.id}) expanded into ZERO tasks! Skipping.")
+                self.logger.warning(
+                    f"DEBUG: Task {i} ({task.id}) expanded into ZERO tasks! Skipping."
+                )
                 task_queue.pop(i)
                 continue
 
