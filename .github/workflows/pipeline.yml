@@ -328,7 +328,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 6: Auto-merge into PR's actual base branch
+  # JOB 6: Merge PR into base branch
+  # Tries --auto first; falls back to direct --squash if auto-merge
+  # is not enabled on the repository.
   # ──────────────────────────────────────────
   auto-merge:
     name: Auto Merge PR
@@ -352,14 +354,28 @@ jobs:
           echo "Head : ${{ github.head_ref }}"
           echo "Base : ${{ github.event.pull_request.base.ref }}"
 
-      - name: Enable auto-merge into base branch
+      - name: Merge PR (auto if enabled, else direct squash)
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} \
-            --squash \
-            --auto \
-            --delete-branch \
-            --subject "${{ github.event.pull_request.title }}" \
-            --body "Auto-merged by CI into ${{ github.event.pull_request.base.ref }}"
+          PR_NUM=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+
+          # Try --auto merge first (requires "Allow auto-merge" in repo settings)
+          if gh pr merge $PR_NUM \
+               --squash \
+               --auto \
+               --delete-branch \
+               --subject "$PR_TITLE" \
+               --body "Auto-merged by CI into $BASE_REF" 2>/dev/null; then
+            echo "Auto-merge scheduled successfully."
+          else
+            echo "Auto-merge not available. Falling back to direct squash merge."
+            gh pr merge $PR_NUM \
+              --squash \
+              --delete-branch \
+              --subject "$PR_TITLE" \
+              --body "Auto-merged by CI into $BASE_REF"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
