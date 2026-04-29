@@ -23,6 +23,7 @@ from gws_assistant.models import (
 from gws_assistant.output_formatter import HumanReadableFormatter
 from gws_assistant.tools.code_execution import execute_generated_code
 from gws_assistant.tools.web_search import summarize_results, web_search_tool
+
 from .memory import save_episode
 
 _MAX_HISTORY = 10

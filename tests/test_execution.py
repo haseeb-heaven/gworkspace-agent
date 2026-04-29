@@ -270,7 +270,7 @@ def test_executor_resolves_nested_gmail_message_placeholder_for_sheets():
                 parameters={
                     "spreadsheet_id": "$last_spreadsheet_id",
                     "range": "Sheet1!A1",
-                    "values": [["$gmail_message_body"]],
+                    "values": [["{{message_id}}"]],
                 },
             ),
         ],
