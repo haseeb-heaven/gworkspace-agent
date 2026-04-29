@@ -175,13 +175,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             # Fix: If payload contains 'messages' list, promote it so code.execute sees a list
             # as expected by LLM for list_messages tasks.
             if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
-                if len(payload["messages"]) > 0:
-                    storage_payload = [
-                        item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
-                        for item in payload["messages"]
-                    ]
-                else:
-                    storage_payload = payload
+                storage_payload = [
+                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
+                    for item in payload["messages"]
+                ]
             elif isinstance(payload, list):
                 storage_payload = [
                     item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload

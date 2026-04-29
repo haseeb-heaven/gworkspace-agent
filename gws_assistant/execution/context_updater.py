@@ -229,22 +229,10 @@ class ContextUpdaterMixin:
                 context["drive_summary_count"] = len(files)
 
                 if len(files) > 0:
-                    # Bug 1 Fix: Pick first non-folder ID if possible
-                    first_file = files[0]
-                    for f in files:
-                        if f.get("mimeType") != "application/vnd.google-apps.folder":
-                            first_file = f
-                            break
-
-                    if "mimeType" in first_file:
-                        context["last_file_mime"] = first_file["mimeType"]
-                    if "webViewLink" in first_file:
-                        context["last_file_url"] = first_file["webViewLink"]
-
-                    # Set top-level ID to first non-folder if we have one
-                    if "id" in first_file:
-                        data["id"] = first_file["id"]
-                        context["id"] = first_file["id"]
+                    if "mimeType" in files[0]:
+                        context["last_file_mime"] = files[0]["mimeType"]
+                    if "webViewLink" in files[0]:
+                        context["last_file_url"] = files[0]["webViewLink"]
 
         if "id" in data and task and task.service == "drive" and task.action == "create_folder":
             context["last_folder_id"] = data["id"]
@@ -388,20 +376,19 @@ class ContextUpdaterMixin:
                 files = data["files"]
                 first_id = files[0].get("id")
 
-                for f in files:
-                    if f.get("mimeType") != "application/vnd.google-apps.folder":
-                        first_id = f.get("id")
-                        break
+                # If the first item is a folder, try to find a document
+                if files[0].get("mimeType") == "application/vnd.google-apps.folder":
+                    for f in files:
+                        if f.get("mimeType") != "application/vnd.google-apps.folder":
+                            first_id = f.get("id")
+                            # self.logger.info(f"DEBUG: Skipping folder '{files[0].get('id')}' for document ID '{first_id}'")
+                            break
 
                 if first_id:
                     results_map[f"{task_id}.id"] = first_id
                     results_map[f"{num}.id"] = first_id
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
-                    results_map[f"{task_id}.output.id"] = first_id
-                    if not is_subtask:
-                        results_map[f"task-{num}.output.id"] = first_id
-                    results_map[f"{action_name}.id"] = first_id
 
             if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")

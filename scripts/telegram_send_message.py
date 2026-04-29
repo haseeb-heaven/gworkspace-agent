@@ -73,7 +73,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if len(message) > 4096:
-        print(f"Validation error: Message too long: {len(message)} characters. Max allowed is 4096.", file=sys.stderr)
+        print(
+            f"Validation error: Message too long: {len(message)} characters. Max allowed is 4096.",
+            file=sys.stderr
+        )
         sys.exit(1)
 
     try:
