@@ -248,14 +248,8 @@ jobs:
             -f repo="$(echo $REPO | cut -d/ -f2)" \
             -F pr=$PR_NUM)
 
-          UNRESOLVED=$(echo "$RESPONSE" | python3 << 'PYEOF'
-import sys, json
-data = json.load(sys.stdin)
-threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
-count = sum(1 for t in threads if not t['isResolved'] and not t['isOutdated'])
-print(count)
-PYEOF
-)
+          echo "$RESPONSE" > /tmp/review_response.json
+          UNRESOLVED=$(python3 .github/scripts/count_unresolved.py /tmp/review_response.json)
 
           echo "Unresolved review threads: $UNRESOLVED"
 
@@ -302,23 +296,8 @@ PYEOF
             -f repo="$(echo $REPO | cut -d/ -f2)" \
             -F pr=$PR_NUM)
 
-          COMMENT_DETAILS=$(echo "$RESPONSE" | python3 << 'PYEOF'
-import sys, json
-data = json.load(sys.stdin)
-threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
-lines = []
-for t in threads:
-    if not t['isResolved'] and not t['isOutdated']:
-        c = t['comments']['nodes'][0] if t['comments']['nodes'] else {}
-        author = c.get('author', {}).get('login', 'unknown')
-        body = c.get('body', '')[:200]
-        path = t.get('path', 'unknown file')
-        line = t.get('line', '?')
-        url = c.get('url', '')
-        lines.append('- **' + str(path) + ':' + str(line) + '** by @' + author + ': ' + body + '\n  ' + url)
-print('\n'.join(lines))
-PYEOF
-)
+          echo "$RESPONSE" > /tmp/notify_response.json
+          COMMENT_DETAILS=$(python3 .github/scripts/format_comments.py /tmp/notify_response.json)
 
           ISSUE_NUM=$(gh pr view $PR_NUM \
             --json closingIssuesReferences \
