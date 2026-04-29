@@ -45,6 +45,29 @@ class TestTelegramSendMessage(unittest.TestCase):
         telegram_script.send_telegram_message("Valid message")
         self.assertEqual(mock_urlopen.call_count, 1)
 
+    @patch("scripts.telegram_send_message.send_telegram_message")
+    @patch("sys.exit")
+    def test_main_block_validation(self, mock_exit, mock_send):
+        # We need to simulate the __main__ block validation
+        # The easiest way without restructuring is to just run the validation logic
+
+        # Test 1: string check
+        import subprocess
+
+        script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "telegram_send_message.py")
+
+        # Test long message exit
+        long_str = "A" * 5000
+        result = subprocess.run([sys.executable, script_path, long_str], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Message too long", result.stderr)
+
+        # Test valid message passes validation and tries to run (it will fail on env if not mocked, but we just check it doesn't fail on validation)
+        # We can just verify it gets past the validation
+        result = subprocess.run([sys.executable, script_path, "Valid"], capture_output=True, text=True)
+        # It will either succeed (0) or fail due to missing env vars (1), but not due to validation
+        self.assertNotIn("Validation error:", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
