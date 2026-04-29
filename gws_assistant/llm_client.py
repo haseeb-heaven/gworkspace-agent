@@ -4,7 +4,7 @@ Single entry point for all LLM calls. Handles:
   - Tool-capable model enforcement
   - API key injection per provider
   - Automatic fallback between models on RateLimitError / AuthenticationError
-  - API key rotation for OpenRouter (OPENROUTER_API_KEY1/2/3)
+  - API key rotation (LLM_API_KEY, LLM_API_KEY2, LLM_API_KEY3)
 """
 
 from __future__ import annotations
@@ -40,8 +40,18 @@ def _build_api_kwargs(model: str, config: Any) -> dict:
 
     elif model.startswith("groq/"):
         kwargs["api_key"] = config.groq_api_key
-        if not kwargs["api_key"]:
-            raise ValueError(f"Model '{model}' requires GROQ_API_KEY in .env")
+
+    elif model.startswith("openai/"):
+        kwargs["api_key"] = config.openai_api_key
+
+    elif model.startswith("google/") or model.startswith("gemini/"):
+        kwargs["api_key"] = config.google_api_key
+
+    elif model.startswith("anthropic/"):
+        kwargs["api_key"] = config.anthropic_api_key
+
+    elif model.startswith("mistral/"):
+        kwargs["api_key"] = config.mistral_api_key
 
     elif model.startswith("ollama/"):
         base = config.ollama_api_base or "http://localhost:11434"
@@ -81,9 +91,7 @@ def call_llm(
 
     for model in model_chain:
         # Determine which keys to rotate through for this model
-        if model.startswith("openrouter/") and config.openrouter_api_keys:
-            api_keys_to_try = config.openrouter_api_keys
-        elif config.llm_api_keys:
+        if config.llm_api_keys:
             api_keys_to_try = config.llm_api_keys
         else:
             api_keys_to_try = [None]

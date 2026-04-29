@@ -47,6 +47,41 @@ class AppConfig:
 
         api_key = generic_key or openrouter_key or None
 
+        # Rotation keys (Priority 1: LLM_API_KEY series)
+        llm_api_keys = []
+        for i in range(1, 4):
+            key_name = f"LLM_API_KEY{i}" if i > 1 else "LLM_API_KEY"
+            k = (os.getenv(key_name) or "").strip()
+            if k:
+                llm_api_keys.append(k)
+
+        # Fallback (Priority 2: Provider-specific keys if LLM_API_KEY series is empty)
+        if not llm_api_keys:
+            provider_specific_key = None
+            if provider == "openrouter":
+                provider_specific_key = os.getenv("OPENROUTER_API_KEY")
+            elif provider == "openai":
+                provider_specific_key = os.getenv("OPENAI_API_KEY")
+            elif provider == "groq":
+                provider_specific_key = os.getenv("GROQ_API_KEY")
+            elif provider in ("google", "gemini"):
+                provider_specific_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            elif provider == "anthropic":
+                provider_specific_key = os.getenv("ANTHROPIC_API_KEY")
+            elif provider == "mistral":
+                provider_specific_key = os.getenv("MISTRAL_API_KEY")
+
+            if provider_specific_key:
+                llm_api_keys.append(provider_specific_key.strip())
+
+        # If still no keys, try generic api_key from previous logic (if any)
+        if not llm_api_keys and generic_key:
+            llm_api_keys.append(generic_key)
+        elif not llm_api_keys and openrouter_key:
+             llm_api_keys.append(openrouter_key)
+
+        api_key = llm_api_keys[0] if llm_api_keys else None
+
         # Resolve primary model — prefer LLM_MODEL, fall back to OPENROUTER_MODEL alias
         model = (
             os.getenv("LLM_MODEL") or os.getenv("OPENROUTER_MODEL") or "openrouter/nvidia/nemotron-super-49b-v1:free"
@@ -89,6 +124,15 @@ class AppConfig:
         log_file_path = log_dir / "gws_assistant.log"
         log_level = (os.getenv("APP_LOG_LEVEL") or "INFO").strip().upper()
         verbose = _to_bool(os.getenv("APP_VERBOSE"), default=True)
+
+        # Provider specific keys
+        groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip() or api_key
+        openai_api_key = (os.getenv("OPENAI_API_KEY") or "").strip() or api_key
+        google_api_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip() or api_key
+        anthropic_api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip() or api_key
+        mistral_api_key = (os.getenv("MISTRAL_API_KEY") or "").strip() or api_key
+        ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
+        memory_type = (os.getenv("MEMORY_TYPE") or "local").strip().lower()
         setup_complete = env_file_path.exists() and gws_binary_path.exists() and gws_binary_path.is_file()
 
         max_retries = int((os.getenv("MAX_RETRIES") or "3").strip())
@@ -107,30 +151,6 @@ class AppConfig:
         gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "0").strip())
         gws_max_retries = int((os.getenv("GWS_MAX_RETRIES") or "3").strip())
 
-        # Support multiple API keys for rotation
-        llm_api_keys_list = [
-            os.getenv("LLM_API_KEY"),
-            os.getenv("LLM_API_KEY2"),
-            os.getenv("LLM_API_KEY3"),
-        ]
-        llm_api_keys = [k.strip() for k in llm_api_keys_list if k and k.strip()]
-
-        # Support multiple API keys for rotation (only for openrouter)
-        openrouter_api_keys = []
-        if provider == "openrouter":
-            openrouter_api_keys_list = [
-                os.getenv("OPENROUTER_API_KEY1"),
-                os.getenv("OPENROUTER_API_KEY2"),
-                os.getenv("OPENROUTER_API_KEY3"),
-                os.getenv("OPENROUTER_API_KEY"),  # Default fallback
-            ]
-            openrouter_api_keys = [k.strip() for k in openrouter_api_keys_list if k and k.strip()]
-        if not openrouter_api_keys and api_key:
-            openrouter_api_keys = [api_key]
-
-        if not llm_api_keys and api_key:
-            llm_api_keys = [api_key]
-
         max_snippet_len = int((os.getenv("MAX_CONTEXT_SNIPPET_LEN") or "300").strip())
         mem0_api_key = (os.getenv("MEM0_API_KEY") or "").strip() or None
         mem0_user_id = (os.getenv("MEM0_USER_ID") or "").strip() or None
@@ -138,9 +158,8 @@ class AppConfig:
         mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
         telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
         telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
-        groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip() or None
-        ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
-        memory_type = (os.getenv("MEMORY_TYPE") or "local").strip().lower()
+        # Removed redundant re-fetch of groq_api_key, ollama_api_base, memory_type
+        # as they are now resolved above.
 
         sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
         read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=True)
@@ -168,7 +187,6 @@ class AppConfig:
             e2b_api_key=e2b_api_key,
             gws_timeout_seconds=gws_timeout_seconds,
             gws_max_retries=gws_max_retries,
-            openrouter_api_keys=openrouter_api_keys,
             llm_api_keys=llm_api_keys,
             max_context_snippet_len=max_snippet_len,
             default_recipient_email=default_recipient_email,
@@ -182,6 +200,10 @@ class AppConfig:
             read_only_mode=read_only_mode,
             llm_fallback_models=llm_fallback_models,
             groq_api_key=groq_api_key,
+            openai_api_key=openai_api_key,
+            google_api_key=google_api_key,
+            anthropic_api_key=anthropic_api_key,
+            mistral_api_key=mistral_api_key,
             ollama_api_base=ollama_api_base,
             memory_type=memory_type,
         )

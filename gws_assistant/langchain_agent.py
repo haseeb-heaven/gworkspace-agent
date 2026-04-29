@@ -317,6 +317,11 @@ def create_agent(
         elif model_to_use.startswith("ollama/"):
             extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
             api_key = "ollama"
+        elif model_to_use.startswith("google/") or model_to_use.startswith("gemini/"):
+            # LiteLLM uses 'gemini/' prefix internally for Google Gemini API
+            extra_kwargs["custom_llm_provider"] = "gemini"
+            # Ensure we use the Gemini-specific API key if available
+            api_key = getattr(config, "google_api_key", api_key)
 
         if not api_key or not str(api_key).strip():
             logger.warning("create_agent: API key is missing or empty. Cannot create ChatLiteLLM agent.")

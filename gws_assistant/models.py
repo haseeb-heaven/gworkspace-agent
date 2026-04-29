@@ -32,7 +32,6 @@ class AppConfigModel:
     e2b_api_key: str | None = None
     gws_timeout_seconds: int = 180
     gws_max_retries: int = 3
-    openrouter_api_keys: list[str] = field(default_factory=list)
     llm_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
@@ -48,6 +47,10 @@ class AppConfigModel:
     read_only_mode: bool = True
     llm_fallback_models: list[str] = field(default_factory=list)
     groq_api_key: str | None = None
+    openai_api_key: str | None = None
+    google_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    mistral_api_key: str | None = None
     ollama_api_base: str | None = None
     dry_run: bool = False
     no_confirm: bool = False
@@ -60,7 +63,7 @@ class AppConfigModel:
     current_key_idx: int = 0
 
     def rotate_api_key(self) -> str | None:
-        keys = self.llm_api_keys if self.llm_api_keys else self.openrouter_api_keys
+        keys = self.llm_api_keys
         if not keys:
             return self.api_key
 
@@ -68,9 +71,17 @@ class AppConfigModel:
         new_key = keys[self.current_key_idx]
         self.api_key = new_key
         # Sync with environment so LiteLLM/OpenAI clients pick it up
-        os.environ["LLM_API_KEY"] = new_key
-        os.environ["OPENROUTER_API_KEY"] = new_key
-        os.environ["OPENAI_API_KEY"] = new_key
+        for env_var in [
+            "LLM_API_KEY",
+            "OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "GOOGLE_API_KEY",
+            "GEMINI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "MISTRAL_API_KEY",
+        ]:
+            os.environ[env_var] = new_key
         return new_key
 
     def api_model_name(self) -> str:
