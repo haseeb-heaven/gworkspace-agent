@@ -13,17 +13,14 @@ on:
         default: false
         type: boolean
 
-# Fix: Grant GITHUB_TOKEN proper permissions for auto-merge
 permissions:
   contents: write
   pull-requests: write
   issues: write
 
 env:
-  # GCP config — only used for deploy job
   GCP_PROJECT_ID: gen-lang-client-0632693223
   GCP_REGION: us-central1
-  # GitHub repo name used as Cloud Run service name (owner/repo → repo only)
   GCP_SERVICE: gworkspace-agent
   PYTHON_VERSION: "3.11"
 
@@ -204,15 +201,176 @@ jobs:
           path: /tmp/security_errors.txt
 
   # ──────────────────────────────────────────
-  # JOB 5: Auto-merge on PR (if all pass)
+  # JOB 5: Review Guard
+  # Blocks merge if ANY unresolved review comment exists
+  # (from bots like Devin, or human reviewers)
   # ──────────────────────────────────────────
-  auto-merge:
-    name: Auto Merge PR
+  review-guard:
+    name: Review Guard (Block if Unresolved Comments)
     runs-on: ubuntu-latest
     needs: [unit-tests, integration-tests, security]
     if: |
       github.event_name == 'pull_request' &&
       github.actor != 'dependabot[bot]'
+    permissions:
+      pull-requests: read
+    outputs:
+      safe_to_merge: ${{ steps.check_reviews.outputs.safe_to_merge }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unresolved review threads
+        id: check_reviews
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+
+          # Fetch all review threads via GraphQL
+          RESPONSE=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 50) {
+                    nodes {
+                      isResolved
+                      isOutdated
+                      comments(first: 1) {
+                        nodes {
+                          author { login }
+                          body
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$(echo $REPO | cut -d/ -f1)" \
+            -f repo="$(echo $REPO | cut -d/ -f2)" \
+            -F pr=$PR_NUM)
+
+          # Count unresolved and non-outdated threads
+          UNRESOLVED=$(echo "$RESPONSE" | \
+            python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
+count = sum(1 for t in threads if not t['isResolved'] and not t['isOutdated'])
+print(count)
+")
+
+          echo "Unresolved review threads: $UNRESOLVED"
+
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "safe_to_merge=false" >> $GITHUB_OUTPUT
+            echo "::error::Merge blocked — $UNRESOLVED unresolved review thread(s) found. Resolve all comments before merging."
+            exit 1
+          else
+            echo "safe_to_merge=true" >> $GITHUB_OUTPUT
+            echo "All review threads resolved. Safe to merge."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Jules about unresolved comments
+        if: failure()
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+
+          # Fetch unresolved comment details
+          RESPONSE=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 50) {
+                    nodes {
+                      isResolved
+                      isOutdated
+                      path
+                      line
+                      comments(first: 1) {
+                        nodes {
+                          author { login }
+                          body
+                          url
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$(echo $REPO | cut -d/ -f1)" \
+            -f repo="$(echo $REPO | cut -d/ -f2)" \
+            -F pr=$PR_NUM)
+
+          COMMENT_DETAILS=$(echo "$RESPONSE" | \
+            python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
+lines = []
+for t in threads:
+    if not t['isResolved'] and not t['isOutdated']:
+        c = t['comments']['nodes'][0] if t['comments']['nodes'] else {}
+        author = c.get('author', {}).get('login', 'unknown')
+        body = c.get('body', '')[:200]
+        path = t.get('path', 'unknown file')
+        line = t.get('line', '?')
+        url = c.get('url', '')
+        lines.append(f'- **{path}:{line}** by @{author}: {body}\n  {url}')
+print('\n'.join(lines))
+")
+
+          # Find linked issue
+          ISSUE_NUM=$(gh pr view $PR_NUM \
+            --json closingIssuesReferences \
+            -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$ISSUE_NUM" ]; then
+            gh issue comment "$ISSUE_NUM" \
+              --body "## ⚠️ Merge Blocked on PR #${PR_NUM} — @jules please address review comments
+
+          There are **unresolved review comments** on this PR that must be addressed before it can be merged.
+
+          **PR:** ${{ github.event.pull_request.html_url }}
+          **Branch:** \`${{ github.head_ref }}\`
+
+          ---
+          ## Unresolved Comments
+
+          ${COMMENT_DETAILS}
+
+          ---
+          **@jules instructions:**
+          1. Read each unresolved comment carefully
+          2. Fix the code as suggested by the reviewer
+          3. Push fix to branch: \`${{ github.head_ref }}\`
+          4. Do NOT resolve the threads manually — CI will check again after your push"
+          else
+            gh pr comment $PR_NUM \
+              --body "## ⚠️ Merge Blocked — Unresolved Review Comments
+
+          **@jules** — please address all unresolved review comments before this PR can be merged.
+
+          ## Unresolved Comments
+          ${COMMENT_DETAILS}"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────
+  # JOB 6: Auto-merge (only after review-guard passes)
+  # ──────────────────────────────────────────
+  auto-merge:
+    name: Auto Merge PR
+    runs-on: ubuntu-latest
+    needs: [review-guard]
+    if: |
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]' &&
+      needs.review-guard.outputs.safe_to_merge == 'true'
     permissions:
       contents: write
       pull-requests: write
@@ -229,7 +387,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 6: Jules feedback loop on CI failure
+  # JOB 7: Jules feedback loop on CI failure
   # ──────────────────────────────────────────
   jules-auto-fix:
     name: Jules Auto-Fix Loop
@@ -331,7 +489,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 7: Live Integration (manual only)
+  # JOB 8: Live Integration (manual only)
   # ──────────────────────────────────────────
   live-integration:
     name: Live Integration Tests (Manual)
@@ -363,7 +521,7 @@ jobs:
         run: pytest -q -m live_integration -v
 
   # ──────────────────────────────────────────
-  # JOB 8: Deploy to Cloud Run (main/master only)
+  # JOB 9: Deploy to Cloud Run (main/master only)
   # ──────────────────────────────────────────
   deploy:
     name: Deploy to Cloud Run
