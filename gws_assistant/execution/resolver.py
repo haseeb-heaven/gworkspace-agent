@@ -216,8 +216,18 @@ class ResolverMixin:
 
         return task
 
-    def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False) -> Any:
-        """Recursively resolve $placeholder and {task-N} tokens from context."""
+    def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
+        """Recursively resolve $placeholder and {task-N} tokens from context.
+
+        The depth guard prevents infinite recursion when resolved values themselves
+        contain brace/dollar characters (e.g. JSON tool output, base64 content).
+        Depth is incremented only when descending into dict/list structures, NOT
+        when substituting a value from context — that substitution is always final.
+        """
+        if depth > 15:
+            # Depth exceeded — return as-is to prevent stack overflow.
+            self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
+            return val
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
@@ -347,6 +357,11 @@ class ResolverMixin:
 
                 if resolved is not None:
                     return resolved
+                
+                self.logger.warning(
+                    f"Placeholder '{path}' resolved to None in context. "
+                    f"Available context keys: {list(context.keys())}"
+                )
                 return _UNRESOLVED_MARKER
 
             # 3. Partial string replacement
@@ -427,14 +442,14 @@ class ResolverMixin:
             # If the list contains a single placeholder string, and that placeholder
             # resolves to a list, return the resolved list directly to avoid double-wrapping.
             if len(val) == 1 and isinstance(val[0], str) and ("{" in val[0] or "$" in val[0]):
-                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex)
+                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex, depth + 1)
                 if isinstance(resolved_item, list):
                     self.logger.debug(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
                     return resolved_item
 
-            return [self._resolve_placeholders(item, context, use_repr_for_complex) for item in val]
+            return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1) for item in val]
         elif isinstance(val, dict):
-            return {k: self._resolve_placeholders(v, context, use_repr_for_complex) for k, v in val.items()}
+            return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1) for k, v in val.items()}
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
