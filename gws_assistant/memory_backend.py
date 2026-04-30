@@ -215,7 +215,8 @@ class LocalMemory(MemoryBackend):
                     score = len(goal_words & past_words)
                     if score > 0:
                         scored.append((score, ep))
-                except Exception:
+                except json.JSONDecodeError:
+                    self.logger.warning("Skipping malformed episodic memory entry during recall.")
                     continue
         scored.sort(key=lambda x: x[0], reverse=True)
         return [ep for _, ep in scored[:max_results]]
@@ -227,8 +228,8 @@ class LocalMemory(MemoryBackend):
             lines = self.memory_file.read_text(encoding="utf-8").splitlines(keepends=True)
             if len(lines) > self._max_episodes:
                 self.memory_file.write_text("".join(lines[-self._max_episodes :]), encoding="utf-8")
-        except Exception:
-            pass
+        except (OSError, UnicodeDecodeError) as exc:
+            self.logger.warning("Failed to prune local memory file %s: %s", self.memory_file, exc)
 
     def add(
         self, data: str | list[dict[str, str]], user_id: str | None = None, metadata: dict[str, Any] | None = None
@@ -271,7 +272,8 @@ class LocalMemory(MemoryBackend):
                     score = len(query_words & fact_words)
                     if score > 0:
                         scored.append((score, fact))
-                except Exception:
+                except json.JSONDecodeError:
+                    self.logger.warning("Skipping malformed semantic memory entry during search.")
                     continue
 
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -290,7 +292,8 @@ class LocalMemory(MemoryBackend):
                     if user_id and fact.get("user_id") != user_id:
                         continue
                     results.append(fact)
-                except Exception:
+                except json.JSONDecodeError:
+                    self.logger.warning("Skipping malformed semantic memory entry during get_all.")
                     continue
         return results
 
@@ -402,7 +405,7 @@ class Mem0Memory(LocalMemory):
 
             try:
                 return self.client.get_all(filters={"user_id": resolved_user_id})
-            except Exception:
+            except TypeError:
                 return self.client.get_all(user_id=resolved_user_id)
         except Exception as e:
             msg = str(e)

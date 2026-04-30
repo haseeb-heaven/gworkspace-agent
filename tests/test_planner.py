@@ -58,3 +58,18 @@ def test_build_gmail_send_message_command():
     )
     assert args[:4] == ["gmail", "users", "messages", "send"]
     assert "--json" in args
+
+
+def test_build_gmail_send_message_rejects_attachments_during_planning():
+    planner = CommandPlanner()
+    with pytest.raises(ValidationError, match="materialized at execution time"):
+        planner.build_command(
+            "gmail",
+            "send_message",
+            {
+                "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
+                "subject": "Hello",
+                "body": "Test message",
+                "attachments": ["/etc/passwd"],
+            },
+        )

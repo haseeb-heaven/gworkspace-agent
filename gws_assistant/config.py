@@ -164,6 +164,9 @@ class AppConfig:
 
             code_execution_enabled = _to_bool(os.getenv("CODE_EXECUTION_ENABLED"), default=True)
             code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
+            if code_execution_backend == "restricted_subprocess":
+                code_execution_backend = "local"
+            code_execution_timeout_seconds = int((os.getenv("CODE_EXECUTION_TIMEOUT_SECONDS") or "5").strip())
             e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
 
             gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "0").strip())
@@ -176,6 +179,9 @@ class AppConfig:
             mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
             telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
             telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
+            telegram_confirmation_timeout_seconds = float(
+                (os.getenv("TELEGRAM_CONFIRMATION_TIMEOUT_SECONDS") or "60").strip()
+            )
             # Removed redundant re-fetch of groq_api_key, ollama_api_base, memory_type
             # as they are now resolved above.
 
@@ -202,6 +208,7 @@ class AppConfig:
                 use_heuristic_fallback=use_heuristic_fallback,
                 code_execution_enabled=code_execution_enabled,
                 code_execution_backend=code_execution_backend,
+                code_execution_timeout_seconds=code_execution_timeout_seconds,
                 e2b_api_key=e2b_api_key,
                 gws_timeout_seconds=gws_timeout_seconds,
                 gws_max_retries=gws_max_retries,
@@ -214,6 +221,7 @@ class AppConfig:
                 mem0_local_storage_path=mem0_local_storage_path,
                 telegram_bot_token=telegram_bot_token,
                 telegram_chat_id=telegram_chat_id,
+                telegram_confirmation_timeout_seconds=telegram_confirmation_timeout_seconds,
                 sandbox_enabled=sandbox_enabled,
                 read_only_mode=read_only_mode,
                 llm_fallback_models=llm_fallback_models,

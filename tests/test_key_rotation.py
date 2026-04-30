@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -36,19 +37,43 @@ def config():
 
 
 def test_rotate_api_key_method(config):
+    original_env = os.environ.get("OPENROUTER_API_KEY")
     assert config.api_key == "key1"
 
     config.rotate_api_key()
     assert config.api_key == "key2"
-    assert os.environ["OPENROUTER_API_KEY"] == "key2"
 
     config.rotate_api_key()
     assert config.api_key == "key3"
-    assert os.environ["OPENROUTER_API_KEY"] == "key3"
 
     config.rotate_api_key()
     assert config.api_key == "key1"
-    assert os.environ["OPENROUTER_API_KEY"] == "key1"
+    assert os.environ.get("OPENROUTER_API_KEY") == original_env
+
+
+def test_rotate_api_key_thread_safe(config):
+    config.llm_api_keys = ["key1", "key2", "key3"]
+    config.api_key = "key1"
+    config.current_key_idx = 0
+    barrier = threading.Barrier(6)
+    errors: list[Exception] = []
+
+    def rotate() -> None:
+        try:
+            barrier.wait()
+            config.rotate_api_key()
+        except Exception as exc:  # pragma: no cover - defensive test harness
+            errors.append(exc)
+
+    threads = [threading.Thread(target=rotate) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors
+    assert config.current_key_idx == 0
+    assert config.api_key == "key1"
 
 
 @patch("openai.resources.chat.Completions.create")

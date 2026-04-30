@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import json
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from .models import AppConfigModel, ExecutionResult
 # trigger WinError 206 ("The filename or extension is too long").  We use a
 # conservative threshold so the total command stays well below that ceiling.
 _WIN_ARG_SAFE_BYTES = 8_000
+_SAFE_POSITIONAL_TOKEN_RE = r"^[A-Za-z0-9_.:+-]+$"
 
 
 def _args_too_long(args: list[str]) -> bool:
@@ -34,22 +36,71 @@ def _validate_args(args: list[str]) -> None:
         "--name", "--description", "--mime-type", "--id", "--thread-id",
         "--message-id", "--file-id", "--document-id", "--spreadsheet-id"
     }
+    ALLOWED_SHORT_FLAGS = {"-o", "-"}
     # List of allowed services/subcommands
     ALLOWED_SERVICES = {
         "drive", "gmail", "sheets", "docs", "calendar", "admin-reports",
         "reports", "tasks", "people", "chat", "classroom", "forms",
         "keep", "meet", "events", "modelarmor", "workflow", "wf",
-        "script", "schema"
+        "script", "schema", "search", "admin", "code", "computation"
     }
+    import re
 
-    for arg in args:
+    if not args:
+        raise ValueError("Command arguments cannot be empty.")
+
+    service = args[0]
+    if service not in ALLOWED_SERVICES:
+        raise ValueError(f"Disallowed service: {service}")
+
+    expecting_value_for: str | None = None
+
+    for index, arg in enumerate(args):
+        if expecting_value_for is not None:
+            expecting_value_for = None
+            continue
+
         if arg.startswith("--"):
             # Check flag (handle --flag=value)
             flag = arg.split("=")[0]
             if flag not in ALLOWED_FLAGS:
                 raise ValueError(f"Disallowed argument: {arg}")
-        # Note: positional args (services/actions/values) are generally safer 
-        # but we could also validate services if needed.
+            if "=" not in arg:
+                expecting_value_for = flag
+        elif arg.startswith("-"):
+            if arg not in ALLOWED_SHORT_FLAGS:
+                raise ValueError(f"Disallowed short argument: {arg}")
+            if arg != "-":
+                expecting_value_for = arg
+        elif index > 0 and not re.match(_SAFE_POSITIONAL_TOKEN_RE, arg):
+            raise ValueError(f"Disallowed positional argument: {arg}")
+
+
+def _detect_structured_failure(stdout: str, stderr: str) -> str | None:
+    """Return an error message when stdout/stderr contains an explicit JSON failure envelope."""
+    for raw in (stdout, stderr):
+        candidate = (raw or "").strip()
+        if not candidate or candidate[0] not in "{[":
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+        if isinstance(parsed, dict):
+            status = str(parsed.get("status", "")).lower()
+            code = parsed.get("code")
+            if parsed.get("error"):
+                return str(parsed["error"])
+            if parsed.get("success") is False:
+                return str(parsed.get("message") or "Command reported success=false.")
+            if parsed.get("ok") is False:
+                return str(parsed.get("description") or parsed.get("message") or "Command reported ok=false.")
+            if status in {"error", "failed", "failure"}:
+                return str(parsed.get("message") or f"Command reported status={status}.")
+            if isinstance(code, int) and code >= 400:
+                return str(parsed.get("message") or parsed.get("error") or f"Command reported code={code}.")
+    return None
 
 
 def _rewrite_large_args_via_tempfile(
@@ -153,21 +204,25 @@ class GWSRunner:
 
                 stderr = re.sub(r"Using keyring backend:.*", "", stderr).strip()
 
+            structured_failure = _detect_structured_failure(stdout, stderr)
+            success = result.returncode == 0 and structured_failure is None
+
             return ExecutionResult(
-                success=result.returncode == 0,
+                success=success,
                 command=command,
                 stdout=stdout,
                 stderr=stderr,
                 return_code=result.returncode,
+                error=structured_failure,
             )
-        except subprocess.TimeoutExpired:
-            msg = f"Command timed out after {timeout} seconds."
-            self.logger.error("%s: %s", msg, " ".join(command))
+        except subprocess.TimeoutExpired as exc:
+            msg = f"Command timed out after {timeout} seconds while executing: {' '.join(command)}"
+            self.logger.exception(msg)
             return ExecutionResult(
                 success=False,
                 command=command,
-                stdout="",
-                stderr=msg,
+                stdout=(exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")),
+                stderr=(exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or msg)),
                 return_code=-1,
                 error=msg,
             )

@@ -510,3 +510,50 @@ def test_legacy_placeholder_resolution():
 
     resolved_sheet = executor._resolve_placeholders("$sheet_email_body", context)
     assert resolved_sheet == "| Col1 | Col2 |\n|---|---|\n| A | B |"
+
+
+def test_execute_single_task_fails_on_invalid_json_stdout():
+    class InvalidJsonRunner(FakeRunner):
+        def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
+            self.commands.append(args)
+            return ExecutionResult(success=True, command=args, stdout="not json")
+
+    runner = InvalidJsonRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    task = PlannedTask(id="1", service="gmail", action="list_messages", parameters={"q": "foo"}, reason="Test")
+    result = executor.execute_single_task(task, {})
+    assert result.success is False
+    assert "Failed to parse" in (result.error or "")
+
+
+def test_execute_single_task_fails_on_non_mapping_json_stdout():
+    class ArrayJsonRunner(FakeRunner):
+        def run(self, args: list[str], timeout_seconds: int = 90) -> ExecutionResult:
+            self.commands.append(args)
+            return ExecutionResult(success=True, command=args, stdout='["ok"]')
+
+    runner = ArrayJsonRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    task = PlannedTask(id="1", service="gmail", action="list_messages", parameters={"q": "foo"}, reason="Test")
+    result = executor.execute_single_task(task, {})
+    assert result.success is False
+    assert "Unexpected response schema" in (result.error or "")
+
+
+def test_execute_single_task_rejects_unsafe_local_attachment_path():
+    runner = FakeRunner()
+    executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
+    task = PlannedTask(
+        id="1",
+        service="gmail",
+        action="send_message",
+        parameters={
+            "to_email": "test@example.com",
+            "subject": "Unsafe",
+            "body": "Test",
+            "attachments": ["/etc/passwd"],
+        },
+    )
+    result = executor.execute_single_task(task, {})
+    assert result.success is False
+    assert "scratch/" in (result.error or "") or "downloads/" in (result.error or "")

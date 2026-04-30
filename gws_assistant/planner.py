@@ -31,6 +31,7 @@ _DRIVE_FILE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{25,60}$")
 
 # MIME type used when exporting Google Docs to PDF for attachment.
 _GDOC_EXPORT_MIME = "application/pdf"
+_ATTACHMENT_ALLOWED_ROOTS = ("downloads", "scratch")
 
 # ---------------------------------------------------------------------------
 # Date / time helpers
@@ -563,32 +564,13 @@ class CommandPlanner:
             elif isinstance(attachments, list):
                 attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
-            # Resolve any raw Drive file IDs in attachment_paths to local files.
-            resolved_attachment_paths: list[str] = []
-            for path in attachment_paths:
-                if _DRIVE_FILE_ID_RE.match(path):
-                    local_path = self._export_drive_file_to_temp(path)
-                    if local_path:
-                        resolved_attachment_paths.append(local_path)
-                    else:
-                        drive_link = f"https://drive.google.com/file/d/{path}/view"
-                        body = (
-                            body.rstrip()
-                            + "\n\nNote: The requested document could not be attached directly. "
-                            + f"You can access it here: {drive_link}"
-                        )
-                else:
-                    resolved_attachment_paths.append(path)
-
-            if resolved_attachment_paths:
-                raw_email = self._build_raw_email_with_attachments(
-                    to_email=to_email,
-                    subject=subject,
-                    body=body,
-                    attachment_paths=resolved_attachment_paths,
+            if attachment_paths:
+                raise ValidationError(
+                    "Gmail attachments are materialized at execution time only. "
+                    "Pass Drive file IDs or safe scratch/downloads paths to the executor."
                 )
-            else:
-                raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
+
+            raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
 
             return [
                 "gmail",
@@ -623,6 +605,7 @@ class CommandPlanner:
             start_date_raw = self._required_text(params, "start_date")
             start_date = _resolve_date_expression(start_date_raw)
             time_zone = str(params.get("time_zone") or params.get("timezone") or "UTC").strip()
+            event_id = str(params.get("event_id") or "").strip()
             start_datetime_raw = str(params.get("start_datetime") or "").strip()
             start_time_raw = str(params.get("start_time") or "").strip()
 
@@ -675,6 +658,8 @@ class CommandPlanner:
                 "start": event_start,
                 "end": event_end,
             }
+            if event_id:
+                event_body["id"] = event_id
 
             if description:
                 event_body["description"] = description
@@ -1074,16 +1059,13 @@ class CommandPlanner:
         msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
         msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
         for path in attachment_paths:
-            # Strip [File: ] decoration if present
-            if isinstance(path, str) and path.startswith("[File: ") and path.endswith("]"):
-                path = path[7:-1].strip()
-
-            if not path or not os.path.isfile(str(path)):
+            normalized_path = CommandPlanner._normalize_attachment_path(path)
+            if not normalized_path:
                 continue
 
-            filename = os.path.basename(str(path))
+            filename = os.path.basename(normalized_path)
             try:
-                with open(str(path), "rb") as fh:
+                with open(normalized_path, "rb") as fh:
                     data = fh.read()
                 part = email_lib.mime.application.MIMEApplication(data, Name=filename)
                 part["Content-Disposition"] = f'attachment; filename="{filename}"'
@@ -1091,6 +1073,31 @@ class CommandPlanner:
             except Exception:
                 continue
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+
+    @staticmethod
+    def _normalize_attachment_path(path: str) -> str | None:
+        """Return a normalized safe attachment path, or None if the path is invalid."""
+        if isinstance(path, str) and path.startswith("[File: ") and path.endswith("]"):
+            path = path[7:-1].strip()
+
+        if not path:
+            return None
+
+        from pathlib import Path
+
+        resolved = Path(path).expanduser().resolve()
+        if not resolved.is_file():
+            return None
+
+        allowed_roots = [Path(root).resolve() for root in _ATTACHMENT_ALLOWED_ROOTS]
+        if any(str(resolved).startswith(str(root)) for root in allowed_roots):
+            return str(resolved)
+
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        for parent in resolved.parents:
+            if parent.parent == temp_root and parent.name.startswith("gws_attach_"):
+                return str(resolved)
+        return None
 
     @staticmethod
     def _export_drive_file_to_temp(file_id: str) -> str | None:

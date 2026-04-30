@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -29,6 +29,7 @@ class AppConfigModel:
     use_heuristic_fallback: bool = True
     code_execution_enabled: bool = True
     code_execution_backend: str = "local"
+    code_execution_timeout_seconds: int = 5
     e2b_api_key: str | None = None
     gws_timeout_seconds: int = 180
     gws_max_retries: int = 3
@@ -43,6 +44,7 @@ class AppConfigModel:
     mem0_local_storage_path: str = ".gemini/memories.jsonl"
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    telegram_confirmation_timeout_seconds: float = 60.0
     sandbox_enabled: bool = True
     read_only_mode: bool = True
     llm_fallback_models: list[str] = field(default_factory=list)
@@ -61,28 +63,18 @@ class AppConfigModel:
     # fields between method calls — the slot write is silently dropped, causing
     # rotate_api_key() to always read index 0 and always jump to index 1.
     current_key_idx: int = 0
+    rotation_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def rotate_api_key(self) -> str | None:
         keys = self.llm_api_keys
         if not keys:
             return self.api_key
 
-        self.current_key_idx = (self.current_key_idx + 1) % len(keys)
-        new_key = keys[self.current_key_idx]
-        self.api_key = new_key
-        # Sync with environment so LiteLLM/OpenAI clients pick it up
-        for env_var in [
-            "LLM_API_KEY",
-            "OPENROUTER_API_KEY",
-            "OPENAI_API_KEY",
-            "GROQ_API_KEY",
-            "GOOGLE_API_KEY",
-            "GEMINI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "MISTRAL_API_KEY",
-        ]:
-            os.environ[env_var] = new_key
-        return new_key
+        with self.rotation_lock:
+            self.current_key_idx = (self.current_key_idx + 1) % len(keys)
+            new_key = keys[self.current_key_idx]
+            self.api_key = new_key
+            return new_key
 
     def api_model_name(self) -> str:
         """Strips the LiteLLM provider prefix from the model name."""

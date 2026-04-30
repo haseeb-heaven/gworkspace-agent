@@ -1,10 +1,11 @@
 """Tests for telegram_app module — covers auth_check, split_and_send, and handler stubs."""
 from __future__ import annotations
 
+import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from gws_assistant.telegram_app import auth_check, split_and_send
+from gws_assistant.telegram_app import auth_check, handle_text, split_and_send
 
 
 @pytest.mark.asyncio
@@ -90,3 +91,20 @@ async def test_run_gws_task_success():
         
         assert update.effective_message.reply_text.called
         mock_exec.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_text_requires_yes_no_for_pending_confirmation():
+    future = asyncio.get_running_loop().create_future()
+    update = MagicMock()
+    update.effective_chat.id = 12345
+    update.effective_message.text = "what is the status?"
+    update.effective_message.reply_text = AsyncMock()
+    context = MagicMock()
+    context.bot_data = {"config": MagicMock()}
+    context.application.bot_data = {"pending_confirmations": {12345: future}}
+
+    await handle_text(update, context)
+
+    assert not future.done()
+    update.effective_message.reply_text.assert_called_once()
