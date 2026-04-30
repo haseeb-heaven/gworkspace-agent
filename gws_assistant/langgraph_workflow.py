@@ -56,6 +56,8 @@ _GWS_INTENT_KEYWORDS = (
     "search emails",
     "job offer",
     "inbox",
+    "task",
+    "todo",
 )
 
 # Phrases that indicate an LLM refusal or non-code response.

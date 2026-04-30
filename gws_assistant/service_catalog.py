@@ -372,7 +372,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "contacts": ServiceSpec(
         key="contacts",
         label="Google Contacts",
-        aliases=("contacts", "people", "profile", "profiles"),
+        aliases=("contacts", "contact", "people", "profile", "profiles"),
         description="List contacts from the authenticated Google account.",
         actions={
             "list_contacts": ActionSpec(
@@ -387,7 +387,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "chat": ServiceSpec(
         key="chat",
         label="Google Chat",
-        aliases=("chat", "spaces", "messages"),
+        aliases=("chat", "space", "spaces", "messages"),
         description="Send and read messages in Google Chat spaces.",
         actions={
             "list_spaces": ActionSpec(
@@ -453,7 +453,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "keep": ServiceSpec(
         key="keep",
         label="Google Keep",
-        aliases=("keep", "notes", "keep notes"),
+        aliases=("keep", "note", "notes", "keep notes"),
         description="Manage Google Keep notes. Note: The API may have limited access in personal accounts; enterprise accounts are preferred.",
         actions={
             "list_notes": ActionSpec(
@@ -515,7 +515,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "admin": ServiceSpec(
         key="admin",
         label="Google Admin SDK",
-        aliases=("admin", "directory", "users", "sdk", "reports", "admin-reports"),
+        aliases=("admin", "directory", "user", "users", "sdk", "reports", "admin-reports"),
         description="Audit logs and activity reports via the Google Admin SDK (Reports API). Use for tracking user logins, drive events, or admin changes.",
         actions={
             "log_activity": ActionSpec(
@@ -540,7 +540,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "tasks": ServiceSpec(
         key="tasks",
         label="Google Tasks",
-        aliases=("tasks", "todo", "todo list", "task list"),
+        aliases=("tasks", "task", "todo", "todo list", "task list"),
         description="Manage task lists and tasks in Google Tasks.",
         actions={
             "list_tasklists": ActionSpec(
