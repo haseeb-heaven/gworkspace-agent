@@ -1,0 +1,120 @@
+<svg width="900" height="600" viewBox="0 0 900 600" xmlns="http://www.w3.org/2000/svg">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&amp;family=Fira+Code&amp;display=swap');
+        
+        .container { font-family: 'Inter', sans-serif; }
+        .terminal { font-family: 'Fira Code', monospace; }
+        
+        @keyframes cliFlow {
+            0% { opacity: 0; }
+            2% { opacity: 1; }
+            30% { opacity: 1; transform: scale(1); }
+            32% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 0; }
+        }
+        
+        @keyframes guiFlow {
+            0% { opacity: 0; }
+            32% { opacity: 0; transform: scale(1.05); }
+            34% { opacity: 1; transform: scale(1); }
+            64% { opacity: 1; transform: scale(1); }
+            66% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 0; }
+        }
+        
+        @keyframes webFlow {
+            0% { opacity: 0; }
+            66% { opacity: 0; }
+            68% { opacity: 1; }
+            98% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 450px; }
+        }
+
+        .cli-layer { animation: cliFlow 10s infinite; opacity: 0; }
+        .gui-layer { animation: guiFlow 10s infinite; opacity: 0; }
+        .web-layer { animation: webFlow 10s infinite; opacity: 0; }
+        
+        .cursor { animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+
+    <rect width="900" height="600" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+
+    <!-- CLI LAYER -->
+    <g class="cli-layer">
+        <rect width="900" height="600" rx="12" fill="#1e293b"/>
+        <text x="30" y="50" fill="#22c55e" class="terminal" font-size="16">PS D:\Code\gworkspace-agent&gt;</text>
+        <text x="270" y="50" fill="#f8fafc" class="terminal" font-size="16">python gws_cli.py --task "List my drive files"</text>
+        
+        <g transform="translate(30, 100)">
+            <text y="20" fill="#94a3b8" class="terminal" font-size="14">2026-04-22 04:10:12 | INFO | Starting CLI application...</text>
+            <text y="45" fill="#94a3b8" class="terminal" font-size="14">2026-04-22 04:10:14 | INFO | Local Memory: found 2 past episodes</text>
+            
+            <text x="20" y="95" fill="#f8fafc" class="terminal" font-size="14">╭─────────────────────────────────────────────────╮</text>
+            <text x="20" y="115" fill="#f8fafc" class="terminal" font-size="14">│  [1] drive.list_files → Searching...             │</text>
+            <text x="20" y="135" fill="#f8fafc" class="terminal" font-size="14">╰─────────────────────────────────────────────────╯</text>
+            
+            <text y="170" fill="#22c55e" class="terminal" font-size="16">✅ Found 15 files:</text>
+            <text y="195" fill="#94a3b8" class="terminal" font-size="14">- Project_Plan.docx (ID: 1x7...)</text>
+            <text y="220" fill="#94a3b8" class="terminal" font-size="14">- Q1_Budget.xlsx (ID: 9a2...)</text>
+            <text y="245" fill="#94a3b8" class="terminal" font-size="14">- Team_Photo.png (ID: k8k...)</text>
+        </g>
+    </g>
+
+    <!-- GUI LAYER -->
+    <g class="gui-layer">
+        <rect width="900" height="600" rx="12" fill="#242424"/>
+        <rect width="900" height="40" fill="#1a1a1a"/>
+        <text x="20" y="25" fill="#f8fafc" font-weight="bold" font-size="14">Google Workspace Assistant (Desktop)</text>
+        
+        <g transform="translate(40, 80)">
+            <rect width="820" height="80" rx="8" fill="#333" stroke="#444"/>
+            <text x="20" y="45" fill="#f8fafc" font-size="18">"Find latest Python 3.13 notes and email them"</text>
+            
+            <rect y="100" width="400" height="40" rx="6" fill="#333"/>
+            <text x="15" y="125" fill="#f8fafc">Service: drive</text>
+            
+            <rect x="420" y="100" width="400" height="40" rx="6" fill="#333"/>
+            <text x="435" y="125" fill="#f8fafc">Action: list_files</text>
+            
+            <rect y="160" width="180" height="45" rx="6" fill="#3b82f6"/>
+            <text x="35" y="188" fill="white" font-weight="bold">Execute Action</text>
+            
+            <rect y="230" width="820" height="250" rx="8" fill="#1a1a1a"/>
+            <text x="20" y="260" fill="#888" class="terminal" font-size="14">&gt; Validating request...</text>
+            <text x="20" y="285" fill="#888" class="terminal" font-size="14">&gt; Building command: gws drive files list</text>
+            <text x="20" y="310" fill="#888" class="terminal" font-size="14">&gt; Success. Found 3 matches.</text>
+        </g>
+    </g>
+
+    <!-- WEB LAYER -->
+    <g class="web-layer">
+        <rect width="900" height="600" rx="12" fill="#f1f5f9"/>
+        <rect width="900" height="35" fill="#e2e8f0"/>
+        <text x="20" y="22" fill="#64748b" font-size="12">🔒 http://localhost:7860</text>
+        
+        <g transform="translate(50, 80)">
+            <text y="30" fill="#3b82f6" font-weight="bold" font-size="28">GWS Agent Web</text>
+            
+            <rect x="400" y="60" width="350" height="60" rx="12" fill="#3b82f6"/>
+            <text x="420" y="95" fill="white">"What are my meetings for today?"</text>
+            
+            <rect y="140" width="400" height="120" rx="12" fill="white" stroke="#e2e8f0"/>
+            <text x="20" y="175" fill="#1e293b" font-weight="bold">Assistant:</text>
+            <text x="20" y="195" fill="#1e293b">You have 3 events today:</text>
+            <text x="20" y="215" fill="#1e293b">1. Morning Standup (9:00 AM)</text>
+            <text x="20" y="235" fill="#1e293b">2. Client Review (1:30 PM)</text>
+        </g>
+        
+        <rect x="50" y="520" width="800" height="45" rx="22" fill="white" stroke="#ddd"/>
+        <text x="80" y="548" fill="#888">Type your request here...</text>
+    </g>
+
+    <rect x="680" y="550" width="200" height="35" rx="17" fill="black" opacity="0.8"/>
+    <text x="700" y="572" fill="white" font-size="12">Simulation Mode: Active</text>
+</svg>

@@ -21,7 +21,9 @@ def test_live_workspace_sheet_and_email_flow():
     if not recipient:
         pytest.skip("LIVE_TEST_RECIPIENT_EMAIL is required for live email verification.")
 
-    gws_binary = Path((os.getenv("GWS_BINARY_PATH") or "gws.exe")).expanduser()
+    gws_binary = Path(
+        (os.getenv("GWS_BINARY_PATH") or os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"))
+    ).expanduser()
     if not gws_binary.exists():
         pytest.skip("GWS_BINARY_PATH does not exist for live integration run.")
 
@@ -29,6 +31,7 @@ def test_live_workspace_sheet_and_email_flow():
         provider=(os.getenv("LLM_PROVIDER") or "openai"),
         model=(os.getenv("LLM_MODEL") or "gpt-4.1-mini"),
         api_key=(os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip() or None,
+        llm_fallback_models=[],
         base_url=None,
         timeout_seconds=60,
         gws_binary_path=gws_binary,

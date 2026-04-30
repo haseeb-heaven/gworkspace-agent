@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,14 +10,14 @@ from gws_assistant.gws_runner import GWSRunner
 
 
 def test_runner_validate_binary(tmp_path):
-    binary = tmp_path / "gws.exe"
+    binary = tmp_path / Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")).name
     binary.write_text("binary")
     runner = GWSRunner(binary, logging.getLogger("test"))
     assert runner.validate_binary() is True
 
 
 def test_runner_success(monkeypatch, tmp_path):
-    binary = tmp_path / "gws.exe"
+    binary = tmp_path / Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")).name
     binary.write_text("binary")
     runner = GWSRunner(binary, logging.getLogger("test"))
 
@@ -39,4 +40,3 @@ def test_runner_timeout(monkeypatch):
     result = runner.run(["drive"], timeout_seconds=1)
     assert result.success is False
     assert "timed out" in (result.error or "").lower()
-

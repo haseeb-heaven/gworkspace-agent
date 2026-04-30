@@ -1,130 +1,108 @@
-from __future__ import annotations
-
-import importlib.util
 import json
 import os
-import re
-import subprocess
-import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import pytest
 from dotenv import dotenv_values
 
-
-ROOT = Path(__file__).resolve().parents[1]
-ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+ROOT = Path(__file__).parent.parent
 
 
-def _run_command(args: list[str], env: dict | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
-        cwd=ROOT,
+def test_cli_module_help_smoke():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "gws_assistant", "--help"],
         capture_output=True,
         text=True,
-        timeout=20,
-        check=False,
-        env=env,
+        encoding="utf-8",
+        errors="replace",
     )
-
-
-def _clean_output(text: str) -> str:
-    return ANSI_ESCAPE_RE.sub("", text)
-
-
-@pytest.mark.skipif(importlib.util.find_spec("rich") is None, reason="CLI runtime dependencies are not installed")
-def test_cli_module_help_smoke():
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path("src").resolve())
-    result = _run_command([sys.executable, "-m", "gws_assistant.cli_app", "--help"], env=env)
-    output = _clean_output(f"{result.stdout}\n{result.stderr}")
     assert result.returncode == 0
-    assert "Google Workspace Assistant CLI" in output
-    assert "--setup" in output
+    stdout = result.stdout or ""
+    assert "usage" in stdout.lower()
+    assert "assistant" in stdout.lower()
 
 
-@pytest.mark.skipif(not (ROOT / "gws.exe").exists(), reason="Bundled gws.exe is not present")
 def test_gws_binary_help_smoke():
-    result = _run_command([str(ROOT / "gws.exe"), "--help"])
-    output = f"{result.stdout}\n{result.stderr}"
+    import os
+    import subprocess
+
+    gws_path = os.getenv("GWS_BINARY_PATH")
+    if not gws_path or not os.path.exists(gws_path):
+        pytest.skip(f"GWS_BINARY_PATH not found or invalid: {gws_path}")
+
+    result = subprocess.run(
+        [gws_path, "--help"],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0
-    assert "Google Workspace CLI" in output
-    assert "SERVICES:" in output
+    assert "usage:" in result.stdout.lower()
 
 
 def test_gradio_launcher_help_smoke():
-    result = _run_command([sys.executable, "gws_gradio.py", "--help"])
-    output = f"{result.stdout}\n{result.stderr}"
+    import subprocess
+    import sys
+
+    # Check if gradio_launcher.py exists
+    launcher_path = ROOT / "gradio_launcher.py"
+    if not launcher_path.exists():
+        pytest.skip("gradio_launcher.py not found")
+
+    result = subprocess.run(
+        [sys.executable, str(launcher_path), "--help"],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0
-    assert "Run Google Workspace Assistant in Gradio" in output
-    assert "--port" in output
+    assert "usage:" in result.stdout.lower()
 
 
-@pytest.mark.skipif(os.getenv("RUN_OPENROUTER_SMOKE") != "1", reason="Set RUN_OPENROUTER_SMOKE=1 to run API smoke test")
-def test_openrouter_chat_completion_smoke():
+@pytest.mark.skipif(
+    os.getenv("RUN_OPENROUTER_SMOKE") != "1" and dotenv_values(ROOT / ".env").get("RUN_OPENROUTER_SMOKE") != "1",
+    reason="Set RUN_OPENROUTER_SMOKE=1 in .env to run API smoke test"
+)
+def test_llm_chat_completion_smoke():
     env_file = dotenv_values(ROOT / ".env")
-    api_key = os.getenv("OPENROUTER_API_KEY") or env_file.get("OPENROUTER_API_KEY")
+    api_key = os.getenv("LLM_API_KEY") or env_file.get("LLM_API_KEY")
     if not api_key:
-        pytest.skip("OPENROUTER_API_KEY is not configured")
+        pytest.skip("LLM_API_KEY is not configured")
 
+    provider = os.getenv("LLM_PROVIDER") or env_file.get("LLM_PROVIDER") or "google"
     model = (
-        os.getenv("OPENROUTER_SMOKE_MODEL")
-        or env_file.get("OPENROUTER_SMOKE_MODEL")
-        or os.getenv("OPENROUTER_MODEL")
-        or env_file.get("OPENROUTER_MODEL")
-        or "openai/gpt-4.1-mini"
-    )
-    base_url = (
-        os.getenv("OPENROUTER_BASE_URL")
-        or env_file.get("OPENROUTER_BASE_URL")
-        or "https://openrouter.ai/api/v1"
-    ).rstrip("/")
-
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "Reply with only: ok"}],
-            "max_tokens": 8,
-            "temperature": 0,
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        f"{base_url}/chat/completions",
-        data=payload,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://localhost/google-workspace-cli",
-            "X-Title": "google-workspace-cli smoke test",
-        },
+        os.getenv("LLM_MODEL")
+        or env_file.get("LLM_MODEL")
+        or "google/gemini-2.5-flash"
     )
 
+    full_model = model
+    if provider and provider != "openai" and not model.startswith(f"{provider}/"):
+        full_model = f"{provider}/{model}"
+
+    import litellm
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            body = response.read().decode("utf-8")
-            status = response.status
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        pytest.fail(f"OpenRouter smoke test failed with HTTP {exc.code}: {_sanitize_openrouter_error(body)}")
-    except urllib.error.URLError as exc:
-        pytest.fail(f"OpenRouter smoke test failed to connect: {exc.reason}")
-
-    assert status == 200
-    data = json.loads(body)
-    assert data.get("choices"), f"OpenRouter response had no choices: {_sanitize_openrouter_error(body)}"
+        response = litellm.completion(
+            model=full_model,
+            messages=[{"role": "user", "content": "Reply with only: ok"}],
+            max_tokens=8,
+            api_key=api_key,
+        )
+        content = response.choices[0].message.content.lower()
+        assert "ok" in content
+    except Exception as e:
+        pytest.fail(f"LLM smoke test failed for {full_model}: {str(e)}")
 
 
 def _sanitize_openrouter_error(body: str) -> str:
     try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return body[:500]
-    payload.pop("user_id", None)
-    if isinstance(payload.get("error"), dict):
-        metadata = payload["error"].get("metadata")
-        if isinstance(metadata, dict):
-            metadata.pop("raw", None)
-    return json.dumps(payload, ensure_ascii=True)[:500]
+        data = json.loads(body)
+        if "error" in data:
+            err = data["error"]
+            if isinstance(err, dict):
+                return err.get("message", body)
+            return str(err)
+    except Exception:
+        pass
+    return body

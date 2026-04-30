@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GWS Agent Demo Simulation</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --terminal-bg: #1e293b;
+            --gui-bg: #242424;
+            --accent: #3b82f6;
+            --text: #f8fafc;
+            --success: #22c55e;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .screen-container {
+            width: 900px;
+            height: 600px;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+
+        /* --- Interface 1: CLI --- */
+        .cli-window {
+            width: 100%;
+            height: 100%;
+            background: var(--terminal-bg);
+            font-family: 'Consolas', 'Courier New', monospace;
+            padding: 20px;
+            box-sizing: border-box;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+            opacity: 0;
+            animation: cliFlow 10s forwards;
+        }
+
+        @keyframes cliFlow {
+            0% { opacity: 0; }
+            5% { opacity: 1; }
+            30% { opacity: 1; transform: scale(1); }
+            35% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 0; }
+        }
+
+        .prompt { color: var(--success); margin-right: 10px; }
+        .command { color: var(--text); }
+        .typing {
+            width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid var(--accent);
+            animation: typing 2s steps(40) 1s forwards;
+        }
+
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+
+        .cli-output {
+            margin-top: 20px;
+            color: #94a3b8;
+            opacity: 0;
+            animation: fadeIn 0.5s ease 3s forwards;
+        }
+
+        /* --- Interface 2: Desktop GUI --- */
+        .gui-window {
+            width: 100%;
+            height: 100%;
+            background: var(--gui-bg);
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 5;
+            opacity: 0;
+            animation: guiFlow 10s 10s forwards;
+        }
+
+        @keyframes guiFlow {
+            0% { opacity: 0; transform: scale(1.05); }
+            5% { opacity: 1; transform: scale(1); }
+            95% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(0.95); }
+        }
+
+        .gui-header {
+            height: 40px;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .gui-content { padding: 30px; }
+        .btn {
+            background: var(--accent);
+            padding: 8px 20px;
+            border-radius: 6px;
+            display: inline-block;
+            margin-top: 10px;
+            cursor: pointer;
+            animation: clickPulse 1s infinite alternate;
+        }
+
+        @keyframes clickPulse {
+            from { transform: scale(1); box-shadow: 0 0 0px var(--accent); }
+            to { transform: scale(1.05); box-shadow: 0 0 10px var(--accent); }
+        }
+
+        /* --- Interface 3: Web GUI --- */
+        .web-window {
+            width: 100%;
+            height: 100%;
+            background: #f1f5f9;
+            color: #1e293b;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            opacity: 0;
+            animation: webFlow 10s 20s forwards;
+        }
+
+        @keyframes webFlow {
+            0% { opacity: 0; }
+            5% { opacity: 1; }
+            100% { opacity: 1; }
+        }
+
+        .browser-bar {
+            height: 35px;
+            background: #e2e8f0;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .chat-bubble {
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            max-width: 70%;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .status-overlay {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+            border: 1px solid var(--accent);
+        }
+
+        @keyframes fadeIn { to { opacity: 1; } }
+
+    </style>
+</head>
+<body>
+
+    <div class="screen-container">
+        
+        <!-- CLI Simulation -->
+        <div class="cli-window">
+            <div><span class="prompt">PS D:\Code\gworkspace-agent></span><span class="command typing">python gws_cli.py --task "List my drive files"</span></div>
+            <div class="cli-output">
+                <br>
+                2026-04-22 04:10:12 | INFO | Starting CLI application...<br>
+                2026-04-22 04:10:14 | INFO | Local Memory: found 2 past episodes<br>
+                <br>
+                ╭─────────────────────────────────────────────────╮<br>
+                │  [1] drive.list_files → Searching...             │<br>
+                ╰─────────────────────────────────────────────────╯<br>
+                <br>
+                ✅ Found 15 files:<br>
+                - Project_Plan.docx (ID: 1x7...)<br>
+                - Q1_Budget.xlsx (ID: 9a2...)<br>
+                - Team_Photo.png (ID: k8k...)<br>
+                <br>
+                <span class="prompt">PS D:\Code\gworkspace-agent></span>_
+            </div>
+        </div>
+
+        <!-- Desktop GUI Simulation -->
+        <div class="gui-window">
+            <div class="gui-header">Google Workspace Assistant (Desktop)</div>
+            <div class="gui-content">
+                <div style="background:#333; height:80px; padding:10px; border-radius:8px; border:1px solid #444">
+                    "Find latest Python 3.13 notes and email them"
+                </div>
+                <div style="margin-top:20px; display:flex; gap:10px;">
+                    <div style="background:#333; flex:1; height:35px; border-radius:6px; padding:5px">Service: drive</div>
+                    <div style="background:#333; flex:1; height:35px; border-radius:6px; padding:5px">Action: list_files</div>
+                </div>
+                <div class="btn">Execute Action</div>
+                <div style="background:#1a1a1a; margin-top:20px; height:250px; border-radius:8px; padding:15px; font-family:monospace; color:#888">
+                    > Validating request...<br>
+                    > Building command: gws drive files list<br>
+                    > Success. Found 3 matches.<br>
+                    > Updating UI components...
+                </div>
+            </div>
+        </div>
+
+        <!-- Web GUI Simulation -->
+        <div class="web-window">
+            <div class="browser-bar">🔒 http://localhost:7860</div>
+            <div style="padding:40px;">
+                <h1 style="color:var(--accent)">GWS Agent Web</h1>
+                <div class="chat-bubble" style="background:#3b82f6; color:white; align-self:flex-end; margin-left:auto;">
+                    "What are my meetings for today?"
+                </div>
+                <div class="chat-bubble">
+                    <b>Assistant:</b><br>
+                    You have 3 events today:<br>
+                    1. Morning Standup (9:00 AM)<br>
+                    2. Client Review (1:30 PM)<br>
+                    3. Gym Session (5:00 PM)
+                </div>
+                <div style="position:absolute; bottom:40px; width:80%; left:40px; height:45px; background:white; border:1px solid #ddd; border-radius:25px; padding:0 20px; display:flex; align-items:center; color:#888">
+                    Type your request here...
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="status-overlay">
+        <span id="demo-status">Mode: CLI Demo</span>
+    </div>
+
+    <script>
+        const status = document.getElementById('demo-status');
+        setTimeout(() => status.innerText = "Mode: Python Desktop GUI (gws_gui.py)", 10000);
+        setTimeout(() => status.innerText = "Mode: Web GUI (gws_gui_web.py)", 20000);
+    </script>
+</body>
+</html>

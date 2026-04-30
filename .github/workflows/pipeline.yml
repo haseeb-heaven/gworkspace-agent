@@ -1,0 +1,733 @@
+name: GWorkspace Agent CI/CD
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches: ["main", "master", "develop"]
+  workflow_dispatch:
+    inputs:
+      run_live_integration:
+        description: "Run live Google Workspace integration tests"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0632693223
+  GCP_REGION: us-central1
+  GCP_SERVICE: gworkspace-agent
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ──────────────────────────────────────────
+  # JOB 0: Auto Conflict Resolution
+  # Detects merge conflicts on PR and auto-resolves by merging
+  # the base branch into the feature branch (feature branch wins via ours).
+  # Resolved branch is pushed back to BOTH the feature branch AND develop.
+  # On unresolvable conflicts: posts comment, exits 0 (pipeline continues).
+  # ──────────────────────────────────────────
+  resolve-conflicts:
+    name: Auto Resolve Conflicts
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      conflict_free: ${{ steps.resolve.outputs.conflict_free }}
+    steps:
+      - name: Checkout PR head branch (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+
+      - name: Check if already up-to-date
+        id: check_dirty
+        run: |
+          MERGE_BASE=$(git merge-base HEAD ${{ github.base_ref }})
+          BASE_TIP=$(git rev-parse ${{ github.base_ref }})
+          if [ "$MERGE_BASE" = "$BASE_TIP" ]; then
+            echo "already_clean=true" >> $GITHUB_OUTPUT
+            echo "Branch already up-to-date with ${{ github.base_ref }}. Skipping."
+          else
+            echo "already_clean=false" >> $GITHUB_OUTPUT
+            echo "Branch is behind ${{ github.base_ref }}. Auto-resolving..."
+          fi
+
+      - name: Auto-resolve conflicts (feature branch wins via ours)
+        id: resolve
+        if: steps.check_dirty.outputs.already_clean == 'false'
+        run: |
+          # Step 1: Try clean patience merge
+          if git merge origin/${{ github.base_ref }} --no-edit --strategy-option=patience; then
+            echo "conflict_free=true" >> $GITHUB_OUTPUT
+            echo "Clean merge — no conflicts."
+            exit 0
+          fi
+
+          echo "Conflicts detected — auto-resolving (feature branch wins)..."
+          CONFLICTING=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+          echo "Conflicting files: $CONFLICTING"
+
+          # Step 2: Abort and re-merge with ours — feature branch always wins
+          git merge --abort
+          git merge origin/${{ github.base_ref }} --no-edit --strategy=ours
+
+          if [ $? -ne 0 ]; then
+            echo "conflict_free=false" >> $GITHUB_OUTPUT
+            echo "::warning::Even ours-strategy failed. Manual intervention required."
+
+            printf '⚠️ **Auto Conflict Resolution Failed**\n\nCI attempted to merge `%s` into `%s` but could not auto-resolve conflicts in:\n\n```\n%s\n```\n\nPlease resolve manually:\n```bash\ngit fetch origin\ngit checkout %s\ngit merge origin/%s\n# fix conflicts in the files listed above\ngit add .\ngit commit -m "chore: resolve merge conflicts with %s"\ngit push\n```' \
+              "${{ github.base_ref }}" \
+              "${{ github.head_ref }}" \
+              "$CONFLICTING" \
+              "${{ github.head_ref }}" \
+              "${{ github.base_ref }}" \
+              "${{ github.base_ref }}" > /tmp/conflict_comment.md
+
+            gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/conflict_comment.md
+            # EXIT 0 — pipeline must continue, not get stuck forever
+            exit 0
+          fi
+
+          echo "conflict_free=true" >> $GITHUB_OUTPUT
+          echo "Conflicts resolved — feature branch wins."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push resolved branch to feature branch
+        if: |
+          steps.check_dirty.outputs.already_clean == 'false' &&
+          steps.resolve.outputs.conflict_free == 'true'
+        run: |
+          git push origin HEAD:${{ github.head_ref }}
+          echo "Pushed resolved branch to ${{ github.head_ref }} successfully."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push resolved merge back to develop
+        if: |
+          steps.check_dirty.outputs.already_clean == 'false' &&
+          steps.resolve.outputs.conflict_free == 'true' &&
+          github.base_ref == 'develop'
+        run: |
+          git push origin HEAD:develop
+          echo "Pushed resolved merge back to develop successfully."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────
+  # JOB 1: Lint + Type Check
+  # ──────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    needs: resolve-conflicts
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff mypy
+          pip install -e .
+
+      - name: Ruff lint
+        id: ruff
+        run: ruff check . 2>&1 | tee /tmp/lint_errors.txt
+
+      - name: Type check
+        id: mypy
+        run: mypy src --ignore-missing-imports 2>&1 | tee -a /tmp/lint_errors.txt
+
+      - name: Save lint errors
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-errors
+          path: /tmp/lint_errors.txt
+
+  # ──────────────────────────────────────────
+  # JOB 2: Unit Tests (all mocked -- no GWS)
+  # ──────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+          pip install -e .
+
+      - name: Run unit tests
+        id: unit_tests
+        env:
+          PYTHONPATH: src
+          CI: "true"
+          DEFAULT_RECIPIENT_EMAIL: bot@example.com
+          OPENAI_API_KEY: fake_key_for_testing
+          LLM_API_KEY: fake_key_for_testing
+        run: |
+          pytest tests/ \
+            -v \
+            -m "not live_integration" \
+            --ignore=tests/manual \
+            --ignore=tests/test_live_integration.py \
+            --cov=src \
+            --cov=gws_assistant \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=70 \
+            --tb=short \
+            -q 2>&1 | tee /tmp/unit_test_errors.txt
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      - name: Save unit test errors
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-errors
+          path: /tmp/unit_test_errors.txt
+
+  # ──────────────────────────────────────────
+  # JOB 3: Integration Tests (mocked GWS)
+  # ──────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests (Mocked)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+          pip install -e .
+
+      - name: Run integration tests (mocked only)
+        id: integration_tests
+        env:
+          PYTHONPATH: src:tests
+          CI: "true"
+          OPENAI_API_KEY: fake_key_for_testing
+          LLM_API_KEY: fake_key_for_testing
+        run: |
+          pytest tests/test_integration.py \
+            -v \
+            -m "not live_integration" \
+            --cov=gws_assistant.langgraph_workflow \
+            --cov=gws_assistant.execution \
+            --cov-report=term-missing \
+            --cov-fail-under=65 \
+            --tb=short 2>&1 | tee /tmp/integration_errors.txt
+
+      - name: Save integration errors
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-errors
+          path: /tmp/integration_errors.txt
+
+  # ──────────────────────────────────────────
+  # JOB 4: Security Scan
+  # ──────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install security tools
+        run: pip install bandit safety pip-audit
+
+      - name: Bandit -- code security
+        run: bandit -r gws_assistant/ -ll --skip B101 -q 2>&1 | tee /tmp/security_errors.txt || true
+
+      - name: Safety -- dependency vulnerabilities
+        run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt || true
+
+      - name: pip-audit -- CVE scan
+        run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt || true
+
+      - name: Save security errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-errors
+          path: /tmp/security_errors.txt
+
+  # ──────────────────────────────────────────
+  # JOB 5: Review Guard
+  # Blocks merge if ANY unresolved review comment exists
+  # GraphQL fetches ALL comments per thread (first: 20)
+  # Jules trigger embeds FULL comment content -- no truncation
+  # ──────────────────────────────────────────
+  review-guard:
+    name: Review Guard (Block if Unresolved Comments)
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, security]
+    if: |
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
+    permissions:
+      pull-requests: write
+      issues: write
+    outputs:
+      safe_to_merge: ${{ steps.check_reviews.outputs.safe_to_merge }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unresolved review threads
+        id: check_reviews
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+
+          RESPONSE=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) {
+                    nodes {
+                      isResolved
+                      isOutdated
+                      comments(first: 20) {
+                        nodes {
+                          author { login }
+                          body
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$(echo $REPO | cut -d/ -f1)" \
+            -f repo="$(echo $REPO | cut -d/ -f2)" \
+            -F pr=$PR_NUM)
+
+          echo "$RESPONSE" > /tmp/review_response.json
+          UNRESOLVED=$(python3 .github/scripts/count_unresolved.py /tmp/review_response.json)
+
+          echo "Unresolved review threads: $UNRESOLVED"
+
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "safe_to_merge=false" >> $GITHUB_OUTPUT
+            echo "::error::Merge blocked -- $UNRESOLVED unresolved review thread(s) found."
+            exit 1
+          else
+            echo "safe_to_merge=true" >> $GITHUB_OUTPUT
+            echo "All review threads resolved. Safe to merge."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify and trigger Jules via PAT
+        if: failure()
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+          HEAD_REF="${{ github.head_ref }}"
+
+          # Fetch ALL comments per thread (first: 20), full body, no truncation
+          RESPONSE=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) {
+                    nodes {
+                      isResolved
+                      isOutdated
+                      path
+                      line
+                      comments(first: 20) {
+                        nodes {
+                          author { login }
+                          body
+                          url
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$(echo $REPO | cut -d/ -f1)" \
+            -f repo="$(echo $REPO | cut -d/ -f2)" \
+            -F pr=$PR_NUM)
+
+          echo "$RESPONSE" > /tmp/notify_response.json
+
+          # format_comments.py: full body, all thread comments, includes outdated
+          COMMENT_DETAILS=$(python3 .github/scripts/format_comments.py /tmp/notify_response.json)
+
+          ISSUE_NUM=$(gh pr view "$PR_NUM" \
+            --json closingIssuesReferences \
+            -q '.closingIssuesReferences[0].number // empty' 2>/dev/null || true)
+
+          # Post human-readable summary on PR or linked issue
+          echo "$COMMENT_DETAILS" > /tmp/comment_details.txt
+
+          python3 .github/scripts/write_review_body.py \
+            --pr-num "$PR_NUM" \
+            --pr-url "${{ github.event.pull_request.html_url }}" \
+            --head-ref "$HEAD_REF" \
+            --base-ref "${{ github.event.pull_request.base.ref }}" \
+            --comments-file /tmp/comment_details.txt \
+            --issue-num "$ISSUE_NUM" \
+            --out /tmp/review_block_body.md
+
+          if [ -n "$ISSUE_NUM" ] && [ "$ISSUE_NUM" != "null" ]; then
+            gh issue comment "$ISSUE_NUM" --body-file /tmp/review_block_body.md
+          else
+            gh pr comment $PR_NUM --body-file /tmp/review_block_body.md
+          fi
+
+          # Jules trigger: embed FULL comment content so Jules needs zero extra fetching
+          if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
+            printf '@google-labs-jules Unresolved review comments on PR #%s must be fixed before merging.\n\n**Branch to push fixes to:** `%s`\n\n---\n\n## Unresolved Review Comments\n\n%s\n\n---\n\nInstructions:\n- Fix EACH comment listed above exactly as suggested\n- Push your fixes to branch: `%s`\n- Do NOT resolve threads manually -- CI will verify and auto-merge once all checks pass' \
+              "$PR_NUM" \
+              "$HEAD_REF" \
+              "$COMMENT_DETAILS" \
+              "$HEAD_REF" > /tmp/jules_trigger.md
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_trigger.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────
+  # JOB 6: Merge PR into base branch
+  # Waits 3 minutes after all tests pass to allow late reviewer
+  # comments (e.g. Devin) before merging.
+  # Tries --auto first; falls back to direct --squash if auto-merge
+  # is not enabled on the repository.
+  # ──────────────────────────────────────────
+  auto-merge:
+    name: Auto Merge PR
+    runs-on: ubuntu-latest
+    needs: [review-guard]
+    if: |
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]' &&
+      needs.review-guard.outputs.safe_to_merge == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Log merge target
+        run: |
+          echo "Merging PR #${{ github.event.pull_request.number }}"
+          echo "Head : ${{ github.head_ref }}"
+          echo "Base : ${{ github.event.pull_request.base.ref }}"
+
+      - name: Wait 3 minutes for late reviewer comments
+        run: |
+          echo "All tests passed. Waiting 3 minutes for late reviewer comments (e.g. Devin)..."
+          sleep 180
+          echo "Wait complete. Proceeding to merge."
+
+      - name: Re-check unresolved threads after wait
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+
+          RESPONSE=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) {
+                    nodes {
+                      isResolved
+                      isOutdated
+                      comments(first: 20) {
+                        nodes { author { login } body }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$(echo $REPO | cut -d/ -f1)" \
+            -f repo="$(echo $REPO | cut -d/ -f2)" \
+            -F pr=$PR_NUM)
+
+          echo "$RESPONSE" > /tmp/final_review_check.json
+          UNRESOLVED=$(python3 .github/scripts/count_unresolved.py /tmp/final_review_check.json)
+
+          echo "Final unresolved review threads: $UNRESOLVED"
+
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "::error::New review comments posted during wait window. Blocking merge."
+            exit 1
+          fi
+
+          echo "No new unresolved threads. Proceeding to merge."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge PR (auto if enabled, else direct squash)
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+
+          if gh pr merge $PR_NUM \
+               --squash \
+               --auto \
+               --delete-branch \
+               --subject "$PR_TITLE" \
+               --body "Auto-merged by CI into $BASE_REF" 2>/dev/null; then
+            echo "Auto-merge scheduled successfully."
+          else
+            echo "Auto-merge not available. Falling back to direct squash merge."
+            gh pr merge $PR_NUM \
+              --squash \
+              --delete-branch \
+              --subject "$PR_TITLE" \
+              --body "Auto-merged by CI into $BASE_REF"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────
+  # JOB 7: CI Failure -- Tag @google-labs-jules to fix via PAT
+  # ──────────────────────────────────────────
+  jules-auto-fix:
+    name: Jules Auto-Fix Loop
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests, integration-tests, security]
+    if: |
+      failure() &&
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all error artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+        continue-on-error: true
+
+      - name: Collect all CI errors
+        run: |
+          ERROR_BODY=""
+          for f in /tmp/artifacts/**/*.txt; do
+            if [ -f "$f" ]; then
+              CONTENT=$(head -80 "$f")
+              ARTIFACT_NAME=$(basename "$(dirname "$f")")
+              ERROR_BODY="${ERROR_BODY}\n### ${ARTIFACT_NAME}\n\`\`\`\n${CONTENT}\n\`\`\`\n"
+            fi
+          done
+          printf "%b" "$ERROR_BODY" > /tmp/all_errors.txt
+
+      - name: Find linked Issue number from PR
+        id: find_issue
+        run: |
+          ISSUE_NUM=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json closingIssuesReferences \
+            -q '.closingIssuesReferences[0].number' 2>/dev/null || echo "")
+
+          if [ -z "$ISSUE_NUM" ]; then
+            PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body')
+            ISSUE_NUM=$(echo "$PR_BODY" | grep -oiP '(?:fixes|closes|resolves)\s+#\K[0-9]+' | head -1)
+          fi
+
+          echo "issue_number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post fix request on linked Issue
+        if: steps.find_issue.outputs.issue_number != ''
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_NUM="${{ github.event.pull_request.number }}"
+          HEAD_BRANCH="${{ github.head_ref }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          ISSUE_NUM="${{ steps.find_issue.outputs.issue_number }}"
+
+          python3 .github/scripts/write_ci_body.py \
+            --type issue \
+            --pr-num "$PR_NUM" \
+            --pr-url "$PR_URL" \
+            --head-branch "$HEAD_BRANCH" \
+            --base-branch "$BASE_BRANCH" \
+            --run-url "$RUN_URL" \
+            --errors-file /tmp/all_errors.txt \
+            --out /tmp/jules_fix_body.md
+
+          gh issue comment $ISSUE_NUM --body-file /tmp/jules_fix_body.md
+
+          if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
+            printf '@google-labs-jules CI failed on PR #%s. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- CI will auto-merge once all checks pass.' "$PR_NUM" "$HEAD_BRANCH" > /tmp/jules_issue_trigger.md
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh issue comment $ISSUE_NUM --body-file /tmp/jules_issue_trigger.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fallback -- post on PR directly if no linked Issue found
+        if: steps.find_issue.outputs.issue_number == ''
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          HEAD_BRANCH="${{ github.head_ref }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          PR_NUM="${{ github.event.pull_request.number }}"
+
+          python3 .github/scripts/write_ci_body.py \
+            --type pr \
+            --pr-num "$PR_NUM" \
+            --head-branch "$HEAD_BRANCH" \
+            --base-branch "$BASE_BRANCH" \
+            --run-url "$RUN_URL" \
+            --errors-file /tmp/all_errors.txt \
+            --out /tmp/jules_pr_body.md
+
+          gh pr comment $PR_NUM --body-file /tmp/jules_pr_body.md
+
+          if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
+            printf '@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- CI will auto-merge into `%s` once all checks pass.' "$HEAD_BRANCH" "$BASE_BRANCH" > /tmp/jules_pr_trigger.md
+            GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_pr_trigger.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────
+  # JOB 8: Live Integration (manual only)
+  # ──────────────────────────────────────────
+  live-integration:
+    name: Live Integration Tests (Manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_integration }}
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      GWS_BINARY_PATH: ${{ secrets.GWS_BINARY_PATH }}
+      LOG_LEVEL: INFO
+      RUN_LIVE_INTEGRATION: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run live GWS tests
+        run: pytest -q -m live_integration -v
+
+  # ──────────────────────────────────────────
+  # JOB 9: Deploy to Cloud Run (main/master only)
+  # ──────────────────────────────────────────
+  deploy:
+    name: Deploy to Cloud Run
+    needs: [unit-tests, integration-tests, security]
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authorize Docker
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Build and Push Container
+        run: |
+          docker build -t "gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_SERVICE }}:${{ github.sha }}" .
+          docker push "gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_SERVICE }}:${{ github.sha }}"
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.GCP_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          image: gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_SERVICE }}:${{ github.sha }}
+          flags: --allow-unauthenticated --port=8080

@@ -1,4 +1,4 @@
-langchain-core>=0.3.0
+﻿langchain-core>=0.3.0
 langchain-openai>=0.3.0
 langgraph>=0.2.0
 langchain-community>=0.3.0
@@ -16,3 +16,9 @@ pytest-cov>=7.1.0
 pytest-mock>=3.14.0
 ddgs>=9.13.0
 e2b-code-interpreter>=0.1.0
+mem0ai>=2.0.0
+litellm>=1.83.14
+# Telegram Polling Bot
+python-telegram-bot>=21.0
+langchain-tavily>=0.2.0
+duckduckgo-search>=6.0.0

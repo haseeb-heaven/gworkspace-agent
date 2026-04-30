@@ -1,51 +1,52 @@
 import pytest
-from gws_assistant.tools.web_search import web_search_tool, summarize_results
+from unittest.mock import patch, MagicMock
+from gws_assistant.tools.web_search import web_search_tool
 
-def test_web_search_tool_no_ddg(mocker):
-    # Mock community import failure
-    import gws_assistant.tools.web_search as ws
-    mocker.patch.object(ws, 'DuckDuckGoSearchResults', None)
-    mocker.patch.object(ws, 'TavilySearchResults', None)
+@patch("gws_assistant.tools.web_search.DuckDuckGoSearchResults")
+def test_web_search_tool_ddg_list(mock_ddg):
+    mock_inst = mock_ddg.return_value
+    mock_inst.invoke.return_value = [
+        MagicMock(page_content="Content 1", metadata={"title": "Title 1", "link": "http1"}),
+        {"snippet": "Content 2", "title": "Title 2", "link": "http2"}
+    ]
     
-    result = ws.web_search_tool.invoke({"query": "test"})
-    assert result["error"] is not None
-    assert "DuckDuckGo search failed or returned no usable results." in result["error"]
-    assert "Tavily search isn't available" in result["error"]
+    with patch("gws_assistant.tools.web_search.HAS_DDG", True):
+        # web_search_tool is a StructuredTool, call .invoke()
+        result = web_search_tool.invoke({"query": "test query"})
+        assert len(result["results"]) == 2
+        assert result["results"][0]["content"] == "Content 1"
+        assert result["results"][1]["content"] == "Content 2"
 
-def test_web_search_tool_falls_back_to_tavily(mocker):
-    import gws_assistant.tools.web_search as ws
+@patch("gws_assistant.tools.web_search.DuckDuckGoSearchResults")
+def test_web_search_tool_ddg_string(mock_ddg):
+    mock_inst = mock_ddg.return_value
+    mock_inst.invoke.return_value = "snippet: Hello, title: World, link: http://test.com"
+    
+    with patch("gws_assistant.tools.web_search.HAS_DDG", True):
+        result = web_search_tool.invoke({"query": "test query"})
+        assert len(result["results"]) == 1
+        assert result["results"][0]["content"] == "Hello"
 
-    class FailingDuckDuckGo:
-        def __init__(self, num_results: int) -> None:
-            self.num_results = num_results
+@patch("gws_assistant.tools.web_search.DuckDuckGoSearchResults")
+def test_web_search_tool_fallback_tavily(mock_ddg):
+    # Mock DDG failure
+    mock_ddg_inst = mock_ddg.return_value
+    mock_ddg_inst.invoke.side_effect = Exception("DDG failed")
+    
+    # Mock Tavily success
+    with patch("gws_assistant.tools.web_search.TavilySearchResults", create=True) as mock_tavily:
+        mock_tavily_inst = mock_tavily.return_value
+        mock_tavily_inst.invoke.return_value = [{"content": "Tavily content", "title": "Tavily title", "url": "http_tavily"}]
+        
+        with patch("gws_assistant.tools.web_search.HAS_DDG", True):
+            with patch("gws_assistant.tools.web_search.HAS_TAVILY", True):
+                with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
+                    result = web_search_tool.invoke({"query": "test query"})
+                    assert result["results"][0]["content"] == "Tavily content"
 
-        def invoke(self, payload):
-            raise RuntimeError("ddg unavailable")
-
-    class FakeTavily:
-        def __init__(self, max_results: int) -> None:
-            self.max_results = max_results
-
-        def invoke(self, payload):
-            return {
-                "results": [
-                    {
-                        "title": "Tavily Result",
-                        "content": "Fallback content",
-                        "url": "https://example.com/result",
-                    }
-                ]
-            }
-
-    mocker.patch.object(ws, "DuckDuckGoSearchResults", FailingDuckDuckGo)
-    mocker.patch.object(ws, "TavilySearchResults", FakeTavily)
-    mocker.patch.dict(ws.os.environ, {"TAVILY_API_KEY": "test-key"}, clear=False)
-
-    result = ws.web_search_tool.invoke({"query": "test fallback"})
-    assert result["error"] is None
-    assert result["results"][0]["title"] == "Tavily Result"
-    assert "Fallback content" in result["results"][0]["content"]
-
-def test_summarize_results():
-    result = summarize_results.invoke({"text": "long text here"})
-    assert result == "long text here"
+def test_web_search_tool_no_results():
+    with patch("gws_assistant.tools.web_search.HAS_DDG", False):
+        with patch("gws_assistant.tools.web_search.HAS_TAVILY", False):
+            result = web_search_tool.invoke({"query": "test query"})
+            assert result["results"] == []
+            assert "failed" in result["error"].lower()

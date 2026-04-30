@@ -1,8 +1,30 @@
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def clear_config_cache():
+    """Clear the AppConfig singleton cache before and after each test."""
+    try:
+        from gws_assistant.config import AppConfig
+        AppConfig.clear_cache()
+        yield
+        AppConfig.clear_cache()
+    except ImportError:
+        yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_session_env():
+    """Ensure required environment variables are set for the entire test session."""
+    if not os.getenv("GWS_BINARY_PATH"):
+        os.environ["GWS_BINARY_PATH"] = "gws"
+    if not os.getenv("DEFAULT_RECIPIENT_EMAIL"):
+        os.environ["DEFAULT_RECIPIENT_EMAIL"] = "test@example.com"
 
 
 class _SimpleMocker:
@@ -53,3 +75,56 @@ def mocker():
         yield helper
     finally:
         helper.stopall()
+
+
+@pytest.fixture
+def default_email(request):
+    import os
+
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
+    email = os.getenv("DEFAULT_RECIPIENT_EMAIL")
+    if not email:
+        if request.node.get_closest_marker("live_integration") or os.getenv("RUN_LIVE_TESTS"):
+            pytest.skip("DEFAULT_RECIPIENT_EMAIL must be set in .env for live integration tests")
+        return "test@example.com"
+    return email
+
+
+def pytest_collection_modifyitems(config, items):
+    """Automatically mark tests based on their directory and filename."""
+    for item in items:
+        # Get path relative to tests directory
+        rel_path = str(item.fspath).replace("\\", "/")
+
+        # Mark manual tests
+        if "tests/manual" in rel_path:
+            item.add_marker(pytest.mark.manual)
+
+        # Service mapping
+        services = {
+            "gmail": pytest.mark.gmail,
+            "docs": pytest.mark.docs,
+            "sheets": pytest.mark.sheets,
+            "drive": pytest.mark.drive,
+            "calendar": pytest.mark.calendar,
+            "tasks": pytest.mark.tasks,
+            "classroom": pytest.mark.classroom,
+            "keep": pytest.mark.keep,
+            "forms": pytest.mark.forms,
+            "slides": pytest.mark.slides,
+            "contacts": pytest.mark.contacts,
+            "admin": pytest.mark.admin,
+            "script": pytest.mark.script,
+            "model_armor": pytest.mark.modelarmor,
+            "events": pytest.mark.events,
+        }
+
+        for name, marker in services.items():
+            if f"/{name}" in rel_path or f"_{name}" in rel_path:
+                item.add_marker(marker)

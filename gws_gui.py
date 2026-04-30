@@ -1,9 +1,9 @@
 """GUI launcher."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gws_assistant.gui_app import main
 

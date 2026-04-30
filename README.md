@@ -1,313 +1,333 @@
-# Google Workspace Agent
+# 🚀 Google Workspace Agent
 
-An intelligent, agentic CLI and GUI for Google Workspace automation with a shared execution contract (typed state, structured tool results, reflection-aware retries).
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Framework: LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![LangChain](https://img.shields.io/badge/LangChain-ReAct-blueviolet.svg)](https://python.langchain.com/)
+[![Safety: Sandbox](https://img.shields.io/badge/Safety-Sandboxed-green.svg)](#safety--security)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Tests](https://img.shields.io/badge/tests-pytest-brightgreen.svg)](https://pytest.org/)
 
-> 🔀 **Repository branch roles:**
-> - [`master`](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) — core generic ReAct engine (base)
-> - [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) — CrewAI-powered multi-step Workspace automation
-> - [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) — LangChain + LangGraph research + compute + Workspace pipeline
-
----
-
-## Why Three Branches?
-
-| Feature | [`crew-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) | [`langchain-ai`](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
-|---------|----------|--------------| 
-| LLM Framework | CrewAI | LangChain + LangGraph |
-| Orchestration | ReAct loop (sequential task planner) | LangGraph StateGraph (DAG-based) |
-| Internet Web Search | ✅ | ✅ DuckDuckGo / Tavily |
-| Sandboxed Code Execution | ✅ | ✅ RestrictedPython sandbox |
-| Workspace Automation | ✅ Full | ✅ Full + Google Meet & Chat |
-| Heuristic Fallback (no API key) | ✅ | ✅ |
-| Retry / Exponential Backoff | ❌ | ✅ |
-| Best For | Professional multi-step automation scripts | Complex research + compute + Workspace workflows |
+An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct + LangGraph DAG** architecture. It converts natural language into verified, multi-step workflows across Gmail, Drive, Sheets, Docs, Calendar, and 15+ other Google services — with built-in safety, memory, and sandboxed code execution.
 
 ---
 
-## Architecture
+## Table of Contents
 
-![System Architecture](assets/architecture_diagram.png)
-
-### ReAct Agentic Loop (Both Branches)
-
-The agent follows the **ReAct (Reasoning + Acting)** pattern — a continuous loop where the system **reasons** about what to do next, **acts** on it by calling a tool or API, **observes** the result, and uses that observation to guide the next step. This loop repeats until the entire user request is resolved.
-
-```mermaid
-flowchart LR
-    A["👤 User Request"] --> B["🔍 Observe\nParse intent & detect services"]
-    B --> C["🧠 Reason\nLLM plans multi-step tasks"]
-    C --> D["⚡ Act\nExecute task via gws.exe"]
-    D --> E["📊 Observe\nParse result · update context"]
-    E --> F{"More tasks?"}
-    F -->|Yes| G["🧠 Reason\nResolve placeholders\nwith prior context"]
-    G --> D
-    F -->|No| H["🔍 Filter\nRelevance scoring"]
-    H --> I["📋 Format\nHuman-readable output"]
-    I --> J["✅ Present to User"]
-
-    style A fill:#e94560,color:#fff
-    style J fill:#0f3460,color:#fff
-```
-
-#### ReAct Loop — Step-by-Step
-
-| Step | Component | What Happens |
-|------|-----------|--------------| 
-| 1 | **Intent Parser** | Detects which Google services (Gmail, Drive, Sheets, etc.) are mentioned |
-| 2 | **LLM Planner** | CrewAI or LangChain agent decomposes the request into an ordered list of tasks with parameters and `$placeholder` variables |
-| 3 | **Task Expander** | Resolves `$placeholders` (e.g., `$last_spreadsheet_id` → actual ID from prior step) and expands batch operations |
-| 4 | **GWS Runner** | Executes each command as a subprocess call to `gws.exe` with proper argument encoding |
-| 5 | **Context Store** | After each task, extracts key IDs, URLs, and values; stores them for downstream tasks |
-| 6 | **Relevance Filter** | Scores each result against original query keywords; drops items below relevance threshold |
-| 7 | **Output Formatter** | Converts raw API payloads into clean tables, summaries, and human-readable text |
-
----
-
-### LangGraph State Machine (`langchain-ai` branch only)
-
-In the `langchain-ai` branch, the ReAct loop is backed by a **LangGraph directed acyclic graph (DAG)** — enabling conditional branching between three task types (web search, code execution, Workspace API) and robust error recovery with retries.
-
-```mermaid
-graph TD
-    START --> Plan["🧠 Generate Plan"]
-    Plan --> Validate["🧪 Validate Tasks"]
-    Validate --> Route{"Type of Task?"}
-
-    Route -->|Research| Search["🔍 Web Search"]
-    Route -->|Logic/Math| Code["💻 Code Execution"]
-    Route -->|Workspace API| Exec["⚡ Execute Task"]
-
-    Search --> Summary["📝 Summarize"]
-    Summary --> Update["💾 Update Context"]
-
-    Code --> Update
-
-    Exec --> Success{"Success?"}
-    Success -->|Yes| Update
-    Success -->|No| Retry["🔄 Handle/Retry"]
-
-    Retry -->|Retry Limit OK| Exec
-    Retry -->|Failed| Resp["✅ Final Response"]
-
-    Update --> MoreTasks{"More Tasks?"}
-    MoreTasks -->|Yes| Exec
-    MoreTasks -->|No| Resp
-```
+- [Key Features](#key-features)
+- [Demos](#demos)
+- [Architecture](#architecture)
+- [LangGraph DAG](#langgraph-dag)
+- [ReAct Loop](#react-loop)
+- [Supported Services](#supported-services)
+- [Getting Started](#getting-started)
+- [Interfaces](#interfaces)
+- [Configuration](#configuration)
+- [Safety & Security](#safety--security)
+- [Testing](#testing)
+- [Contributing](#contributing)
 
 ---
 
 ## Key Features
 
-### Core (Both Branches)
-- **Dual Framework Support** — Choose CrewAI (crew-ai branch) or LangChain + LangGraph (langchain-ai branch) depending on task complexity.
-- **ReAct Agentic Planning** — The LLM reasons, acts, observes, and iterates step-by-step until the full request is resolved.
-- **Multi-Service Detection** — Detects multiple Google Workspace services in a single natural-language prompt and plans cross-service workflows automatically.
-- **Placeholder Resolution** — Dynamically resolves `$placeholders` across steps (e.g., inject a freshly created spreadsheet ID into the next step's email body).
-- **Dual Planning Modes** — High-precision LLM reasoning with a zero-API-key deterministic heuristic fallback.
-- **Human-Readable Output** — Formats all API payloads into clean tables and summaries instead of raw JSON.
-- **Structured Logging** — Logs to both console and rotating `logs/gws_assistant.log` file; includes agent decisions, commands, and errors.
-
-### LangChain + LangGraph Branch (`langchain-ai`) — Exclusive Features
-- **🌐 Internet Web Search** — Built-in DuckDuckGo and Tavily search with LLM-powered summarization for real-time data enrichment during task planning.
-- **💻 Sandboxed Code Execution** — Safely runs Python logic, calculations, and data transformations inside a `RestrictedPython` environment; no unsafe system access.
-- **🔄 Exponential Backoff & Retry** — Robust reliability layer that retries failed Workspace API calls with increasing delays against rate limits and transient errors.
-- **Google Meet & Google Chat** — Extended Workspace service support beyond the base set.
-- **LangGraph DAG Orchestration** — Conditional routing between Research, Code, and Workspace API task types in a stateful graph.
+- **Hybrid ReAct + LangGraph Engine** — LLM-driven planner generates a typed DAG of tasks; LangGraph executes nodes with full state persistence and smart retry logic
+- **Multi-Service Orchestration** — a single natural language request can chain Gmail, Drive, Sheets, Docs, Calendar, and Code execution in one plan
+- **Long-Term Memory via Mem0** — agent learns from past interactions and recalls user preferences across sessions
+- **Sandboxed Code Execution** — Python code runs inside a restricted E2B sandbox with stdout/stderr capture and exit code tracking
+- **Safety-by-Default** — Read-Only mode blocks all writes; Sandbox mode requires manual confirmation before any state-changing action
+- **Multi-Interface** — CLI, Desktop GUI, Web (Gradio), and Telegram Bot all share the same agent core
+- **Model Agnostic** — works with any OpenAI-spec tool-calling model (Gemini, GPT-4o, Claude, Mistral, LLaMA) via OpenRouter or direct APIs
+- **Verified Tool-Calling** — `model_registry.py` validates that the configured model supports function calling before any plan is generated
 
 ---
 
-## Supported Placeholders
+---
 
-| Placeholder | Used In | Resolved To |
-|------------|---------|-------------|
-| `$last_spreadsheet_id` | `sheets.append_values` | ID of the most recently created spreadsheet |
-| `$gmail_message_ids` | `gmail.get_message` | Expands to individual message IDs from the search |
-| `$gmail_summary_values` | `sheets.append_values` | 2D array of Gmail message data (From, Subject, etc.) |
-| `$drive_summary_values` | `sheets.append_values` | 2D array of Drive file data (Name, Type, Link) |
-| `$sheet_email_body` | `gmail.send_message` | Formatted text from spreadsheet values |
+## 🎬 Demos & Showcases
+
+### ⚡ Live Previews
+The following animated showcases demonstrate the agent's autonomous planning and multi-service execution in real-time.
+
+| Autonomous Workflow Demo | Multi-Interface Simulation |
+| :---: | :---: |
+| ![Animated Demo](assets/demo_animated.svg) | ![Simulation](assets/simulation_animated.svg) |
+
+> **Dynamic Multi-Mode Preview:** The simulation on the right is automatically generated and cycles through the CLI, Desktop, and Web interfaces.
+
+### 🖼️ Interface Gallery
+Detailed snapshots of the available user interfaces.
+
+#### 💻 CLI (Typer + Rich)
+![CLI Demo](assets/cli_demo.png)
+
+#### 🖥️ Desktop GUI
+![Desktop GUI Demo](assets/gui_desktop_demo.png)
+
+#### 🌐 Web Interface (Gradio)
+![Web GUI Demo](assets/gui_web_demo.png)
+
+### Architecture Diagram
+![Architecture](assets/architecture_diagram.png)
+
+---
+
+## Architecture
+
+The agent uses a **three-layer architecture**: an LLM Planner that reasons about intent, a LangGraph Workflow that manages stateful execution, and a GWS Executor that calls real Google APIs.
+
+```mermaid
+---
+id: 381d8783-6e2b-46fa-b5fa-879171ca0dbf
+---
+flowchart TD
+    USER["👤 User Request"] --> AGENT
+
+    subgraph AGENT["🤖 Agent System"]
+        PL["🧠 Planner LLM → TaskPlan DAG"]
+        WF["⚙️ LangGraph Workflow generate → execute → reflect"]
+    end
+
+    AGENT --> EX
+
+    subgraph EX["⚡ Execution Engine"]
+        direction LR
+        RS["Resolver"] --> EXC["Executor"] --> CU["Context Updater"] --> VF["Verifier"]
+    end
+
+    EX --> APIS
+
+    subgraph APIS["☁️ Google Workspace APIs"]
+        direction LR
+        GM["Gmail"] --- DR["Drive"] --- SH["Sheets"] --- DC["Docs"] --- CA["Calendar"]
+    end
+
+    AGENT <--> SUP
+
+    subgraph SUP["🛡️ Support"]
+        direction LR
+        MEM["Memory\nMem0"] --- SG["Safety\nGuard"] --- MR["Model\nRegistry"]
+    end
+
+    style AGENT fill:#1a1a2e,color:#fff,stroke:#4A90D9
+    style EX fill:#0f3460,color:#fff,stroke:#E67E22
+    style APIS fill:#16213e,color:#fff,stroke:#2ECC71
+    style SUP fill:#1a1a2e,color:#fff,stroke:#8E44AD
+```
+---
+
+## LangGraph DAG
+
+The agent's execution graph is a **stateful directed acyclic graph** with four core nodes and conditional edges. Each node operates on a shared `AgentState` object that persists across the entire request lifecycle.
+
+```mermaid
+flowchart TD
+    START(["▶ START"]) --> GP
+
+    GP["🧠 generate_plan\nLLM generates TaskPlan\nwith typed task list\nand service/action pairs"]
+
+    GP --> ET
+
+    ET["⚡ execute_task\n① Resolver expands $placeholders\n② Executor calls GWS API\n③ ContextUpdater writes outputs\n④ Verifier checks integrity"]
+
+    ET --> RN
+
+    RN{"🔍 reflect_node\nAll tasks done?\nAny errors?"}
+
+    RN -->|"more tasks remaining"| ET
+    RN -->|"transient error → retry"| GP
+    RN -->|"AUTH / NOT_FOUND → skip"| FO
+    RN -->|"all tasks complete"| FO
+
+    FO["📋 format_output\nApply output_formatter\nBuild final response string"]
+
+    FO --> END(["⏹ END"])
+
+    style GP fill:#4A90D9,color:#fff,stroke:#2c6fad
+    style ET fill:#27AE60,color:#fff,stroke:#1a7a43
+    style RN fill:#E67E22,color:#fff,stroke:#b85e0a
+    style FO fill:#8E44AD,color:#fff,stroke:#6b2f87
+    style START fill:#2ECC71,color:#fff,stroke:#27ae60
+    style END fill:#E74C3C,color:#fff,stroke:#c0392b
+
+```
+
+---
+
+### AgentState Schema
+
+python
+class AgentState(TypedDict):
+    user_request:   str            # original natural language query
+    task_plan:      list[Task]     # planned task list generated by LLM
+    context:        dict           # shared execution context (placeholders live here)
+    task_results:   dict           # keyed outputs per task ID e.g. task-1, task-2
+    current_index:  int            # execution cursor pointing to current task
+    error:          str | None     # last error string for reflect_node classification
+    retry_count:    int            # retry counter — capped per task to prevent loops
+    final_output:   str            # formatted final response string
+
+
+---
+
+## ReAct Loop
+
+Each task execution follows the **ReAct (Reason → Act → Observe)** pattern:
+
+```mermaid
+flowchart LR
+    R["REASON<br>Planner reads user intent<br>+ service catalog 100+ actions<br>+ Mem0 conversation memory<br>→ generates typed TaskPlan JSON"]
+    A["ACT<br>For each Task in plan:<br>① Resolver expands $placeholders<br>② Task validated vs model registry<br>③ GWS API called via executor<br>④ Result written to shared context"]
+    O["OBSERVE<br>Verifier checks output integrity<br>Reflect node classifies errors<br>AUTH/NOT_FOUND → skip<br>SERVER/UNKNOWN → retry<br>Memory updated with outcome"]
+
+    R --> A --> O --> R
+```
 
 ---
 
 ## Supported Services
 
-| Service | Actions | crew-ai | langchain-ai |
-|---------|---------|---------|--------------| 
-| Gmail | `list_messages`, `get_message`, `send_message` | ✅ | ✅ |
-| Google Drive | `list_files`, `create_folder`, `get_file`, `delete_file` | ✅ | ✅ |
-| Google Sheets | `create_spreadsheet`, `get_spreadsheet`, `get_values`, `append_values` | ✅ | ✅ |
-| Google Calendar | `list_events`, `create_event` | ✅ | ✅ |
-| Google Docs | `get_document` | ✅ | ✅ |
-| Google Slides | `get_presentation` | ✅ | ✅ |
-| Google Contacts | `list_contacts` | ✅ | ✅ |
-| Google Meet | — | ❌ | ✅ |
-| Google Chat | — | ❌ | ✅ |
+The agent orchestrates **20+ Google services** and **100+ actions** via `service_catalog.py`:
+
+| Service | Key Actions |
+|---|---|
+| 📧 **Gmail** | send, read, search, reply, forward, label, delete messages |
+| 📂 **Drive** | list, upload, download, export, move, delete, share files and folders |
+| 📊 **Sheets** | create, read, append, update, format spreadsheets |
+| 📝 **Docs** | create, read, batch-update documents |
+| 📅 **Calendar** | create, list, update, delete events with reminders |
+| 📽️ **Slides** | create and read presentations |
+| 👥 **Contacts** | list, search, create contacts |
+| 💬 **Chat** | send messages to Google Chat spaces |
+| 🐍 **Code** | execute Python in E2B sandbox, capture stdout/stderr/exit code |
+| 🔍 **Web Search** | search and summarize web results |
+| 🧠 **Memory** | store and retrieve user preferences via Mem0 |
+| 🛡️ **Admin SDK** | manage users, groups, org units |
+| 📜 **Apps Script** | run Google Apps Scripts |
+| 🔐 **Model Armor** | content safety screening |
+| 📋 **Tasks** | manage Google Tasks lists |
+| 🗒️ **Keep** | create and read Google Keep notes |
+| 📝 **Forms** | create and read Google Forms |
+| 👥 **Meet** | create Meet links |
+| 🏫 **Classroom** | manage courses and assignments |
 
 ---
 
-## Setup
+## Getting Started
 
-1. Install dependencies:
+To get the agent running on your local machine, please follow the comprehensive **[Setup Guide (SETUP.md)](SETUP.md)**.
 
-```powershell
-python -m pip install -r requirements.txt
-```
-
-2. Create your env file if needed:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-3. Run the interactive setup wizard:
-
-```powershell
-python .\gws_cli.py --setup
-```
-
-The preferred launcher on this branch is `gws_cli.py`. `cli.py` is kept as a compatibility shim.
-
-## Environment Variables
-
-Required or commonly used keys:
-
-- `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`
-- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`
-- `GWS_BINARY_PATH`
-- `LANGCHAIN_ENABLED`
-- `TAVILY_API_KEY` for higher-quality search fallback
-- `CODE_EXECUTION_ENABLED`
-- `CODE_EXECUTION_BACKEND` with `restricted_subprocess`, `docker`, or `e2b`
-- `E2B_API_KEY` when `CODE_EXECUTION_BACKEND=e2b`
-- `DEFAULT_RECIPIENT_EMAIL` for email workflows when the prompt omits a recipient
-
-See `.env.example` for the full template.
-
-## Usage
-
-Run a single task:
-
-```powershell
-python .\gws_cli.py --task "List my unread Gmail messages about invoices and save them to a new Google Sheet"
-```
-
-Force heuristic mode (no API key required):
-
-```powershell
-python .\gws_cli.py --no-langchain --task "Search Drive for quarterly planning docs"
-```
-
-Launch Gradio web UI:
-
-```powershell
-python .\gws_gradio.py
-```
-
-## Example Workflows
-
-**Research + Docs + Sheets + Gmail:**
-
-```text
-User: Find the latest Python 3.13 release notes, summarise them into a Google Doc,
-      create a tracking Sheet with key changes, and email it to my team.
-
-Agent:
-  [1] web_search       → "Python 3.13 release notes"
-  [2] summarize        → LLM-powered summary of search results
-  [3] docs.create      → Google Doc created with summary
-  [4] sheets.create    → Spreadsheet created with key changes table
-  [5] gmail.send       → Email sent with Doc + Sheet links attached
-```
-
-**Heuristic fallback (no API key):**
-
-```text
-User: List my Drive files and append them to an existing spreadsheet.
-
-Agent (heuristic mode):
-  [1] drive.list_files        → Lists all Drive files
-  [2] sheets.append_values    → Appends file names + links to spreadsheet
-                                 using $drive_summary_values placeholder
-```
+### Quick Start
+1. **Clone & Install:**
+   ```bash
+   git clone https://github.com/haseeb-heaven/gworkspace-agent.git
+   cd gworkspace-agent
+   pip install -e .
+   ```
+2. **Configure Credentials:** Follow the [Google Cloud Setup](SETUP.md#%EF%B8%8F-step-3-google-cloud--credentials-setup) instructions.
+3. **Run the Agent:**
+   ```bash
+   python gws_cli.py --task "List my drive files"
+   ```
 
 ---
 
-## Project Structure
+## Interfaces
 
-```text
-.
-├── cli.py                    # Compatibility shim (delegates to gws_cli.py)
-├── gws_cli.py                # Main CLI entry point
-├── gws_gui.py                # Tkinter GUI launcher
-├── gws_gradio.py             # Gradio web UI launcher
-├── requirements.txt
-├── .env.example              # Environment variable template
-└── src/
-    └── gws_assistant/
-        ├── agent_system.py        # LLM + heuristic planning (ReAct loop core)
-        ├── cli_app.py             # Terminal UI with Rich
-        ├── config.py              # Environment configuration
-        ├── conversation.py        # Orchestration: parsing → planning → execution
-        ├── execution.py           # Task expansion, placeholder resolution, context store
-        ├── gradio_app.py          # Gradio web interface
-        ├── gws_runner.py          # Subprocess runner for gws.exe (with retry/backoff)
-        ├── output_formatter.py    # Human-readable output (tables, summaries)
-        ├── planner.py             # Command argument construction
-        ├── relevance.py           # Post-retrieval relevance scoring & filtering
-        ├── service_catalog.py     # Service/action definitions & parameter specs
-        ├── setup_wizard.py        # Interactive setup configuration
-        │
-        │   ── langchain-ai branch only ──
-        ├── langchain_agent.py     # LangChain-powered planning engine
-        ├── langgraph_workflow.py  # LangGraph StateGraph DAG orchestration
-        └── tools/
-            ├── web_search.py      # DuckDuckGo / Tavily integration
-            └── code_executor.py   # RestrictedPython sandbox
-└── tests/
-    ├── test_langchain_agent.py    # LangChain planner unit tests
-    ├── test_langgraph_workflow.py # LangGraph DAG integration tests
-    ├── test_heuristic.py          # Heuristic fallback planner tests
-    ├── test_config.py             # Environment config loading tests
-    ├── test_retry.py              # GWS runner retry/backoff tests
-    └── test_smoke.py              # CLI launcher smoke test
+| Interface | Command | Description |
+|---|---|---|
+| **💻 CLI** | `python gws_cli.py` | Rich terminal UI with streaming output, tables, and interactive prompts |
+| **🖥️ Desktop GUI** | `python gws_gui.py` | Native app with visual task logs and manual controls |
+| **🌐 Web UI** | `python gws_gui_web.py` | Gradio chat interface accessible from any browser |
+| **🤖 Telegram Bot** | `python gws_telegram.py` | Secure mobile access via whitelisted Telegram Bot API |
+
+---
+
+## Configuration
+
+All system configuration (API keys, security modes, and service endpoints) is managed via the `.env` file. 
+
+> [!IMPORTANT]
+> Detailed configuration steps and a full environment variable reference can be found in the **[Configuration Section of SETUP.md](SETUP.md#%EF%B8%8F-step-5-agent-configuration)**.
+
+---
+
+## Safety & Security
+
+```mermaid
+flowchart TD
+    REQ["Incoming Task"] --> RO{"Read-Only Mode\nON by default"}
+    RO -->|"write / delete / send action"| BLOCK["🚫 Blocked\nAction rejected immediately"]
+    RO -->|"read-only action"| SB{"Sandbox Mode\nON by default"}
+    SB -->|"state-changing action"| CONF{"User Confirmation\nY / N prompt"}
+    CONF -->|"N"| SKIP["⏭ Skipped"]
+    CONF -->|"Y"| EXEC["✅ Execute"]
+    SB -->|"safe read action"| EXEC
+    RO -->|"--read-write flag set"| SB
+
+    style BLOCK fill:#E74C3C,color:#fff
+    style SKIP fill:#E67E22,color:#fff
+    style EXEC fill:#27AE60,color:#fff
 ```
 
----
-
-## Logs
-
-Logs go to both console and `logs/gws_assistant.log` with automatic rotation. The app logs:
-- Setup state and binary detection
-- Agent planning decisions and LLM reasoning traces
-- Actions taken and commands executed
-- Context store updates (IDs, URLs, values passed between steps)
-- Errors and retry attempts
+- **Read-Only Mode** — default ON. Enable writes with `--read-write` or `READ_ONLY_MODE=false`
+- **Sandbox Mode** — default ON. Disable with `--no-sandbox` or `SANDBOX_ENABLED=false`
+- **Email Recipient Lock** — `DEFAULT_RECIPIENT_EMAIL` forces all outbound emails to one address regardless of what the LLM generates
+- **Model Registry** — raises `ValueError` at startup if the configured model is not on the tool-calling allowlist in `model_registry.py`
 
 ---
 
-## Tests
+## Testing
 
 ```bash
+# Full test suite
 python -m pytest
 ```
 
+```bash
+# Drive metadata and placeholder contract tests only
+python -m pytest -m "drive" -v
+```
+
+```bash
+# With coverage report
+python -m pytest --cov=gws_assistant --cov-report=term-missing
+```
+
+```bash
+# Integration tests (requires live Google credentials)
+python -m pytest -m "not skip_integration" -v
+```
+
+| Test File | Coverage |
+|---|---|
+| `tests/test_placeholder_contracts.py` | Canonical and legacy placeholder resolution |
+| `tests/test_drive_metadata.py` | Drive file summarizer helper |
+| `tests/test_resolver.py` | Full resolver logic including LEGACY_MAP |
+
 ---
 
-## Branches
+## Contributing
 
-| Branch | Framework | Extra Capabilities | Link |
-|--------|-----------|-------------------|------|
-| `master` | CrewAI (base) | Core ReAct Workspace automation | [master](https://github.com/haseeb-heaven/gworkspace-agent/tree/master) |
-| `crew-ai` | CrewAI | Full ReAct loop, web search, code execution, multi-service | [crew-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/crew-ai) |
-| `langchain-ai` | LangChain + LangGraph | Web Search + Code Sandbox + Retry + Meet & Chat | [langchain-ai](https://github.com/haseeb-heaven/gworkspace-agent/tree/langchain-ai) |
+1. Fork the repository
+2. Branch from `develop`: `git checkout -b feature/your-feature develop`
+3. Make changes with tests
+4. Ensure all tests pass: `python -m pytest`
+5. Open a Pull Request targeting **`develop`** — never target `master` directly
 
 ---
-
-## Changelogs
-For changelogs check [CHANGELOG](https://github.com/haseeb-heaven/gworkspace-agent/blob/master/CHANGELOG.md)
 
 ## License
 
-This project is licensed under the **MIT License**.
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 
-## Author
-This project is created and maintained by [Haseeb-Heaven](https://www.github.com/haseeb-heaven).
+---
+
+> **Note:** This project was **architected and designed** by **Haseeb Mir**.
+> AI tools (GitHub Copilot, Jules) were used to assist with **implementation**,
+> **boilerplate generation**, and **refactoring** — all **features**, **architecture**
+> **decisions**, and **system design** are **original**.
+
+<p align="center">
+  Built with ❤️ by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a>
+</p>

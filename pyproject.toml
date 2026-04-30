@@ -13,6 +13,8 @@ dependencies = [
     "langchain-openai>=0.3.11",
     "langgraph>=0.3.34",
     "langchain-community>=0.3.31",
+    "langchain-tavily>=0.2.0",
+    "duckduckgo-search>=6.0.0",
     "RestrictedPython>=8.1",
     "httpx>=0.28.1",
     "openai>=1.109.1",
@@ -23,6 +25,7 @@ dependencies = [
     "customtkinter>=5.2.2",
     "gradio>=5.27.0",
     "e2b-code-interpreter>=1.0.0",
+    "mem0ai>=0.1.33",
 ]
 
 [project.optional-dependencies]
@@ -37,12 +40,42 @@ gws-assistant-gui = "gws_assistant.gui_app:main"
 gws-assistant-gradio = "gws_assistant.gradio_app:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore E402 (import not at top) in tests because we often call load_dotenv() before imports
+"tests/**/*.py" = ["E402"]
+"test_heuristic.py" = ["E402"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114", # missing-module-docstring
+    "C0115", # missing-class-docstring
+    "C0116", # missing-function-docstring
+    "C0103", # invalid-name
+    "R0903", # too-few-public-methods
+    "W0511", # fixme
+]
+max-line-length = 120
+
+[tool.pyright]
+include = ["gws_assistant"]
+exclude = ["**/__pycache__", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+
