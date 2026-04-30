@@ -42,23 +42,40 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
     if HAS_DDG:
         try:
             search = DuckDuckGoSearchResults(num_results=max_results)
-            raw_result_str = str(search.invoke({"query": query}))
+            # Invoke might return a list of Documents or a string depending on LangChain version
+            raw_result = search.invoke({"query": query})
+            
             snippets = []
+            if isinstance(raw_result, list):
+                # Handle list of Document objects or dicts
+                for item in raw_result:
+                    if hasattr(item, "page_content"): # Document
+                        snippets.append({
+                            "content": item.page_content,
+                            "title": item.metadata.get("title", "Search Result"),
+                            "link": item.metadata.get("link", "")
+                        })
+                    elif isinstance(item, dict):
+                        snippets.append({
+                            "content": item.get("snippet") or item.get("content") or "",
+                            "title": item.get("title") or "Search Result",
+                            "link": item.get("link") or item.get("url") or ""
+                        })
+            else:
+                # Fallback to regex if it returned a formatted string
+                raw_result_str = str(raw_result)
+                import re
+                # Use a more robust pattern that doesn't rely on exact comma-space-field sequence
+                # and handles multi-line snippets
+                pattern = re.compile(r"snippet: (.*?),\s+title: (.*?),\s+link: (.*?)(?=\s*,\s*snippet:|$)", re.DOTALL)
+                matches = pattern.findall(raw_result_str)
 
-            # DuckDuckGoSearchResults returns a string like:
-            # "snippet: ..., title: ..., link: ..., snippet: ..., title: ..., link: ..."
-            # We use regex with lookahead to find all matches correctly even if fields contain commas.
-            import re
+                for m in matches:
+                    snippets.append({"content": m[0].strip(), "title": m[1].strip(), "link": m[2].strip()})
 
-            pattern = re.compile(r"snippet: (.*?),\s+title: (.*?),\s+link: (.*?)(?=\s*,\s*snippet:|$)", re.DOTALL)
-            matches = pattern.findall(raw_result_str)
-
-            for m in matches:
-                snippets.append({"content": m[0].strip(), "title": m[1].strip(), "link": m[2].strip()})
-
-            if not snippets and raw_result_str:
-                # Fallback if parsing failed but we got a string
-                snippets.append({"content": raw_result_str, "title": "Search Result"})
+                if not snippets and raw_result_str:
+                    # Final fallback: just take the whole string as content
+                    snippets.append({"content": raw_result_str, "title": "Search Result"})
 
             if snippets:
                 summary = "\n".join([f"- {s.get('title')}: {s.get('content', '')[:300]}..." for s in snippets[:3]])
@@ -138,5 +155,15 @@ def summarize_results(text: str) -> str:
     Returns:
         A concise summary string.
     """
-    # Echo back — the LLM reading this tool output will perform the summarization.
-    return text
+    if not text:
+        return ""
+
+    # Implementation of real (but simple) summarization:
+    # Take the first 1000 characters and append ellipsis if truncated.
+    # This provides a deterministic "summary" for the context window.
+    max_len = 1000
+    cleaned = text.strip()
+    if len(cleaned) <= max_len:
+        return cleaned
+
+    return cleaned[:max_len] + "..." + "\n[Content truncated for brevity]"
