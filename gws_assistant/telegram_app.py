@@ -12,7 +12,7 @@ from telegram.ext import (
     filters,
 )
 
-from gws_assistant.config import AppConfig
+from gws_assistant.models import AppConfigModel
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +316,7 @@ async def handle_service_command(update: Update, context: ContextTypes.DEFAULT_T
     await run_gws_task(update, context, text)
 
 
-def create_application(config: AppConfig) -> Application:
+def create_application(config: AppConfigModel) -> Application:
     """Create and configure the Telegram application."""
     if not config.telegram_bot_token:
         raise ValueError("TELEGRAM_BOT_TOKEN is not set in configuration.")
