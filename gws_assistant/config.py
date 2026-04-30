@@ -230,7 +230,8 @@ class AppConfig:
     @classmethod
     def clear_cache(cls):
         """Clears the cached configuration singleton (useful for tests)."""
-        cls._cached_config = None
+        with cls._config_lock:
+            cls._cached_config = None
 
 
 def _resolve_gws_binary_path(value: str) -> Path:

@@ -99,7 +99,7 @@ def call_llm(
         for api_key in api_keys_to_try:
             try:
                 kwargs = _build_api_kwargs(model, config)
-                if api_key:
+                if api_key and model.startswith("openrouter/"):
                     kwargs["api_key"] = api_key  # override with rotation key
 
                 logger.debug(f"[LLM] Calling model={model}")
@@ -142,9 +142,9 @@ def call_llm(
             except (APIConnectionError, BadRequestError) as e:
                 msg = str(e).lower()
                 if "quota" in msg:
-                    logger.error(f"[LLM] Quota exceeded on model={model} (BadRequest). Trying next key.")
+                    logger.error(f"[LLM] Quota exceeded on model={model} (BadRequest). Trying next model.")
                     last_error = e
-                    continue
+                    break
 
                 logger.error(f"[LLM] {type(e).__name__} on model={model}: {e}. Trying next model.")
                 last_error = e

@@ -84,15 +84,12 @@ class SafetyGuard:
                 if destructive_count > 10:
                     cls._log_audit("plan_block", "system", {"destructive_count": destructive_count, "reason": "exceeded force cap"}, False)
                     raise SafetyBlockedError(f"Too many destructive actions ({destructive_count}) even with --force-dangerous. Max allowed is 10.")
+                else:
+                    logger.warning(f"[FORCE-DANGEROUS] Allowing {destructive_count} destructive actions.")
+                    cls._log_audit("plan_force_allowed", "system", {"destructive_count": destructive_count}, True)
             else:
                 cls._log_audit("plan_block", "system", {"destructive_count": destructive_count}, False)
                 raise SafetyBlockedError(msg + " Use --force-dangerous flag to override. This is logged.")
-
-        if search_all_present and delete_present:
-            msg = "Plan combines search_all with delete. Blocked for safety."
-            cls._log_audit("plan_block", "system", {"reason": "search_all + delete"}, False)
-            if not force_dangerous:
-                raise SafetyBlockedError(msg)
 
         if search_all_present and delete_present:
             msg = "Plan combines search_all with delete. Blocked for safety."
