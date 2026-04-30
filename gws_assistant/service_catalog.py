@@ -86,8 +86,8 @@ SERVICES: dict[str, ServiceSpec] = {
             "move_to_trash": ActionSpec(
                 key="move_to_trash",
                 label="Move file to trash",
-                description="Move a Drive file to the trash by id without permanently deleting it.",
-                keywords=("trash", "move to trash", "bin"),
+                description="Move a Drive file to trash. The file can be recovered from trash within 30 days.",
+                keywords=("trash", "move to trash", "bin", "soft delete"),
                 parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),),
             ),
             "update_file_metadata": ActionSpec(
