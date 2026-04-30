@@ -313,7 +313,7 @@ jobs:
         run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt || true
 
       - name: Snyk -- vulnerability scan
-        uses: snyk/actions/python-3.11@master
+        uses: snyk/actions/python-3.11@v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:

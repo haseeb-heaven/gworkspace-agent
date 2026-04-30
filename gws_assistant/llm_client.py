@@ -90,8 +90,9 @@ def call_llm(
     last_error: Exception | None = None
 
     for model in model_chain:
-        # Determine which keys to rotate through for this model
-        if config.llm_api_keys:
+        # Only rotate keys for OpenRouter models; other providers use
+        # a single provider-specific key set by _build_api_kwargs.
+        if model.startswith("openrouter/") and config.llm_api_keys:
             api_keys_to_try = config.llm_api_keys
         else:
             api_keys_to_try = [None]

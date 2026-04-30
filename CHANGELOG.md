@@ -1,10 +1,14 @@
-## [v0.6.1] - 2026-05-01
-### Added/Changed/Fixed
-- chore(release): add v0.6.0 release entry
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [v0.6.1] - 2026-04-30
+### Fixed
+- Fixed `WorkflowNodes.plan_node` calling `self._append_history` instead of module-level `_append_history`
+- Fixed `WorkflowNodes.format_output_node` returning hardcoded placeholder instead of using `self.formatter`
+- Fixed API key rotation loop retrying same key for non-OpenRouter models in `call_llm`
+- Pinned Snyk GitHub Action to `v1.0.0` instead of mutable `@master` ref
+- Restored `search_all + delete` safety check in `SafetyGuard.check_plan`
 
 ## [0.6.0] - 2026-04-30
 ### Added

@@ -160,12 +160,35 @@ class WorkflowNodes:
         return {"reflection": decision, "abort_plan": abort}
 
     def format_output_node(self, state: AgentState) -> dict[str, Any]:
+        """Format the final output using the formatter."""
         plan = state.get("plan")
         executions = state.get("executions", [])
+        context = state.get("context", {})
+
         if plan and executions:
-            formatted = self.formatter.format(plan, executions)
-            return {"final_output": formatted}
-        return {"final_output": "No result produced."}
+            if plan.summary and ("{" in plan.summary or "$" in plan.summary):
+                try:
+                    plan.summary = self.executor._resolve_placeholders(plan.summary, context)
+                except Exception as e:
+                    self.logger.warning(f"Failed to resolve placeholders in summary: {e}")
+
+            report = self.formatter.format_report(
+                PlanExecutionReport(
+                    plan=plan,
+                    executions=executions,
+                    thought_trace=state.get("thought_trace", []),
+                )
+            )
+        else:
+            report = state.get("final_output") or state.get("error") or "No result produced."
+
+        if not report or report == "No result produced.":
+            err = state.get("error")
+            if err:
+                report = err
+        if any(not item.result.success for item in executions) and "failed" not in report.lower():
+            report = f"Execution finished with failures.\n\n{report}"
+        return {"final_output": report}
 
     def update_context_node(self, state: AgentState) -> dict[str, Any]:
         idx = state.get("current_task_index", 0)
