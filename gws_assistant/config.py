@@ -169,7 +169,7 @@ class AppConfig:
         # as they are now resolved above.
 
         sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
-        read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=True)
+        read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=False)
 
         return AppConfigModel(
             provider=provider,

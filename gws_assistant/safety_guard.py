@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Action categories to treat as destructive
 DESTRUCTIVE_ACTIONS = {
     "drive": ["delete_file", "empty_trash", "move_to_trash"],
-    "gmail": ["delete_message", "trash_message", "batch_delete", "empty_trash", "send_message"],
+    "gmail": ["delete_message", "trash_message", "batch_delete", "empty_trash"],
     "sheets": ["delete_spreadsheet", "clear_all_data", "delete_sheet_tab"],
     "docs": ["delete_document"],
     "calendar": ["delete_event", "delete_calendar"],
