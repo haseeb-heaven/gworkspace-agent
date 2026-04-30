@@ -284,8 +284,9 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     def update_context_node(state: AgentState) -> dict[str, Any]:
         new_index = state.get("current_task_index", 0) + 1
         if state.get("abort_plan"):
-            if state.get("plan"):
-                new_index = len(state.get("plan").tasks)
+            plan = state.get("plan")
+            if plan is not None:
+                new_index = len(plan.tasks)
         return {
             "current_task_index": new_index,
             "error": state.get("error"),
