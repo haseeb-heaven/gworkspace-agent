@@ -108,7 +108,7 @@ class WorkflowNodes:
     def plan_node(self, state: AgentState) -> dict[str, Any]:
         try:
             plan = self.system.plan(state["user_text"])
-            history = self._append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
+            history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
             self._log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
             return {"plan": plan, "error": None, "conversation_history": history}
         except Exception as exc:
