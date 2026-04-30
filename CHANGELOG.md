@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-04-30
+### Added
+- Implemented comprehensive unit and manual integration test suites.
+- Enhanced core agent functionality across CLI, GUI, and Web interfaces.
+
 ## [1.5.0] - Sandbox and Workspace Safety
 ### Added
 - **Sandbox Mode**: Implemented an interactive mode to intercept destructive actions (delete, write) and prompt for confirmation.
