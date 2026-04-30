@@ -142,6 +142,11 @@ class TripleVerifier:
 
 
 class VerifierMixin:
+    # Type hints for mypy
+    runner: Any
+    planner: Any
+    logger: logging.Logger
+
     def verify_resource(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
         verifier = TripleVerifier(self.runner, self.planner, self.logger)
         return verifier.verify_resource(service, resource_id, expected_fields)

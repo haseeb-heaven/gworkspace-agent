@@ -13,7 +13,7 @@ except ImportError:
     HAS_DDG = False
 
 try:
-    from langchain_tavily import TavilySearchResults
+    from langchain_tavily import TavilySearchResults  # type: ignore
 
     HAS_TAVILY = True
 except ImportError:
@@ -44,7 +44,7 @@ def web_search_tool(query: str, max_results: int = 5) -> dict[str, str | list | 
             search = DuckDuckGoSearchResults(num_results=max_results)
             # Invoke might return a list of Documents or a string depending on LangChain version
             raw_result = search.invoke({"query": query})
-            
+
             snippets = []
             if isinstance(raw_result, list):
                 # Handle list of Document objects or dicts

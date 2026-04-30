@@ -7,6 +7,16 @@ logger = logging.getLogger(__name__)
 
 
 class HelpersMixin:
+    # Type hints for mypy
+    config: Any
+    logger: logging.Logger
+    planner: Any
+    runner: Any
+
+    def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
+        # This will be provided by ResolverMixin
+        ...
+
     def _think(self, *args, **kwargs) -> str:
         return "Thought: Proceeding with planned task."
 

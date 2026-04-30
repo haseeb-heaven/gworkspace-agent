@@ -435,9 +435,9 @@ class VerificationEngine:
         # CATEGORY 6 - TASKS
         if service == "tasks" or "task" in tool_name:
             if isinstance(result, dict):
-                status = result.get("status")
-                if status and status not in ("needsAction", "completed"):
-                    raise VerificationError(tool_name, f"Invalid task status {status}", "status")
+                task_status = result.get("status")
+                if task_status and task_status not in ("needsAction", "completed"):
+                    raise VerificationError(tool_name, f"Invalid task status {task_status}", "status")
 
     @classmethod
     def verify_attachment_sent(cls, params: dict, result: Any) -> None:

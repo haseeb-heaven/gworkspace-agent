@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import pytest
+
 pytestmark = pytest.mark.gmail
 
 import logging
-import os
 import tempfile
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from rich.logging import RichHandler

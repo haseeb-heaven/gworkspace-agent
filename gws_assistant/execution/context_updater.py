@@ -1,9 +1,25 @@
-import re
 import base64
+import re
 from typing import Any
 
 
 class ContextUpdaterMixin:
+    def _extract_headers(self, payload: Any) -> dict[str, Any]:
+        """Consolidate logic for extracting Gmail headers into a flat lowercase dict."""
+        if not isinstance(payload, dict):
+            return {}
+        headers = payload.get("headers", [])
+        h_dict = {}
+        if isinstance(headers, list):
+            for h in headers:
+                if isinstance(h, dict):
+                    name = str(h.get("name", "")).lower()
+                    if name:
+                        h_dict[name] = h.get("value")
+        elif isinstance(headers, dict):
+            h_dict = {str(k).lower(): v for k, v in headers.items()}
+        return h_dict
+
     def _mask_pii(self, text: str) -> str:
         """Redact email addresses from text."""
         if not text:
@@ -109,16 +125,7 @@ class ContextUpdaterMixin:
                     continue
 
                 # Extract headers into top-level keys for easy access (e.g. {task-2.from})
-                headers = p_item.get("headers", [])
-                headers_dict = {}
-                if isinstance(headers, list):
-                    for h in headers:
-                        if isinstance(h, dict):
-                            name = str(h.get("name", "")).lower()
-                            if name:
-                                headers_dict[name] = h.get("value")
-                else:
-                    headers_dict = {str(k).lower(): v for k, v in headers.items()}
+                headers_dict = self._extract_headers(p_item)
 
                 # Initialize default keys to prevent KeyError in generated code
                 for name in ("from", "subject", "date", "to", "cc", "bcc"):
@@ -173,14 +180,7 @@ class ContextUpdaterMixin:
                     m_id = m.get("id", "")
                     t_id = m.get("threadId", "")
                     # Extract potential payload headers if available (from partial list or mock)
-                    h_dict = {}
-                    payload = m.get("payload", {})
-                    if "headers" in payload:
-                        headers = payload["headers"]
-                        if isinstance(headers, list):
-                            h_dict = {str(h.get("name", "")).lower(): h.get("value", "") for h in headers}
-                        else:
-                            h_dict = {str(k).lower(): v for k, v in headers.items()}
+                    h_dict = self._extract_headers(m.get("payload", {}))
 
                     sender = h_dict.get("from", "Unknown")
                     subject = h_dict.get("subject", "No Subject")
@@ -188,7 +188,7 @@ class ContextUpdaterMixin:
 
                     # If we don't have payload, use ID/Thread fallback to ensure structure matches
                     # Or try snippet if available
-                    if not payload and "snippet" in m:
+                    if not m.get("payload") and "snippet" in m:
                         subject = m.get("snippet", subject)
 
                     rows.append([sender, subject, date_val, m_id, t_id])

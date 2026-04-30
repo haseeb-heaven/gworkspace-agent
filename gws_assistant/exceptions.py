@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from enum import Enum
 
+from .models import ValidationError
+
 
 class APIErrorType(Enum):
     """Typed taxonomy of Google API errors seen in the wild."""
@@ -47,8 +49,6 @@ def classify_api_error(stderr: str, stdout: str) -> APIErrorType:
 # ---------------------------------------------------------------------------
 # Exception hierarchy
 # ---------------------------------------------------------------------------
-
-from .models import ValidationError
 
 
 class UnsupportedServiceError(ValidationError):

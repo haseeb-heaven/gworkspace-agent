@@ -98,7 +98,9 @@ class IntentParser:
                     "parameters must be an object. "
                     "If service is missing or unsupported, set needs_clarification=true."
                 )
-                completion = self.client.chat.completions.create(
+                from typing import cast
+                client = cast(Any, self.client)
+                completion = client.chat.completions.create(
                     model=self.config.api_model_name(),
                     temperature=0,
                     response_format={"type": "json_object"},

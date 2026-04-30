@@ -71,9 +71,11 @@ read_mem0.py
 *.scratchpad
 download.html
 .planning
+ISSUES.md
 
 # Allowed
 !README.md
 !framework/
 !tests/
 *.orig
+!requirements.txt

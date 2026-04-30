@@ -1,5 +1,7 @@
 import pytest
+
 from gws_assistant.json_utils import extract_json
+
 
 @pytest.mark.gmail
 def test_extract_json_greedy_bug():
@@ -8,7 +10,7 @@ def test_extract_json_greedy_bug():
     {"key": "value"}
     Diagnostic message 2 {ignore this too}
     """
-    
+
     result = extract_json(text)
     assert result == {"key": "value"}
 
@@ -19,7 +21,7 @@ def test_extract_json_nested():
     {"a": {"b": 1}}
     More garbage
     """
-    
+
     result = extract_json(text)
     assert result == {"a": {"b": 1}}
 
@@ -30,6 +32,6 @@ def test_extract_json_array():
     [{"a": 1}, {"b": 2}]
     More garbage
     """
-    
+
     result = extract_json(text)
     assert result == [{"a": 1}, {"b": 2}]

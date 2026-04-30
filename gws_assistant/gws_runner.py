@@ -71,7 +71,7 @@ class GWSRunner:
 
     def run(self, args: list[str], timeout_seconds: int | None = None) -> ExecutionResult:
 
-        timeout = (
+        timeout: float | None = (
             timeout_seconds if timeout_seconds is not None else (self.config.gws_timeout_seconds if self.config else 90)
         )
         # Interpret 0 as no timeout (infinite)

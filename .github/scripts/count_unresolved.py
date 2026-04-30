@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Count unresolved, non-outdated review threads from a GraphQL response JSON file."""
-import sys
 import json
+import sys
 
 
 def main():

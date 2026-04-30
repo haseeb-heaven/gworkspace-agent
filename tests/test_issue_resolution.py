@@ -153,12 +153,12 @@ def test_resolve_gmail_message_body(executor):
         "gmail_message_body_text": "Real body content",
         "task_results": {}
     }
-    
+
     # Test legacy $ placeholder
     val = "$gmail_message_body"
     resolved = exec_instance._resolve_placeholders(val, context)
     assert resolved == "Real body content"
-    
+
     # Test message ID remains message ID
     val2 = "$gmail_message_id"
     resolved2 = exec_instance._resolve_placeholders(val2, context)

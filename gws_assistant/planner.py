@@ -281,7 +281,7 @@ class CommandPlanner:
             mime_type = str(params.get("mime_type") or "application/vnd.google-apps.document").strip()
             folder_id = str(params.get("folder_id") or "").strip()
 
-            payload = {"name": name, "mimeType": mime_type}
+            payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
             if folder_id:
                 payload["parents"] = [folder_id]
 
@@ -406,16 +406,16 @@ class CommandPlanner:
             name = str(params.get("name") or "").strip()
             folder_id = str(params.get("folder_id") or "").strip()
 
-            request_params: dict[str, Any] = {"fileId": file_id}
-            payload: dict[str, Any] = {}
+            _request_params: dict[str, Any] = {"fileId": file_id}
+            _payload: dict[str, Any] = {}
             if name:
-                payload["name"] = name
+                _payload["name"] = name
             if folder_id:
-                payload["parents"] = [folder_id]
+                _payload["parents"] = [folder_id]
 
-            cmd = ["drive", "files", "copy", "--params", json.dumps(request_params)]
-            if payload:
-                cmd.extend(["--json", json.dumps(payload, ensure_ascii=True)])
+            cmd = ["drive", "files", "copy", "--params", json.dumps(_request_params)]
+            if _payload:
+                cmd.extend(["--json", json.dumps(_payload, ensure_ascii=True)])
             return cmd
 
         raise ValidationError(f"Unsupported drive action: {action}")
@@ -758,6 +758,7 @@ class CommandPlanner:
         if action == "batch_update":
             document_id = self._required_text(params, "document_id")
             text = str(params.get("text") or "").strip()
+            location: dict[str, Any] = {}
             if "index" in params:
                 location = {"location": {"index": int(params["index"])}}
             else:

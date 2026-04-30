@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from gws_assistant.exceptions import SafetyBlockedError, VerificationError
+from gws_assistant.exceptions import SafetyBlockedError
 from gws_assistant.models import ExecutionResult
-from gws_assistant.verification_engine import VerificationEngine
+from gws_assistant.verification_engine import VerificationEngine, VerificationError
 
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin

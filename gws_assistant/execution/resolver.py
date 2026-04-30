@@ -59,6 +59,11 @@ LEGACY_PLACEHOLDER_MAP = {
 }
 
 class ResolverMixin:
+    # Type hints for mypy
+    logger: logging.Logger
+    config: Any
+    runner: Any
+
     def _expand_task(self, task: Any, context: dict) -> list:
         """Expand a single task into a list of executable tasks.
         Example: gmail.get_message with message_id=['id1', 'id2']
@@ -357,7 +362,7 @@ class ResolverMixin:
 
                 if resolved is not None:
                     return resolved
-                
+
                 self.logger.warning(
                     f"Placeholder '{path}' resolved to None in context. "
                     f"Available context keys: {list(context.keys())}"
@@ -427,6 +432,13 @@ class ResolverMixin:
                 if is_explicit or is_task_token:
                     return _UNRESOLVED_MARKER
                 return match.group(0)
+
+            # 3. Large Artifact Guard (Issue 14)
+            # If the string is very long, skip regex scanning if it lacks placeholder indicators.
+            if len(val) > 5000:
+                if not ("{{" in val or "$task-" in val or "{task-" in val or "{:" in val):
+                    self.logger.debug(f"DEBUG: Skipping regex scan for large string (len={len(val)})")
+                    return val
 
             # 4. Partial string replacement with regex
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N

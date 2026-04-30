@@ -1,7 +1,21 @@
 from __future__ import annotations
+
 import os
 from unittest.mock import patch
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def clear_config_cache():
+    """Clear the AppConfig singleton cache before and after each test."""
+    try:
+        from gws_assistant.config import AppConfig
+        AppConfig.clear_cache()
+        yield
+        AppConfig.clear_cache()
+    except ImportError:
+        yield
 
 
 @pytest.fixture(scope="session", autouse=True)

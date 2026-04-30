@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 _QUOTED_PHRASE_RE = re.compile(r"""['"]([^'"]{2,80})['"]""")
 _WORD_RE = re.compile(r"[a-zA-Z]{3,}")
 

@@ -1,6 +1,5 @@
 import json
 import os
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -27,8 +26,8 @@ def test_cli_module_help_smoke():
 
 
 def test_gws_binary_help_smoke():
-    import subprocess
     import os
+    import subprocess
 
     gws_path = os.getenv("GWS_BINARY_PATH")
     if not gws_path or not os.path.exists(gws_path):
@@ -77,7 +76,7 @@ def test_llm_chat_completion_smoke():
         or env_file.get("LLM_MODEL")
         or "google/gemini-2.5-flash"
     )
-    
+
     full_model = model
     if provider and provider != "openai" and not model.startswith(f"{provider}/"):
         full_model = f"{provider}/{model}"

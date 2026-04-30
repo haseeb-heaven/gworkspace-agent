@@ -29,7 +29,8 @@ async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
     if not update.effective_chat:
         return False
 
-    config = context.bot_data.get("config")
+    from typing import cast
+    config = cast(AppConfigModel, context.bot_data.get("config"))
     if not config or not config.telegram_chat_id:
         # If no strict chat ID is configured, fail closed or open?
         # User requested: "strictly to bot from .env data only"
@@ -47,6 +48,9 @@ async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
 async def split_and_send(update: Update, text: str):
     """Split message into <= 4096 character chunks and send."""
     MAX_LEN = 4096
+
+    if not update.effective_message:
+        return
 
     if not text:
         text = "No output returned."
@@ -74,7 +78,8 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
     """Execute the task by calling python gws_cli.py --task <task_text>"""
 
     logger.info(f"Starting command execution for task: {task_text[:50]}...")
-    await update.effective_message.reply_text("Received task. Processing...")
+    if update.effective_message:
+        await update.effective_message.reply_text("Received task. Processing...")
 
     config = context.bot_data.get("config")
     timeout = 300
@@ -111,7 +116,8 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             except Exception:
                 pass
             logger.error(f"Task timed out after {timeout} seconds: {task_text[:50]}")
-            await update.effective_message.reply_text(f"Error: Task timed out after {timeout}s.")
+            if update.effective_message:
+                await update.effective_message.reply_text(f"Error: Task timed out after {timeout}s.")
             return
 
         stdout = stdout_bytes.decode("utf-8", errors="replace").strip()
@@ -123,9 +129,10 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             try:
                 data = json.loads(stdout)
                 if data.get("status") == "confirmation_required":
-                    chat_id = update.effective_chat.id
-                    prompt_msg = f"️Confirmation Required \n\nAction: {data.get('action')}\nDetails: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
-                    await update.effective_message.reply_text(prompt_msg)
+                    if update.effective_chat and update.effective_message:
+                        chat_id = update.effective_chat.id
+                        prompt_msg = f"️Confirmation Required \n\nAction: {data.get('action')}\nDetails: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
+                        await update.effective_message.reply_text(prompt_msg)
 
                     loop = asyncio.get_running_loop()
                     future = loop.create_future()
@@ -134,7 +141,8 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     try:
                         reply = await asyncio.wait_for(future, timeout=60.0)
                         if reply.strip().lower() == "yes":
-                            await update.effective_message.reply_text("Proceeding...")
+                            if update.effective_message:
+                                await update.effective_message.reply_text("Proceeding...")
                             # Re-run with --force-dangerous
                             process2 = await asyncio.create_subprocess_exec(
                                 sys.executable,
@@ -154,15 +162,18 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
 
                             if process2.returncode != 0:
                                 logger.error(f"Task failed with exit code {process2.returncode}. Stderr: {stderr2}")
-                                await update.effective_message.reply_text(
-                                    f"Task failed with exit code {process2.returncode}."
-                                )
+                                if update.effective_message:
+                                    await update.effective_message.reply_text(
+                                        f"Task failed with exit code {process2.returncode}."
+                                    )
                             output2 = stdout2 if stdout2 else stderr2
                             await split_and_send(update, output2)
                         else:
-                            await update.effective_message.reply_text("Action cancelled.")
+                            if update.effective_message:
+                                await update.effective_message.reply_text("Action cancelled.")
                     except asyncio.TimeoutError:
-                        await update.effective_message.reply_text("Timeout reached. Action cancelled.")
+                        if update.effective_message:
+                            await update.effective_message.reply_text("Timeout reached. Action cancelled.")
                     finally:
                         pending_confirmations.pop(chat_id, None)
                     return
@@ -175,7 +186,8 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             msg = f"Task failed with exit code {process.returncode}."
             if stderr:
                 msg += f"\n\nDetails:\n{stderr}"
-            await update.effective_message.reply_text(msg)
+            if update.effective_message:
+                await update.effective_message.reply_text(msg)
             return
 
         output = stdout if stdout else stderr
@@ -183,11 +195,12 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
 
     except Exception as e:
         logger.exception("Exception while executing gws_cli.py")
-        await update.effective_message.reply_text(f"Error executing task: {str(e)}")
+        if update.effective_message:
+            await update.effective_message.reply_text(f"Error executing task: {str(e)}")
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await auth_check(update, context):
+    if not await auth_check(update, context) or not update.effective_message:
         return
     await update.effective_message.reply_text(
         "Hello! I am your Google Workspace Assistant. Send me a task or use commands like /mail, /docs, etc."
@@ -195,7 +208,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await auth_check(update, context):
+    if not await auth_check(update, context) or not update.effective_message:
         return
     help_text = (
         "Send me natural language tasks to perform actions in Google Workspace.\n"
@@ -213,7 +226,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await auth_check(update, context):
         return
 
-    task_text = update.effective_message.text.strip()
+    if not update.effective_message or not update.effective_chat:
+        return
+
+    task_text = update.effective_message.text or ""
+    task_text = task_text.strip()
     chat_id = update.effective_chat.id
 
     if chat_id in pending_confirmations:
@@ -308,7 +325,10 @@ async def handle_service_command(update: Update, context: ContextTypes.DEFAULT_T
     # Example: /docs Create a new document about project X
     # Here, we keep the service name as part of the task string to let AI parse it better.
     # So "/docs Create a new document" becomes "docs Create a new document"
-    text = update.effective_message.text.strip()
+    if not update.effective_message:
+        return
+    text = update.effective_message.text or ""
+    text = text.strip()
     # Strip the leading '/'
     if text.startswith("/"):
         text = text[1:]

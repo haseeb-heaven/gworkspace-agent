@@ -10,7 +10,7 @@ from typing import Any
 try:
     from langchain_litellm import ChatLiteLLM
 except ImportError:
-    from langchain_community.chat_models import ChatLiteLLM
+    from langchain_community.chat_models import ChatLiteLLM  # type: ignore
 from langchain_core.prompts import ChatPromptTemplate
 
 from .llm_client import call_llm
