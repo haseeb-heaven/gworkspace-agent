@@ -48,9 +48,7 @@ def classify_api_error(stderr: str, stdout: str) -> APIErrorType:
 # Exception hierarchy
 # ---------------------------------------------------------------------------
 
-
-class ValidationError(Exception):
-    """Raised when a planned task or command fails schema/semantic validation."""
+from .models import ValidationError
 
 
 class UnsupportedServiceError(ValidationError):

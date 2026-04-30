@@ -118,7 +118,8 @@ class PlannedTask:
 # Fix #1 — PlannedTask schema validation
 # ---------------------------------------------------------------------------
 
-from .exceptions import ValidationError  # noqa: E402  (after class defs to avoid circular import)
+class ValidationError(Exception):
+    """Raised when a planned task or command fails schema/semantic validation."""
 
 
 def validate_planned_task(task: "PlannedTask") -> None:
