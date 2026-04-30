@@ -35,3 +35,10 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     run_task("Read the data from my 'Systematic Testing Data' sheet and email it to user@example.com")
+
+
+@pytest.mark.live_integration
+def test_manual_3():
+    run_task(
+        "Append a new row with 'Date', 'Status', 'Log' values to the 'Systematic Testing Data' sheet, then read the last row and print it."
+    )

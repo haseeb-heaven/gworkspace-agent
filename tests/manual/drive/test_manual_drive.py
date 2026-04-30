@@ -38,3 +38,10 @@ def test_manual_2():
 @pytest.mark.live_integration
 def test_manual_3():
     run_task("Search for a document named 'CcaaS - AI Product', and if found, export it to PDF.")
+
+
+@pytest.mark.live_integration
+def test_manual_4():
+    run_task(
+        "Search for a file named 'Agentic AI Test Folder', rename it to 'Renamed AI Folder', and then move it to the root of my Google Drive if it's not already there."
+    )

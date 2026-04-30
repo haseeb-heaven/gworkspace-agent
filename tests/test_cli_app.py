@@ -41,3 +41,28 @@ class TestAskNonEmpty:
     @patch("gws_assistant.cli_app.Prompt.ask", return_value="override")
     def test_with_default(self, mock_ask):
         assert _ask_non_empty("prompt", default="default_val") == "override"
+
+
+class TestAssistantCLI:
+    @patch("gws_assistant.cli_app.AppConfig.from_env")
+    @patch("gws_assistant.cli_app.setup_logging")
+    def test_cli_initialization(self, mock_logging, mock_config):
+        from gws_assistant.cli_app import AssistantCLI
+        config = MagicMock()
+        config.gws_binary_path = Path("gws")
+        mock_config.return_value = config
+        
+        with patch("gws_assistant.cli_app.IntentParser"):
+            with patch("gws_assistant.cli_app.CommandPlanner"):
+                with patch("gws_assistant.cli_app.GWSRunner"):
+                    cli = AssistantCLI()
+                    assert cli is not None
+
+    @patch("gws_assistant.cli_app.AppConfig.from_env")
+    def test_cli_should_stop(self, mock_config):
+        from gws_assistant.cli_app import AssistantCLI
+        cli = AssistantCLI()
+        assert cli._should_stop("exit") is True
+        assert cli._should_stop("quit") is True
+        assert cli._should_stop("bye") is True
+        assert cli._should_stop("list files") is False

@@ -67,3 +67,24 @@ async def test_split_and_send_long_message():
     long_text = "A" * 5000
     await split_and_send(update, long_text)
     assert update.effective_message.reply_text.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_gws_task_success():
+    """run_gws_task handles successful command execution."""
+    update = MagicMock()
+    update.effective_message.reply_text = AsyncMock()
+    context = MagicMock()
+    context.bot_data = {"config": MagicMock()}
+    
+    with patch("asyncio.create_subprocess_exec") as mock_exec:
+        mock_process = AsyncMock()
+        mock_process.communicate.return_value = (b"output", b"")
+        mock_process.returncode = 0
+        mock_exec.return_value = mock_process
+        
+        from gws_assistant.telegram_app import run_gws_task
+        await run_gws_task(update, context, "test task")
+        
+        assert update.effective_message.reply_text.called
+        mock_exec.assert_called()

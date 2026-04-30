@@ -47,5 +47,33 @@ def test_manual_3():
 @pytest.mark.live_integration
 def test_manual_4():
     run_task(
-        f"Search Google Drive for a document or binary file like ${os.getenv('TEST_FILE_NAME')} or any recent file, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} with the file attached. Verify the attachment is successfully added and no internal file paths are leaked in the email body."
+        f"Search Google Drive for a document or binary file like {os.getenv('TEST_FILE_NAME')} or any recent file, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} with the file attached. Verify the attachment is successfully added and no internal file paths are leaked in the email body."
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_5():
+    run_task(
+        "Search Gmail for emails from 'haseebmir.hm@gmail.com' and apply a label called 'GWorkspaceAgent-Test'."
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_6():
+    run_task(
+        f"Find the most recent email from {os.getenv('DEFAULT_RECIPIENT_EMAIL')} and reply to it saying 'This is an automated reply from GWorkspace Agent verification test.'."
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_7():
+    run_task(
+        f"Search for a document containing 'CcaaS - AI Product' in its content, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} attaching this document. The email subject should be 'Verification: AI Product Document' and the body should include a summary of the task."
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_8():
+    run_task(
+        f"Find a document that mentions 'Shibuz' and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}. Ensure the file is attached correctly."
     )
