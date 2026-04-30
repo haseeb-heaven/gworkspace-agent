@@ -62,7 +62,7 @@ def test_format_sheets_values(formatter):
 
 def test_format_drive_files(formatter):
     payload = {
-        "files": [{"name": "Doc1", "mimeType": "text/plain", "webViewLink": "http://link"}]
+        "files": [{"name": "Doc1", "mimeType": "text/plain", "webViewLink": "https://link"}]
     }
     res = ExecutionResult(success=True, stdout=json.dumps(payload), stderr="", command=["gws"])
     out = formatter.format_execution_result(res)

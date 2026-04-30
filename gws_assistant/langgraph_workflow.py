@@ -141,13 +141,60 @@ class WorkflowNodes:
         task_error = None
         for exp_task in expanded:
             resolved = self.executor._resolve_task(exp_task, context)
+            try:
+                validate_planned_task(resolved)
+            except Exception as val_exc:
+                self.logger.error(f"Validation failed after resolution for task {resolved.id}: {val_exc}")
+                return {
+                    "error": str(val_exc),
+                    "last_result": StructuredToolResult(success=False, output={}, error=str(val_exc)),
+                    "executions": executions,
+                    "context": context,
+                }
             result = self.executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
             payload = latest["output"].get("parsed_payload") or latest["output"]
+
+            if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
+                storage_payload = [
+                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
+                    for item in payload["messages"]
+                ]
+            elif isinstance(payload, list):
+                storage_payload = [
+                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload
+                ]
+            else:
+                storage_payload = payload
+
             self.executor._update_context_from_result(payload, context, resolved)
             results_map = context.setdefault("task_results", {})
-            results_map[f"task-{idx+1}"] = payload
+            seq_id = f"task-{idx + 1}"
+            results_map[seq_id] = storage_payload
+            results_map[str(idx + 1)] = storage_payload
+            results_map[f"t{idx + 1}"] = storage_payload
+
+            task_id = str(task.id)
+            if task_id != seq_id:
+                results_map[task_id] = storage_payload
+                if task_id.startswith("task-"):
+                    num = task_id.removeprefix("task-")
+                    results_map[num] = storage_payload
+                    results_map[f"t{num}"] = storage_payload
+                elif task_id.isdigit():
+                    results_map[f"task-{task_id}"] = storage_payload
+                    results_map[f"t{task_id}"] = storage_payload
+
+            thought_trace.append(
+                {
+                    "step": idx + 1,
+                    "action": f"{resolved.service}.{resolved.action}",
+                    "observation": str(latest["output"].get("stdout", ""))[:300],
+                    "success": result.success,
+                    "reason": resolved.reason,
+                }
+            )
             if not result.success:
                 task_error = result.error or "Task failed"
                 break
@@ -156,8 +203,27 @@ class WorkflowNodes:
     def reflect_node(self, state: AgentState) -> dict[str, Any]:
         error = state.get("error")
         attempts = state.get("current_attempt", 0)
+        context = dict(state.get("context", {}))
+        updates: dict[str, Any] = {}
+
         decision, abort = self.executor.reflect_on_error(error, attempts, self.config.max_retries)
-        return {"reflection": decision, "abort_plan": abort}
+        if abort:
+            updates["abort_plan"] = True
+
+        if decision.action == "replan":
+            if state.get("plan") and context.get("replan_count", 0) < self.config.max_replans:
+                context["replan_count"] = int(context.get("replan_count", 0)) + 1
+                updates["context"] = context
+                updates["current_attempt"] = 0
+                updates["current_task_index"] = 0
+                updates["error"] = None
+                decision.reason = "Retries exhausted, requesting new plan."
+            else:
+                decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
+                updates["abort_plan"] = True
+
+        updates["reflection"] = decision
+        return updates
 
     def format_output_node(self, state: AgentState) -> dict[str, Any]:
         """Format the final output using the formatter."""
@@ -192,7 +258,12 @@ class WorkflowNodes:
 
     def update_context_node(self, state: AgentState) -> dict[str, Any]:
         idx = state.get("current_task_index", 0)
-        return {"current_task_index": idx + 1, "current_attempt": 0}
+        new_index = idx + 1
+        if state.get("abort_plan"):
+            plan = state.get("plan")
+            if plan is not None:
+                new_index = len(plan.tasks)
+        return {"current_task_index": new_index, "current_attempt": 0}
 
 
 def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):

@@ -35,9 +35,9 @@ def test_build_api_kwargs_groq(mock_config):
 
 
 def test_build_api_kwargs_ollama(mock_config):
-    mock_config.ollama_api_base = "http://ollama:11434"
+    mock_config.ollama_api_base = "https://ollama.example:11434"
     kwargs = _build_api_kwargs("ollama/test", mock_config)
-    assert kwargs["api_base"] == "http://ollama:11434"
+    assert kwargs["api_base"] == "https://ollama.example:11434"
     assert kwargs["api_key"] == "ollama"
 
 
