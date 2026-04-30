@@ -151,7 +151,7 @@ class WorkflowNodes:
             if not result.success:
                 task_error = result.error or "Task failed"
                 break
-        return {"executions": executions, "context": context, "error": task_error, "last_result": latest or StructuredToolResult(success=True, output={}, error=None)}
+        return {"executions": executions, "context": context, "error": task_error, "last_result": latest or StructuredToolResult(success=True, output={}, error=None), "thought_trace": thought_trace, "current_attempt": state.get("current_attempt", 0) + 1}
 
     def reflect_node(self, state: AgentState) -> dict[str, Any]:
         error = state.get("error")
