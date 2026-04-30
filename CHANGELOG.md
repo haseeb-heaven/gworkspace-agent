@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.0.10] - 2026-04-30
+### Added
+- Added `Mem0` host configuration.
+- Added `TELEGRAM_CHAT_ID` support.
+
+## [0.0.9] - 2026-04-30
+### Fixed
+- Fixed memory leakage in `resolver.py`.
+- Improved task planning resilience.
+
+## [0.0.8] - 2026-04-30
+### Changed
+- Refactored `executor.py` for cleaner logging.
+- Updated dependencies in `pyproject.toml`.
+
+## [0.0.7] - 2026-04-30
+### Added
+- Support for `E2B` sandbox backend.
+- Added `GWS_TIMEOUT_SECONDS` config.
+
+## [0.0.6] - 2026-04-30
+### Added
+- Added `LLM_FALLBACK_MODEL` series for increased reliability.
+- Implemented tool-calling validation in `model_registry.py`.
+
 ## [0.0.5] - 2026-04-30
 ### Fixed
 - Resolved `UnboundLocalError` in Gmail header extraction.
