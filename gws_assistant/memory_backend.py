@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,13 +141,56 @@ class LocalMemory(MemoryBackend):
     def _tokenize(self, text: str) -> set[str]:
         return {w for w in text.lower().split() if w not in self._stop_words and len(w) > 1}
 
+    def _sanitize_text(self, text: str) -> str:
+        sanitized = text
+        sanitized = re.sub(r"(?i)\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b", "[REDACTED_EMAIL]", sanitized)
+        sanitized = re.sub(r"(?<!\w)(?:\+?\d[\d\-\s().]{7,}\d)", "[REDACTED_PHONE]", sanitized)
+        return sanitized
+
+    def _sanitize_value(self, value: Any, parent_key: str | None = None) -> Any:
+        sensitive_keys = {
+            "password",
+            "pass",
+            "token",
+            "access_token",
+            "refresh_token",
+            "secret",
+            "api_key",
+            "apikey",
+            "authorization",
+            "phone",
+            "phone_number",
+            "phonenumber",
+            "email",
+        }
+
+        if isinstance(value, dict):
+            cleaned: dict[str, Any] = {}
+            for k, v in value.items():
+                key_l = str(k).lower()
+                if key_l in sensitive_keys or any(s in key_l for s in sensitive_keys):
+                    cleaned[k] = "[REDACTED]"
+                else:
+                    cleaned[k] = self._sanitize_value(v, key_l)
+            return cleaned
+
+        if isinstance(value, list):
+            return [self._sanitize_value(item, parent_key) for item in value]
+
+        if isinstance(value, str):
+            if parent_key and (parent_key in sensitive_keys or any(s in parent_key for s in sensitive_keys)):
+                return "[REDACTED]"
+            return self._sanitize_text(value)
+
+        return value
+
     def save_episode(self, goal: str, tasks: list[dict], outcome: str) -> None:
         self.memory_file.parent.mkdir(parents=True, exist_ok=True)
         episode = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "goal": goal,
-            "tasks": tasks,
-            "outcome": outcome,
+            "goal": self._sanitize_value(goal),
+            "tasks": self._sanitize_value(tasks),
+            "outcome": self._sanitize_value(outcome),
         }
 
         with open(self.memory_file, "a", encoding="utf-8") as f:
