@@ -98,7 +98,7 @@ def _normalize_workspace_result(result: Any) -> StructuredToolResult:
 
 
 class WorkflowNodes:
-    def __init__(self, config, system, executor, logger):
+    def __init__(self, config: AppConfigModel, system: Any, executor: Any, logger: logging.Logger):
         self.config = config
         self.system = system
         self.executor = executor
