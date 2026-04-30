@@ -20,6 +20,9 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_FALLBACK_MODEL", raising=False)
+    monkeypatch.delenv("LLM_FALLBACK_MODEL2", raising=False)
+    monkeypatch.delenv("LLM_FALLBACK_MODEL3", raising=False)
     monkeypatch.setenv("MEM0_API_KEY", "")
     monkeypatch.setenv("MEM0_USER_ID", "test-user")
 

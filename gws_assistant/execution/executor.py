@@ -241,9 +241,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         if is_text:
                             try:
                                 from pathlib import Path
-                                SAFE_DOWNLOAD_DIR = Path("downloads").resolve()
+                                downloads_dir = Path("downloads").resolve()
+                                scratch_dir = Path("scratch").resolve()
                                 resolved = Path(saved_file).resolve()
-                                if not str(resolved).startswith(str(SAFE_DOWNLOAD_DIR)):
+                                if not (str(resolved).startswith(str(downloads_dir)) or str(resolved).startswith(str(scratch_dir))):
                                     raise ValueError(f"Path traversal blocked: {saved_file}")
                                     
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
