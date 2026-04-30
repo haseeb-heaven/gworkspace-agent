@@ -163,7 +163,8 @@ class WorkflowNodes:
         plan = state.get("plan")
         executions = state.get("executions", [])
         if plan and executions:
-            return {"final_output": "Formatted Result"}
+            formatted = self.formatter.format(plan, executions)
+            return {"final_output": formatted}
         return {"final_output": "No result produced."}
 
     def update_context_node(self, state: AgentState) -> dict[str, Any]:
