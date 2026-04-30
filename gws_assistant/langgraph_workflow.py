@@ -112,7 +112,7 @@ class WorkflowNodes:
             self._log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
             return {"plan": plan, "error": None, "conversation_history": history}
         except Exception as exc:
-            history = self._append_history(state, AIMessage(content=f"Planning failed: {exc}"))
+            history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
             self._log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
             return {"error": str(exc), "conversation_history": history}
 
