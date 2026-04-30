@@ -159,7 +159,7 @@ class VerificationEngine:
             if "create" in tool_name or "copy" in tool_name:
                 title = params.get("title") or params.get("name") or params.get("folder_name")
                 if not title or cls._is_placeholder(str(title)) or len(str(title).strip()) < 1:
-                    print(f"DEBUG: Document title required failed for tool '{tool_name}' with params: {params}")
+                    logger.debug(f"Document title required failed for tool '{tool_name}' with params: {params}")
                     raise VerificationError(tool_name, "Document title required", "title")
 
             content = params.get("content")
@@ -219,7 +219,7 @@ class VerificationEngine:
                         if isinstance(row, list):
                             for cell in row:
                                 if cell is not None and str(cell).strip() and cls._is_placeholder(str(cell)):
-                                    print(f"DEBUG: Placeholder found in values: '{cell}', full params: {params}")
+                                    logger.debug(f"Placeholder found in values: '{cell}', full params: {params}")
                                     raise VerificationError(tool_name, f"Placeholder found in values: {cell}", "values")
 
             sheet_name = params.get("sheet_name") or params.get("tab_name")
@@ -397,9 +397,10 @@ class VerificationEngine:
                     ):
                         raise VerificationError(tool_name, "Result missing id or message_id")
 
-                if "send" in tool_name:
-                    if not result.get("labelIds") and not result.get("threadId"):
-                        raise VerificationError(tool_name, "Send result missing labelIds or threadId")
+                if tool_name in ("gmail_send_message", "send_message"):
+                    # A real send result must have an 'id' and usually 'labelIds' containing 'SENT'
+                    if not result.get("id") or (not result.get("labelIds") and not result.get("threadId")):
+                        raise VerificationError(tool_name, "Send result missing id, labelIds, or threadId")
 
         # CATEGORY 3 - DRIVE / DOCS
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
@@ -514,12 +515,11 @@ class VerificationEngine:
     @classmethod
     def _is_valid_drive_id(cls, value: str) -> bool:
         val_str = str(value)
-        if any(
-            val_str.startswith(prefix)
-            for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "m", "t", "$", "{{"]
-        ):
-            return True
-        return bool(re.match(r"^[a-zA-Z0-9_-]+$", val_str)) and len(val_str) >= 1
+        # Allow internal placeholders and specific recognized prefixes
+        if any(val_str.startswith(prefix) for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{"]):
+            return len(val_str) > 2
+        # Regular Drive IDs are long (25-60 chars). Min 2 is a safe threshold for test IDs.
+        return bool(re.match(r"^[a-zA-Z0-9_-]{2,128}$", val_str))
 
     @classmethod
     def _end_is_after_start(cls, start: Any, end: Any) -> bool:

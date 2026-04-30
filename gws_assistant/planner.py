@@ -100,7 +100,13 @@ def _resolve_date_expression(raw: str) -> str:
 
     # Fallback — return as-is; the LLM may have already supplied an ISO date
     # embedded inside a longer string like "2026-04-14T10:00:00".
-    return raw.strip().split("T")[0][:10]
+    # We strip the time portion only if the prefix is a valid ISO date.
+    stripped = raw.strip()
+    if "T" in stripped:
+        prefix = stripped.split("T")[0]
+        if _ISO_DATE_RE.match(prefix):
+            return prefix
+    return stripped
 
 
 def _parse_time_to_hhmm(raw: str) -> tuple[int, int] | None:
@@ -418,6 +424,10 @@ class CommandPlanner:
                 cmd.extend(["--json", json.dumps(_payload, ensure_ascii=True)])
             return cmd
 
+        if action == "move_to_trash":
+            file_id = self._required_text(params, "file_id")
+            return ["drive", "files", "update", "--params", json.dumps({"fileId": file_id}), "--json", json.dumps({"trashed": True})]
+
         raise ValidationError(f"Unsupported drive action: {action}")
 
     # ------------------------------------------------------------------
@@ -539,8 +549,6 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "delete", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "send_message":
-            import re
-            
             to_email = self._required_text(params, "to_email").strip().rstrip(".")
             subject = self._required_text(params, "subject")
             body = self._required_text(params, "body")
@@ -729,6 +737,16 @@ class CommandPlanner:
                 patch_body["summary"] = str(params.get("summary")).strip()
             if params.get("description"):
                 patch_body["description"] = str(params.get("description")).strip()
+            if params.get("location"):
+                patch_body["location"] = str(params.get("location")).strip()
+            if params.get("start"):
+                patch_body["start"] = params["start"]
+            if params.get("end"):
+                patch_body["end"] = params["end"]
+            if params.get("attendees"):
+                patch_body["attendees"] = params["attendees"]
+            if params.get("reminders"):
+                patch_body["reminders"] = params["reminders"]
 
             return [
                 "calendar",
@@ -999,7 +1017,7 @@ class CommandPlanner:
 
     def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "send_message":
-            message = self._required_text(params, "message")
+            message = self._required_text(params, "message").strip()[:4000]
             python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.environ.get(
@@ -1042,7 +1060,7 @@ class CommandPlanner:
         try:
             parsed = int(str(value).strip())
             return parsed if parsed > 0 else default
-        except Exception:
+        except (ValueError, TypeError):
             return default
 
     @staticmethod
@@ -1077,11 +1095,16 @@ class CommandPlanner:
     @staticmethod
     def _export_drive_file_to_temp(file_id: str) -> str | None:
         try:
+            if not _DRIVE_FILE_ID_RE.match(file_id):
+                logging.error("Refusing to export invalid Drive file ID: %s", file_id)
+                return None
+
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
             gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
             
             # 1. Try to download directly first (works for binary files, images, PDFs already in Drive)
-            direct_file_path = os.path.join(tmp_dir, f"{file_id}")
+            safe_name = re.sub(r"[^A-Za-z0-9_-]", "", file_id)
+            direct_file_path = os.path.join(tmp_dir, safe_name)
             result = subprocess.run(
                 [
                     gws_exe,

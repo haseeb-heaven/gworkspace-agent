@@ -6,8 +6,13 @@ from unittest.mock import MagicMock, patch
 
 # Mock gradio before importing
 mock_gr = MagicMock()
+mock_gr.Blocks.return_value.__enter__.return_value = MagicMock()
+
 with patch.dict(sys.modules, {"gradio": mock_gr}):
-    from gws_assistant.gradio_app import GradioAssistant, create_interface
+    # Pre-patch setup_logging before importing
+    with patch("gws_assistant.gradio_app.setup_logging"):
+        from gws_assistant import gradio_app
+        from gws_assistant.gradio_app import GradioAssistant, create_interface
 
 
 def test_gradio_assistant_run_request():
@@ -25,7 +30,9 @@ def test_gradio_assistant_run_request():
         logger=logger
     )
     
-    with patch("gws_assistant.gradio_app.AppConfig.from_env"):
+    with patch("gws_assistant.gradio_app.AppConfig.from_env") as mock_conf:
+        mock_conf.return_value.log_level = "INFO"
+        mock_conf.return_value.log_file_path = "test.log"
         with patch("gws_assistant.langgraph_workflow.run_workflow") as mock_run:
             mock_run.return_value = "success output"
             out, plan = assistant.run_request("test")
@@ -44,7 +51,9 @@ def test_gradio_assistant_empty_request():
     assert "Enter a request" in out
 
 def test_create_interface():
-    with patch("gws_assistant.gradio_app.AppConfig.from_env"):
+    with patch("gws_assistant.gradio_app.AppConfig.from_env") as mock_conf:
+        mock_conf.return_value.log_level = "INFO"
+        mock_conf.return_value.log_file_path = "test.log"
         with patch("gws_assistant.gradio_app.setup_logging"):
             with patch("gws_assistant.gradio_app.GWSRunner"):
                 with patch("gws_assistant.gradio_app.WorkspaceAgentSystem"):

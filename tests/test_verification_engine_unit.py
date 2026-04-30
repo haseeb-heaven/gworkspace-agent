@@ -204,12 +204,14 @@ class TestVerifyResult:
     def test_calendar_cancelled_event(self):
         with pytest.raises(VerificationError, match="cancelled"):
             VerificationEngine.verify_result("calendar_create_event", {}, {
+                "id": "event123",
                 "status": "cancelled",
             })
 
     def test_tasks_invalid_status(self):
         with pytest.raises(VerificationError, match="Invalid task status"):
             VerificationEngine.verify_result("tasks_create_task", {}, {
+                "id": "task123",
                 "status": "invalid_status",
             })
 

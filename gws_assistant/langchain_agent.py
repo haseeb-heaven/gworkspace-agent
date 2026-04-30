@@ -249,7 +249,7 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
 
     # If user wants to send email but plan has no send_message → incomplete
     if (
-        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to", "email", "mail", "send an email"))
+        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to", "send an email", "compose mail", "compose email"))
         and "send_message" not in actions_in_plan
     ):
         logging.info("Plan incomplete: user wants to send email but plan has no send_message.")

@@ -54,7 +54,7 @@ def test_gmail_send_fail_placeholder_to():
 def test_gmail_send_fail_no_label():
     params = {"to": "valid@example.org", "subject": "Hello", "body": "This is a body"}
     result = {"id": "123"}
-    with pytest.raises(VerificationError, match="Send result missing labelIds or threadId"):
+    with pytest.raises(VerificationError, match="Send result missing id, labelIds, or threadId"):
         VerificationEngine.verify_result("send_message", params, result)
 
 

@@ -15,7 +15,7 @@ def mock_planner():
     planner = MagicMock()
     planner.list_services.return_value = ["drive", "gmail"]
     planner.list_actions.return_value = [MagicMock(key="list_files"), MagicMock(key="create_file")]
-    planner.required_parameters.return_value = (ParameterSpec(name="q", type="string", required=True),)
+    planner.required_parameters.return_value = (ParameterSpec(name="q", prompt="Enter search query", example="report"),)
     planner.ensure_service.side_effect = lambda s: s
     planner.ensure_action.side_effect = lambda s, a: a
     return planner
@@ -39,7 +39,7 @@ class TestConversationEngine:
 
     def test_parse_user_request_delegates_to_parser(self, mock_planner, mock_parser, logger):
         engine = ConversationEngine(planner=mock_planner, logger=logger, parser=mock_parser)
-        mock_parser.parse.return_value = Intent(service="gmail", action="send")
+        mock_parser.parse.return_value = Intent(raw_text="send email", service="gmail", action="send")
         result = engine.parse_user_request("send email")
         assert result.service == "gmail"
         mock_parser.parse.assert_called_once_with("send email")
@@ -47,11 +47,11 @@ class TestConversationEngine:
     def test_needs_service_clarification(self, mock_planner, logger):
         engine = ConversationEngine(planner=mock_planner, logger=logger)
         # Empty service
-        assert engine.needs_service_clarification(Intent(service=None)) is True
+        assert engine.needs_service_clarification(Intent(raw_text="help", service=None)) is True
         # Unknown service
-        assert engine.needs_service_clarification(Intent(service="unknown")) is True
+        assert engine.needs_service_clarification(Intent(raw_text="help", service="unknown")) is True
         # Known service
-        assert engine.needs_service_clarification(Intent(service="drive")) is False
+        assert engine.needs_service_clarification(Intent(raw_text="help", service="drive")) is False
 
     def test_service_clarification_message(self, mock_planner, logger):
         engine = ConversationEngine(planner=mock_planner, logger=logger)
@@ -72,7 +72,7 @@ class TestConversationEngine:
 
     def test_merge_parameters(self, mock_planner, logger):
         engine = ConversationEngine(planner=mock_planner, logger=logger)
-        intent = Intent(service="drive", parameters={"q": "name = 'test'"})
+        intent = Intent(raw_text="search", service="drive", parameters={"q": "name = 'test'"})
         # No interactive params
         merged = engine.merge_parameters(intent)
         assert merged == {"q": "name = 'test'"}
@@ -102,6 +102,6 @@ class TestConversationEngine:
         assert a == "list_files"
 
     def test_format_result(self, mock_planner, logger):
-        result = ExecutionResult(success=True, stdout="output")
+        result = ExecutionResult(success=True, command=["ls"], stdout="output")
         formatted = ConversationEngine.format_result(result)
         assert "output" in formatted

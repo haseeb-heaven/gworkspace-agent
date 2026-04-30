@@ -94,6 +94,8 @@ class TripleVerifier:
         return True
 
     def _build_command(self, service: str, resource_id: str) -> list[str]:
+        if service not in self._RESOURCE_MAP:
+            raise ValueError(f"Unsupported service for verification: {service}")
         action, id_param = self._RESOURCE_MAP[service]
         if self.planner:
             return self.planner.build_command(service, action, {id_param: resource_id})
