@@ -145,5 +145,24 @@ def test_resolve_folder_then_file(executor):
     export_task = report.executions[1].task
     assert export_task.parameters["file_id"] == "doc_id"
     assert export_task.parameters["source_mime"] == "application/vnd.google-apps.document"
+def test_resolve_gmail_message_body(executor):
+    """Verify $gmail_message_body resolves to gmail_message_body_text."""
+    exec_instance, _ = executor
+    context = {
+        "gmail_message_id": "msg123",
+        "gmail_message_body_text": "Real body content",
+        "task_results": {}
+    }
+    
+    # Test legacy $ placeholder
+    val = "$gmail_message_body"
+    resolved = exec_instance._resolve_placeholders(val, context)
+    assert resolved == "Real body content"
+    
+    # Test message ID remains message ID
+    val2 = "$gmail_message_id"
+    resolved2 = exec_instance._resolve_placeholders(val2, context)
+    assert resolved2 == "msg123"
+
 if __name__ == "__main__":
     pytest.main([__file__])

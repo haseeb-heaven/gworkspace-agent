@@ -11,7 +11,7 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_spreadsheet_url":    "last_spreadsheet_url",
     "$last_document_id":        "last_document_id",
     "$last_document_url":       "last_document_url",
-    "$gmail_message_body": "gmail_message_id",
+    "$gmail_message_body": "gmail_message_body_text",
     "$gmail_message_id": "gmail_message_id",
     "$gmail_message_ids":       "gmail_message_ids",
     "$gmail_details_values":    "gmail_details_values",

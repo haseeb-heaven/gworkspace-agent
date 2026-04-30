@@ -1,14 +1,15 @@
 import re
+import base64
 from typing import Any
 
 
 class ContextUpdaterMixin:
     def _mask_pii(self, text: str) -> str:
         """Redact email addresses from text."""
-        import re
         if not text:
             return ""
-        return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
+        # Fix — escape the dot in domain part
+        return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
 
     def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
         """Extract known artifact keys from a task result and store in context."""
@@ -90,10 +91,8 @@ class ContextUpdaterMixin:
                 if not isinstance(p, dict):
                     return ""
                 b = p.get("body", {})
-                if b.get("data"):
+                if isinstance(b, dict) and b.get("data"):
                     try:
-                        import base64
-
                         return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
                     except Exception:
                         return ""

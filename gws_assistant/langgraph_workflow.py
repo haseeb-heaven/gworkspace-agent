@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -323,7 +324,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         if any(not item.result.success for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
         # Save to episodic memory if successful
-        if any(item.result.success for item in executions):
+        if executions and all(item.result.success for item in executions):
             try:
                 from .memory import save_episode
                 save_episode(state["user_text"], [e.task.parameters for e in executions], report)
@@ -473,8 +474,6 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
-            import re
-
             numbers = re.findall(r"\b\d+\b", state["user_text"])
             lowered = state["user_text"].lower()
             if len(numbers) >= 2 and ("from" in lowered or "between" in lowered):

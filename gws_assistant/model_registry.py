@@ -55,6 +55,9 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/deepseek/deepseek-chat:free",
     "openrouter/nvidia/nemotron-super-49b-v1:free",
     "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free",
+    "openrouter/groq/llama-3-groq-70b-8192-tool-use-preview",
+    "openrouter/groq/llama-3.1-8b-instant",
+    "openrouter/groq/llama-3.1-8b-instant:free",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-8b-instant",

@@ -40,7 +40,7 @@ def test_gws_binary_help_smoke():
         text=True,
     )
     assert result.returncode == 0
-    assert "Usage:" in result.stdout
+    assert "usage:" in result.stdout.lower()
 
 
 def test_gradio_launcher_help_smoke():
@@ -58,7 +58,7 @@ def test_gradio_launcher_help_smoke():
         text=True,
     )
     assert result.returncode == 0
-    assert "Usage:" in result.stdout
+    assert "usage:" in result.stdout.lower()
 
 
 @pytest.mark.skipif(
