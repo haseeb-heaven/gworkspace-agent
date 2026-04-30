@@ -105,6 +105,18 @@ def test_is_valid_plan_valid():
     assert is_valid_plan(plan) is True
 
 
+def test_is_valid_plan_drive_move_to_trash():
+    plan = {
+        "tasks": [{
+            "id": "1",
+            "service": "drive",
+            "action": "move_to_trash",
+            "parameters": {"file_id": "1AbCdEFg123"},
+        }]
+    }
+    assert is_valid_plan(plan) is True
+
+
 def test_is_plan_complete():
     # User mentions sheets, plan must have sheets
     assert _is_plan_complete({"tasks": [{"service": "drive"}]}, "create a spreadsheet") is False
