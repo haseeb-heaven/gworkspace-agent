@@ -53,6 +53,7 @@ def run_integration_test(user_text: str, config: AppConfigModel, logger: logging
     return output
 
 
+@pytest.mark.gmail
 def test_flow1_gmail_search_only(config, logger):
     fake_gws = FakeGoogleWorkspace()
     run_integration_test("show me my last 5 unread emails", config, logger, fake_gws)
@@ -70,6 +71,8 @@ def test_flow1_gmail_search_only(config, logger):
     assert list_call["action"] == "list_messages"
 
 
+@pytest.mark.gmail
+@pytest.mark.sheets
 def test_flow2_gmail_to_sheets(config, logger):
     fake_gws = FakeGoogleWorkspace()
     run_integration_test("search emails about invoice and save to Google Sheets", config, logger, fake_gws)
@@ -94,6 +97,7 @@ def test_flow2_gmail_to_sheets(config, logger):
     assert append_call["params"].get("values") is not None and len(append_call["params"]["values"]) > 0
 
 
+@pytest.mark.docs
 @patch("gws_assistant.tools.web_search.web_search_tool")
 def test_flow3_web_search_to_docs(mock_web_search, config, logger):
     mock_web_search.invoke.return_value = {
@@ -142,6 +146,9 @@ def test_flow3_web_search_to_docs(mock_web_search, config, logger):
         )
 
 
+@pytest.mark.gmail
+@pytest.mark.sheets
+@pytest.mark.drive
 def test_flow4_drive_to_sheets_to_gmail(config, logger):
     fake_gws = FakeGoogleWorkspace()
     run_integration_test(
@@ -161,6 +168,7 @@ def test_flow4_drive_to_sheets_to_gmail(config, logger):
     assert send_call is not None
 
 
+@pytest.mark.sheets
 def test_flow5_placeholder_resolution(config, logger):
     # To test this, we need a plan with placeholders. We can force a plan.
     fake_gws = FakeGoogleWorkspace()
@@ -211,6 +219,7 @@ def test_flow5_placeholder_resolution(config, logger):
     )
 
 
+@pytest.mark.sheets
 def test_flow6_reflection_retry_on_failure(config, logger):
     fake_gws = FakeGoogleWorkspace(should_fail_on_first_call=True)
 
@@ -222,6 +231,7 @@ def test_flow6_reflection_retry_on_failure(config, logger):
     # The first call failed, second should succeed, meaning it got retried
 
 
+@pytest.mark.gmail
 def test_flow7_memory_recall_affects_planning(config, logger, tmp_path):
     config.memory_dir = tmp_path
 
