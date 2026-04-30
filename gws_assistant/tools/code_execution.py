@@ -137,8 +137,18 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_print_"] = _print_factory
     safe_g["_print_buffer_instance"] = collector
 
-    safe_g["_getattr_"] = getattr
-    safe_g["_setattr_"] = setattr
+    from RestrictedPython.Guards import safer_getattr
+
+    def safe_setattr(obj, name, value):
+        if name.startswith("_"):
+            raise AttributeError(f'"{name}" is an invalid attribute name because it starts with "_"')
+        return setattr(obj, name, value)
+
+    safe_g["_getattr_"] = safer_getattr
+    safe_g["_setattr_"] = safe_setattr
+    safe_g["__builtins__"]["getattr"] = safer_getattr
+    safe_g["__builtins__"]["setattr"] = safe_setattr
+
     safe_g["_getiter_"] = iter
     safe_g["_getitem_"] = lambda obj, key: obj[key]
     safe_g["_write_"] = lambda obj: obj
