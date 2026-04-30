@@ -219,7 +219,13 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         update_args = self.planner.build_command(
                             "docs", "batch_update", {"document_id": data["documentId"], "text": content}
                         )
-                        self.runner.run(update_args)
+                        update_res = self.runner.run(update_args)
+                        if not update_res.success:
+                            self.logger.warning(
+                                f"Failed to add initial content to doc {data['documentId']}: {update_res.error}"
+                            )
+                        else:
+                            self.logger.info(f"Successfully added initial content to doc {data['documentId']}")
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
                     saved_file = data.get("saved_file")
