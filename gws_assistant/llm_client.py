@@ -128,15 +128,14 @@ def call_llm(
                 level = logging.ERROR if is_quota else logging.WARNING
                 logger.log(
                     level,
-                    f"[LLM] {'Quota' if is_quota else 'RateLimit'} error on model={model} "
-                    f"key=...{str(api_key)[-6:] if api_key else 'N/A'}. "
+                    f"[LLM] {'Quota' if is_quota else 'RateLimit'} error on model={model}. "
                     f"Trying next key."
                 )
                 last_error = e
                 continue
 
             except AuthenticationError as e:
-                logger.error(f"[LLM] AuthenticationError on model={model}. key=...{str(api_key)[-6:] if api_key else 'N/A'}. Trying next key.")
+                logger.error(f"[LLM] AuthenticationError on model={model}. Trying next key.")
                 last_error = e
                 continue  # Try next key in case this one is just invalid/expired
 
