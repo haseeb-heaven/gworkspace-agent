@@ -36,26 +36,17 @@ def extract_json(text: str) -> Any:
     except json.JSONDecodeError:
         pass
 
-    # Fallback: Find the first { or [ and the last } or ]
-    match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
-    if match:
-        candidate = match.group(1)
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            # Try to be even more aggressive if there's trailing garbage
-            # like "Footer message" after the JSON
-            # We search for the LAST } that makes it a valid JSON
-            for i in range(len(candidate), 0, -1):
-                if candidate[i - 1] in ("}", "]"):
-                    try:
-                        return json.loads(candidate[:i])
-                    except json.JSONDecodeError:
-                        continue
+    # Fallback: Find the first { or [ and try to decode from there using JSONDecoder
+    decoder = json.JSONDecoder()
+    for i, char in enumerate(text):
+        if char in ('{', '['):
+            try:
+                obj, _ = decoder.raw_decode(text[i:])
+                return obj
+            except json.JSONDecodeError:
+                continue
 
-    # If all fails, raise the original error or return as is?
-    # For compatibility with existing callers, we might want to return the string
-    # but the goal is to fix parsing.
+    # If all fails, raise the original error
     raise ValueError(f"Could not extract valid JSON from text: {text[:100]}...")
 
 
