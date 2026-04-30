@@ -183,3 +183,36 @@ def test_code_execution_respects_config_flag(config):
 
     output = run_workflow("calculate 2+2", config, system, executor, logger)
     assert "disabled" in output.lower()
+
+
+def test_empty_executions_no_memory_pollution(config):
+    logger = logging.getLogger("test")
+    system = MagicMock()
+    executor = MagicMock()
+
+    # Mock system.memory to track calls
+    system.memory = MagicMock()
+
+    app = create_workflow(config, system, executor, logger)
+
+    # Scenario: GWS intent but planner produced 0 tasks.
+    # Initial state for workflow
+    state = {
+        "user_text": "search my emails",
+        "plan": RequestPlan(raw_text="search my emails", tasks=[], no_service_detected=False),
+        "executions": [],
+        "context": {},
+        "conversation_history": [],
+        "thought_trace": [],
+        "final_output": "No tasks were executed.",
+    }
+
+    # Mocking internal components for create_workflow if needed.
+    system.plan.return_value = RequestPlan(raw_text="search my emails", tasks=[], no_service_detected=False)
+
+    # Let's run it.
+    app.invoke(state)
+
+    # Check if system.memory.add was called
+    # With the fix, it SHOULD NOT be called.
+    assert not system.memory.add.called, "Fix failed: system.memory.add was called for empty executions!"

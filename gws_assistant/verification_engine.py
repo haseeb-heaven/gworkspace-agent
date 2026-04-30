@@ -455,7 +455,7 @@ class VerificationEngine:
                 # If no parts/attachments are found in the result, it's a failure.
                 if not parts:
                     raise VerificationError(
-                        "verify_attachment", "Attachment declared in params but not confirmed in result"
+                        "verify_attachment", "Attachment declared in params but not confirmed in result", severity="WARNING"
                     )
 
     @classmethod

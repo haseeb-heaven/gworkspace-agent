@@ -22,6 +22,7 @@ dist/
 .venv/
 venv/
 env/
+.coverage
 
 # Logs and Environment
 logs/

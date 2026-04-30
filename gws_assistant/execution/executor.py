@@ -240,6 +240,12 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         file_content = None
                         if is_text:
                             try:
+                                from pathlib import Path
+                                SAFE_DOWNLOAD_DIR = Path("downloads").resolve()
+                                resolved = Path(saved_file).resolve()
+                                if not str(resolved).startswith(str(SAFE_DOWNLOAD_DIR)):
+                                    raise ValueError(f"Path traversal blocked: {saved_file}")
+                                    
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
                                     file_content = f.read().lstrip("\ufeff")
                             except Exception as e:

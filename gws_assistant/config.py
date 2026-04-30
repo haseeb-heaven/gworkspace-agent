@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,11 +26,16 @@ class AppConfig:
     """Reads and normalizes environment configuration."""
 
     _cached_config: AppConfigModel | None = None
+    _config_lock = threading.Lock()
 
     @classmethod
     def from_env(cls) -> AppConfigModel:
         if cls._cached_config is not None:
             return cls._cached_config
+
+        with cls._config_lock:
+            if cls._cached_config is not None:
+                return cls._cached_config
 
         env_file_path = Path(".env").expanduser().resolve()
         load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)

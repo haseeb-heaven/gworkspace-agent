@@ -22,6 +22,36 @@ def _args_too_long(args: list[str]) -> bool:
     return os.name == "nt" and any(len(a.encode("utf-8", errors="replace")) > _WIN_ARG_SAFE_BYTES for a in args)
 
 
+def _validate_args(args: list[str]) -> None:
+    """Validator to prevent argument injection of disallowed flags."""
+    # Common flags and subcommands that are allowed
+    ALLOWED_FLAGS = {
+        "--params", "--json", "--fields", "--upload", "--upload-content-type",
+        "--output", "--format", "--api-version", "--page-all", "--page-limit",
+        "--page-delay", "--dry-run", "--sanitize", "-",
+        "--spreadsheet", "--range", "--document", "--title", "--content",
+        "--message", "--subject", "--to", "--query", "--file", "--folder",
+        "--name", "--description", "--mime-type", "--id", "--thread-id",
+        "--message-id", "--file-id", "--document-id", "--spreadsheet-id"
+    }
+    # List of allowed services/subcommands
+    ALLOWED_SERVICES = {
+        "drive", "gmail", "sheets", "docs", "calendar", "admin-reports",
+        "reports", "tasks", "people", "chat", "classroom", "forms",
+        "keep", "meet", "events", "modelarmor", "workflow", "wf",
+        "script", "schema"
+    }
+
+    for arg in args:
+        if arg.startswith("--"):
+            # Check flag (handle --flag=value)
+            flag = arg.split("=")[0]
+            if flag not in ALLOWED_FLAGS:
+                raise ValueError(f"Disallowed argument: {arg}")
+        # Note: positional args (services/actions/values) are generally safer 
+        # but we could also validate services if needed.
+
+
 def _rewrite_large_args_via_tempfile(
     args: list[str],
 ) -> tuple[list[str], list[str], str | None]:
@@ -77,6 +107,8 @@ class GWSRunner:
         # Interpret 0 as no timeout (infinite)
         if timeout == 0:
             timeout = None
+        
+        _validate_args(args)
         command = [str(self.gws_binary_path), *args]
 
         # ------------------------------------------------------------------
