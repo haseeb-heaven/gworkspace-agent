@@ -24,6 +24,7 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("MEM0_USER_ID", "test-user")
 
 
+@pytest.mark.gmail
 def test_config_defaults_to_openrouter_free_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
     monkeypatch.delenv("LLM_MODEL", raising=False)
@@ -34,7 +35,7 @@ def test_config_defaults_to_openrouter_free_model(monkeypatch, tmp_path):
     assert config.provider == "openrouter"
     assert config.model == "openrouter/nvidia/nemotron-super-49b-v1:free"
 
-
+@pytest.mark.gmail
 def test_config_rejects_non_tool_capable_model(monkeypatch, tmp_path):
     _set_required_env(monkeypatch, tmp_path)
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-3.5-turbo")
@@ -45,7 +46,7 @@ def test_config_rejects_non_tool_capable_model(monkeypatch, tmp_path):
             with pytest.raises(ValueError, match="tool-capable model allowlist"):
                 AppConfig.from_env()
 
-
+@pytest.mark.gmail
 def test_artifact_content_validation_rejects_invalid_values():
     from gws_assistant.execution.verifier import validate_artifact_content
 
@@ -55,7 +56,7 @@ def test_artifact_content_validation_rejects_invalid_values():
         with pytest.raises(ValueError):
             validate_artifact_content(value, "unit-test")
 
-
+@pytest.mark.calendar
 def test_triple_verifier_checks_calendar_event_with_expected_fields():
     from gws_assistant.execution.verifier import TripleVerifier
 
@@ -79,7 +80,7 @@ def test_triple_verifier_checks_calendar_event_with_expected_fields():
     assert len(runner.calls) == 3
     assert all(call[:3] == ["calendar", "events", "get"] for call in runner.calls)
 
-
+@pytest.mark.gmail
 def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
     from gws_assistant.memory_backend import get_memory_backend
     from gws_assistant.models import AppConfigModel
@@ -129,7 +130,7 @@ def test_mem0_bug_summary_uses_configured_user_id(monkeypatch, tmp_path):
     assert calls[0]["metadata"]["bug_id"] == "BUG-123"
     assert "recipient was not normalized" in calls[0]["data"]
 
-
+@pytest.mark.gmail
 def test_live_scenario_grouping_and_python_env(monkeypatch, tmp_path):
     import importlib
 
@@ -158,7 +159,7 @@ def test_live_scenario_grouping_and_python_env(monkeypatch, tmp_path):
     assert "sheets" in groups
     assert runner.load_runtime_config().python_exe == sys.executable
 
-
+@pytest.mark.gmail
 def test_live_task_log_redacts_secrets_and_records_attempt(monkeypatch, tmp_path):
     import importlib
 

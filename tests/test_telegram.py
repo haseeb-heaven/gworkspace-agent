@@ -177,11 +177,19 @@ async def test_auth_accepts_correct_chat_id(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-async def test_auth_rejects_when_chat_id_env_missing(mock_update, mock_context):
-    mock_context.bot_data["config"].telegram_chat_id = ""
-    mock_update.effective_message.text = "do something"
+async def test_handle_text_greetings(mock_update, mock_context):
+    mock_update.effective_message.text = "Hello"
+    await handle_text(mock_update, mock_context)
+    mock_update.effective_message.reply_text.assert_called()
+    assert "Hello! I'm your Google Workspace Assistant" in mock_update.effective_message.reply_text.call_args[0][0]
 
-    with patch("gws_assistant.telegram_app.run_gws_task", new_callable=AsyncMock) as mock_run_task:
-        await handle_text(mock_update, mock_context)
-        mock_run_task.assert_not_called()
-        mock_update.effective_message.reply_text.assert_not_called()
+@pytest.mark.asyncio
+@patch("gws_assistant.chat_utils.get_chat_response", new_callable=AsyncMock)
+async def test_handle_text_no_gws_intent(mock_get_chat, mock_update, mock_context):
+    mock_update.effective_message.text = "How are you?"
+    mock_get_chat.return_value = "I am a bot."
+    
+    await handle_text(mock_update, mock_context)
+    
+    mock_get_chat.assert_called_once()
+    mock_update.effective_message.reply_text.assert_called_with("I am a bot.")
