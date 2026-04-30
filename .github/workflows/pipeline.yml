@@ -312,6 +312,13 @@ jobs:
       - name: pip-audit -- CVE scan
         run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt || true
 
+      - name: Snyk -- vulnerability scan
+        uses: snyk/actions/python-3.11@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
       - name: Save security errors
         if: always()
         uses: actions/upload-artifact@v4
