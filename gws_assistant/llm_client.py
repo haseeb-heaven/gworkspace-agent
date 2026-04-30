@@ -99,7 +99,7 @@ def call_llm(
         for api_key in api_keys_to_try:
             try:
                 kwargs = _build_api_kwargs(model, config)
-                if api_key and model.startswith("openrouter/"):
+                if api_key:
                     kwargs["api_key"] = api_key  # override with rotation key
 
                 logger.debug(f"[LLM] Calling model={model}")
