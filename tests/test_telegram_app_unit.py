@@ -75,7 +75,9 @@ async def test_run_gws_task_success():
     update = MagicMock()
     update.effective_message.reply_text = AsyncMock()
     context = MagicMock()
-    context.bot_data = {"config": MagicMock()}
+    mock_config = MagicMock()
+    mock_config.gws_timeout_seconds = 300
+    context.bot_data = {"config": mock_config}
     
     with patch("asyncio.create_subprocess_exec") as mock_exec:
         mock_process = AsyncMock()

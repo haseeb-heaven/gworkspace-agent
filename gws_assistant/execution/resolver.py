@@ -186,17 +186,17 @@ class ResolverMixin:
         # try to pull the most recent matching ID from the global context.
         if task.service == "sheets":
             s_id = str(task.parameters.get("spreadsheet_id") or "")
-            if (not s_id or s_id.startswith("{{")) and context.get("last_spreadsheet_id"):
+            if (not s_id or s_id.startswith("{{") or s_id == _UNRESOLVED_MARKER) and context.get("last_spreadsheet_id"):
                 task.parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
 
         if task.service == "docs":
             d_id = str(task.parameters.get("document_id") or "")
-            if (not d_id or d_id.startswith("{{")) and context.get("last_document_id"):
+            if (not d_id or d_id.startswith("{{") or d_id == _UNRESOLVED_MARKER) and context.get("last_document_id"):
                 task.parameters["document_id"] = context["last_document_id"]
 
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
-            if not f_id or f_id.startswith("{{"):
+            if not f_id or f_id.startswith("{{") or f_id == _UNRESOLVED_MARKER:
                 if context.get("last_file_id"):
                     task.parameters["file_id"] = context["last_file_id"]
                 elif context.get("last_document_id"):

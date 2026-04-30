@@ -140,10 +140,11 @@ def _derive_next_task_id(tasks_data: list[dict]) -> str:
 
 def _derive_email_subject(request_text: str) -> str:
     cleaned = re.sub(
-        r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give\s+me)\s+(an?\s+)?",
+        r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give)(\s+me)?\b",
         "",
         request_text.strip(),
     )
+    cleaned = re.sub(r"(?i)^(the|an?)\s+", "", cleaned.strip())
     cleaned = re.sub(r"\s+to\s+[\w.+-]+@[\w-]+\.[\w.]+.*$", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.strip(" .,;:")
     if not cleaned:
@@ -248,7 +249,7 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
 
     # If user wants to send email but plan has no send_message → incomplete
     if (
-        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to"))
+        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to", "email", "mail", "send an email"))
         and "send_message" not in actions_in_plan
     ):
         logging.info("Plan incomplete: user wants to send email but plan has no send_message.")

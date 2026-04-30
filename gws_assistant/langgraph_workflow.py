@@ -85,20 +85,96 @@ def _is_llm_refusal(code: str) -> bool:
     return any(phrase in lowered for phrase in _REFUSAL_PHRASES)
 
 
+def _append_history(state: AgentState, msg: Any) -> list[Any]:
+    history = list(state.get("conversation_history", []))
+    history.append(msg)
+    return _trim_history(history)
+
+
+def _normalize_workspace_result(result: Any) -> StructuredToolResult:
+    if hasattr(result, "to_structured_result"):
+        return result.to_structured_result()
+    return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
+
+
+class WorkflowNodes:
+    def __init__(self, config, system, executor, logger):
+        self.config = config
+        self.system = system
+        self.executor = executor
+        self.logger = logger
+        self.formatter = HumanReadableFormatter()
+
+    def plan_node(self, state: AgentState) -> dict[str, Any]:
+        try:
+            plan = self.system.plan(state["user_text"])
+            history = self._append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
+            self._log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
+            return {"plan": plan, "error": None, "conversation_history": history}
+        except Exception as exc:
+            history = self._append_history(state, AIMessage(content=f"Planning failed: {exc}"))
+            self._log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
+            return {"error": str(exc), "conversation_history": history}
+
+    def _log_step(self, tool_name: str, normalized_input: Any, normalized_output: Any) -> None:
+        if self.config.verbose:
+            self.logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
+
+    def validate_node(self, state: AgentState) -> dict[str, Any]:
+        plan = state.get("plan")
+        if not plan: return {"error": "No plan to validate."}
+        for task in plan.tasks:
+            if not task.action: return {"error": f"Task {task.id} has no action."}
+        return {"error": None}
+
+    def execute_task_node(self, state: AgentState) -> dict[str, Any]:
+        plan = state.get("plan")
+        idx = state.get("current_task_index", 0)
+        context = dict(state.get("context", {}))
+        executions = list(state.get("executions", []))
+        thought_trace = list(state.get("thought_trace", []))
+        if not plan or idx >= len(plan.tasks): return {"error": "No tasks to execute."}
+        task = plan.tasks[idx]
+        expanded = self.executor._expand_task(task, context)
+        if not expanded: return {"error": "Empty expansion", "executions": executions, "context": context}
+        latest = None
+        task_error = None
+        for exp_task in expanded:
+            resolved = self.executor._resolve_task(exp_task, context)
+            result = self.executor.execute_single_task(resolved, context)
+            executions.append(TaskExecution(task=resolved, result=result))
+            latest = _normalize_workspace_result(result)
+            payload = latest["output"].get("parsed_payload") or latest["output"]
+            self.executor._update_context_from_result(payload, context, resolved)
+            results_map = context.setdefault("task_results", {})
+            results_map[f"task-{idx+1}"] = payload
+            if not result.success:
+                task_error = result.error or "Task failed"
+                break
+        return {"executions": executions, "context": context, "error": task_error, "last_result": latest or StructuredToolResult(success=True, output={}, error=None)}
+
+    def reflect_node(self, state: AgentState) -> dict[str, Any]:
+        error = state.get("error")
+        attempts = state.get("current_attempt", 0)
+        decision, abort = self.executor.reflect_on_error(error, attempts, self.config.max_retries)
+        return {"reflection": decision, "abort_plan": abort}
+
+    def format_output_node(self, state: AgentState) -> dict[str, Any]:
+        plan = state.get("plan")
+        executions = state.get("executions", [])
+        if plan and executions:
+            return {"final_output": "Formatted Result"}
+        return {"final_output": "No result produced."}
+
+    def update_context_node(self, state: AgentState) -> dict[str, Any]:
+        idx = state.get("current_task_index", 0)
+        return {"current_task_index": idx + 1, "current_attempt": 0}
+
+
 def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
     """Creates the compiled LangGraph workflow."""
 
     formatter = HumanReadableFormatter()
-
-    def _append_history(state: AgentState, msg: Any) -> list[Any]:
-        history = list(state.get("conversation_history", []))
-        history.append(msg)
-        return _trim_history(history)
-
-    def _normalize_workspace_result(result: Any) -> StructuredToolResult:
-        if hasattr(result, "to_structured_result"):
-            return result.to_structured_result()
-        return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
 
     def _log_step(
         tool_name: str,

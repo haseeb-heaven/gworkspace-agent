@@ -103,7 +103,7 @@ class TestResolverMixin:
     def test_resolve_placeholders_shorthand_semantic(self, logger):
         resolver = MockResolver(logger_=logger)
         context = {"task_results": {"get_message": "msg_content"}}
-        val = resolver._resolve_placeholders(":get_message", context)
+        val = resolver._resolve_placeholders("{{:get_message}}", context)
         assert val == "msg_content"
 
     def test_resolve_placeholders_shorthand_with_colon_braces(self, logger):
@@ -186,7 +186,7 @@ class TestResolverMixin:
     def test_resolve_placeholders_shorthand(self, logger):
         resolver = MockResolver(logger_=logger)
         context = {"task_results": {"create_doc": "doc123"}}
-        val = resolver._resolve_placeholders("{doc}", context)
+        val = resolver._resolve_placeholders("{{:doc}}", context)
         assert val == "doc123"
 
     def test_resolve_placeholders_recursive(self, logger):

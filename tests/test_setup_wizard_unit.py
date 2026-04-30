@@ -91,15 +91,15 @@ class TestAskHelpers:
     @patch("gws_assistant.setup_wizard.Prompt.ask", return_value="user input")
     def test_ask_text(self, mock_ask):
         from gws_assistant.setup_wizard import _ask_text
-        assert _ask_text("prompt") == "user input"
+        assert _ask_text("prompt", default="def") == "user input"
 
     @patch("gws_assistant.setup_wizard.Prompt.ask", side_effect=["", "valid"])
     def test_ask_text_required(self, mock_ask):
         from gws_assistant.setup_wizard import _ask_text
-        assert _ask_text("prompt", required=True) == "valid"
+        assert _ask_text("prompt", default="def", required=True) == "valid"
         assert mock_ask.call_count == 2
 
     @patch("gws_assistant.setup_wizard.Prompt.ask", return_value="secret")
     def test_ask_secret(self, mock_ask):
         from gws_assistant.setup_wizard import _ask_secret
-        assert _ask_secret("prompt") == "secret"
+        assert _ask_secret("prompt", existing="old") == "secret"

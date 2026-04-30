@@ -66,7 +66,7 @@ def test_derive_next_task_id():
 
 def test_derive_email_subject():
     assert _derive_email_subject("Please send me the report") == "Report"
-    assert _derive_email_subject("find my files") == "Find my files"
+    assert _derive_email_subject("find my files") == "My files"
     assert _derive_email_subject("send") == "Your Requested Summary"
     assert _derive_email_subject("A" * 100) == ("A" * 57) + "..."
 
@@ -96,7 +96,7 @@ def test_is_valid_plan_valid():
             "id": "1",
             "service": "gmail",
             "action": "send_message",
-            "parameters": {"to": "t@e.com", "subject": "S", "body": "B"}
+            "parameters": {"to_email": "t@e.com", "subject": "S", "body": "B"}
         }]
     }
     # Note: depends on actual SERVICES catalog.
