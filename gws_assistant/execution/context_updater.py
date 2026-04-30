@@ -2,34 +2,16 @@ import re
 from typing import Any
 
 
-def _first_non_folder(files: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return first item whose mimeType is not a Google Drive folder, or None."""
-    for f in files:
-        mime = f.get("mimeType")
-        if mime != "application/vnd.google-apps.folder":
-            return f
-    return None
-
-
 class ContextUpdaterMixin:
-    """Mixin that extracts artifact keys from GWS tool results and writes them to execution context.
+    def _mask_pii(self, text: str) -> str:
+        """Redact email addresses from text."""
+        import re
+        if not text:
+            return ""
+        return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
 
-    Updates context state with IDs, URLs, body text, and summary tables for Gmail, Drive,
-    Sheets, and Docs results. Consumers must supply a `logger` attribute.
-    """
-
-    def _update_context_from_result(
-        self, data: dict[str, Any], context: dict[str, Any], task: Any = None
-    ) -> None:
+    def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
         """Extract known artifact keys from a task result and store in context."""
-
-        def _redact(value: str) -> str:
-            """Mask email local-parts and truncate long values to reduce PII exposure."""
-            import re
-
-            value = re.sub(r"([\w.+-]+)(@[\w.-]+)", r"***\2", str(value))
-            return value[:200] + "…" if len(value) > 200 else value
-
         if not isinstance(data, dict):
             return
 
@@ -72,18 +54,12 @@ class ContextUpdaterMixin:
         if "spreadsheetId" in data:
             context["last_spreadsheet_id"] = data["spreadsheetId"]
             if "spreadsheetUrl" not in data:
-                sid = data["spreadsheetId"]
-                data["spreadsheetUrl"] = f"https://docs.google.com/spreadsheets/d/{sid}/edit"
+                data["spreadsheetUrl"] = f"https://docs.google.com/spreadsheets/d/{data['spreadsheetId']}/edit"
             context["last_spreadsheet_url"] = data["spreadsheetUrl"]
 
             # Capture title for Sheet1 auto-fix
             title = data.get("properties", {}).get("title")
-            if (
-                not title
-                and task
-                and task.service == "sheets"
-                and task.action == "create_spreadsheet"
-            ):
+            if not title and task and task.service == "sheets" and task.action == "create_spreadsheet":
                 title = task.parameters.get("title")
             if title:
                 context["last_spreadsheet_title"] = title
@@ -91,8 +67,7 @@ class ContextUpdaterMixin:
         if "documentId" in data:
             context["last_document_id"] = data["documentId"]
             if "documentUrl" not in data:
-                did = data["documentId"]
-                data["documentUrl"] = f"https://docs.google.com/document/d/{did}/edit"
+                data["documentUrl"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
             context["last_document_url"] = data["documentUrl"]
 
             # Capture document title
@@ -111,23 +86,18 @@ class ContextUpdaterMixin:
             if not isinstance(payload, list):
                 payload = []
 
-            def find_body(p: dict[str, Any]) -> str:
+            def find_body(p):
                 if not isinstance(p, dict):
                     return ""
                 b = p.get("body", {})
-                if not isinstance(b, dict):
-                    return ""
                 if b.get("data"):
                     try:
                         import base64
 
-                        decoded = base64.urlsafe_b64decode(b["data"])
-                        if isinstance(decoded, bytes):
-                            return decoded.decode("utf-8", errors="replace")
-                        return str(decoded)
+                        return base64.urlsafe_b64decode(b["data"]).decode("utf-8", errors="replace")
                     except Exception:
                         return ""
-                parts = p.get("parts")
+                parts = p.get("parts", [])
                 if isinstance(parts, list):
                     for part in parts:
                         res = find_body(part)
@@ -158,19 +128,14 @@ class ContextUpdaterMixin:
                 for name, value in headers_dict.items():
                     if name in ("from", "subject", "date", "to", "cc", "bcc"):
                         data[name] = value
-                        # Also store in context for legacy/global access
+                        # Also store in context for legacy/global access if this is the latest get_message
                         if is_gmail_get:
-                            # NOTE: Keys below contain PII (email addresses, body text).
-                            # Values are redacted — must never be serialized or logged raw.
-                            if name in ("from", "to", "cc", "bcc"):
-                                context[f"gmail_{name}"] = _redact(str(value))
-                            else:
-                                context[f"gmail_{name}"] = value
+                            context[f"gmail_{name}"] = self._mask_pii(value)
 
                 body = find_body(p_item)
                 if body:
                     data["body"] = body
-                    context["gmail_message_body_text"] = _redact(str(body))
+                    context["gmail_message_body_text"] = self._mask_pii(body)
 
                 # Populate gmail_details_values for Sheets extraction
                 sender = headers_dict.get("from", "Unknown")
@@ -186,14 +151,7 @@ class ContextUpdaterMixin:
 
                 # We want to build a cumulative list if this is part of an expansion
                 details_list = context.setdefault("gmail_details_values", [])
-                # Store masked row in context
-                masked_row = [
-                    _redact(str(sender)),
-                    subject,
-                    date_val,
-                    _redact(str(email_addr)),
-                ]
-                details_list.append(masked_row)
+                details_list.append(row)
 
         if "messages" in data:
             msgs = data["messages"]
@@ -202,7 +160,7 @@ class ContextUpdaterMixin:
                     m_id = msgs[0].get("id", "")
                     t_id = msgs[0].get("threadId", "")
                     context["message_id"] = m_id
-                    context["gmail_message_body"] = context.get("gmail_message_body_text", "")
+                    context["gmail_message_id"] = m_id
                     if task:
                         task_id = str(task.id)
                         num = task_id.removeprefix("task-")
@@ -212,8 +170,7 @@ class ContextUpdaterMixin:
                 # Enriched schema for messages summary
                 rows = []
                 for m in msgs:
-                    # m is often a sparse object during list_messages,
-                    # but might have headers if partial response
+                    # m is often a sparse object during list_messages, but might have headers if partial response
                     m_id = m.get("id", "")
                     t_id = m.get("threadId", "")
                     # Extract potential payload headers if available (from partial list or mock)
@@ -222,10 +179,7 @@ class ContextUpdaterMixin:
                     if "headers" in payload:
                         headers = payload["headers"]
                         if isinstance(headers, list):
-                            h_dict = {
-                                str(h.get("name", "")).lower(): h.get("value", "")
-                                for h in headers
-                            }
+                            h_dict = {str(h.get("name", "")).lower(): h.get("value", "") for h in headers}
                         else:
                             h_dict = {str(k).lower(): v for k, v in headers.items()}
 
@@ -238,26 +192,16 @@ class ContextUpdaterMixin:
                     if not payload and "snippet" in m:
                         subject = m.get("snippet", subject)
 
-                    rows.append([_redact(sender), subject, date_val, m_id, t_id])
+                    rows.append([sender, subject, date_val, m_id, t_id])
 
                 context["gmail_summary_rows"] = rows
                 context["gmail_summary_values"] = [r.copy() for r in rows]
 
-                table_lines = [
-                    "| Sender | Subject | Date | ID | Thread ID |",
-                    "|---|---|---|---|---|",
-                ]
+                table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
                 for r in rows:
                     # Sanitize cells
-                    safe_r = [
-                        str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|")
-                        for c in r
-                    ]
-                    row_str = (
-                        f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | "
-                        f"{safe_r[3]} | {safe_r[4]} |"
-                    )
-                    table_lines.append(row_str)
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |")
                 context["gmail_summary_table"] = "\n".join(table_lines)
                 context["gmail_summary_count"] = len(msgs)
 
@@ -270,8 +214,7 @@ class ContextUpdaterMixin:
                     context[f"message_id_from_task_{num}"] = context["gmail_message_ids"]
                     context[f"thread_id_from_task_{num}"] = [m.get("threadId") for m in msgs]
 
-                # Reset details for fresh extraction ONLY if it's empty
-                # to allow for cumulative append in expanded tasks
+                # Reset details for fresh extraction ONLY if it's empty to allow for cumulative append in expanded tasks
                 if not context.get("gmail_details_values"):
                     context["gmail_details_values"] = []
 
@@ -280,22 +223,14 @@ class ContextUpdaterMixin:
             if files and isinstance(files, list):
                 context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
-                rows = [
-                    [f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")]
-                    for f in files
-                ]
+                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
                 context["drive_metadata_rows"] = rows
                 context["drive_summary_rows"] = rows
-                context["drive_summary_values"] = [
-                    r.copy() if isinstance(r, list) else r for r in rows
-                ]
+                context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
 
                 table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
                 for r in rows:
-                    safe_r = [
-                        str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|")
-                        for c in r
-                    ]
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
                     table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
                 context["drive_metadata_table"] = "\n".join(table_lines)
                 context["drive_summary_table"] = "\n".join(table_lines)
@@ -304,12 +239,11 @@ class ContextUpdaterMixin:
                 context["drive_summary_count"] = len(files)
 
                 if len(files) > 0:
-                    # Pick first non-folder file if possible
-                    first_file = _first_non_folder(files) or files[0]
-                    if "mimeType" in first_file:
-                        context["last_file_mime"] = first_file["mimeType"]
-                    if "webViewLink" in first_file:
-                        context["last_file_url"] = first_file["webViewLink"]
+                    non_folder = next((f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"), files[0])
+                    if "mimeType" in non_folder:
+                        context["last_file_mime"] = non_folder["mimeType"]
+                    if "webViewLink" in non_folder:
+                        context["last_file_url"] = non_folder["webViewLink"]
 
         if "id" in data and task and task.service == "drive" and task.action == "create_folder":
             context["last_folder_id"] = data["id"]
@@ -324,12 +258,7 @@ class ContextUpdaterMixin:
             context["last_export_file_content"] = val
             context["last_export_content"] = val
             context["last_file_content"] = val
-        elif (
-            "content" in data
-            and task
-            and task.service == "drive"
-            and task.action in ("export_file", "get_file")
-        ):
+        elif "content" in data and task and task.service == "drive" and task.action in ("export_file", "get_file"):
             val = data["content"]
             context["drive_export_content"] = val
             context["drive_export_file"] = val
@@ -365,10 +294,7 @@ class ContextUpdaterMixin:
                 cols = max(len(r) for r in rows)
 
                 def pad_row(row_list, length):
-                    safe_row = [
-                        str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|")
-                        for c in row_list
-                    ]
+                    safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
                     return safe_row + [""] * (length - len(safe_row))
 
                 header_row = pad_row(rows[0], cols)
@@ -458,8 +384,16 @@ class ContextUpdaterMixin:
             # Special case: promote first item's ID for files/messages
             if "files" in data and isinstance(data["files"], list) and len(data["files"]) > 0:
                 # Bug 1 Fix: Pick first non-folder ID if possible
-                nf = _first_non_folder(data["files"])
-                first_id = nf.get("id") if nf else data["files"][0].get("id")
+                files = data["files"]
+                first_id = files[0].get("id")
+
+                # If the first item is a folder, try to find a document
+                if files[0].get("mimeType") == "application/vnd.google-apps.folder":
+                    for f in files:
+                        if f.get("mimeType") != "application/vnd.google-apps.folder":
+                            first_id = f.get("id")
+                            # self.logger.info(f"DEBUG: Skipping folder '{files[0].get('id')}' for document ID '{first_id}'")
+                            break
 
                 if first_id:
                     results_map[f"{task_id}.id"] = first_id
@@ -467,11 +401,7 @@ class ContextUpdaterMixin:
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
 
-            if (
-                "messages" in data
-                and isinstance(data["messages"], list)
-                and len(data["messages"]) > 0
-            ):
+            if "messages" in data and isinstance(data["messages"], list) and len(data["messages"]) > 0:
                 first_id = data["messages"][0].get("id")
                 if first_id:
                     results_map[f"{task_id}.id"] = first_id

@@ -11,7 +11,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_spreadsheet_url":    "last_spreadsheet_url",
     "$last_document_id":        "last_document_id",
     "$last_document_url":       "last_document_url",
-    "$gmail_message_body":      "gmail_message_body",
+    "$gmail_message_body": "gmail_message_id",
+    "$gmail_message_id": "gmail_message_id",
     "$gmail_message_ids":       "gmail_message_ids",
     "$gmail_details_values":    "gmail_details_values",
     "$calendar_events":         "calendar_events",
@@ -329,7 +330,20 @@ class ResolverMixin:
                 ]
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
-                    resolved = resolved[0]
+                    # We have a list. Check if we need to do the folder heuristic.
+                    # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
+                    # we can't easily check mime types unless we look at the original objects.
+                    # Let's get the original objects using a parent path.
+                    parent_path = path.rsplit('.', 1)[0]
+                    parent_objects = self._get_value_by_path(results_map, parent_path)
+
+                    picked = resolved[0]
+                    if isinstance(parent_objects, list) and len(parent_objects) == len(resolved):
+                        for i, obj in enumerate(parent_objects):
+                            if isinstance(obj, dict) and obj.get("mimeType") != "application/vnd.google-apps.folder":
+                                picked = resolved[i]
+                                break
+                    resolved = picked
 
                 if resolved is not None:
                     return resolved

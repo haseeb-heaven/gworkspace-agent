@@ -146,7 +146,7 @@ def call_llm(
                     logger.error(f"[LLM] Quota exceeded on model={model} (BadRequest). Trying next key.")
                     last_error = e
                     continue
-
+                
                 logger.error(f"[LLM] {type(e).__name__} on model={model}: {e}. Trying next model.")
                 last_error = e
                 break

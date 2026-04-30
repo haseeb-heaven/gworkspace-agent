@@ -26,7 +26,11 @@ def send_telegram_message(message: str):
         raise ValueError("Message cannot be empty.")
 
     if len(message) > 4096:
-        raise ValueError(f"Message too long: {len(message)} characters. Max allowed is 4096.")
+        error_text = (
+            f"Message too long: {len(message)} characters. "
+            f"Max allowed is 4096."
+        )
+        raise ValueError(error_text)
 
     # Determine the root directory and find the .env file
     root_dir = Path(__file__).resolve().parents[1]

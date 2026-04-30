@@ -7,8 +7,8 @@ Fixes:
   - Include outdated threads too (marked clearly so Jules knows)
   - Numbered output so Jules can reference each fix
 """
-import json
 import sys
+import json
 
 
 def main():

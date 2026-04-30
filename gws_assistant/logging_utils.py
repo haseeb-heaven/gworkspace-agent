@@ -24,6 +24,8 @@ def setup_logging(config: AppConfigModel) -> logging.Logger:
     # The logger itself must be at least as verbose as the most verbose handler
     # We'll keep the logger at INFO (or lower) so the file handler gets data
     logger.setLevel(logging.DEBUG)
+    for handler in logger.handlers:
+        handler.close()
     logger.handlers.clear()
     logger.propagate = False
 

@@ -74,7 +74,12 @@ class TaskRunner:
             marker_expr = f"{self.service} and not live_integration and not manual"
             cmd = [sys.executable, "-m", "pytest", "-v", "-m", marker_expr]
 
-            process = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            try:
+                process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == "nt", timeout=60)
+            except subprocess.TimeoutExpired:
+                self.status = "FAILED"
+                logger.warning(f"Runner {self.agent_id} ({self.service}) FAILED: Timeout Expired")
+                return
 
             if process.returncode == 0:
                 self.status = "PASSED"

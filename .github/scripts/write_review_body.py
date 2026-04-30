@@ -9,10 +9,19 @@ def main():
     parser.add_argument("--pr-url", required=True)
     parser.add_argument("--head-ref", required=True)
     parser.add_argument("--base-ref", required=True)
-    parser.add_argument("--comments", required=True)
+    parser.add_argument("--comments", required=False)
+    parser.add_argument("--comments-file", help="File containing comments payload", required=False)
     parser.add_argument("--issue-num", default="")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
+
+    comments = args.comments
+    if args.comments_file:
+        with open(args.comments_file, "r") as cf:
+            comments = cf.read()
+
+    if not comments:
+        comments = ""
 
     if args.issue_num:
         body = (
@@ -25,7 +34,7 @@ def main():
             f"**Target Branch:** `{args.base_ref}`\n\n"
             f"---\n"
             f"## Unresolved Comments\n\n"
-            f"{args.comments}\n\n"
+            f"{comments}\n\n"
             f"---\n"
             f"**@google-labs-jules instructions:**\n"
             f"1. Read each unresolved comment carefully\n"
@@ -42,7 +51,7 @@ def main():
             f"**Head Branch:** `{args.head_ref}`\n"
             f"**Target Branch:** `{args.base_ref}`\n\n"
             f"## Unresolved Comments\n"
-            f"{args.comments}\n"
+            f"{comments}\n"
         )
 
     with open(args.out, "w") as f:

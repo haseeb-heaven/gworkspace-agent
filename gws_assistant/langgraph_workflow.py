@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -23,8 +22,6 @@ from gws_assistant.models import (
 from gws_assistant.output_formatter import HumanReadableFormatter
 from gws_assistant.tools.code_execution import execute_generated_code
 from gws_assistant.tools.web_search import summarize_results, web_search_tool
-
-from .memory import save_episode
 
 _MAX_HISTORY = 10
 
@@ -178,10 +175,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             # Fix: If payload contains 'messages' list, promote it so code.execute sees a list
             # as expected by LLM for list_messages tasks.
             if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
-                storage_payload = [
-                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
-                    for item in payload["messages"]
-                ]
+                if len(payload["messages"]) > 0:
+                    storage_payload = [
+                        item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
+                        for item in payload["messages"]
+                    ]
+                else:
+                    storage_payload = []
             elif isinstance(payload, list):
                 storage_payload = [
                     item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload
@@ -325,6 +325,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         # Save to episodic memory if successful
         if any(item.result.success for item in executions):
             try:
+                from .memory import save_episode
                 save_episode(state["user_text"], [e.task.parameters for e in executions], report)
             except Exception as e:
                 logger.warning(f"Failed to save episode to memory: {e}")
@@ -332,9 +333,8 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         # Also add a semantic memory fact if successful
         if executions and all(item.result.success for item in executions):
             try:
-                if getattr(system, 'memory', None) is not None:
-                    memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
-                    system.memory.add(memory_text, metadata={"type": "task_completion"})
+                memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
+                system.memory.add(memory_text, metadata={"type": "task_completion"})
             except Exception as e:
                 logger.warning(f"Failed to add semantic memory: {e}")
 
@@ -358,6 +358,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         )
         context = dict(state.get("context", {}))
 
+        rows = [
+            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
+            for r in result.get("results", [])
+        ]
+
         markdown_lines = []
         for r in result.get("results", []):
             title   = r.get("title", "")
@@ -368,10 +373,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         # New canonical keys
         context["search_summary_table"] = markdown_table
-        context["search_summary_rows"] = [
-            [r.get("title", ""), r.get("url", ""), r.get("snippet", "")]
-            for r in result.get("results", [])
-        ]
+        context["search_summary_rows"] = rows
         context["search_summary_count"] = len(result.get("results", []))
 
         # We can still store the LLM summary for use if needed
@@ -471,6 +473,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
+            import re
 
             numbers = re.findall(r"\b\d+\b", state["user_text"])
             lowered = state["user_text"].lower()

@@ -46,5 +46,42 @@ class TestTelegramSendMessage(unittest.TestCase):
         self.assertEqual(mock_urlopen.call_count, 1)
 
 
+
+class TestTelegramMainValidation(unittest.TestCase):
+    SCRIPT_PATH = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "scripts", "telegram_send_message.py")
+    )
+
+    def test_main_rejects_oversized_message(self):
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT_PATH, "A" * 4097],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("too long", result.stderr.lower())
+
+    def test_main_accepts_message_at_limit(self):
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT_PATH, "A" * 4096],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotIn("too long", result.stderr.lower())
+
+    def test_main_rejects_non_string_is_unreachable_via_cli(self):
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT_PATH, "hello"],
+            capture_output=True,
+            text=True,
+        )
+        stderr = result.stderr.lower()
+        self.assertNotIn("must be a string", stderr)
+        self.assertNotIn("too long", stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

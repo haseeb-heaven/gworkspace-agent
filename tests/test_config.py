@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from unittest.mock import patch
-
 from gws_assistant.config import AppConfig
 
 

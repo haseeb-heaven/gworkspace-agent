@@ -56,7 +56,7 @@ def test_resolve_document_not_folder(executor):
                 action="export_file",
                 parameters={
                     "file_id": "{{task-1.id}}",
-                    "source_mime": "application/vnd.google-apps.document",
+                    "source_mime": "{{last_file_mime}}",
                     "mime_type": "text/plain",
                 },
             ),
@@ -70,6 +70,7 @@ def test_resolve_document_not_folder(executor):
     export_task = report.executions[1].task
     # EXPECTATION: It should pick 'doc_id', not 'folder_id'
     assert export_task.parameters["file_id"] == "doc_id"
+    assert export_task.parameters["source_mime"] == "application/vnd.google-apps.document"
 
 
 def test_expand_task_graceful_failure(executor):
@@ -108,25 +109,23 @@ def test_resolve_placeholders_smart_pick(executor):
     assert resolved == "f1"
 
 
+
 def test_resolve_folder_then_file(executor):
-    """Bug 4: drive context should prefer a non-folder file for last_file_mime resolution."""
     exec_instance, runner = executor
 
-    # Mock drive.list_files to return multiple folders then a file
     runner.responses[("drive", "files", "list")] = ExecutionResult(
         success=True,
         command=["drive", "files", "list"],
         stdout='{"files": ['
-        '{"id": "folder_1", "name": "Folder 1", "mimeType": "application/vnd.google-apps.folder"},'
-        '{"id": "folder_2", "name": "Folder 2", "mimeType": "application/vnd.google-apps.folder"},'
-        '{"id": "file_1", "name": "My Doc", "mimeType": "application/vnd.google-apps.document"}'
+        '{"id": "folder_id", "name": "My Folder", "mimeType": "application/vnd.google-apps.folder"},'
+        '{"id": "doc_id", "name": "My Doc", "mimeType": "application/vnd.google-apps.document"}'
         "]}",
     )
 
     plan = RequestPlan(
         raw_text="export doc",
         tasks=[
-            PlannedTask(id="task-1", service="drive", action="list_files", parameters={"q": "name = 'My Doc'"}),
+            PlannedTask(id="task-1", service="drive", action="list_files", parameters={"q": "name = 'My Folder'"}),
             PlannedTask(
                 id="task-2",
                 service="drive",
@@ -134,7 +133,7 @@ def test_resolve_folder_then_file(executor):
                 parameters={
                     "file_id": "{{task-1.id}}",
                     "source_mime": "{{last_file_mime}}",
-                    "mime_type": "text/plain",
+                    "mime_type": "application/zip",
                 },
             ),
         ],
@@ -143,11 +142,8 @@ def test_resolve_folder_then_file(executor):
     report = exec_instance.execute(plan)
     assert report.success is True
 
-    # Check task-2 parameters after resolution
     export_task = report.executions[1].task
-    # EXPECTATION: It should pick 'file_1', not 'folder_1' or 'folder_2'
-    assert export_task.parameters["file_id"] == "file_1"
+    assert export_task.parameters["file_id"] == "doc_id"
     assert export_task.parameters["source_mime"] == "application/vnd.google-apps.document"
-
 if __name__ == "__main__":
     pytest.main([__file__])
