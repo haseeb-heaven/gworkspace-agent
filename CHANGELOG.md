@@ -1,3 +1,7 @@
+## [v0.6.1] - 2026-05-01
+### Added/Changed/Fixed
+- chore(release): add v0.6.0 release entry
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
