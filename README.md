@@ -307,6 +307,11 @@ python -m pytest -m "not skip_integration" -v
 
 ---
 
+## Releases
+See the [CHANGELOG.md](CHANGELOG.md) for details on all versions.
+
+---
+
 ## Contributing
 
 1. Fork the repository
