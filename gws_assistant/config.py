@@ -24,8 +24,13 @@ def _to_bool(value: str | None, default: bool) -> bool:
 class AppConfig:
     """Reads and normalizes environment configuration."""
 
-    @staticmethod
-    def from_env() -> AppConfigModel:
+    _cached_config: AppConfigModel | None = None
+
+    @classmethod
+    def from_env(cls) -> AppConfigModel:
+        if cls._cached_config is not None:
+            return cls._cached_config
+
         env_file_path = Path(".env").expanduser().resolve()
         load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
 
@@ -171,7 +176,7 @@ class AppConfig:
         sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
         read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=False)
 
-        return AppConfigModel(
+        cls._cached_config = AppConfigModel(
             provider=provider,
             model=model,
             api_key=api_key,
@@ -214,6 +219,12 @@ class AppConfig:
             ollama_api_base=ollama_api_base,
             memory_type=memory_type,
         )
+        return cls._cached_config
+
+    @classmethod
+    def clear_cache(cls):
+        """Clears the cached configuration singleton (useful for tests)."""
+        cls._cached_config = None
 
 
 def _resolve_gws_binary_path(value: str) -> Path:

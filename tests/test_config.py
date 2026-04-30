@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import pytest
 from unittest.mock import patch
 from gws_assistant.config import AppConfig
+
+
+@pytest.fixture(autouse=True)
+def clear_config_cache():
+    AppConfig.clear_cache()
+    yield
+    AppConfig.clear_cache()
 
 
 def _required(monkeypatch):
