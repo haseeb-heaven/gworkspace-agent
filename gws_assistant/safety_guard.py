@@ -44,7 +44,9 @@ class SafetyGuard:
     def _log_audit(action: str, service: str, params: dict, confirmed: bool) -> None:
         log_path = SafetyGuard._get_audit_log_path()
         timestamp = datetime.now().isoformat()
-        log_entry = f"{timestamp} | {action} | {service} | {json.dumps(params)} | {confirmed}\n"
+        # Sanitize log fields - strip newlines from all string values to prevent log injection
+        safe_params = {k: str(v).replace("\n", "\\n").replace("\r", "\\r") for k, v in params.items()}
+        log_entry = f"{timestamp} | {action} | {service} | {json.dumps(safe_params)} | {confirmed}\n"
         with open(log_path, "a") as f:
             f.write(log_entry)
 
@@ -76,8 +78,19 @@ class SafetyGuard:
                 delete_present = True
 
         if destructive_count > 3:
-            msg = f"This plan contains {destructive_count} destructive actions. Blocked for safety. Use --force-dangerous flag to override. This is logged."
-            cls._log_audit("plan_block", "system", {"destructive_count": destructive_count}, False)
+            msg = f"This plan contains {destructive_count} destructive actions. Blocked for safety."
+            if force_dangerous:
+                # Add a hard cap even in force_dangerous mode
+                if destructive_count > 10:
+                    cls._log_audit("plan_block", "system", {"destructive_count": destructive_count, "reason": "exceeded force cap"}, False)
+                    raise SafetyBlockedError(f"Too many destructive actions ({destructive_count}) even with --force-dangerous. Max allowed is 10.")
+            else:
+                cls._log_audit("plan_block", "system", {"destructive_count": destructive_count}, False)
+                raise SafetyBlockedError(msg + " Use --force-dangerous flag to override. This is logged.")
+
+        if search_all_present and delete_present:
+            msg = "Plan combines search_all with delete. Blocked for safety."
+            cls._log_audit("plan_block", "system", {"reason": "search_all + delete"}, False)
             if not force_dangerous:
                 raise SafetyBlockedError(msg)
 
