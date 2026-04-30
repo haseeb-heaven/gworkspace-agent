@@ -34,9 +34,9 @@ class VerificationEngine:
 
     NUMERIC_PLACEHOLDERS = {"0000", "1234", "9999", "00000000"}
 
-    EXACT_EMAILS = {"test@example.com", "user@example.com", "example@gmail.com", "noreply@example.com"}
+    EXACT_EMAILS = {"noreply@example.com"}
 
-    EMAIL_PLACEHOLDER_DOMAINS = ["@example.com", "@test.com"]
+    EMAIL_PLACEHOLDER_DOMAINS = ["@test.com"]
 
     SPECIAL_CHARS_ONLY = re.compile(r"^[^a-zA-Z0-9\s]+$")
 
@@ -97,9 +97,7 @@ class VerificationEngine:
             if "send" in tool_name or "reply" in tool_name or "forward" in tool_name:
                 to = params.get("to") or params.get("to_email")
                 if to is None or to == [] or cls._is_placeholder(str(to)) or not cls._is_valid_email(str(to)):
-                    # Allow common test emails used in our test suite
-                    if str(to) not in ["strict-default@example.com", "test@example.com", "user@example.com"]:
-                        raise VerificationError(tool_name, "Invalid 'to' email address", "to")
+                    raise VerificationError(tool_name, "Invalid 'to' email address", "to")
 
                 for field in ["cc", "bcc"]:
                     val = params.get(field)
