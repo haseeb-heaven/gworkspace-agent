@@ -539,9 +539,14 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "delete", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "send_message":
+            import re
+            
             to_email = self._required_text(params, "to_email").strip().rstrip(".")
             subject = self._required_text(params, "subject")
             body = self._required_text(params, "body")
+
+            # Scrub any internal [File: \\?\D:\...] or [File: /...] paths from the body
+            body = re.sub(r'\[File: [^\]]+\]', '[See attached document]', body)
 
             attachments = params.get("attachments")
             attachment_paths: list[str] = []
@@ -550,7 +555,7 @@ class CommandPlanner:
             elif isinstance(attachments, list):
                 attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
-            # Resolve any raw Drive file IDs in attachment_paths to local PDF files.
+            # Resolve any raw Drive file IDs in attachment_paths to local files.
             resolved_attachment_paths: list[str] = []
             for path in attachment_paths:
                 if _DRIVE_FILE_ID_RE.match(path):
@@ -1074,6 +1079,27 @@ class CommandPlanner:
         try:
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
             gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
+            
+            # 1. Try to download directly first (works for binary files, images, PDFs already in Drive)
+            direct_file_path = os.path.join(tmp_dir, f"{file_id}")
+            result = subprocess.run(
+                [
+                    gws_exe,
+                    "drive",
+                    "files",
+                    "get",
+                    "--params",
+                    json.dumps({"fileId": file_id}),
+                    "-o",
+                    direct_file_path,
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and os.path.isfile(direct_file_path) and os.path.getsize(direct_file_path) > 0:
+                return direct_file_path
+
+            # 2. If get fails (e.g. Google Docs), try exporting to PDF or CSV
             for mime_type, ext in [("application/pdf", ".pdf"), ("text/csv", ".csv")]:
                 file_path = os.path.join(tmp_dir, f"{file_id}{ext}")
                 result = subprocess.run(

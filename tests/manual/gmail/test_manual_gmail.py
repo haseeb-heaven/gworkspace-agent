@@ -1,5 +1,5 @@
 import subprocess
-
+import os
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env at module level
@@ -41,4 +41,11 @@ def test_manual_2():
 def test_manual_3():
     run_task(
         "Search for 'urgent', save the top result to a document, and reply back to the sender via email using user@example.com."
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_4():
+    run_task(
+        f"Search Google Drive for a document or binary file like ${os.getenv('TEST_FILE_NAME')} or any recent file, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} with the file attached. Verify the attachment is successfully added and no internal file paths are leaked in the email body."
     )

@@ -69,4 +69,23 @@ def test_live_workspace_sheet_and_email_flow():
     send_result = runner.run(send_cmd, timeout_seconds=90)
     assert send_result.success, f"Failed to send email: {send_result.stderr or send_result.error}"
     send_payload = json.loads(send_result.stdout or "{}")
-    assert send_payload.get("id"), f"Missing sent message id in payload: {send_payload}"
+    message_id = send_payload.get("id")
+    assert message_id, f"Missing sent message id in payload: {send_payload}"
+
+    # Verification: Verify that the spreadsheet was actually created
+    verify_sheet_cmd = planner.build_command("sheets", "get_spreadsheet", {"spreadsheet_id": spreadsheet_id})
+    verify_sheet_result = runner.run(verify_sheet_cmd, timeout_seconds=30)
+    assert verify_sheet_result.success, f"Verification failed! Spreadsheet {spreadsheet_id} not found."
+    assert spreadsheet_id in verify_sheet_result.stdout or verify_sheet_result.stdout != ""
+
+    # Verification: Verify that the email was actually sent
+    verify_email_cmd = planner.build_command("gmail", "get_message", {"message_id": message_id})
+    verify_email_result = runner.run(verify_email_cmd, timeout_seconds=30)
+    assert verify_email_result.success, f"Verification failed! Email {message_id} not found."
+    assert message_id in verify_email_result.stdout or verify_email_result.stdout != ""
+    
+    # Cleanup: Delete the created spreadsheet to avoid polluting the workspace
+    # Since there's no native 'delete_spreadsheet' in planner, we delete via drive
+    delete_sheet_cmd = planner.build_command("drive", "delete_file", {"file_id": spreadsheet_id})
+    runner.run(delete_sheet_cmd, timeout_seconds=30)
+

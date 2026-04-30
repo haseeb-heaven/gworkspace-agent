@@ -80,3 +80,6 @@ ISSUES.md
 !tests/
 *.orig
 !requirements.txt
+
+# PowerShell
+*.ps1
