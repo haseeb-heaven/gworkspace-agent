@@ -183,6 +183,24 @@ class HelpersMixin:
                         # Also update the task's own entry in the map if it's a dict
                         if isinstance(results_map.get(task.id), dict):
                             results_map[task.id][k] = v
+                else:
+                    # If parsed_value is not a dict (e.g., a list or scalar), store it directly
+                    num = task.id.split("-")[-1] if "-" in task.id else task.id
+                    results_map[f"task-{num}.result"] = parsed
+                    results_map[f"{num}.result"] = parsed
+                    results_map[f"task-{num}.parsed_value"] = parsed
+                    results_map[f"{num}.parsed_value"] = parsed
+
+            # Always store stdout for email templates
+            if output_data.get("stdout") is not None:
+                stdout = output_data["stdout"]
+                context["code_stdout"] = stdout
+                context["last_code_stdout"] = stdout
+                num = task.id.split("-")[-1] if "-" in task.id else task.id
+                results_map[f"task-{num}.stdout"] = stdout
+                results_map[f"{num}.stdout"] = stdout
+                results_map[f"task-{num}.output"] = stdout
+                results_map[f"{num}.output"] = stdout
 
             return ExecutionResult(
                 success=result.get("success", False),
