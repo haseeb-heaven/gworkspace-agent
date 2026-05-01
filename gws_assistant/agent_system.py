@@ -643,6 +643,11 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
 
     def _admin_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         recipient = _extract_email(text) or self.config.default_recipient_email
+        if not recipient:
+            raise ValueError(
+                "No recipient email found in _admin_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
+                "Please provide an email address or configure default_recipient_email."
+            )
         app_name = "admin" if "admin" in lowered else "drive"
         return [
             PlannedTask(
@@ -667,6 +672,11 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
 
     def _contacts_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         recipient = _extract_email(text) or self.config.default_recipient_email
+        if not recipient:
+            raise ValueError(
+                "No recipient email found in _contacts_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
+                "Please provide an email address or configure default_recipient_email."
+            )
         action = "list_directory_people" if any(kw in lowered for kw in ("directory", "users", "members", "workspace")) else "list_contacts"
         return [
             PlannedTask(
@@ -691,6 +701,11 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
 
     def _chat_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         recipient = _extract_email(text) or self.config.default_recipient_email
+        if not recipient:
+            raise ValueError(
+                "No recipient email found in _chat_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
+                "Please provide an email address or configure default_recipient_email."
+            )
         return [
             PlannedTask(
                 id="task-1",

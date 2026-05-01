@@ -143,6 +143,57 @@ class TestTripleVerifier:
         with pytest.raises(ValueError, match="Unsupported service"):
             v._build_command("unknown", "id")
 
+    def test_resource_map_contains_new_services(self):
+        """Test that _RESOURCE_MAP contains entries for the four new verifier services."""
+        from gws_assistant.execution.verifier import TripleVerifier
+        assert "slides" in TripleVerifier._RESOURCE_MAP
+        assert TripleVerifier._RESOURCE_MAP["slides"] == ("get_presentation", "presentation_id")
+        assert "forms" in TripleVerifier._RESOURCE_MAP
+        assert TripleVerifier._RESOURCE_MAP["forms"] == ("get_form", "form_id")
+        assert "chat" in TripleVerifier._RESOURCE_MAP
+        assert TripleVerifier._RESOURCE_MAP["chat"] == ("get_message", "name")
+        assert "contacts" in TripleVerifier._RESOURCE_MAP
+        assert TripleVerifier._RESOURCE_MAP["contacts"] == ("get_person", "resourceName")
+
+    def test_build_command_slides(self):
+        """Test _build_command for slides service."""
+        v = self._make_verifier()
+        cmd = v._build_command("slides", "test_presentation_id")
+        assert isinstance(cmd, list)
+        assert "slides" in cmd
+        assert "presentations" in cmd
+        assert "get" in cmd
+        assert any("test_presentation_id" in str(part) for part in cmd)
+
+    def test_build_command_forms(self):
+        """Test _build_command for forms service."""
+        v = self._make_verifier()
+        cmd = v._build_command("forms", "test_form_id")
+        assert isinstance(cmd, list)
+        assert "forms" in cmd
+        assert "get" in cmd
+        assert any("test_form_id" in str(part) for part in cmd)
+
+    def test_build_command_chat(self):
+        """Test _build_command for chat service."""
+        v = self._make_verifier()
+        cmd = v._build_command("chat", "spaces/abc123/messages/def456")
+        assert isinstance(cmd, list)
+        assert "chat" in cmd
+        assert "spaces" in cmd
+        assert "messages" in cmd
+        assert "get" in cmd
+        assert any("spaces/abc123/messages/def456" in str(part) for part in cmd)
+
+    def test_build_command_contacts(self):
+        """Test _build_command for contacts service."""
+        v = self._make_verifier()
+        cmd = v._build_command("contacts", "people/test_resource_name")
+        assert isinstance(cmd, list)
+        assert "people" in cmd
+        assert "get" in cmd
+        assert any("people/test_resource_name" in str(part) for part in cmd)
+
     def test_payload_uses_output_attr(self):
         result = MagicMock(output={"key": "val"}, stdout='{}')
         payload = TripleVerifier._payload(result)

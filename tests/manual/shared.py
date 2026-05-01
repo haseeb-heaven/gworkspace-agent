@@ -64,7 +64,7 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
         # Extract ID from output
         # Common GWS ID patterns
         id_patterns = [
-            r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName):\s*([a-zA-Z0-9_-]{5,})",
+            r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName):\s*([a-zA-Z0-9_./-]{5,})",
             r"\b(spaces/[a-zA-Z0-9_-]+/messages/[a-zA-Z0-9_-]+)\b", # Chat Message Name
             r"\b([a-f0-9]{16})\b",         # Gmail IDs
             r"\b([a-zA-Z0-9_-]{20,})\b",  # Long IDs like Drive/Docs/Sheets/Slides (Greedy fallback)
