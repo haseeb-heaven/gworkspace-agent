@@ -328,8 +328,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 )
 
         if result.success and result.output is not None:
-            if op_key and isinstance(result.output, dict):
-                context.setdefault("idempotent_operations", {})[op_key] = result.output
             try:
                 # Use service_action format for verification engine
                 VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
@@ -368,6 +366,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         result.success = False
                         result.error = f"Consistency check failed: could not verify {task.service} resource {resource_id} after creation."
                         result.stdout = json.dumps({"error": result.error})
+
+            # Store in idempotency cache only if result is still successful after all checks
+            if result.success and op_key and isinstance(result.output, dict):
+                context.setdefault("idempotent_operations", {})[op_key] = result.output
 
         elif result.success and result.output is None:
             logger.warning(f"Task {task.service}.{task.action} succeeded but returned no output — context NOT updated.")

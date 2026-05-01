@@ -92,6 +92,40 @@ class ContextUpdaterMixin:
             if doc_title:
                 context["last_document_title"] = doc_title
 
+        if "presentationId" in data:
+            context["last_presentation_id"] = data["presentationId"]
+            if "presentationUrl" not in data:
+                data["presentationUrl"] = f"https://docs.google.com/presentation/d/{data['presentationId']}/edit"
+            context["last_presentation_url"] = data["presentationUrl"]
+
+            # Capture presentation title
+            pres_title = data.get("title")
+            if pres_title:
+                context["last_presentation_title"] = pres_title
+
+        if "formId" in data:
+            context["last_form_id"] = data["formId"]
+            if "responderUri" in data:
+                context["last_form_url"] = data["responderUri"]
+            elif "formUrl" in data:
+                context["last_form_url"] = data["formUrl"]
+            else:
+                url = f"https://docs.google.com/forms/d/{data['formId']}/edit"
+                data["formUrl"] = url
+                context["last_form_url"] = url
+
+            # Capture form title
+            form_title = data.get("info", {}).get("title")
+            if form_title:
+                context["last_form_title"] = form_title
+
+        if "htmlLink" in data and task and task.service == "calendar":
+            context["last_event_url"] = data["htmlLink"]
+            context["last_calendar_event_url"] = data["htmlLink"]
+
+        if "meetingUri" in data:
+            context["last_meeting_url"] = data["meetingUri"]
+
         # Gmail Body Extraction (Recursive base64 decode)
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
         if is_gmail_get or "payload" in data:

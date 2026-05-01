@@ -128,6 +128,16 @@ def main():
     project_root = current_file.parents[2]
     scripts_dir = project_root / "scripts"
 
+    # Remove tests/manual from sys.path to avoid shadowing standard libraries (e.g. calendar)
+    manual_dir = str(current_file.parent)
+    while manual_dir in sys.path:
+        sys.path.remove(manual_dir)
+    # Also remove current dir if it's there
+    if "" in sys.path:
+        sys.path.remove("")
+    if "." in sys.path:
+        sys.path.remove(".")
+
     if not scripts_dir.exists():
         print(f"Error: Scripts directory not found at {scripts_dir}")
         sys.exit(1)

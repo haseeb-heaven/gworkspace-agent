@@ -11,6 +11,12 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_spreadsheet_url":    "last_spreadsheet_url",
     "$last_document_id":        "last_document_id",
     "$last_document_url":       "last_document_url",
+    "$last_presentation_id":    "last_presentation_id",
+    "$last_presentation_url":   "last_presentation_url",
+    "$last_form_id":            "last_form_id",
+    "$last_form_url":           "last_form_url",
+    "$last_meeting_url":        "last_meeting_url",
+    "$last_event_url":          "last_event_url",
     "$gmail_message_body": "gmail_message_body_text",
     "$gmail_message_id": "gmail_message_id",
     "$gmail_message_ids":       "gmail_message_ids",
@@ -201,6 +207,20 @@ class ResolverMixin:
                     task.parameters["file_id"] = context["last_file_id"]
                 elif context.get("last_document_id"):
                     task.parameters["file_id"] = context["last_document_id"]
+                elif context.get("last_presentation_id"):
+                    task.parameters["file_id"] = context["last_presentation_id"]
+                elif context.get("last_form_id"):
+                    task.parameters["file_id"] = context["last_form_id"]
+
+        if task.service == "slides":
+            p_id = str(task.parameters.get("presentation_id") or "")
+            if (not p_id or p_id.startswith("{{") or p_id == _UNRESOLVED_MARKER) and context.get("last_presentation_id"):
+                task.parameters["presentation_id"] = context["last_presentation_id"]
+
+        if task.service == "forms":
+            f_id = str(task.parameters.get("form_id") or "")
+            if (not f_id or f_id.startswith("{{") or f_id == _UNRESOLVED_MARKER) and context.get("last_form_id"):
+                task.parameters["form_id"] = context["last_form_id"]
 
         if task.service == "sheets" and task.action == "create_spreadsheet":
             if not task.parameters.get("title"):
@@ -522,11 +542,14 @@ class ResolverMixin:
         return curr
 
     def _get_artifact_links_body(self, body: str, context: dict) -> str:
-        """Inject doc/sheet URLs from context into email body."""
+        """Inject artifact URLs (Doc/Sheet/Slide/Form/Meet) from context into email body."""
         doc_url = context.get("last_document_url", "")
         sheet_url = context.get("last_spreadsheet_url", "")
+        slide_url = context.get("last_presentation_url", "")
+        form_url = context.get("last_form_url", "")
+        meet_url = context.get("last_meeting_url", "")
 
-        if not doc_url and not sheet_url:
+        if not any([doc_url, sheet_url, slide_url, form_url, meet_url]):
             return body
 
         links = []
@@ -534,6 +557,12 @@ class ResolverMixin:
             links.append(f"Google Doc: {doc_url}")
         if sheet_url:
             links.append(f"Google Sheet: {sheet_url}")
+        if slide_url:
+            links.append(f"Google Slides: {slide_url}")
+        if form_url:
+            links.append(f"Google Form: {form_url}")
+        if meet_url:
+            links.append(f"Google Meet: {meet_url}")
 
         final_body = f"{body}\n\n" + "\n".join(links)
         self.logger.info(
