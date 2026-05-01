@@ -597,14 +597,19 @@ $last_export_file_content"""
         wants_docs = "docs" in services or any(
             kw in lowered for kw in ("create document", "create a doc", "google doc", "save to a document", "to a document")
         )
-        wants_email = (
-            "send_message" in lowered
-            or any(kw in lowered for kw in (
-                "send email", "send mail", "email to", "to email",
-                "send detailed email", "send an email", "compose email",
-                "email it", "email me", "email the", "email this", "email that",
-                "mail it", "mail me", "mail the", "mail this", "mail that",
-            ))
+        wants_email = any(
+            re.search(pattern, lowered) for pattern in (
+                r"\bsend\s+(?:an?\s+)?email\b",
+                r"\bsend\s+mail\b",
+                r"\bemail\s+(?:it\s+)?to\b",
+                r"\bemail\s+(?:me|the\s+results?|the\s+link|them)\b",
+                r"\bto\s+email\b",
+                r"\bto\s+send\s+(?:an?\s+)?email\b",
+                r"\bcompose\s+(?:an?\s+)?email\b",
+                r"\bsend\s+detailed\s+email\b",
+                r"\bmail\s+(?:it\s+)?to\b",
+                r"\bsend_message\b",
+            )
         )
         wants_code = "code" in services or "computation" in services or any(
             kw in lowered for kw in (
@@ -1171,7 +1176,15 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             if "sort" in lowered:
                 rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
                 parameters["code"] = f"""data = {data_str}
-result = sorted(data, reverse={rev})
+try:
+    sort_index = 1
+    if not all(isinstance(r, (list, tuple)) and len(r) > sort_index for r in data):
+        print("Cannot sort: sort_index 1 out of range for some rows")
+    else:
+        data = sorted(data, key=lambda r: (str(r[sort_index]).lower(),), reverse={rev})
+except (ValueError, TypeError) as exc:
+    print(f"Sorting failed: {{exc}} — leaving data unsorted")
+result = data
 print(result)"""
             else:
                 # Try to generate generic processing code for "convert to table" etc
@@ -1328,12 +1341,8 @@ _WEB_SEARCH_LEADING_PHRASES: tuple[str, ...] = (
 )
 
 _WEB_SEARCH_TRAILING_SPLITS = re.compile(
-    r"(?:"
-    r"\s+(?:and|then)\s+(?:save|store|write|append|create|send|email|share|extract)\b|"
-    r"[;,]\s*(?:save|store|write|append|create|send|email|share|extract)\b|"
-    r"\s+(?:save|store|write|append|create)\s+to\s+(?:a|the|my)\b|"
-    r"\s+send\s+(?:an?\s+)?email\b"
-    r")",
+    r"\s*(?:,\s*(?:and\s+)?(?:then\s+)?|(?<!\w)(?:then|after\s+that)\s+)"
+    r"(?:save|write|store|export|add|insert|put|append|email|send|create|make|generate|upload|share)\b",
     re.IGNORECASE,
 )
 
