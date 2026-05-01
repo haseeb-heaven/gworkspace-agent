@@ -45,6 +45,10 @@ class TripleVerifier:
         "keep": ("get_note", "name"),
         "tasks": ("get_task", "task_id"),
         "gmail": ("get_message", "message_id"),
+        "slides": ("get_presentation", "presentation_id"),
+        "forms": ("get_form", "form_id"),
+        "chat": ("get_message", "name"),
+        "contacts": ("get", "resource_name"),
     }
 
     def __init__(
@@ -86,8 +90,10 @@ class TripleVerifier:
             payload = self._payload(result)
             try:
                 self._validate_expected_fields(payload, expected_fields or {})
-            except ValueError as exc:
-                self.logger.warning("Triple-check field validation failed for %s %s: %s", service, resource_id, exc)
+                # Tier 3: Verify content is valid and not empty/placeholder
+                validate_artifact_content(payload, f"{service}_verification")
+            except Exception as exc:
+                self.logger.warning("Triple-check validation failed for %s %s: %s", service, resource_id, exc)
                 return False
 
         self.logger.info("Triple-check passed for %s %s.", service, resource_id)
@@ -120,6 +126,14 @@ class TripleVerifier:
             return ["keep", "notes", "get", "--params", json.dumps({"name": resource_id})]
         if service == "tasks":
             return ["tasks", "tasks", "get", "--params", json.dumps({"tasklist": "@default", "task": resource_id})]
+        if service == "slides":
+            return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})]
+        if service == "forms":
+            return ["forms", "forms", "get", "--params", json.dumps({"formId": resource_id})]
+        if service == "chat":
+            return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": resource_id})]
+        if service == "contacts":
+            return ["people", "people", "get", "--params", json.dumps({"resourceName": resource_id, "personFields": "names,emailAddresses"})]
         raise ValueError(f"Unsupported service for verification: {service}")
 
     @staticmethod

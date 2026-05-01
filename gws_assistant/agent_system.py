@@ -319,6 +319,30 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern M: Chat -> Email
+        if "chat" in services and "gmail" in services and any(kw in lowered for kw in ("spaces", "messages", "chat")):
+            tasks = self._chat_to_email_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: chat.list_spaces -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern N: Chat Send Message (Heuristic Search for Space)
+        if "chat" in services and any(kw in lowered for kw in ("send", "post", "message")) and "spaces/" not in lowered:
+            tasks = self._chat_send_message_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: chat.list_spaces -> chat.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
 
@@ -664,6 +688,48 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                     "body": f"Hi,\n\nPlease find the requested list below:\n\n$last_contacts_list",
                 },
                 reason="Email the list.",
+            ),
+        ]
+
+    def _chat_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        recipient = self.config.default_recipient_email
+        return [
+            PlannedTask(
+                id="task-1",
+                service="chat",
+                action="list_spaces",
+                parameters={"page_size": 10},
+                reason="List available chat spaces.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Chat Spaces List",
+                    "body": "Hi,\n\nPlease find the list of chat spaces below:\n\n$last_chat_spaces",
+                },
+                reason="Email the list.",
+            ),
+        ]
+
+    def _chat_send_message_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        msg_text = _extract_quoted(text) or "Hello from GWorkspace Agent!"
+        return [
+            PlannedTask(
+                id="task-1",
+                service="chat",
+                action="list_spaces",
+                parameters={"page_size": 10},
+                reason="Find available chat spaces.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="chat",
+                action="send_message",
+                parameters={"space": "{{task-1.id}}", "text": msg_text},
+                reason="Send the message to the detected space.",
             ),
         ]
 

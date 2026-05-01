@@ -7,74 +7,76 @@ load_dotenv()  # Load .env at module level
 import pytest
 
 
-def run_task(task_string):
-    import os
-
-    load_dotenv()  # Ensure .env is loaded inside helper
-    email = os.getenv("DEFAULT_RECIPIENT_EMAIL", os.getenv("DEFAULT_RECIPIENT_EMAIL"))
-    task_string = task_string.replace(os.getenv("DEFAULT_RECIPIENT_EMAIL"), email)
-    import os
-
-    print(f'Running manual task: python gws_cli.py --task "{task_string}"')
-    import os
-
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    result = subprocess.run(
-        ["python", "gws_cli.py", "--task", task_string], capture_output=True, text=True, encoding="utf-8", env=env
-    )
-    if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
-        pytest.skip("Auth not configured")
-    assert result.returncode == 0, f"Task failed: {result.stderr}"
-
+from tests.manual.shared import run_task
 
 @pytest.mark.live_integration
 def test_manual_1():
-    run_task("Search my inbox for the last 3 emails and log the output.")
+    # Read verification
+    run_task("Search my inbox for the last 3 emails and log the output.", expected=["Planned", "completed"], service="gmail")
 
 
 @pytest.mark.live_integration
 def test_manual_2():
-    run_task("Find an email about 'invoice' and save the snippet to a Google Sheet.")
+    # Search and Append verification
+    run_task("Find an email about 'invoice' and save the snippet to a Google Sheet.", expected=["Planned", "completed"], service="gmail")
 
 
 @pytest.mark.live_integration
 def test_manual_3():
+    # Multi-step verification
     run_task(
-        "Search for 'urgent', save the top result to a document, and reply back to the sender via email using user@example.com."
+        "Search for 'urgent', save the top result to a document, and reply back to the sender via email.",
+        expected=["Planned", "completed"],
+        service="gmail"
     )
 
 
 @pytest.mark.live_integration
 def test_manual_4():
+    # Attachment and path leakage verification
     run_task(
-        f"Search Google Drive for a document or binary file like {os.getenv('TEST_FILE_NAME')} or any recent file, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} with the file attached. Verify the attachment is successfully added and no internal file paths are leaked in the email body."
+        f"Search Google Drive for a document or binary file like {os.getenv('TEST_FILE_NAME')} or any recent file, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} with the file attached. Verify the attachment is successfully added and no internal file paths are leaked in the email body.",
+        expected=["Planned", "completed"],
+        unexpected=["[File: ", "D:\\", "C:\\"],
+        service="gmail"
     )
 
 
 @pytest.mark.live_integration
 def test_manual_5():
+    # Search and Label verification
     run_task(
-        "Search Gmail for emails from 'haseebmir.hm@gmail.com' and apply a label called 'GWorkspaceAgent-Test'."
+        "Search Gmail for emails from 'haseebmir.hm@gmail.com' and apply a label called 'GWorkspaceAgent-Test'.",
+        expected=["Planned", "completed"],
+        service="gmail"
     )
 
 
 @pytest.mark.live_integration
 def test_manual_6():
+    # Reply verification
     run_task(
-        f"Find the most recent email from {os.getenv('DEFAULT_RECIPIENT_EMAIL')} and reply to it saying 'This is an automated reply from GWorkspace Agent verification test.'."
+        f"Find the most recent email from {os.getenv('DEFAULT_RECIPIENT_EMAIL')} and reply to it saying 'This is an automated reply from GWorkspace Agent verification test.'.",
+        expected=["Planned", "completed"],
+        service="gmail"
     )
 
 
 @pytest.mark.live_integration
 def test_manual_7():
+    # Document attachment verification
     run_task(
-        f"Search for a document containing 'CcaaS - AI Product' in its content, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} attaching this document. The email subject should be 'Verification: AI Product Document' and the body should include a summary of the task."
+        f"Search for a document containing 'CcaaS - AI Product' in its content, and send an email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')} attaching this document. The email subject should be 'Verification: AI Product Document' and the body should include a summary of the task.",
+        expected=["Planned", "completed"],
+        service="gmail"
     )
 
 
 @pytest.mark.live_integration
 def test_manual_8():
+    # ID resolution and attachment verification
     run_task(
-        f"Find a document that mentions 'Shibuz' and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}. Ensure the file is attached correctly."
+        f"Find a document that mentions 'Shibuz' and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}. Ensure the file is attached correctly.",
+        expected=["Planned", "completed"],
+        service="gmail"
     )

@@ -168,6 +168,8 @@ class CommandPlanner:
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
+        import sys
+        print(f"DEBUG build_command: {service_key}.{action_key} params={params}", file=sys.stderr)
 
         if service_key == "drive":
             return self._build_drive_command(action_key, params)
@@ -823,6 +825,23 @@ class CommandPlanner:
                         "resourceName": "people/me",
                         "pageSize": page_size,
                         "personFields": "names,emailAddresses,phoneNumbers",
+                    }
+                ),
+            ]
+        if action == "list_directory_people":
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            read_mask = params.get("read_mask") or "names,emailAddresses,phoneNumbers"
+            sources = params.get("sources") or "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"
+            return [
+                "people",
+                "people",
+                "listDirectoryPeople",
+                "--params",
+                json.dumps(
+                    {
+                        "readMask": read_mask,
+                        "sources": sources,
+                        "pageSize": page_size,
                     }
                 ),
             ]

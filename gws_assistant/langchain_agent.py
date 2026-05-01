@@ -393,7 +393,7 @@ def _invoke_with_backoff(
             return None
 
         try:
-            if model_name.startswith("groq/") or model_name.startswith("openrouter/"):
+            if model_name.startswith("groq/") or model_name.startswith("openrouter/") or model_name.startswith("google/") or model_name.startswith("gemini/"):
                 # Groq's tool-calling implementation via LangChain's with_structured_output
                 # is currently unstable (tool_choice errors). We bypass it and call LiteLLM
                 # directly with a JSON instruction.
@@ -424,6 +424,8 @@ def _invoke_with_backoff(
 
                 try:
                     plan_data = json.loads(json_str)
+                    print(f"DEBUG raw_content: {raw_content}", file=sys.stderr)
+                    print(f"DEBUG plan_data: {plan_data}", file=sys.stderr)
                     # Handle models that return the schema's outer wrapper (name/parameters)
                     if "parameters" in plan_data and isinstance(plan_data["parameters"], dict):
                         plan_data = plan_data["parameters"]

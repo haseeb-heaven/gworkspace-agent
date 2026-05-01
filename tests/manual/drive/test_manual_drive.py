@@ -6,42 +6,32 @@ load_dotenv()  # Load .env at module level
 import pytest
 
 
-def run_task(task_string):
-    import os
-
-    load_dotenv()  # Ensure .env is loaded inside helper
-    email = os.getenv("DEFAULT_RECIPIENT_EMAIL", os.getenv("DEFAULT_RECIPIENT_EMAIL"))
-    task_string = task_string.replace(os.getenv("DEFAULT_RECIPIENT_EMAIL"), email)
-    print(f'Running manual task: python gws_cli.py --task "{task_string}"')
-    import os
-
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    result = subprocess.run(
-        ["python", "gws_cli.py", "--task", task_string], capture_output=True, text=True, encoding="utf-8", env=env
-    )
-    if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
-        pytest.skip("Auth not configured")
-    assert result.returncode == 0, f"Task failed: {result.stderr}"
-
+from tests.manual.shared import run_task
 
 @pytest.mark.live_integration
 def test_manual_1():
-    run_task("Search my drive for files containing 'budget' and list the top 5 results.")
+    # Read/Search verification
+    run_task("Search my drive for files containing 'budget' and list the top 5 results.", expected=["Planned", "completed"], service="drive")
 
 
 @pytest.mark.live_integration
 def test_manual_2():
-    run_task("Create a new folder named 'Agentic AI Test Folder'.")
+    # Create verification
+    run_task("Create a new folder named 'Agentic AI Test Folder'.", expected=["completed", "Agentic AI Test Folder"], service="drive", expected_fields={"name": "Agentic AI Test Folder"})
 
 
 @pytest.mark.live_integration
 def test_manual_3():
-    run_task("Search for a document named 'CcaaS - AI Product', and if found, export it to PDF.")
+    # Export/Read verification
+    run_task("Search for a document named 'CcaaS - AI Product', and if found, export it to PDF.", expected=["Planned", "completed"], service="drive")
 
 
 @pytest.mark.live_integration
 def test_manual_4():
+    # Rename/Move verification
     run_task(
-        "Search for a file named 'Agentic AI Test Folder', rename it to 'Renamed AI Folder', and then move it to the root of my Google Drive if it's not already there."
+        "Search for a file named 'Agentic AI Test Folder', rename it to 'Renamed AI Folder', and then move it to the root of my Google Drive if it's not already there.",
+        expected=["Planned", "completed", "Renamed AI Folder"],
+        service="drive",
+        expected_fields={"name": "Renamed AI Folder"}
     )
