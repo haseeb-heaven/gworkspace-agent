@@ -8,7 +8,6 @@ All notable changes to this project will be documented in this file.
 - Fixed `WorkflowNodes.format_output_node` returning hardcoded placeholder instead of using `self.formatter`
 - Fixed API key rotation loop retrying same key for non-OpenRouter models in `call_llm`
 - Pinned Snyk GitHub Action to `v1.0.0` instead of mutable `@master` ref
-- Restored `search_all + delete` safety check in `SafetyGuard.check_plan`
 
 ## [0.6.0] - 2026-04-30
 ### Added
