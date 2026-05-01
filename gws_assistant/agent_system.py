@@ -39,6 +39,8 @@ class WorkspaceAgentSystem:
         self.config = config
         self.logger = logger
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
+        import sys
+        print(f"DEBUG agent_system: use_langchain={self._use_langchain} config.api_key={bool(self.config.api_key)}", file=sys.stderr)
         from .memory_backend import get_memory_backend
 
         self.memory = get_memory_backend(config, logger)
@@ -288,6 +290,30 @@ class WorkspaceAgentSystem:
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: slides.get_presentation -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern K: Admin -> Email
+        if "admin" in services and "gmail" in services and any(kw in lowered for kw in ("reports", "activities", "logs", "audit")):
+            tasks = self._admin_to_email_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: admin.list_activities -> gmail.send_message",
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern L: Contacts -> Email
+        if "contacts" in services and "gmail" in services and any(kw in lowered for kw in ("contacts", "people", "users", "directory", "members")):
+            tasks = self._contacts_to_email_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: contacts.list_directory_people -> gmail.send_message",
                 confidence=0.8,
                 no_service_detected=False,
                 source="heuristic",
@@ -593,6 +619,54 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             ),
         ]
 
+    def _admin_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        recipient = self.config.default_recipient_email
+        app_name = "admin" if "admin" in lowered else "drive"
+        return [
+            PlannedTask(
+                id="task-1",
+                service="admin",
+                action="list_activities",
+                parameters={"application_name": app_name, "max_results": 5},
+                reason="Fetch activity logs.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Activity Report",
+                    "body": f"Hi,\n\nPlease find the {app_name} activity report below:\n\n$last_admin_activities",
+                },
+                reason="Email the report.",
+            ),
+        ]
+
+    def _contacts_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        recipient = self.config.default_recipient_email
+        action = "list_directory_people" if any(kw in lowered for kw in ("directory", "users", "members", "workspace")) else "list_contacts"
+        return [
+            PlannedTask(
+                id="task-1",
+                service="contacts",
+                action=action,
+                parameters={"page_size": 5},
+                reason=f"Fetch {action}.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Contacts/Users List",
+                    "body": f"Hi,\n\nPlease find the requested list below:\n\n$last_contacts_list",
+                },
+                reason="Email the list.",
+            ),
+        ]
+
     def _docs_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         d_id = _extract_id(text)
         title = _extract_quoted(text) or "New Document"
@@ -741,6 +815,12 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         elif service == "calendar" and action == "create_event":
             parameters["summary"] = _extract_quoted(lowered) or "New Event"
             parameters["start_date"] = date.today().isoformat()  # Default to today for heuristic
+        elif service == "drive" and action == "create_folder":
+            parameters["folder_name"] = _extract_quoted(lowered) or "New Folder"
+        elif service == "docs" and action == "create_document":
+            parameters["title"] = _extract_quoted(lowered) or "New Document"
+        elif service == "sheets" and action == "create_spreadsheet":
+            parameters["title"] = _extract_quoted(lowered) or "New Spreadsheet"
         elif service == "tasks" and action == "create_task":
             parameters["title"] = _extract_quoted(lowered) or "New Task"
         elif service in ("code", "computation"):
@@ -903,10 +983,6 @@ def _first_int(text: str) -> int | None:
 def _is_drive_to_email_request(text: str) -> bool:
     lowered = text.lower()
     exclusion_words = (
-        "count",
-        "table",
-        "summary",
-        "metadata",
         "metadata only",
         "names only",
         "no file content",
@@ -922,10 +998,6 @@ def _is_drive_to_email_request(text: str) -> bool:
 def _is_drive_metadata_to_email_request(text: str) -> bool:
     lowered = text.lower()
     exclusion_words = (
-        "count",
-        "table",
-        "summary",
-        "metadata",
         "metadata only",
         "names only",
         "no file content",
@@ -943,7 +1015,7 @@ def _is_metadata_only_request(text: str) -> bool:
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
     has_metadata_intent = any(
         t in text
-        for t in ("count", "table", "summary", "metadata", "no file content", "names only", "sizes", "group", "list")
+        for t in ("metadata only", "no file content", "names only", "do not download")
     )
     has_email_intent = any(t in text for t in ("email", "send", "mail"))
     return has_drive_intent and has_metadata_intent and not has_email_intent
