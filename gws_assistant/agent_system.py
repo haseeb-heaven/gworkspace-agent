@@ -642,7 +642,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         ]
 
     def _admin_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
         app_name = "admin" if "admin" in lowered else "drive"
         return [
             PlannedTask(
@@ -666,7 +666,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         ]
 
     def _contacts_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
         action = "list_directory_people" if any(kw in lowered for kw in ("directory", "users", "members", "workspace")) else "list_contacts"
         return [
             PlannedTask(
@@ -690,7 +690,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         ]
 
     def _chat_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
         return [
             PlannedTask(
                 id="task-1",
