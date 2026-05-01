@@ -77,7 +77,6 @@ def run_code(code_b64: str) -> dict[str, object]:
         return result
 
     sandbox_globals = get_sandbox_globals()
-    set_memory_limit()
 
     try:
         byte_code = compile_restricted(code, filename="<string>", mode="exec")
@@ -108,5 +107,6 @@ def run_code(code_b64: str) -> dict[str, object]:
 
 
 if __name__ == "__main__":
+    set_memory_limit()
     payload = run_code(sys.stdin.read().strip())
     print(json.dumps(payload))

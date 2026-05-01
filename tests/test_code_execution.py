@@ -21,7 +21,7 @@ def test_code_execution_tool_timeout():
 
 def test_code_execution_tool_returns_structured_contract():
     result = code_execution_tool.invoke({"code": "result = {'a': 1}\nprint('done')"})
-    assert set(["success", "output", "error"]).issubset(result.keys())
+    assert {"success", "output", "error"}.issubset(result.keys())
     assert result["output"]["parsed_value"] == {"a": 1}
 
 
