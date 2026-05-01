@@ -46,6 +46,7 @@ scratch/
 artifacts/
 .skill
 *.skill
+skills/
 .gemini
 $params
 .git
