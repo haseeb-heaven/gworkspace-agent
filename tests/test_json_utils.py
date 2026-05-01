@@ -1,7 +1,7 @@
 import pytest
 
 from gws_assistant import json_utils
-from gws_assistant.json_utils import JsonExtractionError, extract_json, safe_json_loads
+from gws_assistant.json_utils import extract_json, safe_json_loads
 
 
 @pytest.mark.gmail

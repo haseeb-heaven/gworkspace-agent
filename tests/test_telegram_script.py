@@ -1,8 +1,8 @@
 import os
 import sys
 import unittest
-from urllib.error import URLError
 from unittest.mock import MagicMock, patch
+from urllib.error import URLError
 
 # Add the root directory to sys.path to import the script
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

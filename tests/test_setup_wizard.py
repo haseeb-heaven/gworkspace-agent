@@ -1,7 +1,8 @@
-import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-from gws_assistant.setup_wizard import discover_gws_binary, _render_env, _quote, _ask_text, _ask_secret
+from unittest.mock import patch
+
+from gws_assistant.setup_wizard import _ask_secret, _ask_text, _quote, _render_env, discover_gws_binary
+
 
 def test_discover_gws_binary_path_env():
     with patch("shutil.which") as mock_which:
@@ -55,6 +56,6 @@ def test_ask_text(mock_ask):
 def test_ask_secret(mock_ask):
     mock_ask.return_value = "secret"
     assert _ask_secret("prompt", "existing") == "secret"
-    
+
     mock_ask.return_value = ""
     assert _ask_secret("prompt", "existing") == "existing"

@@ -1,5 +1,6 @@
-import subprocess
 import os
+import subprocess
+
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env at module level

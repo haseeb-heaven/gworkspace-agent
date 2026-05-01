@@ -1,11 +1,10 @@
 """Tests for cli_app module — covers helper functions and typer callback branches."""
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from gws_assistant.cli_app import _save_output, _ask_non_empty
+from gws_assistant.cli_app import _ask_non_empty, _save_output
 
 
 class TestSaveOutput:

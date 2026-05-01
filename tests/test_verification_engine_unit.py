@@ -5,7 +5,6 @@ import pytest
 
 from gws_assistant.verification_engine import VerificationEngine, VerificationError
 
-
 # ---------- _is_placeholder ----------
 
 class TestIsPlaceholder:

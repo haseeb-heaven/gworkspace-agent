@@ -1,10 +1,9 @@
 """Unit tests for langgraph_workflow.py — covers helper functions and logic."""
 from __future__ import annotations
 
-import logging
-import pytest
-from langchain_core.messages import AIMessage, HumanMessage
-from gws_assistant.langgraph_workflow import _trim_history, _is_llm_refusal
+from langchain_core.messages import HumanMessage
+
+from gws_assistant.langgraph_workflow import _is_llm_refusal, _trim_history
 
 
 def test_trim_history():

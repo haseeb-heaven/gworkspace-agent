@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from gws_assistant.telegram_app import auth_check, handle_text, split_and_send
 
@@ -79,16 +80,16 @@ async def test_run_gws_task_success():
     mock_config = MagicMock()
     mock_config.gws_timeout_seconds = 300
     context.bot_data = {"config": mock_config}
-    
+
     with patch("asyncio.create_subprocess_exec") as mock_exec:
         mock_process = AsyncMock()
         mock_process.communicate.return_value = (b"output", b"")
         mock_process.returncode = 0
         mock_exec.return_value = mock_process
-        
+
         from gws_assistant.telegram_app import run_gws_task
         await run_gws_task(update, context, "test task")
-        
+
         assert update.effective_message.reply_text.called
         mock_exec.assert_called()
 

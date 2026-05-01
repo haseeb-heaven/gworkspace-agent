@@ -124,9 +124,11 @@ class WorkflowNodes:
 
     def validate_node(self, state: AgentState) -> dict[str, Any]:
         plan = state.get("plan")
-        if not plan: return {"error": "No plan to validate."}
+        if not plan:
+            return {"error": "No plan to validate."}
         for task in plan.tasks:
-            if not task.action: return {"error": f"Task {task.id} has no action."}
+            if not task.action:
+                return {"error": f"Task {task.id} has no action."}
         return {"error": None}
 
     def execute_task_node(self, state: AgentState) -> dict[str, Any]:
@@ -299,7 +301,7 @@ class WorkflowNodes:
             err = state.get("error")
             if err:
                 report = err
-        if any(not item.result.success for item in executions) and "failed" not in report.lower():
+        if any(not getattr(item.result, "success", False) for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
         return {"final_output": report}
 
@@ -315,21 +317,22 @@ class WorkflowNodes:
     def persist_memory_node(self, state: AgentState) -> dict[str, Any]:
         """Persist successful task executions to episodic and semantic memory."""
         executions = state.get("executions", [])
-        if not executions or not all(e.result.success for e in executions):
+        if not executions or not all(getattr(e.result, "success", False) for e in executions):
             return {}
 
         try:
             # Re-generate report for memory summary (or use a simple one)
             plan = state.get("plan")
-            if not plan: return {}
-            
+            if not plan:
+                return {}
+
             # Resolve placeholders in summary for memory
             summary = plan.summary or ""
             if "{" in summary or "$" in summary:
                 try:
                     summary = self.executor._resolve_placeholders(summary, state.get("context", {}))
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Best-effort placeholder resolution failed in persist_memory_node: {e}")
 
             # Save to episodic memory
             from .memory import save_episode
@@ -338,10 +341,10 @@ class WorkflowNodes:
             # Save to semantic memory
             memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Outcome: {summary[:200]}"
             self.system.memory.add(memory_text, metadata={"type": "task_completion"})
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to persist memory in persist_memory_node: {e}")
-        
+
         return {}
 
 

@@ -1,8 +1,6 @@
 """Comprehensive tests for memory_backend.py — covers LocalMemory and get_memory_backend."""
 from __future__ import annotations
 
-import json
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

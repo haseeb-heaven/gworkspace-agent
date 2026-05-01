@@ -35,7 +35,7 @@ def test_gui_instantiation():
         mock_config.log_level = "INFO"
         mock_config.log_file_path = "test.log"
         mock_config_loader.return_value = mock_config
-        
+
         with patch("gws_assistant.gui_app.setup_logging"):
             with patch("gws_assistant.gui_app.IntentParser"):
                 with patch("gws_assistant.gui_app.CommandPlanner"):

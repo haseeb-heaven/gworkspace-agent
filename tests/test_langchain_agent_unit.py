@@ -1,22 +1,24 @@
 """Unit tests for langchain_agent.py — covers helper functions and logic."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from litellm.exceptions import RateLimitError
+
 from gws_assistant.langchain_agent import (
     _backoff_delay,
-    _is_rate_limit_error,
-    _is_endpoint_missing_error,
-    _request_requires_send_email,
-    _plan_has_send_task,
-    _extract_explicit_email,
-    _derive_next_task_id,
-    _derive_email_subject,
     _derive_email_body_placeholder,
-    is_valid_plan,
+    _derive_email_subject,
+    _derive_next_task_id,
+    _extract_explicit_email,
+    _is_endpoint_missing_error,
     _is_plan_complete,
+    _is_rate_limit_error,
+    _plan_has_send_task,
+    _request_requires_send_email,
     _safe_invoke_structured_output,
+    is_valid_plan,
 )
 
 
@@ -121,7 +123,7 @@ def test_is_plan_complete():
     # User mentions sheets, plan must have sheets
     assert _is_plan_complete({"tasks": [{"service": "drive"}]}, "create a spreadsheet") is False
     assert _is_plan_complete({"tasks": [{"service": "sheets"}]}, "create a spreadsheet") is True
-    
+
     # User mentions send email, plan must have send_message
     assert _is_plan_complete({"tasks": [{"service": "gmail", "action": "list"}]}, "send an email") is False
     assert _is_plan_complete({"tasks": [{"service": "gmail", "action": "send_message"}]}, "send an email") is True

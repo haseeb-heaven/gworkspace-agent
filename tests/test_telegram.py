@@ -188,8 +188,8 @@ async def test_handle_text_greetings(mock_update, mock_context):
 async def test_handle_text_no_gws_intent(mock_get_chat, mock_update, mock_context):
     mock_update.effective_message.text = "How are you?"
     mock_get_chat.return_value = "I am a bot."
-    
+
     await handle_text(mock_update, mock_context)
-    
+
     mock_get_chat.assert_called_once()
     mock_update.effective_message.reply_text.assert_called_with("I am a bot.")

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
-import pytest
 from unittest.mock import MagicMock
-from gws_assistant.output_formatter import HumanReadableFormatter
+
+import pytest
+
 from gws_assistant.models import ExecutionResult, PlanExecutionReport, PlannedTask
+from gws_assistant.output_formatter import HumanReadableFormatter
 
 
 @pytest.fixture

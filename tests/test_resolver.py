@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
-import pytest
 from unittest.mock import MagicMock
 
-from gws_assistant.execution.resolver import ResolverMixin, LEGACY_PLACEHOLDER_MAP
+import pytest
+
+from gws_assistant.execution.resolver import ResolverMixin
 from gws_assistant.models import PlannedTask
 
 

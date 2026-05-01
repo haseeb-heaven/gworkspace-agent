@@ -1108,7 +1108,7 @@ class CommandPlanner:
 
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
             gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
-            
+
             # 1. Try to download directly first (works for binary files, images, PDFs already in Drive)
             safe_name = re.sub(r"[^A-Za-z0-9_-]", "", file_id)
             direct_file_path = os.path.join(tmp_dir, safe_name)

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
 from gws_assistant.conversation import ConversationEngine
-from gws_assistant.models import ExecutionResult, Intent, ParameterSpec
 from gws_assistant.exceptions import ValidationError
+from gws_assistant.models import ExecutionResult, Intent, ParameterSpec
 
 
 @pytest.fixture
