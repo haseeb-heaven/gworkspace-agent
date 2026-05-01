@@ -262,6 +262,19 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern A2: Drive -> Sheets -> Gmail (Search, Export, Email)
+        if "drive" in services and "sheets" in services and "gmail" in services and _is_drive_to_sheets_to_email_request(lowered):
+            tasks = self._drive_to_sheets_to_gmail_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
+                confidence=0.75,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Pattern C: Drive Folder & Move
         if "drive" in services and _is_drive_folder_move_request(lowered):
             tasks = self._drive_folder_move_tasks(text, lowered)
@@ -579,6 +592,74 @@ $last_export_file_content"""
                 reason="Email the metadata summary table.",
             ),
         ]
+
+    def _drive_to_sheets_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Drive → Sheets → Gmail workflow: search Drive, export to Sheets, email the link."""
+        query = _drive_query_from_text(text)
+        recipient = _extract_email(text) or self.config.default_recipient_email
+
+        # Extract the document name from the query for the sheet title
+        sheet_title = "Results"
+        if "'" in query:
+            doc_name = query.split("'")[1]
+            sheet_title = f"Results: {doc_name}"
+
+        code_script = """data = $drive_summary_values
+if len(data) == 0:
+    print('No files found.')
+else:
+    # Calculate percentage if numeric data exists
+    print('Files Summary:')
+    for row in data:
+        print(' - ' + str(row))
+    print(f'\\nTotal files: {len(data)}')"""
+
+        tasks = [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": 50},
+                reason="Search for the requested document.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="sheets",
+                action="create_spreadsheet",
+                parameters={"title": sheet_title},
+                reason="Create a spreadsheet to store the results.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="sheets",
+                action="append_values",
+                parameters={
+                    "spreadsheet_id": "{{task-2.id}}",
+                    "values": "$drive_summary_values",
+                },
+                reason="Append the Drive search results to the sheet.",
+            ),
+            PlannedTask(
+                id="task-4",
+                service="code",
+                action="execute",
+                parameters={"code": code_script},
+                reason="Compute summary and percentage from the data.",
+            ),
+            PlannedTask(
+                id="task-5",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": f"Results: {sheet_title}",
+                    "body": "Here are the results from your Drive search:\n\n{{task-4.stdout}}\n\nSheet link: $last_folder_url",
+                },
+                reason="Email the results with the Sheets link.",
+            ),
+        ]
+
+        return tasks
 
     def _web_search_pattern_tasks(
         self,
@@ -1549,13 +1630,21 @@ def _is_gmail_to_sheets_request(text: str) -> bool:
     email"`` and routed them to ``gmail.list_messages``. We now reject
     requests that carry an explicit web-search intent so they fall through
     to the dedicated web-search heuristics.
+
+    Also reject requests with explicit Drive/document search intent (e.g.
+    "Search document X", "find document Y") to avoid misrouting Drive-based
+    requests to Gmail.
     """
+    lowered = text.lower()
     if _has_explicit_web_search_intent(text):
         return False
+    # Reject Drive/document search requests
+    if re.search(r"\b(search|find|list|show)\s+(document|drive|file)\b", text, re.IGNORECASE):
+        return False
     return (
-        ("gmail" in text or "email" in text)
-        and "sheet" in text
-        and any(t in text for t in ("save", "extract", "append", "write"))
+        ("gmail" in lowered or "email" in lowered)
+        and "sheet" in lowered
+        and any(t in lowered for t in ("save", "extract", "append", "write"))
     )
 
 
@@ -1595,6 +1684,23 @@ def _is_sheet_creation_request(text: str) -> bool:
             and not any(phrase in text for phrase in ("create email", "create a doc", "create document"))
         )
     return "sheet" in text and any(t in text for t in ("create", "add", "new"))
+
+
+def _is_drive_to_sheets_to_email_request(text: str) -> bool:
+    """Detect a Drive → Sheets → Email workflow.
+
+    Matches requests like "Search document X, convert to table in Sheets, send email"
+    where the user wants to search Drive, export to Sheets, and email the result.
+    """
+    lowered = text.lower()
+    if _has_explicit_web_search_intent(text):
+        return False
+    return (
+        ("drive" in lowered or "document" in lowered or "file" in lowered)
+        and "sheet" in lowered
+        and ("email" in lowered or "send" in lowered or "mail" in lowered)
+        and any(t in lowered for t in ("search", "find", "list", "show"))
+    )
 
 
 def _extract_data_rows(text: str) -> list[list[Any]]:

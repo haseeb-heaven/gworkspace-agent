@@ -12,6 +12,7 @@ from gws_assistant.agent_system import (
     _detect_services_in_order,
     _has_explicit_web_search_intent,
     _is_drive_to_email_request,
+    _is_drive_to_sheets_to_email_request,
     _is_gmail_to_sheets_request,
     _web_search_query_from_text,
 )
@@ -316,6 +317,42 @@ class TestDriveToEmailHeuristicGuard:
     def test_genuine_drive_to_email_prompt_still_matches(self):
         text = "Find my passport photo in Drive and email it to user@example.com"
         assert _is_drive_to_email_request(text) is True
+
+
+class TestDriveToSheetsToEmailHeuristic:
+    """``_is_drive_to_sheets_to_email_request`` detects Drive → Sheets → Gmail workflows."""
+
+    def test_drive_to_sheets_to_email_is_detected(self):
+        text = "Search document '12th Class' and convert that to table format in Sheets and then send me haseebmir.hm@gmail.com"
+        assert _is_drive_to_sheets_to_email_request(text) is True
+
+    def test_drive_to_sheets_to_email_with_find(self):
+        text = "Find document 'report' and save to Sheets then email me"
+        assert _is_drive_to_sheets_to_email_request(text) is True
+
+    def test_drive_to_sheets_to_email_rejects_web_search(self):
+        text = "Search the web for Python frameworks and save to Sheets and email me"
+        assert _is_drive_to_sheets_to_email_request(text) is False
+
+    def test_drive_to_sheets_to_email_requires_drive_document(self):
+        text = "Convert to table in Sheets and send email"
+        assert _is_drive_to_sheets_to_email_request(text) is False
+
+
+class TestGmailToSheetsHeuristicGuard:
+    """``_is_gmail_to_sheets_request`` must not capture Drive/document search prompts."""
+
+    def test_drive_document_search_is_rejected(self):
+        text = "Search document '12th Class' and convert that to table format in Sheets"
+        assert _is_gmail_to_sheets_request(text) is False
+
+    def test_drive_file_search_is_rejected(self):
+        text = "Search file 'report' and save to Sheets"
+        assert _is_gmail_to_sheets_request(text) is False
+
+    def test_genuine_gmail_to_sheets_still_matches(self):
+        text = "Search my emails for invoices and save to Sheets"
+        assert _is_gmail_to_sheets_request(text) is True
 
 
 class TestWebSearchQueryExtraction:
