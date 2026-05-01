@@ -49,7 +49,8 @@ def _validate_args(args: list[str]) -> None:
         "drive", "gmail", "sheets", "docs", "calendar", "admin-reports",
         "reports", "tasks", "people", "chat", "classroom", "forms",
         "keep", "meet", "events", "modelarmor", "workflow", "wf",
-        "script", "schema", "search", "admin", "code", "computation"
+        "script", "schema", "search", "admin", "code", "computation",
+        "slides"
     }
 
     if not args:
