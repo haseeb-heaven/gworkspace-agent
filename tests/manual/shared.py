@@ -42,9 +42,10 @@ def run_task(
     env["PYTHONIOENCODING"] = "utf-8"
     # Ensure we are in the project root
     cwd = Path(__file__).resolve().parents[2]
+    script_path = cwd / "gws_cli.py"
 
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "gws_cli.py", "--task", task_string],
+        [sys.executable, str(script_path), "--task", task_string],
         capture_output=True,
         text=True,
         encoding="utf-8",
