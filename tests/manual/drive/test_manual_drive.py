@@ -34,3 +34,25 @@ def test_manual_4():
         service="drive",
         expected_fields={"name": "Renamed AI Folder"}
     )
+
+
+@pytest.mark.live_integration
+def test_manual_5():
+    # File copy verification
+    run_task(
+        "Find a recent file in Drive and create a copy of it.",
+        expected=["completed"],
+        service="drive",
+        skip_verification=True  # May not have files to copy
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_6():
+    # Batch operations verification
+    run_task(
+        "List all PDFs in Drive and export the first one if found.",
+        expected=["completed"],
+        service="drive",
+        skip_verification=True  # May not have PDFs
+    )

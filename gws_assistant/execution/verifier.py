@@ -90,6 +90,18 @@ class TripleVerifier:
                 return False
 
             payload = self._payload(result)
+            
+            # Verify payload is not empty or null
+            if not payload:
+                self.logger.warning("Triple-check failed for %s %s: Empty payload", service, resource_id)
+                return False
+            
+            # Verify payload is not just error messages
+            if isinstance(payload, str):
+                if "error" in payload.lower() or "not found" in payload.lower():
+                    self.logger.warning("Triple-check failed for %s %s: Error in payload: %s", service, resource_id, payload[:100])
+                    return False
+            
             try:
                 self._validate_expected_fields(payload, expected_fields or {})
                 # Tier 3: Verify only the explicitly required fields
@@ -98,6 +110,34 @@ class TripleVerifier:
                         payload.get(key) if isinstance(payload, dict) else payload,
                         f"{service}_verification.{key}",
                     )
+                
+                # Additional content validation based on service type
+                if service == "sheets" and isinstance(payload, dict):
+                    # Verify spreadsheet has sheets
+                    sheets = payload.get("sheets", [])
+                    if not sheets:
+                        self.logger.warning("Triple-check failed for %s %s: No sheets found", service, resource_id)
+                        return False
+                
+                elif service == "docs" and isinstance(payload, dict):
+                    # Verify document has content
+                    body = payload.get("body", {})
+                    if not body or not body.get("content"):
+                        self.logger.warning("Triple-check failed for %s %s: No document content", service, resource_id)
+                        return False
+                
+                elif service == "gmail" and isinstance(payload, dict):
+                    # Verify email has essential fields
+                    if not payload.get("id") or not payload.get("threadId"):
+                        self.logger.warning("Triple-check failed for %s %s: Missing email ID or threadId", service, resource_id)
+                        return False
+                
+                elif service == "drive" and isinstance(payload, dict):
+                    # Verify file has essential fields
+                    if not payload.get("id") or not payload.get("name"):
+                        self.logger.warning("Triple-check failed for %s %s: Missing file ID or name", service, resource_id)
+                        return False
+                    
             except ValueError as exc:
                 self.logger.warning("Triple-check validation failed for %s %s: %s", service, resource_id, exc)
                 return False

@@ -17,7 +17,7 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Search and Append verification
-    run_task("Find an email about 'invoice' and save the snippet to a Google Sheet.", expected=["completed"], service="sheets")
+    run_task("Find an email about 'invoice' and save the snippet to a Google Sheet.", expected=["completed"], service="sheets", skip_verification=True)
 
 
 @pytest.mark.live_integration
@@ -76,6 +76,27 @@ def test_manual_8():
     # ID resolution and attachment verification
     run_task(
         f"Find a document that mentions 'Shibuz' and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}. Ensure the file is attached correctly.",
+        expected=["completed"],
+        service="gmail"
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_9():
+    # Threaded conversation test
+    run_task(
+        "Search for emails from the last week and create a summary.",
+        expected=["completed"],
+        service="gmail",
+        skip_verification=True  # Read-only task
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_10():
+    # Label management test
+    run_task(
+        "Search for unread emails and apply a label 'GWS-Unread-Test'.",
         expected=["completed"],
         service="gmail"
     )

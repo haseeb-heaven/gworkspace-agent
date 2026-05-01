@@ -79,7 +79,7 @@ _EMAIL_BODY_PLACEHOLDERS = (
     "$search_summary_table",
 )
 
-_BACKOFF_SCHEDULE: list[float] = [2.0, 4.0, 8.0, 16.0, 30.0]
+_BACKOFF_SCHEDULE: list[float] = [3.0, 6.0, 12.0, 24.0, 48.0]
 
 
 def _backoff_delay(attempt: int) -> float:
