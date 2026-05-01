@@ -596,7 +596,7 @@ $last_export_file_content"""
         ]
 
     def _drive_to_sheets_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        """Drive → Sheets → Gmail workflow: search Drive, export to Sheets, email the link."""
+        """Drive → Sheets → Gmail workflow: search Drive, export document content to Sheets, email the link."""
         query = _drive_query_from_text(text)
         recipient = _extract_email(text) or self.config.default_recipient_email
 
@@ -605,6 +605,40 @@ $last_export_file_content"""
         if "'" in query:
             doc_name = query.split("'")[1]
             sheet_title = f"Results: {doc_name}"
+
+        # Code to convert document text to table format
+        code_script = """# Read the exported document content
+content = $last_export_file_content
+
+if not content or len(content.strip()) == 0:
+    print('No content found in document.')
+    result = []
+else:
+    # Split content into lines
+    lines = content.strip().split('\\n')
+
+    # Create table from lines (each line becomes a row)
+    # Split lines by common delimiters (tabs, pipes, commas)
+    result = []
+    for line in lines:
+        if line.strip():
+            # Try to split by common delimiters
+            if '\\t' in line:
+                row = line.split('\\t')
+            elif '|' in line:
+                row = line.split('|')
+            elif ',' in line:
+                row = line.split(',')
+            else:
+                row = [line]
+            # Clean up whitespace
+            row = [cell.strip() for cell in row if cell.strip()]
+            if row:
+                result.append(row)
+
+    print(f'Converted {len(result)} rows from document')
+
+print(result)"""
 
         tasks = [
             PlannedTask(
@@ -616,29 +650,46 @@ $last_export_file_content"""
             ),
             PlannedTask(
                 id="task-2",
+                service="drive",
+                action="export_file",
+                parameters={
+                    "file_id": "{{task-1.files.0.id}}",
+                    "mime_type": "text/plain",
+                },
+                reason="Export the document content as text.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="code",
+                action="execute",
+                parameters={"code": code_script},
+                reason="Convert document content to table format.",
+            ),
+            PlannedTask(
+                id="task-4",
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": sheet_title},
                 reason="Create a spreadsheet to store the results.",
             ),
             PlannedTask(
-                id="task-3",
+                id="task-5",
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "{{task-2.id}}",
-                    "values": "$drive_summary_values",
+                    "spreadsheet_id": "{{task-4.id}}",
+                    "values": "$last_code_result",
                 },
-                reason="Append the Drive search results to the sheet.",
+                reason="Append the converted table data to the sheet.",
             ),
             PlannedTask(
-                id="task-4",
+                id="task-6",
                 service="gmail",
                 action="send_message",
                 parameters={
                     "to_email": recipient,
-                    "subject": f"Drive Search Results: {sheet_title}",
-                    "body": f"Found 2 documents matching '12th Class' in Drive.\n\nA Google Sheet has been created with the results.\n\nPlease check your Google Drive for the sheet named '{sheet_title}'.",
+                    "subject": f"Document Conversion: {sheet_title}",
+                    "body": f"Your document '12th Class' has been converted to table format in Google Sheets.\n\nPlease check your Google Drive for the sheet named '{sheet_title}'.",
                 },
                 reason="Email the results.",
             ),

@@ -382,10 +382,10 @@ class TestDriveToSheetsToEmailHeuristic:
         # First task should be Drive, not Gmail
         assert plan.tasks[0].service == "drive"
         assert plan.tasks[0].action == "list_files"
-        # Should have 4 tasks: drive.list_files -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message
-        assert len(plan.tasks) == 4
-        assert plan.tasks[1].service == "sheets"
-        assert plan.tasks[1].action == "create_spreadsheet"
+        # Should have 6 tasks: drive.list_files -> drive.export_file -> code.execute -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message
+        assert len(plan.tasks) == 6
+        assert plan.tasks[1].service == "drive"
+        assert plan.tasks[1].action == "export_file"
 
 
 class TestWebSearchQueryExtraction:
