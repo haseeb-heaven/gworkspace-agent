@@ -599,7 +599,6 @@ $last_export_file_content"""
             or "send_message" in lowered
             or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email", "send me"))
         )
-        )
         wants_code = "code" in services or "computation" in services or any(
             kw in lowered for kw in (
                 "code executor",
