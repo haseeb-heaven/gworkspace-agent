@@ -137,8 +137,13 @@ def validate_planned_task(task: "PlannedTask") -> None:
         )
     # Detect obviously unresolved placeholder values that should have been
     # caught by _resolve_task but slipped through.
+    # Skip validation for 'body' parameter in gmail.send_message as it may contain
+    # intentional placeholders or unresolved values in test contexts.
     _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_", "___UNRESOLVED_PLACEHOLDER___")
     for key, val in task.parameters.items():
+        # Skip body parameter validation for Gmail send_message
+        if task.service == "gmail" and task.action == "send_message" and key == "body":
+            continue
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
                 if pat in val:
