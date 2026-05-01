@@ -66,7 +66,9 @@ def _has_explicit_web_search_intent(text: str) -> bool:
     if not text:
         return False
     lowered = text.lower()
-    return any(phrase in lowered for phrase in _WEB_SEARCH_INTENT_PHRASES)
+    return any(
+        re.search(r"\b" + re.escape(phrase) + r"\b", lowered) for phrase in _WEB_SEARCH_INTENT_PHRASES
+    )
 
 
 class WorkspaceAgentSystem:
@@ -597,7 +599,10 @@ $last_export_file_content"""
         )
         wants_email = (
             "send_message" in lowered
-            or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email", "to email"))
+            or any(kw in lowered for kw in (
+                "send email", "send mail", "email to", "to email",
+                "send detailed email", "send an email", "compose email",
+            ))
         )
         wants_code = "code" in services or "computation" in services or any(
             kw in lowered for kw in (
@@ -675,7 +680,7 @@ $last_export_file_content"""
                     parameters={
                         "spreadsheet_id": "$last_spreadsheet_id",
                         "range": "Sheet1!A1",
-                        "values": "$search_summary_rows",
+                        "values": "$last_code_result" if wants_code else "$search_summary_rows",
                     },
                     reason="Save the search results to the spreadsheet.",
                 )
@@ -690,7 +695,7 @@ $last_export_file_content"""
                     action="create_document",
                     parameters={
                         "title": doc_title,
-                        "content": "$search_summary_table",
+                        "content": "$last_code_result_table" if wants_code else "$search_summary_table",
                     },
                     reason="Save the search summary into a Google Doc.",
                 )
@@ -700,22 +705,23 @@ $last_export_file_content"""
         # Step 4: optional email.
         if wants_email:
             subject = sheet_title if wants_sheets else (doc_title if wants_docs else "Web Search Results")
+            _table_ref = "$last_code_result_table" if wants_code else "$search_summary_table"
             if wants_sheets:
                 body = (
                     "Hi,\n\n"
                     "Please find the search results spreadsheet here: "
                     "$last_spreadsheet_url\n\n"
-                    "Top results:\n$search_summary_table"
+                    "Top results:\n" + _table_ref
                 )
             elif wants_docs:
                 body = (
                     "Hi,\n\n"
                     "Please find the search results document here: "
                     "$last_document_url\n\n"
-                    "Top results:\n$search_summary_table"
+                    "Top results:\n" + _table_ref
                 )
             else:
-                body = "Hi,\n\nHere are the top web search results:\n\n$search_summary_table"
+                body = "Hi,\n\nHere are the top web search results:\n\n" + _table_ref
 
             tasks.append(
                 PlannedTask(
@@ -1320,8 +1326,12 @@ _WEB_SEARCH_LEADING_PHRASES: tuple[str, ...] = (
 )
 
 _WEB_SEARCH_TRAILING_SPLITS = re.compile(
-    r"\s+(?:and|then|,|;|extract|use|save|store|write|append|create|send|email|share|"
-    r"with proper|so that|to a|to the|to my)\b",
+    r"(?:"
+    r"\s+(?:and|then)\s+(?:save|store|write|append|create|send|email|share|extract)\b|"
+    r"[;,]\s*(?:save|store|write|append|create|send|email|share|extract)\b|"
+    r"\s+(?:save|store|write|append|create)\s+to\s+(?:a|the|my)\b|"
+    r"\s+send\s+(?:an?\s+)?email\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -1506,6 +1516,8 @@ def _is_gmail_to_sheets_request(text: str) -> bool:
 
 
 def _is_sheet_to_email_request(text: str) -> bool:
+    if _has_explicit_web_search_intent(text):
+        return False
     return "sheet" in text and any(t in text for t in ("email", "send", "mail"))
 
 
@@ -1514,6 +1526,8 @@ def _is_drive_folder_move_request(text: str) -> bool:
 
 
 def _is_docs_to_email_request(text: str) -> bool:
+    if _has_explicit_web_search_intent(text):
+        return False
     return any(t in text for t in ("doc", "document")) and any(t in text for t in ("email", "send", "mail"))
 
 
