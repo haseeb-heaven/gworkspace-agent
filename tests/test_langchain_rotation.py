@@ -17,7 +17,7 @@ def mock_logger():
 def config():
     return AppConfigModel(
         provider="openrouter",
-        model="google/gemini-2.0-flash-exp:free",
+        model="anthropic/claude-3-haiku",
         api_key="key1",
         llm_fallback_models=[],
         base_url="https://openrouter.ai/api/v1",
@@ -75,7 +75,7 @@ def test_langchain_rotates_on_429(mock_create_agent, mock_logger, config):
         assert mock_llm.with_structured_output.return_value.invoke.call_count == 2
         mock_logger.info.assert_any_call(
             "Model '%s' rate-limited (attempt %d/%d, HTTP 429). Rotating API key and backing off %.0fs before retry.",
-            "google/gemini-2.0-flash-exp:free",
+            "anthropic/claude-3-haiku",
             1,
             3,
             2.0,

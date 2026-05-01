@@ -168,6 +168,7 @@ class CommandPlanner:
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
+        logging.getLogger(__name__).debug("build_command: service=%s action=%s", service_key, action_key)
 
         if service_key == "drive":
             return self._build_drive_command(action_key, params)
@@ -826,6 +827,33 @@ class CommandPlanner:
                     }
                 ),
             ]
+        if action == "list_directory_people":
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            read_mask = params.get("read_mask") or "names,emailAddresses,phoneNumbers"
+            sources = params.get("sources") or "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"
+            return [
+                "people",
+                "people",
+                "listDirectoryPeople",
+                "--params",
+                json.dumps(
+                    {
+                        "readMask": read_mask,
+                        "sources": sources,
+                        "pageSize": page_size,
+                    }
+                ),
+            ]
+        if action == "get_person":
+            resource_name = self._required_text(params, "resourceName")
+            person_fields = params.get("personFields") or "names,emailAddresses,phoneNumbers"
+            return [
+                "people",
+                "people",
+                "get",
+                "--params",
+                json.dumps({"resourceName": resource_name, "personFields": person_fields}),
+            ]
         raise ValidationError(f"Unsupported contacts action: {action}")
 
     def _build_chat_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -856,6 +884,9 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"parent": space, "pageSize": page_size}),
             ]
+        if action == "get_message":
+            name = self._required_text(params, "name")
+            return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": name})]
         raise ValidationError(f"Unsupported chat action: {action}")
 
     def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:

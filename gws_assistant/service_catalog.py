@@ -8,7 +8,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",
         label="Google Drive",
-        aliases=("drive", "files", "google drive", "document", "documents", "file"),
+        aliases=("drive", "files", "google drive", "document", "documents", "file", "folder", "folders"),
         description="Manage files and folders in Google Drive. Returns file metadata including id, name, mimeType, webViewLink.",
         actions={
             "list_files": ActionSpec(
@@ -188,7 +188,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "gmail": ServiceSpec(
         key="gmail",
         label="Gmail",
-        aliases=("gmail", "mail", "email", "emails", "message", "messages", "inbox"),
+        aliases=("gmail", "mail", "email", "emails", "inbox", "messages", "message"),
         description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
         actions={
             "list_messages": ActionSpec(
@@ -389,6 +389,32 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("list", "show", "find", "search", "contacts", "people"),
                 parameters=(ParameterSpec("page_size", "How many contacts should I show?", "10", required=False),),
             ),
+            "list_directory_people": ActionSpec(
+                key="list_directory_people",
+                label="List directory members",
+                description="Provides a list of domain profiles and domain contacts in the authenticated user's domain directory. Returns: [{name, emailAddresses[], phoneNumbers[]}].",
+                keywords=("list", "show", "find", "directory", "users", "members", "workspace"),
+                parameters=(
+                    ParameterSpec("page_size", "How many people should I show?", "10", required=False),
+                    ParameterSpec(
+                        "read_mask",
+                        "Fields to return (e.g. names,emailAddresses,phoneNumbers)",
+                        "names,emailAddresses,phoneNumbers",
+                        required=False,
+                    ),
+                    ParameterSpec("sources", "Sources (DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE)", "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE", required=False),
+                ),
+            ),
+            "get_person": ActionSpec(
+                key="get_person",
+                label="Get person",
+                description="Get a specific person's profile by resourceName. Returns: {resourceName, names[], emailAddresses[], phoneNumbers[]}.",
+                keywords=("get", "show", "read", "person", "contact"),
+                parameters=(
+                    ParameterSpec("resourceName", "Person resource name (e.g. people/c123)", "people/c123"),
+                    ParameterSpec("personFields", "Fields to return", "names,emailAddresses,phoneNumbers", required=False),
+                ),
+            ),
         },
     ),
     "chat": ServiceSpec(
@@ -422,6 +448,15 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
                     ParameterSpec("page_size", "How many messages should I show?", "10", required=False),
+                ),
+            ),
+            "get_message": ActionSpec(
+                key="get_message",
+                label="Get message",
+                description="Fetch a single Chat message by its resource name. Returns: {name, text, sender, createTime}.",
+                keywords=("get", "read", "message", "fetch"),
+                parameters=(
+                    ParameterSpec("name", "Full message resource name (e.g. spaces/AAAA1234/messages/xyz)", "spaces/AAAA1234/messages/xyz"),
                 ),
             ),
         },
@@ -529,14 +564,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 key="log_activity",
                 label="Log activity",
                 description="Synthetic internal tool to record an audit log entry for the agent's actions. Returns: {success, logged_at}.",
-                keywords=("log", "audit", "track", "metadata", "store"),
+                keywords=("record", "audit", "track", "metadata", "store"),
                 parameters=(ParameterSpec("data", "Metadata or activity to log", "User performed X"),),
             ),
             "list_activities": ActionSpec(
                 key="list_activities",
                 label="List activities",
                 description="Retrieve audit logs for a specific application (e.g. 'drive', 'admin'). Returns: {items: [...]}.",
-                keywords=("list", "find", "search", "logs", "audit", "events"),
+                keywords=("list", "activities", "reports", "find", "search", "logs", "audit", "events"),
                 parameters=(
                     ParameterSpec("application_name", "Application to audit (admin, drive, etc.)", "drive"),
                     ParameterSpec("max_results", "How many logs to show?", "10", required=False),

@@ -45,6 +45,12 @@ class TripleVerifier:
         "keep": ("get_note", "name"),
         "tasks": ("get_task", "task_id"),
         "gmail": ("get_message", "message_id"),
+        "slides": ("get_presentation", "presentation_id"),
+        "forms": ("get_form", "form_id"),
+        "chat": ("get_message", "name"),
+        "contacts": ("get_person", "resourceName"),
+        "admin": ("list_activities", "application_name"),
+        "meet": ("get_conference", "name"),
     }
 
     def __init__(
@@ -86,8 +92,14 @@ class TripleVerifier:
             payload = self._payload(result)
             try:
                 self._validate_expected_fields(payload, expected_fields or {})
+                # Tier 3: Verify only the explicitly required fields
+                for key in expected_fields or {}:
+                    validate_artifact_content(
+                        payload.get(key) if isinstance(payload, dict) else payload,
+                        f"{service}_verification.{key}",
+                    )
             except ValueError as exc:
-                self.logger.warning("Triple-check field validation failed for %s %s: %s", service, resource_id, exc)
+                self.logger.warning("Triple-check validation failed for %s %s: %s", service, resource_id, exc)
                 return False
 
         self.logger.info("Triple-check passed for %s %s.", service, resource_id)
@@ -120,6 +132,21 @@ class TripleVerifier:
             return ["keep", "notes", "get", "--params", json.dumps({"name": resource_id})]
         if service == "tasks":
             return ["tasks", "tasks", "get", "--params", json.dumps({"tasklist": "@default", "task": resource_id})]
+        if service == "slides":
+            return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})]
+        if service == "forms":
+            return ["forms", "forms", "get", "--params", json.dumps({"formId": resource_id})]
+        if service == "chat":
+            return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": resource_id})]
+        if service == "contacts":
+            return ["people", "people", "get", "--params", json.dumps({"resourceName": resource_id, "personFields": "names,emailAddresses"})]
+        if service == "admin":
+            return [
+                "admin-reports", "activities", "list", "--params",
+                json.dumps({"userKey": "all", "applicationName": resource_id, "maxResults": 5}),
+            ]
+        if service == "meet":
+            return ["meet", "spaces", "get", "--params", json.dumps({"name": resource_id})]
         raise ValueError(f"Unsupported service for verification: {service}")
 
     @staticmethod
