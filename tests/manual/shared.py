@@ -62,8 +62,8 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
         id_patterns = [
             r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName):\s*([a-zA-Z0-9_-]{5,})",
             r"\b(spaces/[a-zA-Z0-9_-]+/messages/[a-zA-Z0-9_-]+)\b", # Chat Message Name
-            r"\b([a-zA-Z0-9_-]{20,})\b",  # Long IDs like Drive/Docs/Sheets/Slides
             r"\b([a-f0-9]{16})\b",         # Gmail IDs
+            r"\b([a-zA-Z0-9_-]{20,})\b",  # Long IDs like Drive/Docs/Sheets/Slides (Greedy fallback)
         ]
 
         resource_id = None

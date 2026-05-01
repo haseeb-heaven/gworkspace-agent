@@ -197,14 +197,14 @@ class ContextUpdaterMixin:
             conns = data.get("connections") or data.get("people")
             if conns and isinstance(conns, list):
                 rows = []
+                def first_val(items, key):
+                    if isinstance(items, list) and items:
+                        return items[0].get(key, "")
+                    return ""
+
                 for person in conns:
                     if not isinstance(person, dict):
                         continue
-
-                    def first_val(items, key):
-                        if isinstance(items, list) and items:
-                            return items[0].get(key, "")
-                        return ""
 
                     name = first_val(person.get("names"), "displayName")
                     email = first_val(person.get("emailAddresses"), "value")
@@ -516,6 +516,14 @@ class ContextUpdaterMixin:
                     results_map[f"{num}.id"] = first_id
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
+
+            if "spaces" in data and isinstance(data["spaces"], list) and len(data["spaces"]) > 0:
+                first_name = data["spaces"][0].get("name")
+                if first_name:
+                    results_map[f"{task_id}.name"] = first_name
+                    results_map[f"{num}.name"] = first_name
+                    results_map[f"task-{num}.name"] = first_name
+                    results_map[f"{seq_num}.name"] = first_name
 
         if "values" in data and isinstance(data["values"], list):
             results_map["values"] = data["values"]  # Direct alias for the most recent values

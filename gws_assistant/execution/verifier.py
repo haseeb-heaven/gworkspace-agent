@@ -47,7 +47,7 @@ class TripleVerifier:
         "gmail": ("get_message", "message_id"),
         "slides": ("get_presentation", "presentation_id"),
         "forms": ("get_form", "form_id"),
-        "chat": ("send_message", "space"),
+        "chat": ("get_message", "name"),
         "contacts": ("list_contacts", "resourceName"),
     }
 

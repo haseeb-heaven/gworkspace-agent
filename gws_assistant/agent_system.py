@@ -728,7 +728,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 id="task-2",
                 service="chat",
                 action="send_message",
-                parameters={"space": "{{task-1.id}}", "text": msg_text},
+                parameters={"space": "{{task-1.name}}", "text": msg_text},
                 reason="Send the message to the detected space.",
             ),
         ]
