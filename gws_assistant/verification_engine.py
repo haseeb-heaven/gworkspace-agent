@@ -255,7 +255,7 @@ class VerificationEngine:
                         if "T" in str(s_val):
                             raise VerificationError(tool_name, "End time must be after start time", "end")
                         else:
-                            # For all-day events, we might want to automatically increment if equal, 
+                            # For all-day events, we might want to automatically increment if equal,
                             # but here we just warn if they are equal but not strictly less.
                             if str(start) > str(end):
                                 raise VerificationError(tool_name, "End date must be on or after start date", "end")
