@@ -28,7 +28,13 @@ class ContextUpdaterMixin:
         return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
 
     def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
-        """Extract known artifact keys from a task result and store in context."""
+        """Extract known artifact keys from a task result and store in context.
+
+        NOTE: This method intentionally enriches ``data`` in-place with
+        normalised aliases (e.g. ``data["id"]``, ``data["name"]``) so that
+        downstream template resolution (``{{task-N.id}}``) can find them.
+        Callers must be aware that the dict they pass will be mutated.
+        """
         if not isinstance(data, dict):
             return
 
