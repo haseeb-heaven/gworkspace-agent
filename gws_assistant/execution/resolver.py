@@ -411,7 +411,7 @@ class ResolverMixin:
                         res = context[ctx_key]
                         if res is None:
                             val = val.replace(placeholder, _UNRESOLVED_MARKER)
-                        elif use_repr_for_complex and isinstance(res, (dict, list)):
+                        elif use_repr_for_complex and isinstance(res, (dict, list, str)):
                             val = val.replace(placeholder, repr(res))
                         else:
                             val = val.replace(placeholder, str(res))

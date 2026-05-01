@@ -330,6 +330,32 @@ class TestDriveToEmailHeuristicGuard:
         text = f"Find my passport photo in Drive and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         assert _is_drive_to_email_request(text) is True
 
+    def test_drive_image_attachment_skips_export(self, tmp_path):
+        """Test that image attachment requests skip export_file and use Drive links."""
+        agent = WorkspaceAgentSystem(
+            config=_config(tmp_path), logger=logging.getLogger("test")
+        )
+        plan = agent.plan(
+            "Find drive about file 'passport_size_studio_large' and attach that image to my email"
+        )
+
+        services = [t.service for t in plan.tasks]
+        actions = [t.action for t in plan.tasks]
+
+        # Should have drive.list_files and gmail.send_message
+        assert "drive" in services
+        assert "gmail" in services
+        assert "list_files" in actions
+        assert "send_message" in actions
+
+        # Should NOT have export_file for images
+        assert "export_file" not in actions
+
+        # Email body should reference Drive links, not content
+        gmail_task = next(t for t in plan.tasks if t.action == "send_message")
+        assert "$drive_metadata_table" in gmail_task.parameters["body"]
+        assert "$drive_file_links" in gmail_task.parameters["body"]
+
 
 class TestDriveToSheetsToEmailHeuristic:
     """``_is_drive_to_sheets_to_email_request`` detects Drive → Sheets → Gmail workflows."""

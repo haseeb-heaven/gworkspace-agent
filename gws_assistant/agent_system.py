@@ -499,12 +499,19 @@ class WorkspaceAgentSystem:
         exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
         skip_export = any(word in lowered for word in exclusion_words)
 
-        if skip_export:
+        # Check if user wants to attach the file or if it's likely an image
+        wants_attach = "attach" in lowered or "image" in lowered or "photo" in lowered or "picture" in lowered
+
+        if skip_export or wants_attach:
+            # For attachments or metadata-only requests, email the Drive link
             body_content = """Hi,
 
 Here are the files found:
 
-$drive_metadata_table"""
+$drive_metadata_table
+
+You can access the files at:
+$drive_file_links"""
         else:
             body_content = """Hi,
 
@@ -512,9 +519,6 @@ Please find the content below:
 $last_export_file_content"""
 
         send_params: dict[str, Any] = {"to_email": recipient, "subject": f"Document: {query}", "body": body_content}
-
-        if "attach" in lowered:
-            send_params["attachments"] = ["{{task-1.id}}"]
 
         tasks = [
             PlannedTask(
@@ -526,13 +530,14 @@ $last_export_file_content"""
             )
         ]
 
-        if not skip_export:
+        # Only export if not skipping and not an attachment request
+        if not skip_export and not wants_attach:
             tasks.append(
                 PlannedTask(
                     id="task-2",
                     service="drive",
                     action="export_file",
-                    parameters={"file_id": "{{task-1.id}}", "mime_type": "text/plain"},
+                    parameters={"file_id": "{{task-1.files.0.id}}", "mime_type": "text/plain"},
                     reason="Extract content for the email.",
                 )
             )
@@ -543,7 +548,7 @@ $last_export_file_content"""
                 service="gmail",
                 action="send_message",
                 parameters=send_params,
-                reason="Email the extracted content.",
+                reason="Email the file information or content.",
             )
         )
 

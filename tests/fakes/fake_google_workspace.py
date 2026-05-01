@@ -159,7 +159,7 @@ class FakeGoogleWorkspace(GWSRunner):
                 output = {
                     "id": "file123",
                     "name": "Report Document.pdf",
-                    "saved_file": "/tmp/fake_exported_file.pdf",
+                    "saved_file": "downloads/fake_exported_file.txt",
                     "content": "Fake content of exported file: extracted data 42",
                 }
 
@@ -173,5 +173,14 @@ class FakeGoogleWorkspace(GWSRunner):
         key = f"{service}.{action}"
         if key in self.mocked_responses:
             output = self.mocked_responses[key]
+
+        # Create fake file on disk if action is export/get and saved_file is in output
+        if (action == "export_file" or action == "get_file") and isinstance(output, dict) and "saved_file" in output:
+            try:
+                p = Path(output["saved_file"])
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(output.get("content", ""), encoding="utf-8")
+            except Exception:
+                pass
 
         return ExecutionResult(success=True, command=args, stdout=json.dumps(output), output=output, return_code=0)
