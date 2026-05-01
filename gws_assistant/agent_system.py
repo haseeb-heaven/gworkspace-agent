@@ -609,8 +609,8 @@ $last_export_file_content"""
                 "sort them",
                 "sort from",
                 "sorted from",
-                "compute",
-                "calculate",
+                "compute ",
+                "calculate ",
             )
         )
 
