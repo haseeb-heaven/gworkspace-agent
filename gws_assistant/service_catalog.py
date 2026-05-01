@@ -188,7 +188,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "gmail": ServiceSpec(
         key="gmail",
         label="Gmail",
-        aliases=("gmail", "mail", "email", "emails", "inbox"),
+        aliases=("gmail", "mail", "email", "emails", "message", "inbox"),
         description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
         actions={
             "list_messages": ActionSpec(
