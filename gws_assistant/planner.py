@@ -844,6 +844,16 @@ class CommandPlanner:
                     }
                 ),
             ]
+        if action == "get_person":
+            resource_name = self._required_text(params, "resourceName")
+            person_fields = params.get("personFields") or "names,emailAddresses,phoneNumbers"
+            return [
+                "people",
+                "people",
+                "get",
+                "--params",
+                json.dumps({"resourceName": resource_name, "personFields": person_fields}),
+            ]
         raise ValidationError(f"Unsupported contacts action: {action}")
 
     def _build_chat_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -874,6 +884,9 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"parent": space, "pageSize": page_size}),
             ]
+        if action == "get_message":
+            name = self._required_text(params, "name")
+            return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": name})]
         raise ValidationError(f"Unsupported chat action: {action}")
 
     def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:

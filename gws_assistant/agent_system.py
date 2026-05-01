@@ -39,8 +39,6 @@ class WorkspaceAgentSystem:
         self.config = config
         self.logger = logger
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
-        import sys
-        print(f"DEBUG agent_system: use_langchain={self._use_langchain} config.api_key={bool(self.config.api_key)}", file=sys.stderr)
         from .memory_backend import get_memory_backend
 
         self.memory = get_memory_backend(config, logger)
@@ -1063,13 +1061,11 @@ def _is_drive_to_email_request(text: str) -> bool:
 
 def _is_drive_metadata_to_email_request(text: str) -> bool:
     lowered = text.lower()
-    exclusion_words = (
-        "metadata only",
-        "names only",
-        "no file content",
-        "do not download",
+    intent_words = (
+        "count", "table", "summary", "metadata", "list", "sizes", "group",
+        "metadata only", "names only", "no file content", "do not download",
     )
-    if not any(word in lowered for word in exclusion_words):
+    if not any(word in lowered for word in intent_words):
         return False
     return any(t in lowered for t in ("drive", "file", "document")) and any(
         t in lowered for t in ("email", "send", "mail")
@@ -1081,7 +1077,8 @@ def _is_metadata_only_request(text: str) -> bool:
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
     has_metadata_intent = any(
         t in text
-        for t in ("metadata only", "no file content", "names only", "do not download")
+        for t in ("count", "table", "summary", "metadata", "list", "sizes", "group",
+                  "metadata only", "no file content", "names only", "do not download")
     )
     has_email_intent = any(t in text for t in ("email", "send", "mail"))
     return has_drive_intent and has_metadata_intent and not has_email_intent

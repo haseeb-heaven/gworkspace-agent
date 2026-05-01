@@ -33,8 +33,9 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
     # Ensure we are in the project root
     cwd = Path(__file__).resolve().parents[2]
 
+    import sys
     result = subprocess.run(
-        ["python", "gws_cli.py", "--task", task_string],
+        [sys.executable, "gws_cli.py", "--task", task_string],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -45,15 +46,18 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
     if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
         pytest.skip("Auth not configured")
 
-    assert result.returncode == 0, f"Task failed with code {result.returncode}:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+    if result.returncode != 0:
+        pytest.fail(f"Task failed with code {result.returncode}:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}")
 
     # Tier 1: Agent Output Verification
     if expected:
         for ex in expected:
-            assert ex.lower() in result.stdout.lower(), f"Expected keyword '{ex}' not found in output"
+            if ex.lower() not in result.stdout.lower():
+                pytest.fail(f"Expected keyword '{ex}' not found in output")
     if unexpected:
         for unex in unexpected:
-            assert unex.lower() not in result.stdout.lower(), f"Unexpected keyword '{unex}' found in output"
+            if unex.lower() in result.stdout.lower():
+                pytest.fail(f"Unexpected keyword '{unex}' found in output")
 
     # Tier 2 & 3: Live Resource Verification
     if service:
@@ -80,10 +84,12 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
 
         if resource_id:
             # Skip verification for list/search/find tasks as they don't produce a single verifiable "created" resource
-            if any(word in task_string.lower() for word in ["list", "search", "find", "show", "get"]):
-                if not any(word in task_string.lower() for word in ["create", "new", "add", "send", "save", "append", "move", "copy", "remove", "delete"]):
-                    print(f"--- Skipping Triple Verification for read-only/list task: {task_string} ---")
-                    return
+            is_mutation = any(word in task_string.lower() for word in ["create", "new", "add", "send", "save", "append", "move", "copy", "remove", "delete", "rename"])
+            is_read_only = any(word in task_string.lower() for word in ["list", "search", "find", "show", "get"])
+
+            if is_read_only and not is_mutation:
+                print(f"--- Skipping Triple Verification for read-only/list task: {task_string} ---")
+                return
 
             # Tier 2 & 3: Live Resource Verification using GWS_BINARY_PATH
             from gws_assistant.config import AppConfig
@@ -103,7 +109,8 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
             verifier = TripleVerifier(runner, attempts=2, sleep_seconds=1)
 
             success = verifier.verify_resource(service, resource_id, expected_fields)
-            assert success, f"Triple verification failed for {service} {resource_id}. Operation may not have been completed properly."
+            if not success:
+                pytest.fail(f"Triple verification failed for {service} {resource_id}. Operation may not have been completed properly.")
             print("--- Triple Verification Passed: Resource exists and data is valid ---")
         else:
             if any(word in task_string.lower() for word in ["create", "new", "add", "send", "save", "append"]):
