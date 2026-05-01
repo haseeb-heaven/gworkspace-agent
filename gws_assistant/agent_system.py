@@ -596,9 +596,8 @@ $last_export_file_content"""
             kw in lowered for kw in ("create document", "create a doc", "google doc", "save to a document", "to a document")
         )
         wants_email = (
-            "gmail" in services
-            or "send_message" in lowered
-            or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email"))
+            "send_message" in lowered
+            or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email", "to email"))
         )
         wants_code = "code" in services or "computation" in services or any(
             kw in lowered for kw in (
