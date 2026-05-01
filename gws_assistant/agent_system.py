@@ -605,15 +605,43 @@ $last_export_file_content"""
             doc_name = query.split("'")[1]
             sheet_title = f"Results: {doc_name}"
 
-        code_script = """data = $drive_summary_values
-if len(data) == 0:
+        # Format Drive data for Sheets and calculate statistics
+        code_script = """files = {{task-1.files}}
+if len(files) == 0:
     print('No files found.')
+    result = []
 else:
-    # Calculate percentage if numeric data exists
-    print('Files Summary:')
-    for row in data:
-        print(' - ' + str(row))
-    print(f'\\nTotal files: {len(data)}')"""
+    # Create header row
+    header = [['Name', 'MimeType', 'ID', 'Link']]
+
+    # Create data rows
+    rows = []
+    for f in files:
+        name = f.get('name', 'N/A')
+        mime_type = f.get('mimeType', 'N/A')
+        file_id = f.get('id', 'N/A')
+        link = f.get('webViewLink', 'N/A')
+        rows.append([name, mime_type, file_id, link])
+
+    # Combine header and rows
+    result = header + rows
+
+    # Calculate statistics
+    total = len(files)
+    print(f'Total files found: {total}')
+
+    # Count by MIME type
+    mime_counts = {}
+    for f in files:
+        mime = f.get('mimeType', 'Unknown')
+        mime_counts[mime] = mime_counts.get(mime, 0) + 1
+
+    print('\\nFile types:')
+    for mime, count in mime_counts.items():
+        percentage = (count / total) * 100
+        print(f'  {mime}: {count} ({percentage:.1f}%)')
+
+print(result)"""
 
         tasks = [
             PlannedTask(
@@ -625,27 +653,27 @@ else:
             ),
             PlannedTask(
                 id="task-2",
+                service="code",
+                action="execute",
+                parameters={"code": code_script},
+                reason="Format Drive data for Sheets and calculate statistics.",
+            ),
+            PlannedTask(
+                id="task-3",
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": sheet_title},
                 reason="Create a spreadsheet to store the results.",
             ),
             PlannedTask(
-                id="task-3",
+                id="task-4",
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "{{task-2.id}}",
-                    "values": "$drive_summary_values",
+                    "spreadsheet_id": "{{task-3.id}}",
+                    "values": "$last_code_result",
                 },
-                reason="Append the Drive search results to the sheet.",
-            ),
-            PlannedTask(
-                id="task-4",
-                service="code",
-                action="execute",
-                parameters={"code": code_script},
-                reason="Compute summary and percentage from the data.",
+                reason="Append the formatted Drive data to the sheet.",
             ),
             PlannedTask(
                 id="task-5",
@@ -654,7 +682,7 @@ else:
                 parameters={
                     "to_email": recipient,
                     "subject": f"Results: {sheet_title}",
-                    "body": "Here are the results from your Drive search:\n\n{{task-4.stdout}}\n\nSheet link: $last_folder_url",
+                    "body": "Here are the results from your Drive search:\n\n{{task-2.stdout}}\n\nSheet link: {{task-3.webViewLink}}",
                 },
                 reason="Email the results with the Sheets link.",
             ),
@@ -1586,8 +1614,11 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
     lowered = text.lower()
     if _has_explicit_web_search_intent(lowered):
         return False
-    # If user explicitly mentions "sheet" or "spreadsheet", route to Drive -> Sheets -> Gmail instead
-    if "sheet" in lowered or "spreadsheet" in lowered:
+    # If user explicitly mentions "sheet" or "spreadsheet" with conversion verbs
+    # (convert, save to, export to), route to Drive -> Sheets -> Gmail instead
+    sheet_keywords = ("sheet", "spreadsheet")
+    conversion_verbs = ("convert", "save to", "export to", "append to", "write to")
+    if any(kw in lowered for kw in sheet_keywords) and any(verb in lowered for verb in conversion_verbs):
         return False
     intent_words = (
         "count", "table", "summary", "metadata", "sizes", "group",
@@ -1605,8 +1636,11 @@ def _is_metadata_only_request(text: str) -> bool:
     lowered = text.lower()
     if _has_explicit_web_search_intent(text):
         return False
-    # If user explicitly mentions "sheet" or "spreadsheet", route to Drive -> Sheets patterns instead
-    if "sheet" in lowered or "spreadsheet" in lowered:
+    # If user explicitly mentions "sheet" or "spreadsheet" with conversion verbs
+    # (convert, save to, export to), route to Drive -> Sheets patterns instead
+    sheet_keywords = ("sheet", "spreadsheet")
+    conversion_verbs = ("convert", "save to", "export to", "append to", "write to")
+    if any(kw in lowered for kw in sheet_keywords) and any(verb in lowered for verb in conversion_verbs):
         return False
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
     has_metadata_intent = any(
