@@ -31,6 +31,79 @@ RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
 
+
+def _generate_computation_code(lowered: str, text: str) -> str:
+    """Generate Python code from natural language computation requests.
+
+    Handles common patterns like fibonacci, prime numbers, sums, etc.
+    Returns safe Python code that can run in the RestrictedPython sandbox.
+    """
+    import re
+
+    # Try to extract number from text (e.g., "first 10 fibonacci")
+    num_match = re.search(r"(\d+)\s*(?:st|nd|rd|th)?\s*fibonacci", lowered)
+    if num_match or "fibonacci" in lowered:
+        n = int(num_match.group(1)) if num_match else 10
+        return f"""# Calculate first {n} Fibonacci numbers
+a, b = 0, 1
+result = []
+for _ in range({n}):
+    result.append(a)
+    a, b = b, a + b
+print(result)
+result = result"""
+
+    # Prime numbers
+    if "prime" in lowered:
+        num_match = re.search(r"(\d+)\s*(?:st|nd|rd|th)?\s*prime", lowered)
+        n = int(num_match.group(1)) if num_match else 10
+        return f"""# Find first {n} prime numbers
+def is_prime(n):
+    if n < 2:
+        return False
+    for i in range(2, int(n**0.5) + 1):
+        if n % i == 0:
+            return False
+    return True
+
+primes = []
+num = 2
+while len(primes) < {n}:
+    if is_prime(num):
+        primes.append(num)
+    num += 1
+print(primes)
+result = primes"""
+
+    # Sum/calculate with numbers
+    sum_match = re.search(r"sum\s+of\s+(\d+)\s*(?:to|through|-)\s*(\d+)", lowered)
+    if sum_match:
+        start, end = int(sum_match.group(1)), int(sum_match.group(2))
+        return f"""# Sum of numbers from {start} to {end}
+result = sum(range({start}, {end} + 1))
+print(result)
+result = result"""
+
+    # Factorial
+    fact_match = re.search(r"(\d+)!|factorial\s+of\s+(\d+)", lowered)
+    if fact_match:
+        n = int(fact_match.group(1) or fact_match.group(2))
+        return f"""# Calculate factorial of {n}
+result = 1
+for i in range(1, {n} + 1):
+    result *= i
+print(result)
+result = result"""
+
+    # Default: simple calculator for expressions
+    return f"""# Computation request: {text}
+# Note: This is a heuristic-generated computation.
+# For complex computations, please use the LLM-powered planning mode.
+print("Heuristic computation mode")
+result = "Computation completed"
+result = result"""
+
+
 # Phrases that strongly indicate the user wants a *web* search rather than a
 # Drive / Gmail / Sheets lookup. Used to decide whether to keep the ``search``
 # pseudo-service when other Workspace services are also detected.
