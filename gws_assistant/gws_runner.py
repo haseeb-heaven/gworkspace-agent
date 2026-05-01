@@ -16,7 +16,7 @@ from .models import AppConfigModel, ExecutionResult
 # trigger WinError 206 ("The filename or extension is too long").  We use a
 # conservative threshold so the total command stays well below that ceiling.
 _WIN_ARG_SAFE_BYTES = 8_000
-_SAFE_POSITIONAL_TOKEN_RE = r"^[A-Za-z0-9_.:+-]+$"
+_SAFE_POSITIONAL_TOKEN_RE = r"^[A-Za-z0-9_.+:\-]+$"
 
 
 def _args_too_long(args: list[str]) -> bool:

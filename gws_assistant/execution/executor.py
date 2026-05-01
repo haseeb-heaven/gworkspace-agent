@@ -108,6 +108,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         # 1. Resolve placeholders in parameters FIRST (type-preserving)
         task.parameters = self._resolve_placeholders(task.parameters, context)
 
+        # Ensure unique event_id for calendar events to prevent duplicates and enable idempotency
+        if task.service == "calendar" and task.action == "create_event":
+            if not task.parameters.get("event_id"):
+                task.parameters["event_id"] = self._calendar_event_id(task.parameters)
+
         # Sandbox / Read-Only Mode Logic
         if self.config:
             from gws_assistant.safety_guard import SafetyGuard
@@ -146,7 +151,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         op_key = self._idempotency_key(task)
         if op_key:
             cached_output = context.setdefault("idempotent_operations", {}).get(op_key)
-            if cached_output:
+            if cached_output is not None:
                 return ExecutionResult(
                     success=True,
                     command=["<cached>"],
@@ -478,8 +483,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 )
                 if not isinstance(data, ExecutionResult):
                     result.output = data
+                    # Add verification call for gmail.send_message
+                    VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
             except Exception as e:
-                logger.warning(f"Failed to parse Gmail send result: {e}")
+                logger.warning(f"Failed to parse or verify Gmail send result: {e}")
         return result
 
     @staticmethod
@@ -489,8 +496,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         return bool(re.match(r"^[A-Za-z0-9_\-]{25,60}$", value or ""))
 
     def _idempotency_key(self, task: Any) -> str | None:
-        if task.service == "calendar" and task.action == "create_event":
-            task.parameters.setdefault("event_id", self._calendar_event_id(task.parameters))
         if task.action not in {"create_event", "create_folder", "create_file"}:
             return None
         payload = {

@@ -264,15 +264,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_text = task_text.strip()
     chat_id = update.effective_chat.id
 
-    confirmations = _pending_confirmations(context)
-    if chat_id in confirmations:
-        future = confirmations[chat_id]
-        if not future.done():
-            if task_text.lower() not in {"yes", "no"}:
-                await update.effective_message.reply_text("Please reply with 'yes' or 'no' for the pending confirmation.")
-                return
-            future.set_result(task_text)
-        return
+    async with _confirmation_lock(context):
+        confirmations = _pending_confirmations(context)
+        if chat_id in confirmations:
+            future = confirmations[chat_id]
+            if not future.done():
+                if task_text.lower() not in {"yes", "no"}:
+                    await update.effective_message.reply_text("Please reply with 'yes' or 'no' for the pending confirmation.")
+                    return
+                future.set_result(task_text)
+            return
     if not task_text:
         return
 
