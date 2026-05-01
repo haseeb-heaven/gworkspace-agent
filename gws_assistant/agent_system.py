@@ -51,6 +51,7 @@ _WEB_SEARCH_INTENT_PHRASES: tuple[str, ...] = (
     "from the web",
     "from the internet",
     "on the internet",
+    "scrape",
 )
 
 
@@ -597,16 +598,15 @@ $last_export_file_content"""
         wants_email = (
             "gmail" in services
             or "send_message" in lowered
-            or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email", "send me"))
+            or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email"))
         )
         wants_code = "code" in services or "computation" in services or any(
             kw in lowered for kw in (
                 "code executor",
                 "code execution",
                 "use code",
-                "sort them",
-                "sort from",
-                "sorted from",
+                "run a script",
+                "run python",
                 "compute ",
                 "calculate ",
             )
@@ -1399,6 +1399,14 @@ def _extract_email(text: str) -> str | None:
 def _extract_quoted(text: str) -> str | None:
     match = RE_EXTRACT_QUOTED.search(text)
     return match.group(1) if match else None
+
+
+def _extract_sheet_title(text: str) -> str | None:
+    return _extract_quoted(text)
+
+
+def _extract_doc_title(text: str) -> str | None:
+    return _extract_quoted(text)
 
 
 def _first_int(text: str) -> int | None:

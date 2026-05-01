@@ -277,15 +277,10 @@ _CODE_EXECUTOR_INTENT_KEYWORDS: tuple[str, ...] = (
     "code executor",
     "code execution",
     "use code",
-    "with code",
-    "via code",
     "run a script",
     "run python",
     "compute ",
     "calculate ",
-    "sort them",
-    "sort from",
-    "sorted from",
 )
 
 
