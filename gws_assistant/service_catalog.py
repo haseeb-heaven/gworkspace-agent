@@ -404,6 +404,7 @@ SERVICES: dict[str, ServiceSpec] = {
                     ),
                     ParameterSpec("sources", "Sources (DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE)", "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE", required=False),
                 ),
+            ),
             "get_person": ActionSpec(
                 key="get_person",
                 label="Get person",
@@ -415,7 +416,6 @@ SERVICES: dict[str, ServiceSpec] = {
                 ),
             ),
         },
-    ),
     ),
     "chat": ServiceSpec(
         key="chat",
