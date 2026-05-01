@@ -1090,7 +1090,7 @@ class CommandPlanner:
             return None
 
         allowed_roots = [Path(root).resolve() for root in _ATTACHMENT_ALLOWED_ROOTS]
-        if any(str(resolved).startswith(str(root)) for root in allowed_roots):
+        if any(resolved == root or root in resolved.parents for root in allowed_roots):
             return str(resolved)
 
         temp_root = Path(tempfile.gettempdir()).resolve()

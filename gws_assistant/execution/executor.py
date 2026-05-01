@@ -466,7 +466,21 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             "--json",
             json.dumps({"raw": raw_email}, ensure_ascii=True),
         ]
-        return self.runner.run(args)
+        result = self.runner.run(args)
+        if result.success and result.stdout:
+            try:
+                data = self._parse_json_result(
+                    result,
+                    "gmail",
+                    "send_message",
+                    require_mapping=True,
+                    context_message="gmail send result",
+                )
+                if not isinstance(data, ExecutionResult):
+                    result.output = data
+            except Exception as e:
+                logger.warning(f"Failed to parse Gmail send result: {e}")
+        return result
 
     @staticmethod
     def _looks_like_drive_file_id(value: str) -> bool:

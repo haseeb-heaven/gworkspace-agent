@@ -98,6 +98,8 @@ def _normalize_workspace_result(result: Any) -> StructuredToolResult:
 
 
 class WorkflowNodes:
+    """Testable extraction of LangGraph workflow node logic."""
+
     def __init__(self, config: AppConfigModel, system: Any, executor: Any, logger: logging.Logger):
         self.config = config
         self.system = system
