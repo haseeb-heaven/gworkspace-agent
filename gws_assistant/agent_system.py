@@ -1211,10 +1211,10 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 parameters["code"] = f"""data = {data_str}
 try:
     sort_index = 1
-    if not all(isinstance(r, (list, tuple)) and len(r) > sort_index for r in data):
-        print("Cannot sort: sort_index 1 out of range for some rows")
-    else:
+    if all(isinstance(r, (list, tuple)) and len(r) > sort_index for r in data):
         data = sorted(data, key=lambda r: (str(r[sort_index]).lower(),), reverse={rev})
+    else:
+        data = sorted(data, reverse={rev})
 except (ValueError, TypeError) as exc:
     print(f"Sorting failed: {{exc}} — leaving data unsorted")
 result = data
