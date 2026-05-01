@@ -138,6 +138,7 @@ def call_llm(
                 continue
 
             except AuthenticationError as e:
+                # Non-OpenRouter models only have one iteration ([None]), so is_last_key will be True.
                 is_last_key = (i == len(api_keys_to_try) - 1)
                 retry_msg = "Trying next key." if not is_last_key else "Trying next model."
                 logger.error(f"[LLM] AuthenticationError on model={model}. {retry_msg}")

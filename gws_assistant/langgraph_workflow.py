@@ -301,7 +301,7 @@ class WorkflowNodes:
             err = state.get("error")
             if err:
                 report = err
-        if any(not item.result.success for item in executions) and "failed" not in report.lower():
+        if any(not getattr(item.result, "success", False) for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
         return {"final_output": report}
 
@@ -317,7 +317,7 @@ class WorkflowNodes:
     def persist_memory_node(self, state: AgentState) -> dict[str, Any]:
         """Persist successful task executions to episodic and semantic memory."""
         executions = state.get("executions", [])
-        if not executions or not all(e.result.success for e in executions):
+        if not executions or not all(getattr(e.result, "success", False) for e in executions):
             return {}
 
         try:
@@ -331,8 +331,8 @@ class WorkflowNodes:
             if "{" in summary or "$" in summary:
                 try:
                     summary = self.executor._resolve_placeholders(summary, state.get("context", {}))
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Best-effort placeholder resolution failed in persist_memory_node: {e}")
 
             # Save to episodic memory
             from .memory import save_episode
