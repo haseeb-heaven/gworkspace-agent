@@ -331,7 +331,8 @@ class WorkspaceAgentSystem:
             )
 
         # Pattern N: Chat Send Message (Heuristic Search for Space)
-        if "chat" in services and any(kw in lowered for kw in ("send", "post", "message")) and "spaces/" not in lowered:
+        _send_kw = ("send a message", "post a message", "send message", "post message")
+        if "chat" in services and any(kw in lowered for kw in _send_kw) and "spaces/" not in lowered:
             tasks = self._chat_send_message_tasks(text, lowered)
             return RequestPlan(
                 raw_text=text,
