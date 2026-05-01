@@ -350,6 +350,18 @@ class TestDriveToSheetsToEmailHeuristic:
         text = "Convert to table in Sheets and send email"
         assert _is_drive_to_sheets_to_email_request(text) is False
 
+    def test_drive_metadata_pattern_rejects_sheet_requests(self):
+        """Drive metadata pattern should not match when user explicitly mentions Sheets."""
+        from gws_assistant.agent_system import _is_drive_metadata_to_email_request
+        text = "Search document '12th Class' and convert that to table format in Sheets and then send email"
+        assert _is_drive_metadata_to_email_request(text) is False
+
+    def test_drive_metadata_only_rejects_sheet_requests(self):
+        """Drive metadata-only pattern should not match when user explicitly mentions Sheets."""
+        from gws_assistant.agent_system import _is_metadata_only_request
+        text = "Search document '12th Class' and convert that to table format in Sheets"
+        assert _is_metadata_only_request(text) is False
+
     def test_drive_pattern_takes_priority_over_gmail_pattern(self, tmp_path):
         """When both Drive and Gmail could match, Drive pattern should win."""
         agent = WorkspaceAgentSystem(

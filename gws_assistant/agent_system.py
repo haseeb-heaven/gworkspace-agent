@@ -1586,6 +1586,9 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
     lowered = text.lower()
     if _has_explicit_web_search_intent(lowered):
         return False
+    # If user explicitly mentions "sheet" or "spreadsheet", route to Drive -> Sheets -> Gmail instead
+    if "sheet" in lowered or "spreadsheet" in lowered:
+        return False
     intent_words = (
         "count", "table", "summary", "metadata", "sizes", "group",
         "metadata only", "names only", "no file content", "do not download",
@@ -1599,7 +1602,11 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
 
 def _is_metadata_only_request(text: str) -> bool:
     """Detect Drive metadata-only requests that do NOT require emailing (counts, tables, summaries)."""
+    lowered = text.lower()
     if _has_explicit_web_search_intent(text):
+        return False
+    # If user explicitly mentions "sheet" or "spreadsheet", route to Drive -> Sheets patterns instead
+    if "sheet" in lowered or "spreadsheet" in lowered:
         return False
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
     has_metadata_intent = any(
