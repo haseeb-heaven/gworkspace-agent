@@ -188,7 +188,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "gmail": ServiceSpec(
         key="gmail",
         label="Gmail",
-        aliases=("gmail", "mail", "email", "emails", "message", "inbox"),
+        aliases=("gmail", "mail", "email", "emails", "inbox", "messages", "message"),
         description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
         actions={
             "list_messages": ActionSpec(
@@ -448,6 +448,15 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
                     ParameterSpec("page_size", "How many messages should I show?", "10", required=False),
+                ),
+            ),
+            "get_message": ActionSpec(
+                key="get_message",
+                label="Get message",
+                description="Fetch a single Chat message by its resource name. Returns: {name, text, sender, createTime}.",
+                keywords=("get", "read", "message", "fetch"),
+                parameters=(
+                    ParameterSpec("name", "Full message resource name (e.g. spaces/AAAA1234/messages/xyz)", "spaces/AAAA1234/messages/xyz"),
                 ),
             ),
         },
