@@ -237,6 +237,20 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern A2: Drive -> Sheets -> Gmail (Search, Export, Email)
+        # Must come BEFORE Pattern A to ensure Sheet requests take priority
+        if "drive" in services and "sheets" in services and "gmail" in services and _is_drive_to_sheets_to_email_request(lowered):
+            tasks = self._drive_to_sheets_to_gmail_tasks(text, lowered)
+            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {task_chain}",
+                confidence=0.75,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
         # Pattern A: Drive -> Gmail (Search & Email)
         if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
             tasks = self._drive_to_gmail_tasks(text, lowered)
@@ -246,19 +260,6 @@ class WorkspaceAgentSystem:
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: {task_chain}",
                 confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern A2: Drive -> Sheets -> Gmail (Search, Export, Email)
-        if "drive" in services and "sheets" in services and "gmail" in services and _is_drive_to_sheets_to_email_request(lowered):
-            tasks = self._drive_to_sheets_to_gmail_tasks(text, lowered)
-            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: {task_chain}",
-                confidence=0.75,
                 no_service_detected=False,
                 source="heuristic",
             )
