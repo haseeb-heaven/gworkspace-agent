@@ -1116,7 +1116,7 @@ class CommandPlanner:
 
         from pathlib import Path
         resolved = Path(path).expanduser().resolve()
-        
+
         # On Windows, resolve() can add \\?\ prefix. Strip it for comparison.
         res_str = str(resolved)
         if res_str.startswith("\\\\?\\"):

@@ -129,6 +129,109 @@ def test_is_plan_complete():
     assert _is_plan_complete({"tasks": [{"service": "gmail", "action": "send_message"}]}, "send an email") is True
 
 
+def test_is_plan_complete_rejects_web_search_without_search_task():
+    """Plans that omit ``search.web_search`` for explicit web-search prompts
+    must be rejected so the heuristic fallback can produce a correct plan.
+
+    This is the regression test for the production bug where the LLM
+    planner produced ``gmail.list_messages -> sheets.append_values -> ...``
+    when the user asked to "Search the web ...".
+    """
+    request = "Search the web for the top 3 Python frameworks and save to a Google Sheet"
+    bad_plan = {
+        "tasks": [
+            {"service": "gmail", "action": "list_messages"},
+            {"service": "sheets", "action": "create_spreadsheet"},
+            {"service": "sheets", "action": "append_values"},
+        ]
+    }
+    good_plan = {
+        "tasks": [
+            {"service": "search", "action": "web_search"},
+            {"service": "sheets", "action": "create_spreadsheet"},
+            {"service": "sheets", "action": "append_values"},
+        ]
+    }
+    assert _is_plan_complete(bad_plan, request) is False
+    assert _is_plan_complete(good_plan, request) is True
+
+
+def test_is_plan_complete_rejects_when_code_executor_requested_but_missing():
+    """Plans must include a code/computation step when the user explicitly
+    asks for one ("use code executor to sort", "compute X", "sort them
+    from cheapest to most expensive")."""
+    request = (
+        "Search the web for the top 3 AI agents, use code executor to "
+        "sort them from cheapest to most expensive, save to a sheet"
+    )
+    plan_without_code = {
+        "tasks": [
+            {"service": "search", "action": "web_search"},
+            {"service": "sheets", "action": "create_spreadsheet"},
+            {"service": "sheets", "action": "append_values"},
+        ]
+    }
+    plan_with_code = {
+        "tasks": [
+            {"service": "search", "action": "web_search"},
+            {"service": "code", "action": "execute"},
+            {"service": "sheets", "action": "create_spreadsheet"},
+            {"service": "sheets", "action": "append_values"},
+        ]
+    }
+    assert _is_plan_complete(plan_without_code, request) is False
+    assert _is_plan_complete(plan_with_code, request) is True
+
+
+def test_web_search_intent_keywords_match_canonical_phrase_list():
+    """``langchain_agent`` and ``agent_system`` must reuse the same
+    web-search intent vocabulary so the LLM completeness check and the
+    heuristic planner stay in sync.
+
+    Regression test for the Devin Review finding "Inconsistent web-search
+    intent keyword lists allow incorrect LLM plans to pass validation".
+    """
+    from gws_assistant.agent_system import _WEB_SEARCH_INTENT_PHRASES
+    from gws_assistant.langchain_agent import _web_search_intent_keywords
+
+    assert _web_search_intent_keywords() is _WEB_SEARCH_INTENT_PHRASES
+    # And every phrase the canonical list cares about must be honoured.
+    for phrase in ("scrape", "look it up online", "google for "):
+        assert phrase in _WEB_SEARCH_INTENT_PHRASES
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "Scrape the latest Python docs and save to a sheet",
+        "Look it up online and email me the result",
+        "Google for changelog and save to a doc",
+    ],
+)
+def test_is_plan_complete_rejects_when_extended_web_phrases_used(request_text):
+    """The previously-missing phrases must also force the LLM completeness
+    check to reject plans that omit ``search.web_search``."""
+    bad_plan = {
+        "tasks": [
+            {"service": "gmail", "action": "list_messages"},
+            {"service": "sheets", "action": "create_spreadsheet"},
+        ]
+    }
+    assert _is_plan_complete(bad_plan, request_text) is False
+
+
+def test_is_plan_complete_does_not_require_search_for_workspace_lookups():
+    """A request that says ``"search Drive"`` must not require ``search.web_search``."""
+    request = "Search Drive for files and email me"
+    plan = {
+        "tasks": [
+            {"service": "drive", "action": "list_files"},
+            {"service": "gmail", "action": "send_message"},
+        ]
+    }
+    assert _is_plan_complete(plan, request) is True
+
+
 def test_safe_invoke_structured_output_success():
     chain = MagicMock()
     chain.invoke.return_value = {"tasks": []}

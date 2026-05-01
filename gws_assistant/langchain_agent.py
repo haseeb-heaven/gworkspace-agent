@@ -259,6 +259,31 @@ def is_valid_plan(plan_data: Any) -> bool:
     return True
 
 
+def _web_search_intent_keywords() -> tuple[str, ...]:
+    """Return the canonical web-search intent phrases.
+
+    Single source of truth lives in :mod:`gws_assistant.agent_system` as
+    ``_WEB_SEARCH_INTENT_PHRASES`` — it is also consumed by the heuristic
+    planner. Lazy-imported here to avoid the circular import between
+    :mod:`agent_system` (which imports :func:`plan_with_langchain` at module
+    level) and this module.
+    """
+    from .agent_system import _WEB_SEARCH_INTENT_PHRASES
+
+    return _WEB_SEARCH_INTENT_PHRASES
+
+
+_CODE_EXECUTOR_INTENT_KEYWORDS: tuple[str, ...] = (
+    "code executor",
+    "code execution",
+    "use code",
+    "run a script",
+    "run python",
+    "compute ",
+    "calculate ",
+)
+
+
 def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     """Check if the LLM plan covers all major steps implied by the user request.
 
@@ -275,6 +300,19 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     services_in_plan = {str(t.get("service", "")).lower() for t in tasks if isinstance(t, dict)}
     actions_in_plan = {str(t.get("action", "")).lower() for t in tasks if isinstance(t, dict)}
     lowered = request_text.lower()
+
+    # If user explicitly asks for a *web* search but the plan has no search
+    # task → incomplete. This catches plans that hallucinate
+    # gmail.list_messages or drive.list_files for "Search the web for X".
+    # Use word-boundary matching to match _has_explicit_web_search_intent behavior.
+    if (
+        any(re.search(r"\b" + re.escape(kw) + r"\b", lowered) for kw in _web_search_intent_keywords())
+        and "web_search" not in actions_in_plan
+    ):
+        logging.info(
+            "Plan incomplete: user asked for a web search but plan has no search.web_search task."
+        )
+        return False
 
     # If user mentions sheets/spreadsheet but plan has no sheets task → incomplete
     if any(kw in lowered for kw in ("sheet", "spreadsheet")) and "sheets" not in services_in_plan:
@@ -295,6 +333,17 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
         and "docs" not in services_in_plan
     ):
         logging.info("Plan incomplete: user mentions docs but plan has no docs task.")
+        return False
+
+    # If user explicitly asks the agent to use a code executor / sort /
+    # compute, the plan should include a code (or computation) step.
+    if (
+        any(kw in lowered for kw in _CODE_EXECUTOR_INTENT_KEYWORDS)
+        and not (services_in_plan & {"code", "computation"})
+    ):
+        logging.info(
+            "Plan incomplete: user asked for code execution but plan has no code/computation task."
+        )
         return False
 
     return True
@@ -573,7 +622,7 @@ def plan_with_langchain(
         "6. DRIVE QUERIES: use 'q' parameter for drive.list_files. "
         "7. EMAIL ACTIONS: use gmail.send_message for sending. "
         "8. EXPORTS: use drive.export_file to read content. "
-        "9. WEB SEARCH: only use if explicitly requested or external info needed. "
+        "9. WEB SEARCH: When the user says 'search the web', 'search online', 'search the internet', 'web search', 'browse the web', 'google for', 'look it up online', 'look up online', 'find online', 'find on the web', 'on the web', 'from the web', 'on the internet', 'from the internet', 'scrape', or otherwise asks for information that lives OUTSIDE the user's Google Workspace, the FIRST task MUST be search.web_search. NEVER substitute gmail.list_messages, drive.list_files, or any Workspace lookup for a web search. If the user is explicitly looking inside Drive/Gmail/Sheets, then DO NOT use search.web_search. "
         "10. DATA STRUCTURES: drive.list_files returns {{{{files: [...]}}}}, gmail.list_messages returns {{{{messages: [...]}}}}. "
         "11. LEGACY: you may use $drive_file_ids or $gmail_message_ids for the most recent search results. "
         "12. GMAIL: use $gmail_message_body_text for decoded text. "

@@ -112,13 +112,13 @@ def run_task(
                     continue
                 if candidate.lower() in _COMMON_FALSE_POSITIVES:
                     continue
-                
+
                 # Service-aware filtering
                 if service == "gmail" and len(candidate) > 20: # Gmail IDs are 16 chars
                     continue
                 if service in ("sheets", "docs", "drive") and len(candidate) < 25:
                     continue
-                
+
                 resource_id = candidate
                 break
 
@@ -160,7 +160,7 @@ def run_task(
         else:
             _creation_words = {"create", "new", "add", "append"}
             _read_words = {"read", "get", "fetch", "list", "search", "find", "show"}
-            
+
             # "send" is only a creation task for the service being verified
             # If we're verifying docs but the task sends an email, that's not a docs creation
             _service_specific_creation = {
@@ -171,23 +171,23 @@ def run_task(
                 "slides": {"create", "append"},
                 "forms": {"create"},
             }
-            
+
             # Check if the task is primarily about creating the service being verified
             task_lower = task_string.lower()
             service_specific_creates = _service_specific_creation.get(service, set())
-            
+
             # If the task starts with read words, it's likely a read task
             if any(word in task_lower for word in _read_words):
                 print(f"Note: No ID extracted for {service} verification (expected for read task).")
                 return
-            
+
             # If the task has creation words for the specific service, it's a creation task
             if any(word in task_lower for word in service_specific_creates):
                 pytest.fail(
                     f"Could not extract {service} resource ID from output for triple verification, "
                     "but task appears to be a creation task."
                 )
-            
+
             # "save" often refers to local files, so we check for drive/docs/sheets context
             if "save" in task_lower and any(w in task_lower for w in ("drive", "sheet", "doc", "file", "form")):
                 if service in ["drive", "sheets", "docs"]:
@@ -195,5 +195,5 @@ def run_task(
                         f"Could not extract {service} resource ID from output for triple verification, "
                         "but task appears to be a creation task."
                     )
-            
+
             print(f"Note: No ID extracted for {service} verification (expected for non-creation tasks).")
