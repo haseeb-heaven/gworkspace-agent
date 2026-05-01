@@ -597,20 +597,7 @@ $last_export_file_content"""
         wants_docs = "docs" in services or any(
             kw in lowered for kw in ("create document", "create a doc", "google doc", "save to a document", "to a document")
         )
-        wants_email = any(
-            re.search(pattern, lowered) for pattern in (
-                r"\bsend\s+(?:an?\s+)?email\b",
-                r"\bsend\s+mail\b",
-                r"\bemail\s+(?:it\s+)?to\b",
-                r"\bemail\s+(?:me|the\s+results?|the\s+link|them)\b",
-                r"\bto\s+email\b",
-                r"\bto\s+send\s+(?:an?\s+)?email\b",
-                r"\bcompose\s+(?:an?\s+)?email\b",
-                r"\bsend\s+detailed\s+email\b",
-                r"\bmail\s+(?:it\s+)?to\b",
-                r"\bsend_message\b",
-            )
-        )
+        wants_email = False  # Will be recomputed after query extraction
         wants_code = "code" in services or "computation" in services or any(
             kw in lowered for kw in (
                 "code executor",
@@ -630,6 +617,52 @@ $last_export_file_content"""
             return None
 
         query = _web_search_query_from_text(text)
+
+        # Check for email intent in the text AFTER the search query to avoid
+        # false positives when the search topic itself contains email-related
+        # phrases (e.g., "Search the web for how to send email").
+        # We find the position of the last search intent phrase and check if
+        # email intent appears after it.
+        search_intent_pos = -1
+        for phrase in sorted(_WEB_SEARCH_LEADING_PHRASES, key=len, reverse=True):
+            idx = lowered.find(phrase)
+            if idx >= 0:
+                search_intent_pos = idx + len(phrase)
+                break
+
+        if search_intent_pos >= 0:
+            text_after_search_intent = text[search_intent_pos:]
+            wants_email = any(
+                re.search(pattern, text_after_search_intent.lower()) for pattern in (
+                    r"\bsend\s+(?:an?\s+)?email\b",
+                    r"\bsend\s+mail\b",
+                    r"\bemail\s+(?:it\s+)?to\b",
+                    r"\bemail\s+(?:me|the\s+results?|the\s+link|them)\b",
+                    r"\bto\s+email\b",
+                    r"\bto\s+send\s+(?:an?\s+)?email\b",
+                    r"\bcompose\s+(?:an?\s+)?email\b",
+                    r"\bsend\s+detailed\s+email\b",
+                    r"\bmail\s+(?:it\s+)?to\b",
+                    r"\bsend_message\b",
+                )
+            )
+        else:
+            # Fallback: check entire text if no search intent phrase found
+            wants_email = any(
+                re.search(pattern, lowered) for pattern in (
+                    r"\bsend\s+(?:an?\s+)?email\b",
+                    r"\bsend\s+mail\b",
+                    r"\bemail\s+(?:it\s+)?to\b",
+                    r"\bemail\s+(?:me|the\s+results?|the\s+link|them)\b",
+                    r"\bto\s+email\b",
+                    r"\bto\s+send\s+(?:an?\s+)?email\b",
+                    r"\bcompose\s+(?:an?\s+)?email\b",
+                    r"\bsend\s+detailed\s+email\b",
+                    r"\bmail\s+(?:it\s+)?to\b",
+                    r"\bsend_message\b",
+                )
+            )
+
         recipient = _extract_email(text) or self.config.default_recipient_email
         sheet_title = _extract_sheet_title(text) or "Web Search Results"
         doc_title = _extract_doc_title(text) or "Web Search Notes"
