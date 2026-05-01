@@ -222,7 +222,7 @@ class ContextUpdaterMixin:
                 table_str = "\n".join(table_lines)
                 context["contacts_summary_table"] = table_str
                 context["last_contacts_list"] = table_str
-                context["contacts_summary_count"] = len(conns)
+                context["contacts_summary_count"] = len(rows)
 
         if "activities" in data or ("items" in data and task and task.service == "admin"):
             items = data.get("activities") or data.get("items")
@@ -246,7 +246,7 @@ class ContextUpdaterMixin:
                 table_str = "\n".join(table_lines)
                 context["admin_summary_table"] = table_str
                 context["last_admin_activities"] = table_str
-                context["admin_summary_count"] = len(items)
+                context["admin_summary_count"] = len(rows)
 
         if "spaces" in data:
             spaces = data["spaces"]
@@ -257,6 +257,13 @@ class ContextUpdaterMixin:
                         continue
                     rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
 
+                # Promote first space name so {{task-N.id}} resolves for chat
+                first_name = spaces[0].get("name", "") if spaces else ""
+                if first_name:
+                    context["last_chat_space_name"] = first_name
+                    data["id"] = first_name
+                    data["name"] = first_name
+
                 context["chat_summary_rows"] = rows
                 table_lines = ["| Space Name | Resource Name | Type |", "|---|---|---|"]
                 for r in rows:
@@ -266,7 +273,7 @@ class ContextUpdaterMixin:
                 table_str = "\n".join(table_lines)
                 context["chat_summary_table"] = table_str
                 context["last_chat_spaces"] = table_str
-                context["chat_summary_count"] = len(spaces)
+                context["chat_summary_count"] = len(rows)
 
         if "messages" in data:
             msgs = data["messages"]

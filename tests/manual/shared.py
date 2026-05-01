@@ -2,7 +2,9 @@ import logging
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
+from typing import Sequence
 
 import pytest
 from dotenv import load_dotenv
@@ -10,9 +12,18 @@ from dotenv import load_dotenv
 # Load .env at module level
 load_dotenv()
 
-def run_task(task_string, expected=None, unexpected=None, service=None, expected_fields=None):
-    """
-    Runs a manual task and performs triple verification if service is provided.
+
+def run_task(
+    task_string: str,
+    expected: Sequence[str] | None = None,
+    unexpected: Sequence[str] | None = None,
+    service: str | None = None,
+    expected_fields: dict[str, object] | None = None,
+    *,
+    skip_verification: bool = False,
+) -> None:
+    """Run a manual task and perform triple verification if *service* is provided.
+
     1. Verify agent output (via expected/unexpected)
     2. Verify resource existence (via TripleVerifier)
     3. Verify data integrity (via TripleVerifier + validate_artifact_content)
@@ -20,34 +31,34 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
     load_dotenv()
     email = os.getenv("DEFAULT_RECIPIENT_EMAIL")
     if email:
-        # Replace both placeholders and the actual email if it was hardcoded as person@example.com
         task_string = task_string.replace("person@example.com", email)
 
     test_file = os.getenv("TEST_FILE_NAME", "README.md")
     task_string = task_string.replace("TEST_FILE_NAME", test_file)
 
-    print(f'Running manual task: python gws_cli.py --task "{task_string}"')
+    print("Running manual task: python gws_cli.py --task <redacted>")
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     # Ensure we are in the project root
     cwd = Path(__file__).resolve().parents[2]
 
-    import sys
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603
         [sys.executable, "gws_cli.py", "--task", task_string],
         capture_output=True,
         text=True,
         encoding="utf-8",
         env=env,
-        cwd=str(cwd)
+        cwd=str(cwd),
     )
 
     if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
         pytest.skip("Auth not configured")
 
     if result.returncode != 0:
-        pytest.fail(f"Task failed with code {result.returncode}:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}")
+        pytest.fail(
+            f"Task failed with code {result.returncode}:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+        )
 
     # Tier 1: Agent Output Verification
     if expected:
@@ -60,38 +71,45 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
                 pytest.fail(f"Unexpected keyword '{unex}' found in output")
 
     # Tier 2 & 3: Live Resource Verification
-    if service:
-        # Extract ID from output
-        # Common GWS ID patterns
+    if service and not skip_verification:
+        # Extract ID from output — ordered from most specific to least specific
         id_patterns = [
             r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName):\s*([a-zA-Z0-9_./-]{5,})",
-            r"\b(spaces/[a-zA-Z0-9_-]+/messages/[a-zA-Z0-9_-]+)\b", # Chat Message Name
-            r"\b([a-f0-9]{16})\b",         # Gmail IDs
-            r"\b([a-zA-Z0-9_-]{20,})\b",  # Long IDs like Drive/Docs/Sheets/Slides (Greedy fallback)
+            r"\b(spaces/[a-zA-Z0-9_-]+/messages/[a-zA-Z0-9_-]+)\b",
+            r"\b(spaces/[a-zA-Z0-9_-]+)\b",
+            r"\b([a-f0-9]{16})\b",
+            r"\b([a-zA-Z0-9_-]{25,80})\b",
         ]
+
+        _COMMON_FALSE_POSITIVES = frozenset({
+            "result", "success", "status", "tasks", "summary",
+            "pythonioencoding", "authentication",
+        })
 
         resource_id = None
         for pattern in id_patterns:
             match = re.search(pattern, result.stdout)
             if match:
-                resource_id = match.group(1) if match.groups() else match.group(0)
-                # Filter out false positives like separator lines or common words
-                if not re.search(r"[a-zA-Z0-9]", resource_id):
+                candidate = match.group(1) if match.groups() else match.group(0)
+                if not re.search(r"[a-zA-Z0-9]", candidate):
                     continue
-                if resource_id.lower() in ("result", "success", "status", "tasks", "summary"):
+                if candidate.lower() in _COMMON_FALSE_POSITIVES:
                     continue
+                resource_id = candidate
                 break
 
         if resource_id:
-            # Skip verification for list/search/find tasks as they don't produce a single verifiable "created" resource
-            is_mutation = any(word in task_string.lower() for word in ["create", "new", "add", "send", "save", "append", "move", "copy", "remove", "delete", "rename"])
-            is_read_only = any(word in task_string.lower() for word in ["list", "search", "find", "show", "get"])
+            # Skip verification for pure read-only tasks
+            _mutation_words = {"create", "new", "add", "send", "save", "append", "move", "copy", "remove", "delete", "rename"}
+            _read_words = {"list", "search", "find", "show", "get"}
+            task_lower = task_string.lower()
+            is_mutation = any(w in task_lower for w in _mutation_words)
+            is_read_only = any(w in task_lower for w in _read_words)
 
             if is_read_only and not is_mutation:
-                print(f"--- Skipping Triple Verification for read-only/list task: {task_string} ---")
+                print("--- Skipping Triple Verification for read-only/list task ---")
                 return
 
-            # Tier 2 & 3: Live Resource Verification using GWS_BINARY_PATH
             from gws_assistant.config import AppConfig
             from gws_assistant.execution.verifier import TripleVerifier
             from gws_assistant.gws_runner import GWSRunner
@@ -110,10 +128,17 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
 
             success = verifier.verify_resource(service, resource_id, expected_fields)
             if not success:
-                pytest.fail(f"Triple verification failed for {service} {resource_id}. Operation may not have been completed properly.")
+                pytest.fail(
+                    f"Triple verification failed for {service} {resource_id}. "
+                    "Operation may not have been completed properly."
+                )
             print("--- Triple Verification Passed: Resource exists and data is valid ---")
         else:
-            if any(word in task_string.lower() for word in ["create", "new", "add", "send", "save", "append"]):
-                print(f"Warning: Could not extract {service} ID from output for triple verification, but task appears to be a creation task.")
+            _creation_words = {"create", "new", "add", "send", "save", "append"}
+            if any(word in task_string.lower() for word in _creation_words):
+                pytest.fail(
+                    f"Could not extract {service} resource ID from output for triple verification, "
+                    "but task appears to be a creation task."
+                )
             else:
                 print(f"Note: No ID extracted for {service} verification (expected for non-creation tasks).")

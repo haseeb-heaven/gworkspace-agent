@@ -39,6 +39,7 @@ class WorkspaceAgentSystem:
         self.config = config
         self.logger = logger
         self._use_langchain = bool(self.config.langchain_enabled and self.config.api_key)
+        self.logger.debug("agent_system initialized (langchain_enabled=%s)", self._use_langchain)
         from .memory_backend import get_memory_backend
 
         self.memory = get_memory_backend(config, logger)
@@ -648,7 +649,8 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 "No recipient email found in _admin_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
                 "Please provide an email address or configure default_recipient_email."
             )
-        app_name = "admin" if "admin" in lowered else "drive"
+        _admin_keywords = ("admin", "audit", "reports", "logs", "login", "activities")
+        app_name = "admin" if any(kw in lowered for kw in _admin_keywords) else "drive"
         return [
             PlannedTask(
                 id="task-1",
@@ -1092,8 +1094,19 @@ def _is_metadata_only_request(text: str) -> bool:
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
     has_metadata_intent = any(
         t in text
-        for t in ("count", "table", "summary", "metadata", "list", "sizes", "group",
-                  "metadata only", "no file content", "names only", "do not download")
+        for t in (
+            "metadata only",
+            "no file content",
+            "names only",
+            "do not download",
+            "metadata",
+            "summary",
+            "table",
+            "count",
+            "list",
+            "sizes",
+            "group",
+        )
     )
     has_email_intent = any(t in text for t in ("email", "send", "mail"))
     return has_drive_intent and has_metadata_intent and not has_email_intent

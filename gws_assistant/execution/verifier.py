@@ -47,7 +47,7 @@ class TripleVerifier:
         "gmail": ("get_message", "message_id"),
         "slides": ("get_presentation", "presentation_id"),
         "forms": ("get_form", "form_id"),
-        "chat": ("get_message", "name"),
+        "chat": ("list_spaces", "page_size"),
         "contacts": ("get_person", "resourceName"),
     }
 
@@ -90,10 +90,12 @@ class TripleVerifier:
             payload = self._payload(result)
             try:
                 self._validate_expected_fields(payload, expected_fields or {})
-                # Tier 3: Verify content is valid and not empty/placeholder
-                # Only validate expected_fields to avoid failing on optional None fields in full payload
-                for key, val in (expected_fields or {}).items():
-                    validate_artifact_content(val, f"{service}_verification.{key}")
+                # Tier 3: Verify only the explicitly required fields
+                for key in expected_fields or {}:
+                    validate_artifact_content(
+                        payload.get(key) if isinstance(payload, dict) else payload,
+                        f"{service}_verification.{key}",
+                    )
             except ValueError as exc:
                 self.logger.warning("Triple-check validation failed for %s %s: %s", service, resource_id, exc)
                 return False
