@@ -94,7 +94,7 @@ class TestTripleVerifier:
     def test_successful_verification(self):
         runner = MagicMock()
         runner.run.return_value = MagicMock(
-            success=True, stdout='{"spreadsheetId": "abc123"}', output=None
+            success=True, stdout='{"spreadsheetId": "abc123", "sheets": [{"data": {}}]}', output=None
         )
         v = self._make_verifier(runner=runner, attempts=2)
         assert v.verify_resource("sheets", "abc123") is True
@@ -117,7 +117,7 @@ class TestTripleVerifier:
     def test_field_validation_passes(self):
         runner = MagicMock()
         runner.run.return_value = MagicMock(
-            success=True, stdout='{"title": "correct"}', output=None
+            success=True, stdout='{"title": "correct", "sheets": [{"data": {}}]}', output=None
         )
         v = self._make_verifier(runner=runner, attempts=1)
         assert v.verify_resource("sheets", "abc123", {"title": "correct"}) is True
@@ -224,7 +224,7 @@ class TestVerifierMixin:
             pass
         obj = MyClass()
         obj.runner = MagicMock()
-        obj.runner.run.return_value = MagicMock(success=True, stdout='{}', output=None)
+        obj.runner.run.return_value = MagicMock(success=True, stdout='{"sheets": [{"data": {}}]}', output=None)
         obj.planner = None
         obj.logger = MagicMock()
         assert obj.verify_resource("sheets", "abc123") is True

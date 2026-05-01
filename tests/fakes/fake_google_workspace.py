@@ -136,6 +136,7 @@ class FakeGoogleWorkspace(GWSRunner):
                 output = {
                     "spreadsheetId": "fake_sheet_id_123",
                     "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/fake_sheet_id_123",
+                    "sheets": [{"properties": {"title": "Sheet1"}}],
                 }
             elif action == "append_values":
                 output = {
@@ -148,6 +149,7 @@ class FakeGoogleWorkspace(GWSRunner):
                 output = {
                     "spreadsheetId": params.get("spreadsheetId", "fake_sheet_id_123"),
                     "properties": {"title": "Test Sheet"},
+                    "sheets": [{"properties": {"title": "Sheet1"}, "data": {}}],
                 }
 
         elif service == "drive":
@@ -155,13 +157,17 @@ class FakeGoogleWorkspace(GWSRunner):
                 output = {"files": [{"id": "file123", "name": "Report Document.pdf", "mimeType": "application/pdf"}]}
             elif action == "export_file" or action == "get_file":
                 output = {
+                    "id": "file123",
+                    "name": "Report Document.pdf",
                     "saved_file": "/tmp/fake_exported_file.pdf",
                     "content": "Fake content of exported file: extracted data 42",
                 }
 
         elif service == "docs":
             if action == "create_document":
-                output = {"documentId": "fake_doc_id_456"}
+                output = {"documentId": "fake_doc_id_456", "body": {"content": []}}
+            elif action == "batch_update":
+                output = {"documentId": params.get("documentId", "fake_doc_id_456"), "body": {"content": []}}
 
         # Override with any custom mock responses
         key = f"{service}.{action}"
