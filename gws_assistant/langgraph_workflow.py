@@ -312,6 +312,38 @@ class WorkflowNodes:
                 new_index = len(plan.tasks)
         return {"current_task_index": new_index, "current_attempt": 0}
 
+    def persist_memory_node(self, state: AgentState) -> dict[str, Any]:
+        """Persist successful task executions to episodic and semantic memory."""
+        executions = state.get("executions", [])
+        if not executions or not all(e.result.success for e in executions):
+            return {}
+
+        try:
+            # Re-generate report for memory summary (or use a simple one)
+            plan = state.get("plan")
+            if not plan: return {}
+            
+            # Resolve placeholders in summary for memory
+            summary = plan.summary or ""
+            if "{" in summary or "$" in summary:
+                try:
+                    summary = self.executor._resolve_placeholders(summary, state.get("context", {}))
+                except Exception:
+                    pass
+
+            # Save to episodic memory
+            from .memory import save_episode
+            save_episode(state["user_text"], [e.task.parameters for e in executions], summary)
+
+            # Save to semantic memory
+            memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Outcome: {summary[:200]}"
+            self.system.memory.add(memory_text, metadata={"type": "task_completion"})
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to persist memory in persist_memory_node: {e}")
+        
+        return {}
+
 
 def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
     """Creates the compiled LangGraph workflow."""
@@ -533,22 +565,22 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         return "format_output"
 
-    def route_after_web_search(state: AgentState) -> Literal["validate", "format_output"]:
+    def route_after_web_search(state: AgentState) -> Literal["validate", "persist_memory"]:
         """After web search, if the plan has workspace tasks to execute, go to validate."""
         plan = state.get("plan")
         if plan and plan.tasks and not state.get("error"):
             return "validate"
-        return "format_output"
+        return "persist_memory"
 
     def route_after_task(state: AgentState) -> Literal["reflect_node"]:
         return "reflect_node"
 
     def route_after_reflection(
         state: AgentState,
-    ) -> Literal["update_context", "execute_task", "generate_plan", "format_output", "generate_code"]:
+    ) -> Literal["update_context", "execute_task", "generate_plan", "persist_memory", "generate_code"]:
         decision = state.get("reflection")
         if not decision:
-            return "format_output"
+            return "persist_memory"
         if decision.action == "continue":
             return "update_context"
         if decision.action == "retry":
@@ -557,14 +589,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "execute_task"
         if decision.action == "replan":
             return "generate_plan"
-        return "format_output"
+        return "persist_memory"
 
-    def route_after_context(state: AgentState) -> Literal["execute_task", "format_output"]:
+    def route_after_context(state: AgentState) -> Literal["execute_task", "persist_memory"]:
         plan = state.get("plan")
         idx = state.get("current_task_index", 0)
         if plan and idx < len(plan.tasks):
             return "execute_task"
-        return "format_output"
+        return "persist_memory"
 
     workflow = StateGraph(AgentState)
     workflow.add_node("generate_plan", nodes.plan_node)
@@ -573,6 +605,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     workflow.add_node("reflect_node", nodes.reflect_node)
     workflow.add_node("update_context", nodes.update_context_node)
     workflow.add_node("format_output", nodes.format_output_node)
+    workflow.add_node("persist_memory", nodes.persist_memory_node)
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("generate_code", generate_code_node)
     workflow.add_node("code_execution", code_execution_node)
@@ -588,11 +621,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "update_context": "update_context",
             "execute_task": "execute_task",
             "generate_plan": "generate_plan",
-            "format_output": "format_output",
+            "persist_memory": "persist_memory",
             "generate_code": "generate_code",
         },
     )
     workflow.add_conditional_edges("update_context", route_after_context)
+    workflow.add_edge("persist_memory", "format_output")
     workflow.add_conditional_edges("web_search", route_after_web_search)
     workflow.add_edge("generate_code", "code_execution")
     workflow.add_edge("code_execution", "reflect_node")
