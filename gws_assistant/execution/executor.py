@@ -498,4 +498,4 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             "time_zone": str(parameters.get("time_zone") or parameters.get("timezone") or "UTC").strip(),
         }
         digest = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:24]
-        return f"evt-{digest}"
+        return f"evt{digest}"

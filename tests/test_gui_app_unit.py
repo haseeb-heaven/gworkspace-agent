@@ -16,11 +16,16 @@ class MockCTk:
     def grid_rowconfigure(self, *args, **kwargs): pass
     def bind(self, *args, **kwargs): pass
     def winfo_children(self): return []
+    def mainloop(self): pass
 
-with patch.dict(sys.modules, {"customtkinter": mock_ctk, "tkinter": mock_tk, "tkinter.messagebox": MagicMock()}):
-    mock_ctk.CTk = MockCTk
-    mock_ctk.set_appearance_mode = MagicMock()
-    mock_ctk.set_default_color_theme = MagicMock()
+mock_ctk.CTk = MockCTk
+mock_ctk.set_appearance_mode = MagicMock()
+mock_ctk.set_default_color_theme = MagicMock()
+
+# Permanently patch sys.modules for this test session to avoid TclError
+sys.modules["customtkinter"] = mock_ctk
+sys.modules["tkinter"] = mock_tk
+sys.modules["tkinter.messagebox"] = MagicMock()
 
 def test_gui_instantiation():
     with patch("gws_assistant.gui_app.AppConfig.from_env") as mock_config_loader:

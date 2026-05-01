@@ -101,7 +101,9 @@ async def test_handle_text_requires_yes_no_for_pending_confirmation():
     update.effective_message.text = "what is the status?"
     update.effective_message.reply_text = AsyncMock()
     context = MagicMock()
-    context.bot_data = {"config": MagicMock()}
+    mock_config = MagicMock()
+    mock_config.telegram_chat_id = "12345"
+    context.bot_data = {"config": mock_config}
     context.application.bot_data = {"pending_confirmations": {12345: future}}
 
     await handle_text(update, context)

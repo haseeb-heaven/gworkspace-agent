@@ -10,11 +10,13 @@ def test_calendar_creation(default_email):
 
     context = {}
     # Create a calendar event
+    import time
+    unique_summary = f"Testing Framework {int(time.time())}"
     task = create_task(
         "calendar",
         "create_event",
         {
-            "summary": "Testing Framework",
+            "summary": unique_summary,
             "description": f"Email details to {default_email}",
             "start_date": "2026-04-20",
             "start_time": "tomorrow at 10am",
