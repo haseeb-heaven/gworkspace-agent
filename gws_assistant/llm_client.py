@@ -97,7 +97,7 @@ def call_llm(
         else:
             api_keys_to_try = [None]
 
-        for api_key in api_keys_to_try:
+        for i, api_key in enumerate(api_keys_to_try):
             try:
                 kwargs = _build_api_kwargs(model, config)
                 if api_key:
@@ -127,8 +127,9 @@ def call_llm(
                 msg = str(e).lower()
                 is_quota = any(k in msg for k in ("quota", "billing", "insufficient_quota", "insufficient_quota_available", "out_of_quota"))
                 level = logging.ERROR if is_quota else logging.WARNING
-                
-                retry_msg = "Trying next key." if len(api_keys_to_try) > 1 else "Trying next model."
+
+                is_last_key = (i == len(api_keys_to_try) - 1)
+                retry_msg = "Trying next key." if not is_last_key else "Trying next model."
                 logger.log(
                     level,
                     f"[LLM] {'Quota' if is_quota else 'RateLimit'} error on model={model}. {retry_msg}"
@@ -137,7 +138,8 @@ def call_llm(
                 continue
 
             except AuthenticationError as e:
-                retry_msg = "Trying next key." if len(api_keys_to_try) > 1 else "Trying next model."
+                is_last_key = (i == len(api_keys_to_try) - 1)
+                retry_msg = "Trying next key." if not is_last_key else "Trying next model."
                 logger.error(f"[LLM] AuthenticationError on model={model}. {retry_msg}")
                 last_error = e
                 continue  # Try next key in case this one is just invalid/expired
