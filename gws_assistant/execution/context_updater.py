@@ -295,8 +295,18 @@ class ContextUpdaterMixin:
                         context[f"message_id_from_task_{num}"] = m_id
                         context[f"thread_id_from_task_{num}"] = t_id
 
-                # Enriched schema for messages summary
-                rows = []
+                # Enriched schema for messages summary.
+                # NOTE: ``subject`` and ``snippet`` are kept as **separate**
+                # values. Earlier revisions of this module silently replaced
+                # the subject column with the snippet when the payload was
+                # missing, which caused downstream "save snippet to sheet"
+                # tasks to leak Gmail snippets into spreadsheets that should
+                # have held web-search results or document content. The
+                # snippet now lives in its own ``gmail_snippets_rows`` /
+                # ``gmail_snippet_values`` keys so callers can choose which
+                # field to use without ambiguity.
+                rows: list[list[str]] = []
+                snippet_rows: list[list[str]] = []
                 for m in msgs:
                     # m is often a sparse object during list_messages, but might have headers if partial response
                     m_id = m.get("id", "")
@@ -307,16 +317,16 @@ class ContextUpdaterMixin:
                     sender = h_dict.get("from", "Unknown")
                     subject = h_dict.get("subject", "No Subject")
                     date_val = h_dict.get("date", "Unknown Date")
-
-                    # If we don't have payload, use ID/Thread fallback to ensure structure matches
-                    # Or try snippet if available
-                    if not m.get("payload") and "snippet" in m:
-                        subject = m.get("snippet", subject)
+                    snippet_val = str(m.get("snippet") or "").strip()
 
                     rows.append([sender, subject, date_val, m_id, t_id])
+                    snippet_rows.append([sender, snippet_val, date_val, m_id, t_id])
 
                 context["gmail_summary_rows"] = rows
                 context["gmail_summary_values"] = [r.copy() for r in rows]
+                context["gmail_snippets_rows"] = snippet_rows
+                context["gmail_snippet_rows"] = [r.copy() for r in snippet_rows]
+                context["gmail_snippet_values"] = [r.copy() for r in snippet_rows]
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
                 for r in rows:
@@ -325,6 +335,17 @@ class ContextUpdaterMixin:
                     table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |")
                 context["gmail_summary_table"] = "\n".join(table_lines)
                 context["gmail_summary_count"] = len(msgs)
+
+                snippet_table_lines = [
+                    "| Sender | Snippet | Date | ID | Thread ID |",
+                    "|---|---|---|---|---|",
+                ]
+                for r in snippet_rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    snippet_table_lines.append(
+                        f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |"
+                    )
+                context["gmail_snippets_table"] = "\n".join(snippet_table_lines)
 
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
 

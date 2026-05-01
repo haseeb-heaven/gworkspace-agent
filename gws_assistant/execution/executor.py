@@ -12,6 +12,7 @@ from gws_assistant.verification_engine import VerificationEngine, VerificationEr
 
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
+from .path_safety import is_within_allowed_dir
 from .reflector import ReflectorMixin
 from .resolver import _UNRESOLVED_MARKER, ResolverMixin
 from .verifier import VerifierMixin
@@ -288,13 +289,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         file_content = None
                         if is_text:
                             try:
-                                from pathlib import Path
-                                downloads_dir = Path("downloads").resolve()
-                                scratch_dir = Path("scratch").resolve()
-                                resolved = Path(saved_file).resolve()
-                                if not (str(resolved).startswith(str(downloads_dir)) or str(resolved).startswith(str(scratch_dir))):
+                                if not is_within_allowed_dir(saved_file):
                                     result.success = False
-                                    result.error = f"Path traversal blocked while reading exported file: {saved_file}"
+                                    result.error = (
+                                        f"Path traversal blocked while reading exported file: {saved_file}"
+                                    )
                                     result.stdout = json.dumps({"error": result.error})
                                     return result
 

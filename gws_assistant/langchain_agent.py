@@ -77,6 +77,24 @@ _EMAIL_BODY_PLACEHOLDERS = (
     "$sheet_summary_table",
     "$gmail_summary_table",
     "$search_summary_table",
+    "$web_search_summary",
+    "$last_export_file_content",
+    "$drive_summary_table",
+)
+
+# Services whose data is *consumed* by an email body. ``gmail`` is intentionally
+# excluded here because every email-sending plan contains a gmail.send_message
+# task — picking gmail as the body source would loop the email back on itself
+# and is the root cause of the "Gmail snippets in place of search/Doc content"
+# regression. The ordered tuple defines preference when multiple data
+# sources are present in the plan.
+_EMAIL_BODY_SOURCE_PRIORITY: tuple[tuple[str, str], ...] = (
+    ("code", "$code_output"),
+    ("computation", "$code_output"),
+    ("sheets", "$sheet_summary_table"),
+    ("docs", "$last_export_file_content"),
+    ("drive", "$last_export_file_content"),
+    ("search", "$search_summary_table"),
 )
 
 _BACKOFF_SCHEDULE: list[float] = [3.0, 6.0, 12.0, 24.0, 48.0]
@@ -156,15 +174,31 @@ def _derive_email_subject(request_text: str) -> str:
 
 
 def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
-    services_used = {t.get("service", "") for t in tasks_data if isinstance(t, dict)}
-    if "code" in services_used or "computation" in services_used:
-        return "$code_output"
-    if "sheets" in services_used:
-        return "$sheet_summary_table"
+    """Pick the placeholder that should populate an outgoing email body.
+
+    Historically this function favoured ``gmail`` over ``search`` / ``docs``,
+    which meant that a plan such as ``[search.web_search,
+    gmail.send_message]`` resolved the body to ``$gmail_summary_table`` —
+    causing the agent to surface unrelated Gmail snippets instead of the
+    search results the user asked for. The fix is to consult only the
+    *source* services (``search``, ``docs``, ``drive`` …) when selecting the
+    placeholder, falling back to ``$gmail_summary_table`` only when gmail is
+    the sole service in the plan (e.g. forwarding a previously-fetched
+    message).
+    """
+    services_used = {
+        str(t.get("service", "")).strip().lower()
+        for t in tasks_data
+        if isinstance(t, dict)
+    }
+    services_used.discard("")
+
+    for service, placeholder in _EMAIL_BODY_SOURCE_PRIORITY:
+        if service in services_used:
+            return placeholder
+
     if "gmail" in services_used:
         return "$gmail_summary_table"
-    if "search" in services_used:
-        return "$search_summary_table"
     return "Here are the results of your Google Workspace request."
 
 

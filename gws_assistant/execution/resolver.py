@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -233,8 +234,13 @@ class ResolverMixin:
 
         if task.service == "sheets" and task.action == "create_spreadsheet":
             if not task.parameters.get("title"):
-                task.parameters["title"] = "GWS Agent Spreadsheet"
-                self.logger.info("Added default spreadsheet title: GWS Agent Spreadsheet")
+                # The default spreadsheet title is configurable via the
+                # ``DEFAULT_SPREADSHEET_TITLE`` env var so test environments
+                # (and per-deployment naming conventions) don't have to patch
+                # source code.
+                default_title = os.getenv("DEFAULT_SPREADSHEET_TITLE") or "GWS Agent Spreadsheet"
+                task.parameters["title"] = default_title
+                self.logger.info(f"Added default spreadsheet title: {default_title}")
 
         # 4. Strict email recipient enforcement (Security Policy)
         if task.service == "gmail" and task.action == "send_message":
