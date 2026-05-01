@@ -78,5 +78,5 @@ def test_langchain_rotates_on_429(mock_create_agent, mock_logger, config):
             "anthropic/claude-3-haiku",
             1,
             3,
-            2.0,
+            3.0,
         )

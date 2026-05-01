@@ -23,9 +23,9 @@ from gws_assistant.langchain_agent import (
 
 
 def test_backoff_delay():
-    assert _backoff_delay(0) == 2.0
-    assert _backoff_delay(1) == 4.0
-    assert _backoff_delay(100) == 30.0
+    assert _backoff_delay(0) == 3.0
+    assert _backoff_delay(1) == 6.0
+    assert _backoff_delay(100) == 48.0
 
 
 def test_is_rate_limit_error():
