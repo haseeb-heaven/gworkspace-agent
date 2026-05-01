@@ -488,6 +488,36 @@ class TestWebSearchPlanRouting:
         assert "create_document" in actions
         assert "send_message" in actions
 
+    def test_web_search_to_doc_to_email_with_call_that_syntax(self, tmp_path):
+        """Test 'call that' syntax for doc title extraction."""
+        agent = WorkspaceAgentSystem(
+            config=_config(tmp_path), logger=logging.getLogger("test")
+        )
+        plan = agent.plan(
+            "Search web for changelogs of C++ 17 and save that information "
+            "to a document call that 'cpp_17_changelogs' and send that "
+            "document information to email user@example.com"
+        )
+
+        services = [t.service for t in plan.tasks]
+        actions = [t.action for t in plan.tasks]
+
+        # Must NOT be drive.list_files + drive.export_file: the doc doesn't
+        # exist yet, the planner must CREATE it after a web search.
+        assert "drive" not in services
+        assert plan.tasks[0].service == "search"
+        assert plan.tasks[0].action == "web_search"
+        assert "docs" in services
+        assert "create_document" in actions
+        assert "send_message" in actions
+
+        # Verify query extraction is correct (should not include the save/email part)
+        assert plan.tasks[0].parameters["query"] == "changelogs of C++ 17"
+
+        # Verify doc title extraction is correct
+        doc_task = next(t for t in plan.tasks if t.action == "create_document")
+        assert doc_task.parameters["title"] == "cpp_17_changelogs"
+
     def test_drive_search_for_named_file_is_unchanged(self, tmp_path):
         """Genuine Drive lookups must still route through drive.list_files."""
         agent = WorkspaceAgentSystem(

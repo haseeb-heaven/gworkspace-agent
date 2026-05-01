@@ -653,7 +653,7 @@ print(result)"""
                 service="drive",
                 action="export_file",
                 parameters={
-                    "file_id": "{{task-1.files.0.id}}",
+                    "file_id": "{{task-1.files[0].id}}",
                     "mime_type": "text/plain",
                 },
                 reason="Export the document content as text.",
@@ -677,7 +677,7 @@ print(result)"""
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "{{task-4.id}}",
+                    "spreadsheet_id": "{{task-4.spreadsheetId}}",
                     "values": "$last_code_result",
                 },
                 reason="Append the converted table data to the sheet.",
@@ -1491,7 +1491,7 @@ _WEB_SEARCH_LEADING_PHRASES: tuple[str, ...] = (
 )
 
 _WEB_SEARCH_TRAILING_SPLITS = re.compile(
-    r"\s*(?:,\s*(?:and\s+)?(?:then\s+)?|(?<!\w)(?:then|after\s+that)\s+)"
+    r"\s*(?:,\s*(?:and\s+)?(?:then\s+)?|(?<!\w)(?:then|after\s+that|and)\s+)"
     r"(?:save|write|store|export|add|insert|put|append|email|send|create|make|generate|upload|share)\b",
     re.IGNORECASE,
 )
@@ -1581,7 +1581,7 @@ def _extract_sheet_title(text: str) -> str | None:
 
 
 def _extract_doc_title(text: str) -> str | None:
-    m = re.search(r"(?:named|called|titled|doc|document)\s+[\'\"]([^\'\"]+)[\'\"]", text, re.IGNORECASE)
+    m = re.search(r"(?:named|called|titled|doc|document)(?:\s+call\s+that)?\s+[\'\"]([^\'\"]+)[\'\"]", text, re.IGNORECASE)
     if m:
         return m.group(1)
     # Fall back to last quoted string, not first
