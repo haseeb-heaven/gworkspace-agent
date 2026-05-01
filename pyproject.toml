@@ -26,7 +26,6 @@ dependencies = [
     "gradio>=5.27.0",
     "e2b-code-interpreter>=1.0.0",
     "mem0ai>=0.1.33",
-    "pytest-asyncio>=0.24.0",
 ]
 
 [project.optional-dependencies]

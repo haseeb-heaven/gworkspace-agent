@@ -318,8 +318,10 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
-        # Pattern M: Chat -> Email
-        if "chat" in services and "gmail" in services and any(kw in lowered for kw in ("spaces", "messages", "chat")):
+        # Pattern M: Chat -> Email (skip when user explicitly wants to send a chat message)
+        _send_kw = ("send a message", "post a message", "send message", "post message")
+        _has_send_intent = any(kw in lowered for kw in _send_kw)
+        if "chat" in services and "gmail" in services and any(kw in lowered for kw in ("spaces", "messages", "chat")) and not _has_send_intent:
             tasks = self._chat_to_email_tasks(text, lowered)
             return RequestPlan(
                 raw_text=text,
@@ -331,8 +333,7 @@ class WorkspaceAgentSystem:
             )
 
         # Pattern N: Chat Send Message (Heuristic Search for Space)
-        _send_kw = ("send a message", "post a message", "send message", "post message")
-        if "chat" in services and any(kw in lowered for kw in _send_kw) and "spaces/" not in lowered:
+        if "chat" in services and _has_send_intent and "spaces/" not in lowered:
             tasks = self._chat_send_message_tasks(text, lowered)
             return RequestPlan(
                 raw_text=text,
@@ -1080,7 +1081,7 @@ def _is_drive_to_email_request(text: str) -> bool:
 def _is_drive_metadata_to_email_request(text: str) -> bool:
     lowered = text.lower()
     intent_words = (
-        "count", "table", "summary", "metadata", "list", "sizes", "group",
+        "count", "table", "summary", "metadata", "sizes", "group",
         "metadata only", "names only", "no file content", "do not download",
     )
     if not any(word in lowered for word in intent_words):
