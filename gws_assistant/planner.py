@@ -1115,19 +1115,37 @@ class CommandPlanner:
             return None
 
         from pathlib import Path
-
         resolved = Path(path).expanduser().resolve()
-        if not resolved.is_file():
+        
+        # On Windows, resolve() can add \\?\ prefix. Strip it for comparison.
+        res_str = str(resolved)
+        if res_str.startswith("\\\\?\\"):
+            res_str = res_str[4:]
+        resolved_path = Path(res_str)
+
+        if not resolved_path.is_file():
             return None
 
-        allowed_roots = [Path(root).resolve() for root in _ATTACHMENT_ALLOWED_ROOTS]
-        if any(resolved == root or root in resolved.parents for root in allowed_roots):
-            return str(resolved)
+        allowed_roots = []
+        for root in _ATTACHMENT_ALLOWED_ROOTS:
+            r_path = Path(root).resolve()
+            r_str = str(r_path)
+            if r_str.startswith("\\\\?\\"):
+                r_str = r_str[4:]
+            allowed_roots.append(Path(r_str))
+
+        if any(resolved_path == root or root in resolved_path.parents for root in allowed_roots):
+            return str(resolved_path)
 
         temp_root = Path(tempfile.gettempdir()).resolve()
-        for parent in resolved.parents:
+        t_str = str(temp_root)
+        if t_str.startswith("\\\\?\\"):
+            t_str = t_str[4:]
+        temp_root = Path(t_str)
+
+        for parent in resolved_path.parents:
             if parent.parent == temp_root and parent.name.startswith("gws_attach_"):
-                return str(resolved)
+                return str(resolved_path)
         return None
 
     @staticmethod

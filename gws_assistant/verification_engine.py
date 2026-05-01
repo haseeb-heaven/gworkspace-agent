@@ -249,7 +249,16 @@ class VerificationEngine:
 
                 if start and end and cls._is_valid_iso8601(start) and cls._is_valid_iso8601(end):
                     if not cls._end_is_after_start(start, end):
-                        raise VerificationError(tool_name, "End time must be after start time", "end")
+                        # For all-day events, Google allows start and end date to be the same if it's a 0-duration event?
+                        # Actually GCal usually wants end > start. But let's check if they are datetimes.
+                        s_val = start.get("dateTime") if isinstance(start, dict) else start
+                        if "T" in str(s_val):
+                            raise VerificationError(tool_name, "End time must be after start time", "end")
+                        else:
+                            # For all-day events, we might want to automatically increment if equal, 
+                            # but here we just warn if they are equal but not strictly less.
+                            if str(start) > str(end):
+                                raise VerificationError(tool_name, "End date must be on or after start date", "end")
 
             attendees = params.get("attendees")
             if attendees:

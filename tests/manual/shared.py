@@ -89,16 +89,18 @@ def run_task(
     if service and not skip_verification:
         # Extract ID from output — ordered from most specific to least specific
         id_patterns = [
-            r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName):\s*([a-zA-Z0-9_./-]{5,})",
+            r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName|eventId|event_id):\s*([a-zA-Z0-9_/-]{5,})",
+            r"(?:Triple-check passed for\s+[a-z]+\s+)([a-zA-Z0-9_/-]{5,})",
             r"\b(spaces/[a-zA-Z0-9_-]+/messages/[a-zA-Z0-9_-]+)\b",
             r"\b(spaces/[a-zA-Z0-9_-]+)\b",
             r"\b([a-f0-9]{16})\b",
-            r"\b([a-zA-Z0-9_-]{30,80})\b",  # Increased min length to avoid matching random hex
+            r"\b([a-zA-Z0-9_-]{30,128})\b",
         ]
 
         _COMMON_FALSE_POSITIVES = frozenset({
             "result", "success", "status", "tasks", "summary",
-            "pythonioencoding", "authentication",
+            "pythonioencoding", "authentication", "llm_model", "model",
+            "gemini-flash-latest", "llama-3-groq-70b-8192-tool-use-preview",
         })
 
         resource_id = None

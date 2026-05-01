@@ -270,6 +270,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("summary", "Event summary", "Weekly Sync"),
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
+                    ParameterSpec("end_date", "Optional: End date (YYYY-MM-DD)", "2026-04-15", required=False),
+                    ParameterSpec("start_time", "Optional: Start time (e.g. 10am, 14:30)", "10:00 AM", required=False),
+                    ParameterSpec("end_time", "Optional: End time (e.g. 11am, 15:30)", "11:00 AM", required=False),
+                    ParameterSpec("start_datetime", "Optional: Full start ISO datetime", "2026-04-15T10:00:00", required=False),
+                    ParameterSpec("end_datetime", "Optional: Full end ISO datetime", "2026-04-15T11:00:00", required=False),
+                    ParameterSpec("time_zone", "Optional: Timezone (default: UTC)", "UTC", required=False),
+                    ParameterSpec("description", "Optional: Event description", "Discuss project status", required=False),
+                    ParameterSpec("event_id", "Optional: Specific ID to use for the event", "evt_123", required=False),
                 ),
             ),
             "get_event": ActionSpec(
