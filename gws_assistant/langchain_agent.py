@@ -259,23 +259,19 @@ def is_valid_plan(plan_data: Any) -> bool:
     return True
 
 
-_WEB_SEARCH_INTENT_KEYWORDS: tuple[str, ...] = (
-    "search the web",
-    "search web",
-    "web search",
-    "search online",
-    "search the internet",
-    "search internet",
-    "search google for",
-    "look up online",
-    "find online",
-    "find on the web",
-    "browse the web",
-    "from the web",
-    "on the web",
-    "from the internet",
-    "on the internet",
-)
+def _web_search_intent_keywords() -> tuple[str, ...]:
+    """Return the canonical web-search intent phrases.
+
+    Single source of truth lives in :mod:`gws_assistant.agent_system` as
+    ``_WEB_SEARCH_INTENT_PHRASES`` — it is also consumed by the heuristic
+    planner. Lazy-imported here to avoid the circular import between
+    :mod:`agent_system` (which imports :func:`plan_with_langchain` at module
+    level) and this module.
+    """
+    from .agent_system import _WEB_SEARCH_INTENT_PHRASES
+
+    return _WEB_SEARCH_INTENT_PHRASES
+
 
 _CODE_EXECUTOR_INTENT_KEYWORDS: tuple[str, ...] = (
     "code executor",
@@ -314,7 +310,7 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     # task → incomplete. This catches plans that hallucinate
     # gmail.list_messages or drive.list_files for "Search the web for X".
     if (
-        any(kw in lowered for kw in _WEB_SEARCH_INTENT_KEYWORDS)
+        any(kw in lowered for kw in _web_search_intent_keywords())
         and "search" not in services_in_plan
     ):
         logging.info(
@@ -630,7 +626,7 @@ def plan_with_langchain(
         "6. DRIVE QUERIES: use 'q' parameter for drive.list_files. "
         "7. EMAIL ACTIONS: use gmail.send_message for sending. "
         "8. EXPORTS: use drive.export_file to read content. "
-        "9. WEB SEARCH: When the user says 'search the web', 'search online', 'search the internet', 'web search', 'on the web', 'from the web', or otherwise asks for information that lives OUTSIDE the user's Google Workspace, the FIRST task MUST be search.web_search. NEVER substitute gmail.list_messages, drive.list_files, or any Workspace lookup for a web search. If the user is explicitly looking inside Drive/Gmail/Sheets, then DO NOT use search.web_search. "
+        "9. WEB SEARCH: When the user says 'search the web', 'search online', 'search the internet', 'web search', 'browse the web', 'google for', 'look it up online', 'look up online', 'find online', 'find on the web', 'on the web', 'from the web', 'on the internet', 'from the internet', 'scrape', or otherwise asks for information that lives OUTSIDE the user's Google Workspace, the FIRST task MUST be search.web_search. NEVER substitute gmail.list_messages, drive.list_files, or any Workspace lookup for a web search. If the user is explicitly looking inside Drive/Gmail/Sheets, then DO NOT use search.web_search. "
         "10. DATA STRUCTURES: drive.list_files returns {{{{files: [...]}}}}, gmail.list_messages returns {{{{messages: [...]}}}}. "
         "11. LEGACY: you may use $drive_file_ids or $gmail_message_ids for the most recent search results. "
         "12. GMAIL: use $gmail_message_body_text for decoded text. "

@@ -183,6 +183,43 @@ def test_is_plan_complete_rejects_when_code_executor_requested_but_missing():
     assert _is_plan_complete(plan_with_code, request) is True
 
 
+def test_web_search_intent_keywords_match_canonical_phrase_list():
+    """``langchain_agent`` and ``agent_system`` must reuse the same
+    web-search intent vocabulary so the LLM completeness check and the
+    heuristic planner stay in sync.
+
+    Regression test for the Devin Review finding "Inconsistent web-search
+    intent keyword lists allow incorrect LLM plans to pass validation".
+    """
+    from gws_assistant.agent_system import _WEB_SEARCH_INTENT_PHRASES
+    from gws_assistant.langchain_agent import _web_search_intent_keywords
+
+    assert _web_search_intent_keywords() is _WEB_SEARCH_INTENT_PHRASES
+    # And every phrase the canonical list cares about must be honoured.
+    for phrase in ("scrape", "look it up online", "google for "):
+        assert phrase in _WEB_SEARCH_INTENT_PHRASES
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "Scrape the latest Python docs and save to a sheet",
+        "Look it up online and email me the result",
+        "Google for changelog and save to a doc",
+    ],
+)
+def test_is_plan_complete_rejects_when_extended_web_phrases_used(request_text):
+    """The previously-missing phrases must also force the LLM completeness
+    check to reject plans that omit ``search.web_search``."""
+    bad_plan = {
+        "tasks": [
+            {"service": "gmail", "action": "list_messages"},
+            {"service": "sheets", "action": "create_spreadsheet"},
+        ]
+    }
+    assert _is_plan_complete(bad_plan, request_text) is False
+
+
 def test_is_plan_complete_does_not_require_search_for_workspace_lookups():
     """A request that says ``"search Drive"`` must not require ``search.web_search``."""
     request = "Search Drive for files and email me"
