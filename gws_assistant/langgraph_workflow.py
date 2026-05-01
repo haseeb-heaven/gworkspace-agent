@@ -135,14 +135,26 @@ class WorkflowNodes:
         context = dict(state.get("context", {}))
         executions = list(state.get("executions", []))
         thought_trace = list(state.get("thought_trace", []))
-        if not plan or idx >= len(plan.tasks): return {"error": "No tasks to execute."}
+
+        if not plan or idx >= len(plan.tasks):
+            return {"error": "No tasks to execute."}
+
         task = plan.tasks[idx]
         expanded = self.executor._expand_task(task, context)
-        if not expanded: return {"error": "Empty expansion", "executions": executions, "context": context}
-        latest = None
-        task_error = None
+        if not expanded:
+            return {
+                "error": f"Task {task.id} expanded to no executable tasks.",
+                "last_result": StructuredToolResult(success=False, output={}, error="Empty expansion"),
+                "executions": executions,
+                "context": context,
+            }
+
+        latest: StructuredToolResult | None = None
+        task_error: str | None = None
         for exp_task in expanded:
             resolved = self.executor._resolve_task(exp_task, context)
+
+            # Bug Fix: Ensure task is structurally valid AND all placeholders resolved
             try:
                 validate_planned_task(resolved)
             except Exception as val_exc:
@@ -153,16 +165,24 @@ class WorkflowNodes:
                     "executions": executions,
                     "context": context,
                 }
+
             result = self.executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
+
+            # Store results in context for placeholder resolution
+            results_map = context.setdefault("task_results", {})
             payload = latest["output"].get("parsed_payload") or latest["output"]
 
+            # Fix: If payload contains 'messages' list, promote it so code.execute sees a list
             if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
-                storage_payload = [
-                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
-                    for item in payload["messages"]
-                ]
+                if len(payload["messages"]) > 0:
+                    storage_payload = [
+                        item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
+                        for item in payload["messages"]
+                    ]
+                else:
+                    storage_payload = []
             elif isinstance(payload, list):
                 storage_payload = [
                     item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload
@@ -170,23 +190,33 @@ class WorkflowNodes:
             else:
                 storage_payload = payload
 
+            # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
             self.executor._update_context_from_result(payload, context, resolved)
-            results_map = context.setdefault("task_results", {})
+
+            # Always also store by sequential index (task-1, task-2, etc.)
             seq_id = f"task-{idx + 1}"
             results_map[seq_id] = storage_payload
             results_map[str(idx + 1)] = storage_payload
             results_map[f"t{idx + 1}"] = storage_payload
 
-            task_id = str(task.id)
-            if task_id != seq_id:
-                results_map[task_id] = storage_payload
-                if task_id.startswith("task-"):
-                    num = task_id.removeprefix("task-")
+            # Use task.id as provided in the plan
+            t_id = str(task.id)
+            if t_id != seq_id:
+                results_map[t_id] = storage_payload
+                if t_id.startswith("task-"):
+                    num = t_id.removeprefix("task-")
                     results_map[num] = storage_payload
                     results_map[f"t{num}"] = storage_payload
-                elif task_id.isdigit():
-                    results_map[f"task-{task_id}"] = storage_payload
-                    results_map[f"t{task_id}"] = storage_payload
+                elif t_id.isdigit():
+                    results_map[f"task-{t_id}"] = storage_payload
+                    results_map[f"t{t_id}"] = storage_payload
+
+            if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
+                if "drive_export_content" in latest["output"]:
+                    content = latest["output"]["drive_export_content"]
+                    context["drive_export_content"] = content
+                    context["drive_export_file"] = content
+                    results_map[t_id] = {"content": content}
 
             thought_trace.append(
                 {
@@ -197,10 +227,23 @@ class WorkflowNodes:
                     "reason": resolved.reason,
                 }
             )
+            self._log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
             if not result.success:
-                task_error = result.error or "Task failed"
+                task_error = result.error or result.stderr or "Task execution failed"
                 break
-        return {"executions": executions, "context": context, "error": task_error, "last_result": latest or StructuredToolResult(success=True, output={}, error=None), "thought_trace": thought_trace, "current_attempt": state.get("current_attempt", 0) + 1}
+
+        if latest is None:
+            latest = StructuredToolResult(success=True, output={}, error=None)
+
+        return {
+            "executions": executions,
+            "context": context,
+            "error": task_error,
+            "last_result": latest,
+            "current_attempt": state.get("current_attempt", 0) + 1,
+            "conversation_history": _trim_history(state.get("conversation_history", [])),
+            "thought_trace": thought_trace,
+        }
 
     def reflect_node(self, state: AgentState) -> dict[str, Any]:
         error = state.get("error")
@@ -224,7 +267,9 @@ class WorkflowNodes:
                 decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
                 updates["abort_plan"] = True
 
+        self._log_step("reflection", {"error": error, "attempt": attempts}, decision)
         updates["reflection"] = decision
+        updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))
         return updates
 
     def format_output_node(self, state: AgentState) -> dict[str, Any]:
@@ -271,251 +316,7 @@ class WorkflowNodes:
 def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
     """Creates the compiled LangGraph workflow."""
 
-    formatter = HumanReadableFormatter()
-
-    def _log_step(
-        tool_name: str,
-        normalized_input: Any,
-        normalized_output: StructuredToolResult | ReflectionDecision | dict[str, Any],
-    ) -> None:
-        if config.verbose:
-            logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
-
-    def plan_node(state: AgentState) -> dict[str, Any]:
-        try:
-            plan = system.plan(state["user_text"])
-            history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
-            _log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
-            return {"plan": plan, "error": None, "conversation_history": history}
-        except Exception as exc:
-            history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
-            _log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
-            return {"error": str(exc), "conversation_history": history}
-
-    def validate_node(state: AgentState) -> dict[str, Any]:
-        plan = state.get("plan")
-        if not plan:
-            return {"error": "No plan to validate."}
-        for task in plan.tasks:
-            if not task.action:
-                return {"error": f"Task {task.id} has no action."}
-        return {"error": None}
-
-    def execute_task_node(state: AgentState) -> dict[str, Any]:
-        plan = state.get("plan")
-        idx = state.get("current_task_index", 0)
-        context = dict(state.get("context", {}))
-        executions = list(state.get("executions", []))
-        thought_trace = list(state.get("thought_trace", []))
-
-        if not plan or idx >= len(plan.tasks):
-            return {"error": "No tasks to execute."}
-
-        task = plan.tasks[idx]
-        expanded = executor._expand_task(task, context)
-        if not expanded:
-            return {
-                "error": f"Task {task.id} expanded to no executable tasks.",
-                "last_result": StructuredToolResult(success=False, output={}, error="Empty expansion"),
-                "executions": executions,
-                "context": context,
-            }
-
-        latest: StructuredToolResult | None = None
-        task_error: str | None = None
-        for exp_task in expanded:
-            resolved = executor._resolve_task(exp_task, context)
-
-            # Bug Fix: Ensure task is structurally valid AND all placeholders resolved
-            try:
-                validate_planned_task(resolved)
-            except Exception as val_exc:
-                logger.error(f"Validation failed after resolution for task {resolved.id}: {val_exc}")
-                return {
-                    "error": str(val_exc),
-                    "last_result": StructuredToolResult(success=False, output={}, error=str(val_exc)),
-                    "executions": executions,
-                    "context": context,
-                }
-
-            result = executor.execute_single_task(resolved, context)
-            executions.append(TaskExecution(task=resolved, result=result))
-            latest = _normalize_workspace_result(result)
-
-            # Store results in context for placeholder resolution
-            # executor._resolve_template expects dict with keys like 'files', 'id' etc.
-            # latest['output'] usually contains 'parsed_payload' which has the real data.
-            results_map = context.setdefault("task_results", {})
-            payload = latest["output"].get("parsed_payload") or latest["output"]
-
-            # Fix: If payload contains 'messages' list, promote it so code.execute sees a list
-            # as expected by LLM for list_messages tasks.
-            if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
-                if len(payload["messages"]) > 0:
-                    storage_payload = [
-                        item if isinstance(item, dict) else {"id": str(item), "content": str(item)}
-                        for item in payload["messages"]
-                    ]
-                else:
-                    storage_payload = []
-            elif isinstance(payload, list):
-                storage_payload = [
-                    item if isinstance(item, dict) else {"id": str(item), "content": str(item)} for item in payload
-                ]
-            else:
-                storage_payload = payload
-
-            # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
-            executor._update_context_from_result(payload, context, resolved)
-
-            # Always also store by sequential index (task-1, task-2, etc.) to
-            # support LLMs that refer to tasks by their order regardless of name.
-            seq_id = f"task-{idx + 1}"
-            results_map[seq_id] = storage_payload
-            results_map[str(idx + 1)] = storage_payload
-            results_map[f"t{idx + 1}"] = storage_payload
-            logger.debug(f"DEBUG: Saved result to results_map keys: {seq_id}, {idx + 1}, t{idx + 1}")
-
-            # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
-            t_id = str(task.id)
-            if t_id != seq_id:
-                results_map[t_id] = storage_payload
-                # Also store with numeric ID for {task-1...} vs {1...}
-                if t_id.startswith("task-"):
-                    num = t_id.removeprefix("task-")
-                    results_map[num] = storage_payload
-                    results_map[f"t{num}"] = storage_payload
-                elif t_id.isdigit():
-                    results_map[f"task-{t_id}"] = storage_payload
-                    results_map[f"t{t_id}"] = storage_payload
-
-            if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
-                # Special handling: if we exported a file, its content (if text) is stored directly.
-                # This is used by later tasks like gmail.send_message via $drive_export_content.
-                if "drive_export_content" in latest["output"]:
-                    content = latest["output"]["drive_export_content"]
-                    context["drive_export_content"] = content
-                    context["drive_export_file"] = content
-                    # Also put it in task_results so {task-N.content} works
-                    results_map[t_id] = {"content": content}
-                    if t_id.startswith("task-"):
-                        results_map[t_id.removeprefix("task-")] = {"content": content}
-            thought_trace.append(
-                {
-                    "step": idx + 1,
-                    "action": f"{resolved.service}.{resolved.action}",
-                    "observation": str(latest["output"].get("stdout", ""))[:300],
-                    "success": result.success,
-                    "reason": resolved.reason,
-                }
-            )
-            _log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
-            if not result.success:
-                task_error = result.error or result.stderr or "Task execution failed"
-                break
-
-        # Fix #5 — fallback if loop had no iterations
-        if latest is None:
-            latest = StructuredToolResult(success=True, output={}, error=None)
-
-        return {
-            "executions": executions,
-            "context": context,
-            "error": task_error,
-            "last_result": latest,
-            "current_attempt": state.get("current_attempt", 0) + 1,
-            "conversation_history": _trim_history(state.get("conversation_history", [])),
-            "thought_trace": thought_trace,
-        }
-
-    def reflect_node(state: AgentState) -> dict[str, Any]:
-        error = state.get("error")
-        attempts = state.get("current_attempt", 0)
-        context = dict(state.get("context", {}))
-        updates: dict[str, Any] = {}
-
-        decision, abort_plan = executor.reflect_on_error(error, attempts, config.max_retries)
-
-        if abort_plan:
-            updates["abort_plan"] = True
-
-        if decision.action == "replan":
-            if state.get("plan") and context.get("replan_count", 0) < config.max_replans:
-                context["replan_count"] = int(context.get("replan_count", 0)) + 1
-                updates["context"] = context
-                updates["current_attempt"] = 0
-                updates["current_task_index"] = 0
-                updates["error"] = None
-                decision.reason = "Retries exhausted, requesting new plan."
-            else:
-                decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
-                updates["abort_plan"] = True
-
-        _log_step("reflection", {"error": error, "attempt": attempts}, decision)
-        updates["reflection"] = decision
-        updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))
-        return updates
-
-    def update_context_node(state: AgentState) -> dict[str, Any]:
-        new_index = state.get("current_task_index", 0) + 1
-        if state.get("abort_plan"):
-            plan = state.get("plan")
-            if plan is not None:
-                new_index = len(plan.tasks)
-        return {
-            "current_task_index": new_index,
-            "error": state.get("error"),
-            "current_attempt": 0,
-            "conversation_history": _trim_history(state.get("conversation_history", [])),
-        }
-
-    def format_output_node(state: AgentState) -> dict[str, Any]:
-        plan = state.get("plan")
-        executions = state.get("executions", [])
-        context = state.get("context", {})
-
-        if plan and executions:
-            # Resolve placeholders in summary if any exist
-            if plan.summary and ("{" in plan.summary or "$" in plan.summary):
-                try:
-                    plan.summary = executor._resolve_placeholders(plan.summary, context)
-                except Exception as e:
-                    logger.warning(f"Failed to resolve placeholders in summary: {e}")
-
-            report = formatter.format_report(
-                PlanExecutionReport(
-                    plan=plan,
-                    executions=executions,
-                    thought_trace=state.get("thought_trace", []),
-                )
-            )
-        else:
-            report = state.get("final_output") or state.get("error") or "No result produced."
-
-        # Guard: if report is still empty and there was an error in state, use it.
-        if not report or report == "No result produced.":
-            err = state.get("error")
-            if err:
-                report = err
-        if any(not item.result.success for item in executions) and "failed" not in report.lower():
-            report = f"Execution finished with failures.\n\n{report}"
-        # Save to episodic memory if successful
-        if executions and all(item.result.success for item in executions):
-            try:
-                from .memory import save_episode
-                save_episode(state["user_text"], [e.task.parameters for e in executions], report)
-            except Exception as e:
-                logger.warning(f"Failed to save episode to memory: {e}")
-
-        # Also add a semantic memory fact if successful
-        if executions and all(item.result.success for item in executions):
-            try:
-                memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
-                system.memory.add(memory_text, metadata={"type": "task_completion"})
-            except Exception as e:
-                logger.warning(f"Failed to add semantic memory: {e}")
-
-        return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
+    nodes = WorkflowNodes(config, system, executor, logger)
 
     def web_search_node(state: AgentState) -> dict[str, Any]:
         result = web_search_tool.invoke({"query": state["user_text"]})
@@ -595,7 +396,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
         result = execute_generated_code(str(code), config=config)
-        _log_step("sandbox_execute", {"code": code}, result)
+        nodes._log_step("sandbox_execute", {"code": code}, result)
 
         results_map = context.setdefault("task_results", {})
         results_map["code"] = result.get("output", {})
@@ -637,7 +438,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             generated = f"result = {extracted or '0'}\nprint(result)"
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
-            _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback"})
+            nodes._log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback"})
             return {"context": context, "error": None}
 
         try:
@@ -668,7 +469,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
-            _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback_enhanced"})
+            nodes._log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback_enhanced"})
             return {"context": context, "error": None}
 
         content = getattr(llm_response, "content", str(llm_response))
@@ -691,7 +492,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         context = dict(state.get("context", {}))
         context["generated_code"] = generated_code
-        _log_step("generate_code", {"prompt": state["user_text"]}, {"generated_code": generated_code})
+        nodes._log_step("generate_code", {"prompt": state["user_text"]}, {"generated_code": generated_code})
         return {"context": context, "error": None}
 
     def route_after_plan(state: AgentState) -> Literal["validate", "format_output", "web_search", "generate_code"]:
@@ -766,12 +567,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         return "format_output"
 
     workflow = StateGraph(AgentState)
-    workflow.add_node("generate_plan", plan_node)
-    workflow.add_node("validate", validate_node)
-    workflow.add_node("execute_task", execute_task_node)
-    workflow.add_node("reflect_node", reflect_node)
-    workflow.add_node("update_context", update_context_node)
-    workflow.add_node("format_output", format_output_node)
+    workflow.add_node("generate_plan", nodes.plan_node)
+    workflow.add_node("validate", nodes.validate_node)
+    workflow.add_node("execute_task", nodes.execute_task_node)
+    workflow.add_node("reflect_node", nodes.reflect_node)
+    workflow.add_node("update_context", nodes.update_context_node)
+    workflow.add_node("format_output", nodes.format_output_node)
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("generate_code", generate_code_node)
     workflow.add_node("code_execution", code_execution_node)

@@ -11,6 +11,8 @@ from typing import Any
 
 from .models import AppConfigModel, ExecutionResult
 
+import re
+
 # Windows CreateProcess has a hard limit of ~32 767 characters for the entire
 # command-line string.  Any single CLI argument larger than this threshold will
 # trigger WinError 206 ("The filename or extension is too long").  We use a
@@ -36,6 +38,11 @@ def _validate_args(args: list[str]) -> None:
         "--name", "--description", "--mime-type", "--id", "--thread-id",
         "--message-id", "--file-id", "--document-id", "--spreadsheet-id"
     }
+    # Flags that do NOT take a value (boolean flags)
+    BOOLEAN_FLAGS = {
+        "--page-all", "--dry-run", "--sanitize", "--no-sandbox",
+        "--force-dangerous", "--read-write", "-"
+    }
     ALLOWED_SHORT_FLAGS = {"-o", "-"}
     # List of allowed services/subcommands
     ALLOWED_SERVICES = {
@@ -44,7 +51,6 @@ def _validate_args(args: list[str]) -> None:
         "keep", "meet", "events", "modelarmor", "workflow", "wf",
         "script", "schema", "search", "admin", "code", "computation"
     }
-    import re
 
     if not args:
         raise ValueError("Command arguments cannot be empty.")
@@ -65,7 +71,7 @@ def _validate_args(args: list[str]) -> None:
             flag = arg.split("=")[0]
             if flag not in ALLOWED_FLAGS:
                 raise ValueError(f"Disallowed argument: {arg}")
-            if "=" not in arg:
+            if "=" not in arg and flag not in BOOLEAN_FLAGS:
                 expecting_value_for = flag
         elif arg.startswith("-"):
             if arg not in ALLOWED_SHORT_FLAGS:
