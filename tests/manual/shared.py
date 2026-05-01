@@ -72,6 +72,11 @@ def run_task(
                 pytest.fail(f"Unexpected keyword '{unex}' found in output")
 
     # Tier 2 & 3: Live Resource Verification
+    # Services without persistent GWS resources — skip triple verification
+    _NON_VERIFIABLE_SERVICES = frozenset({"code", "search", "computation"})
+    if service and service in _NON_VERIFIABLE_SERVICES:
+        print(f"--- Skipping Triple Verification for non-resource service: {service} ---")
+        return
     if service and not skip_verification:
         # Extract ID from output — ordered from most specific to least specific
         id_patterns = [

@@ -49,6 +49,8 @@ class TripleVerifier:
         "forms": ("get_form", "form_id"),
         "chat": ("get_message", "name"),
         "contacts": ("get_person", "resourceName"),
+        "admin": ("list_activities", "application_name"),
+        "meet": ("get_conference", "name"),
     }
 
     def __init__(
@@ -138,6 +140,13 @@ class TripleVerifier:
             return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": resource_id})]
         if service == "contacts":
             return ["people", "people", "get", "--params", json.dumps({"resourceName": resource_id, "personFields": "names,emailAddresses"})]
+        if service == "admin":
+            return [
+                "admin-reports", "activities", "list", "--params",
+                json.dumps({"userKey": "all", "applicationName": resource_id, "maxResults": 5}),
+            ]
+        if service == "meet":
+            return ["meet", "spaces", "get", "--params", json.dumps({"name": resource_id})]
         raise ValueError(f"Unsupported service for verification: {service}")
 
     @staticmethod
