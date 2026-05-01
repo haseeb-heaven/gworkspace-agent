@@ -164,7 +164,23 @@ def get_safe_globals() -> dict[str, Any]:
             return target * expr
         if op == "/=":
             return target / expr
-        return expr
+        if op == "//=":
+            return target // expr
+        if op == "%=":
+            return target % expr
+        if op == "**=":
+            return target ** expr
+        if op == "&=":
+            return target & expr
+        if op == "|=":
+            return target | expr
+        if op == "^=":
+            return target ^ expr
+        if op == "<<=":
+            return target << expr
+        if op == ">>=":
+            return target >> expr
+        raise NotImplementedError(f"Unsupported in-place operator: {op}")
 
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.

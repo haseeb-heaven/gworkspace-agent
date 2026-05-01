@@ -387,7 +387,7 @@ class WorkspaceAgentSystem:
 
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
 
         exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
         skip_export = any(word in lowered for word in exclusion_words)
@@ -445,7 +445,7 @@ $last_export_file_content"""
     def _drive_metadata_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         """Drive metadata with explicit email intent: list files -> compute table -> send email."""
         query = _drive_query_from_text(text)
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
         page_size = _first_int(lowered) or 50
 
         code = (
@@ -586,7 +586,7 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
     def _drive_folder_move_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
         folder_name = _extract_quoted(text) or "Organized Files"
-        recipient = self.config.default_recipient_email
+        recipient = _extract_email(text) or self.config.default_recipient_email
 
         return [
             PlannedTask(
@@ -892,7 +892,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["spreadsheet_id"] = _extract_id(lowered) or "{{task-1.id}}"
             parameters["range"] = "Sheet1!A1"
         elif service == "gmail" and action == "send_message":
-            parameters["to_email"] = self.config.default_recipient_email
+            parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
             parameters["subject"] = "GWorkspace Notification"
             parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service == "calendar" and action == "create_event":
