@@ -47,8 +47,6 @@ class TripleVerifier:
         "gmail": ("get_message", "message_id"),
         "slides": ("get_presentation", "presentation_id"),
         "forms": ("get_form", "form_id"),
-        "chat": ("get_message", "name"),
-        "contacts": ("get", "resource_name"),
     }
 
     def __init__(

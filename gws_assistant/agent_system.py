@@ -685,7 +685,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 parameters={
                     "to_email": recipient,
                     "subject": "Contacts/Users List",
-                    "body": f"Hi,\n\nPlease find the requested list below:\n\n$last_contacts_list",
+                    "body": "Hi,\n\nPlease find the requested list below:\n\n$last_contacts_list",
                 },
                 reason="Email the list.",
             ),

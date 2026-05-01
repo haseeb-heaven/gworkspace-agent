@@ -424,8 +424,7 @@ def _invoke_with_backoff(
 
                 try:
                     plan_data = json.loads(json_str)
-                    print(f"DEBUG raw_content: {raw_content}", file=sys.stderr)
-                    print(f"DEBUG plan_data: {plan_data}", file=sys.stderr)
+                    logger.debug("LLM response parsed: raw_content=%s..., plan_data keys=%s", raw_content[:100] if raw_content else "", list(plan_data.keys()) if isinstance(plan_data, dict) else "")
                     # Handle models that return the schema's outer wrapper (name/parameters)
                     if "parameters" in plan_data and isinstance(plan_data["parameters"], dict):
                         plan_data = plan_data["parameters"]

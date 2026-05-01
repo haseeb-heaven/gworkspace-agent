@@ -218,7 +218,7 @@ class ContextUpdaterMixin:
                 for r in rows:
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
                     table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
-                
+
                 table_str = "\n".join(table_lines)
                 context["contacts_summary_table"] = table_str
                 context["last_contacts_list"] = table_str
@@ -232,7 +232,8 @@ class ContextUpdaterMixin:
                     if not isinstance(item, dict):
                         continue
                     event_type = item.get("id", {}).get("uniqueQualifier", "Event")
-                    actor = item.get("actor", {}).get("email", "Unknown")
+                    _actor = item.get("actor", {}).get("email", "Unknown")
+                    actor = self._mask_pii(_actor) if _actor and _actor != "Unknown" else _actor
                     time_val = item.get("id", {}).get("time", "Unknown Time")
                     rows.append([event_type, actor, time_val])
 
@@ -241,7 +242,7 @@ class ContextUpdaterMixin:
                 for r in rows:
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
                     table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
-                
+
                 table_str = "\n".join(table_lines)
                 context["admin_summary_table"] = table_str
                 context["last_admin_activities"] = table_str
@@ -261,7 +262,7 @@ class ContextUpdaterMixin:
                 for r in rows:
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
                     table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
-                
+
                 table_str = "\n".join(table_lines)
                 context["chat_summary_table"] = table_str
                 context["last_chat_spaces"] = table_str

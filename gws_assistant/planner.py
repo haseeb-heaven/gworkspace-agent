@@ -168,8 +168,7 @@ class CommandPlanner:
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
-        import sys
-        print(f"DEBUG build_command: {service_key}.{action_key} params={params}", file=sys.stderr)
+        logging.getLogger(__name__).debug("build_command: service=%s action=%s", service_key, action_key)
 
         if service_key == "drive":
             return self._build_drive_command(action_key, params)

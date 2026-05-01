@@ -1,10 +1,11 @@
-import os
-import subprocess
-import re
 import logging
+import os
+import re
+import subprocess
 from pathlib import Path
-from dotenv import load_dotenv
+
 import pytest
+from dotenv import load_dotenv
 
 # Load .env at module level
 load_dotenv()
@@ -21,7 +22,7 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
     if email:
         # Replace both placeholders and the actual email if it was hardcoded as person@example.com
         task_string = task_string.replace("person@example.com", email)
-    
+
     test_file = os.getenv("TEST_FILE_NAME", "README.md")
     task_string = task_string.replace("TEST_FILE_NAME", test_file)
 
@@ -31,12 +32,12 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
     env["PYTHONIOENCODING"] = "utf-8"
     # Ensure we are in the project root
     cwd = Path(__file__).resolve().parents[2]
-    
+
     result = subprocess.run(
-        ["python", "gws_cli.py", "--task", task_string], 
-        capture_output=True, 
-        text=True, 
-        encoding="utf-8", 
+        ["python", "gws_cli.py", "--task", task_string],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
         env=env,
         cwd=str(cwd)
     )
@@ -64,7 +65,7 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
             r"\b([a-zA-Z0-9_-]{20,})\b",  # Long IDs like Drive/Docs/Sheets/Slides
             r"\b([a-f0-9]{16})\b",         # Gmail IDs
         ]
-        
+
         resource_id = None
         for pattern in id_patterns:
             match = re.search(pattern, result.stdout)
@@ -76,7 +77,7 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
                 if resource_id.lower() in ("result", "success", "status", "tasks", "summary"):
                     continue
                 break
-        
+
         if resource_id:
             # Skip verification for list/search/find tasks as they don't produce a single verifiable "created" resource
             if any(word in task_string.lower() for word in ["list", "search", "find", "show", "get"]):
@@ -85,22 +86,22 @@ def run_task(task_string, expected=None, unexpected=None, service=None, expected
                     return
 
             # Tier 2 & 3: Live Resource Verification using GWS_BINARY_PATH
+            from gws_assistant.config import AppConfig
             from gws_assistant.execution.verifier import TripleVerifier
             from gws_assistant.gws_runner import GWSRunner
-            from gws_assistant.config import AppConfig
-            
+
             config = AppConfig.from_env()
             binary_path = Path(config.gws_binary_path)
             if not binary_path.is_absolute():
                 binary_path = cwd / binary_path
-            
+
             print(f"--- Triple Verification for {service} ---")
             print(f"Using binary (GWS_BINARY_PATH): {binary_path}")
             print(f"Verifying ID: {resource_id}")
-                
+
             runner = GWSRunner(binary_path, logging.getLogger("triple_verifier"), config=config)
             verifier = TripleVerifier(runner, attempts=2, sleep_seconds=1)
-            
+
             success = verifier.verify_resource(service, resource_id, expected_fields)
             assert success, f"Triple verification failed for {service} {resource_id}. Operation may not have been completed properly."
             print("--- Triple Verification Passed: Resource exists and data is valid ---")
