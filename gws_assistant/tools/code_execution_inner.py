@@ -69,6 +69,7 @@ def _trim_output(text: str, max_len: int = 1000) -> str:
 
 def run_code(code_b64: str) -> dict[str, object]:
     result: dict[str, object] = {"stdout": "", "stderr": "", "success": False, "error": None}
+    set_memory_limit()
 
     try:
         code = base64.b64decode(code_b64.encode("ascii")).decode("utf-8")
