@@ -31,6 +31,44 @@ RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
 
 NO_SERVICE_MESSAGE = "No Google Workspace service detected in your request."
 
+# Phrases that strongly indicate the user wants a *web* search rather than a
+# Drive / Gmail / Sheets lookup. Used to decide whether to keep the ``search``
+# pseudo-service when other Workspace services are also detected.
+_WEB_SEARCH_INTENT_PHRASES: tuple[str, ...] = (
+    "search the web",
+    "search web",
+    "web search",
+    "search online",
+    "search the internet",
+    "search internet",
+    "search google for",
+    "google for ",
+    "look it up online",
+    "look up online",
+    "find online",
+    "find on the web",
+    "browse the web",
+    "scrape",
+    "from the web",
+    "on the web",
+    "from the internet",
+    "on the internet",
+)
+
+
+def _has_explicit_web_search_intent(text: str) -> bool:
+    """Return ``True`` when *text* contains an explicit web-search phrase.
+
+    The check is case-insensitive and tolerant of surrounding whitespace; it
+    is intentionally narrow so that incidental uses of the verb "search"
+    against a Workspace service (``"search drive for X"``) are *not* treated
+    as web-search intent.
+    """
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in _WEB_SEARCH_INTENT_PHRASES)
+
 
 class WorkspaceAgentSystem:
     """Plans one or more gws tasks from a natural-language request."""
@@ -149,6 +187,23 @@ class WorkspaceAgentSystem:
             )
 
         # MULTI-TASK HEURISTICS (General Patterns)
+
+        # Pattern WS-*: Web Search-driven workflows.
+        # These run BEFORE the gmail-/drive-led patterns so that requests like
+        # "Search the web for X, save to Sheet, send email" do not get routed
+        # to gmail.list_messages or drive.list_files.
+        if "search" in services and _has_explicit_web_search_intent(lowered):
+            ws_plan = self._web_search_pattern_tasks(text, lowered, services)
+            if ws_plan is not None:
+                tasks, summary_chain = ws_plan
+                return RequestPlan(
+                    raw_text=text,
+                    tasks=tasks,
+                    summary=f"Planned {len(tasks)} tasks: {summary_chain}",
+                    confidence=0.85,
+                    no_service_detected=False,
+                    source="heuristic",
+                )
 
         # Pattern B: Gmail -> Sheets -> Email (Extraction)
         if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
@@ -523,6 +578,174 @@ $last_export_file_content"""
                 reason="Email the metadata summary table.",
             ),
         ]
+
+    def _web_search_pattern_tasks(
+        self,
+        text: str,
+        lowered: str,
+        services: list[str],
+    ) -> tuple[list[PlannedTask], str] | None:
+        """Build a plan for "Search the web → ..." style requests.
+
+        Returns ``None`` when the pattern doesn't apply (caller falls
+        through to the next heuristic). Otherwise returns a tuple of
+        ``(tasks, summary_chain)`` where *summary_chain* is the
+        ``service.action -> ...`` string used in the plan summary.
+        """
+        wants_sheets = "sheets" in services or "sheet" in lowered or "spreadsheet" in lowered
+        wants_docs = "docs" in services or any(
+            kw in lowered for kw in ("create document", "create a doc", "google doc", "save to a document", "to a document")
+        )
+        wants_email = (
+            "gmail" in services
+            or "send_message" in lowered
+            or any(kw in lowered for kw in ("send email", "send mail", "email to", "send detailed email", "send to"))
+        )
+        wants_code = "code" in services or "computation" in services or any(
+            kw in lowered for kw in (
+                "code executor",
+                "code execution",
+                "use code",
+                "sort them",
+                "sort from",
+                "sorted from",
+                "compute",
+                "calculate",
+            )
+        )
+
+        # If the user does not actually want any downstream artefact, fall
+        # through to the simple single-task path so the existing single-task
+        # search heuristic can handle it.
+        if not (wants_sheets or wants_docs or wants_email or wants_code):
+            return None
+
+        query = _web_search_query_from_text(text)
+        recipient = _extract_email(text) or self.config.default_recipient_email
+        sheet_title = _extract_quoted(text) or "Web Search Results"
+        doc_title = _extract_quoted(text) or "Web Search Notes"
+        chain: list[str] = []
+        tasks: list[PlannedTask] = []
+
+        # Step 1: web search.
+        tasks.append(
+            PlannedTask(
+                id="task-1",
+                service="search",
+                action="web_search",
+                parameters={"query": query, "max_results": 5},
+                reason="Run a web search for the requested information.",
+            )
+        )
+        chain.append("search.web_search")
+
+        # Step 2: optional code transform (sort/format/extract).
+        if wants_code:
+            order_desc = any(
+                kw in lowered
+                for kw in ("expensive", "descending", "high to low", "highest first", "most expensive")
+            )
+            order_flag = "True" if order_desc else "False"
+            sort_key = "1"  # Default: sort by the second column (typically price).
+            code = (
+                "rows = $search_summary_rows\n"
+                "# rows is a list of [title, snippet, url] entries.\n"
+                "try:\n"
+                "    rows = sorted(rows, key=lambda r: r[" + sort_key + "], reverse=" + order_flag + ")\n"
+                "except Exception:\n"
+                "    pass\n"
+                "result = rows\n"
+            )
+            tasks.append(
+                PlannedTask(
+                    id=f"task-{len(tasks) + 1}",
+                    service="code",
+                    action="execute",
+                    parameters={"code": code},
+                    reason="Process / sort the search results before saving.",
+                )
+            )
+            chain.append("code.execute")
+
+        # Step 3: persistence — Sheets and/or Docs.
+        if wants_sheets:
+            tasks.append(
+                PlannedTask(
+                    id=f"task-{len(tasks) + 1}",
+                    service="sheets",
+                    action="create_spreadsheet",
+                    parameters={"title": sheet_title},
+                    reason="Create a spreadsheet to hold the search results.",
+                )
+            )
+            chain.append("sheets.create_spreadsheet")
+
+            tasks.append(
+                PlannedTask(
+                    id=f"task-{len(tasks) + 1}",
+                    service="sheets",
+                    action="append_values",
+                    parameters={
+                        "spreadsheet_id": "$last_spreadsheet_id",
+                        "range": "Sheet1!A1",
+                        "values": "$search_summary_rows",
+                    },
+                    reason="Save the search results to the spreadsheet.",
+                )
+            )
+            chain.append("sheets.append_values")
+
+        if wants_docs:
+            tasks.append(
+                PlannedTask(
+                    id=f"task-{len(tasks) + 1}",
+                    service="docs",
+                    action="create_document",
+                    parameters={
+                        "title": doc_title,
+                        "content": "$search_summary_table",
+                    },
+                    reason="Save the search summary into a Google Doc.",
+                )
+            )
+            chain.append("docs.create_document")
+
+        # Step 4: optional email.
+        if wants_email:
+            subject = sheet_title if wants_sheets else (doc_title if wants_docs else "Web Search Results")
+            if wants_sheets:
+                body = (
+                    "Hi,\n\n"
+                    "Please find the search results spreadsheet here: "
+                    "$last_spreadsheet_url\n\n"
+                    "Top results:\n$search_summary_table"
+                )
+            elif wants_docs:
+                body = (
+                    "Hi,\n\n"
+                    "Please find the search results document here: "
+                    "$last_document_url\n\n"
+                    "Top results:\n$search_summary_table"
+                )
+            else:
+                body = "Hi,\n\nHere are the top web search results:\n\n$search_summary_table"
+
+            tasks.append(
+                PlannedTask(
+                    id=f"task-{len(tasks) + 1}",
+                    service="gmail",
+                    action="send_message",
+                    parameters={
+                        "to_email": recipient,
+                        "subject": subject,
+                        "body": body,
+                    },
+                    reason="Email the search results to the requested recipient.",
+                )
+            )
+            chain.append("gmail.send_message")
+
+        return tasks, " -> ".join(chain)
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
@@ -1010,11 +1233,30 @@ def _detect_services_in_order(text: str) -> list[str]:
 
     found_services = [service for _, service in sorted(hits, key=lambda item: item[0])]
 
-    # Priority Fix: If we detected both a workspace service and generic 'search',
-    # and they are at the same position or search is just a keyword, prioritize the workspace service.
+    # Priority Fix: when the verb "search" is detected alongside one or more
+    # Workspace services, decide between *web* search and Workspace-side
+    # search.
+    #
+    # * If the request contains an explicit web-search phrase
+    #   (``"search the web"``, ``"web search"``, ``"search online"`` …) keep
+    #   ``search`` and instead drop ``drive`` if it was only matched via the
+    #   loose ``"document"`` / ``"file"`` aliases — those words are usually
+    #   referring to the Doc the user wants to *create*, not an existing
+    #   Drive resource.
+    # * Otherwise drop ``search`` (the user asked to search a Workspace
+    #   service, not the web).
     if "search" in found_services and len(found_services) > 1:
-        # If any other service exists, we likely want that service's search, not web search
-        found_services = [s for s in found_services if s != "search"]
+        if _has_explicit_web_search_intent(text):
+            # Keep "search". If "drive" was only matched via the generic
+            # "document"/"file" aliases (i.e. neither the literal "drive"
+            # word nor "google drive" appears in the text), strip it so the
+            # heuristic doesn't trigger drive_to_email patterns by mistake.
+            if "drive" in found_services and not re.search(
+                r"\b(drive|google drive|in my drive|from my drive)\b", text, re.IGNORECASE
+            ):
+                found_services = [s for s in found_services if s != "drive"]
+        else:
+            found_services = [s for s in found_services if s != "search"]
 
     return found_services
 
@@ -1071,6 +1313,81 @@ def _drive_query_from_text(text: str) -> str:
     return ""
 
 
+# Phrases used when isolating the actual web-search query — these are stripped
+# from the start of a request so that the search query passed to the
+# web_search tool is concise and on-topic.
+_WEB_SEARCH_LEADING_PHRASES: tuple[str, ...] = (
+    "search the web for",
+    "search web for",
+    "search online for",
+    "search the internet for",
+    "search internet for",
+    "search google for",
+    "look up online for",
+    "look up online",
+    "look it up online",
+    "find online",
+    "find on the web",
+    "browse the web for",
+    "search for",
+)
+
+_WEB_SEARCH_TRAILING_SPLITS = re.compile(
+    r"\s+(?:and|then|,|;|extract|use|save|store|write|append|create|send|email|share|"
+    r"with proper|in 20\d\d|so that|to a|to the|to my)\b",
+    re.IGNORECASE,
+)
+
+
+def _web_search_query_from_text(text: str) -> str:
+    """Extract a focused web-search query from a natural-language request.
+
+    Strips a leading "search the web for"/"search online for" prefix and
+    trims the result before any task-chaining clause (``"and save"``,
+    ``"then email"`` …) so the query passed to the search engine is concise
+    and topical. Falls back to a quoted span or the trimmed full text.
+
+    Prefix-stripping is preferred over quoted strings because requests
+    typically contain a quoted *artefact name* (e.g. the destination Sheet
+    or Doc title) that should NOT be used as the search query.
+    """
+    if not text:
+        return ""
+
+    lowered = text.lower()
+    candidate: str | None = None
+
+    # 1. Strip a leading "search the web for ..." prefix.
+    for phrase in sorted(_WEB_SEARCH_LEADING_PHRASES, key=len, reverse=True):
+        idx = lowered.find(phrase)
+        if idx >= 0:
+            candidate = text[idx + len(phrase):].lstrip()
+            break
+
+    # 2. Truncate at the first chaining clause so we don't pass the entire
+    #    "save to Sheet … send email …" tail to the search engine.
+    if candidate is not None:
+        match = _WEB_SEARCH_TRAILING_SPLITS.search(candidate)
+        if match:
+            candidate = candidate[: match.start()].rstrip(" .,;:")
+        candidate = candidate.strip(" .,;:")
+
+    # 3. Fall back to a quoted span only if prefix-stripping failed to
+    #    yield something sensible.
+    if not candidate or len(candidate) < 3:
+        quoted = re.search(r"['\"]([^'\"\n]{3,200})['\"]", text)
+        if quoted:
+            candidate = quoted.group(1).strip()
+
+    if not candidate:
+        candidate = text.strip()
+
+    # 4. Cap the length so we don't pass essay-length queries to the engine.
+    if len(candidate) > 200:
+        candidate = candidate[:200].rstrip()
+    return candidate
+
+
 def _extract_id(text: str) -> str | None:
     """Extract a Google Workspace ID (alphanumeric string with underscores/dashes) from text."""
     # Look for common ID pattern: ~44 characters, alphanumeric, includes - and _
@@ -1114,6 +1431,11 @@ def _is_drive_to_email_request(text: str) -> bool:
     )
     if any(word in lowered for word in exclusion_words):
         return False
+    # When the user explicitly asks for a web search the words "document" /
+    # "file" usually describe the artefact they want *created*, not a
+    # Drive resource to look up. Punt to the dedicated web-search patterns.
+    if _has_explicit_web_search_intent(lowered):
+        return False
     return any(t in lowered for t in ("drive", "file", "document")) and any(
         t in lowered for t in ("email", "send", "mail")
     )
@@ -1121,6 +1443,8 @@ def _is_drive_to_email_request(text: str) -> bool:
 
 def _is_drive_metadata_to_email_request(text: str) -> bool:
     lowered = text.lower()
+    if _has_explicit_web_search_intent(lowered):
+        return False
     intent_words = (
         "count", "table", "summary", "metadata", "sizes", "group",
         "metadata only", "names only", "no file content", "do not download",
@@ -1134,6 +1458,8 @@ def _is_drive_metadata_to_email_request(text: str) -> bool:
 
 def _is_metadata_only_request(text: str) -> bool:
     """Detect Drive metadata-only requests that do NOT require emailing (counts, tables, summaries)."""
+    if _has_explicit_web_search_intent(text):
+        return False
     has_drive_intent = any(t in text for t in ("drive", "file", "document", "folder"))
     has_metadata_intent = any(
         t in text
@@ -1156,6 +1482,17 @@ def _is_metadata_only_request(text: str) -> bool:
 
 
 def _is_gmail_to_sheets_request(text: str) -> bool:
+    """Detect a Gmail → Sheets workflow.
+
+    The previous implementation matched any request that contained
+    ``"email"`` + ``"sheet"`` + a save verb, which incorrectly captured web
+    search requests like ``"Search the web ... save to Google Sheet ... send
+    email"`` and routed them to ``gmail.list_messages``. We now reject
+    requests that carry an explicit web-search intent so they fall through
+    to the dedicated web-search heuristics.
+    """
+    if _has_explicit_web_search_intent(text):
+        return False
     return (
         ("gmail" in text or "email" in text)
         and "sheet" in text
