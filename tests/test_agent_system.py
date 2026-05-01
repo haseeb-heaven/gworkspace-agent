@@ -276,7 +276,7 @@ class TestServiceDetectionWithWebSearch:
         text = (
             "Search the web for changelogs of C++ 17 and save that "
             "information to a document called 'cpp_17_changelogs' and "
-            "send that document via email to user@example.com"
+            f"send that document via email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         )
         services = _detect_services_in_order(text)
         assert "search" in services
@@ -286,14 +286,22 @@ class TestServiceDetectionWithWebSearch:
 
 
 class TestGmailToSheetsHeuristicGuard:
-    """``_is_gmail_to_sheets_request`` must not capture web-search prompts."""
+    """``_is_gmail_to_sheets_request`` must not capture web-search or Drive/document search prompts."""
 
     def test_web_search_with_save_and_email_is_rejected(self):
         text = (
             "Search the web for the top 3 Software Engineering AI Agents, "
             "extract name and pricing, save to a new Google Sheet named "
-            "'AI Agents Pricing', then send detailed email to user@example.com"
+            "'AI Agents Pricing', then send detailed email to test@example.com"
         ).lower()
+        assert _is_gmail_to_sheets_request(text) is False
+
+    def test_drive_document_search_is_rejected(self):
+        text = "Search document '12th Class' and convert that to table format in Sheets"
+        assert _is_gmail_to_sheets_request(text) is False
+
+    def test_drive_file_search_is_rejected(self):
+        text = "Search file 'report' and save to Sheets"
         assert _is_gmail_to_sheets_request(text) is False
 
     def test_real_gmail_to_sheets_prompt_still_matches(self):
@@ -303,6 +311,10 @@ class TestGmailToSheetsHeuristicGuard:
         ).lower()
         assert _is_gmail_to_sheets_request(text) is True
 
+    def test_genuine_gmail_to_sheets_still_matches(self):
+        text = "Search my emails for invoices and save to Sheets"
+        assert _is_gmail_to_sheets_request(text) is True
+
 
 class TestDriveToEmailHeuristicGuard:
     """``_is_drive_to_email_request`` must not capture web-search prompts."""
@@ -310,12 +322,12 @@ class TestDriveToEmailHeuristicGuard:
     def test_web_search_to_doc_to_email_is_rejected(self):
         text = (
             "Search the web for changelogs of C++ 17 and save that "
-            "information to a document and send email to user@example.com"
+            f"information to a document and send email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         )
         assert _is_drive_to_email_request(text) is False
 
     def test_genuine_drive_to_email_prompt_still_matches(self):
-        text = "Find my passport photo in Drive and email it to user@example.com"
+        text = f"Find my passport photo in Drive and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         assert _is_drive_to_email_request(text) is True
 
 
@@ -338,21 +350,20 @@ class TestDriveToSheetsToEmailHeuristic:
         text = "Convert to table in Sheets and send email"
         assert _is_drive_to_sheets_to_email_request(text) is False
 
-
-class TestGmailToSheetsHeuristicGuard:
-    """``_is_gmail_to_sheets_request`` must not capture Drive/document search prompts."""
-
-    def test_drive_document_search_is_rejected(self):
-        text = "Search document '12th Class' and convert that to table format in Sheets"
-        assert _is_gmail_to_sheets_request(text) is False
-
-    def test_drive_file_search_is_rejected(self):
-        text = "Search file 'report' and save to Sheets"
-        assert _is_gmail_to_sheets_request(text) is False
-
-    def test_genuine_gmail_to_sheets_still_matches(self):
-        text = "Search my emails for invoices and save to Sheets"
-        assert _is_gmail_to_sheets_request(text) is True
+    def test_drive_pattern_takes_priority_over_gmail_pattern(self, tmp_path):
+        """When both Drive and Gmail could match, Drive pattern should win."""
+        agent = WorkspaceAgentSystem(
+            config=_config(tmp_path), logger=logging.getLogger("test")
+        )
+        # This request has both "document" (Drive) and "email" (Gmail) keywords
+        # It should route to Drive → Sheets → Gmail, not Gmail → Sheets
+        plan = agent.plan(
+            "Search document '12th Class' and convert that to table format in Sheets and then send me test@example.com"
+        )
+        assert plan.no_service_detected is False
+        # First task should be Drive, not Gmail
+        assert plan.tasks[0].service == "drive"
+        assert plan.tasks[0].action == "list_files"
 
 
 class TestWebSearchQueryExtraction:

@@ -206,18 +206,6 @@ class WorkspaceAgentSystem:
                     source="heuristic",
                 )
 
-        # Pattern B: Gmail -> Sheets -> Email (Extraction)
-        if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
-            tasks = self._gmail_to_sheets_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
         # Pattern A1: Drive Metadata Only (e.g. counts, tables, summaries)
         if (
             "drive" in services
@@ -282,6 +270,19 @@ class WorkspaceAgentSystem:
                 raw_text=text,
                 tasks=tasks,
                 summary=f"Planned {len(tasks)} tasks: drive.create_folder -> drive.list_files -> drive.move_file",
+                confidence=0.7,
+                no_service_detected=False,
+                source="heuristic",
+            )
+
+        # Pattern B: Gmail -> Sheets -> Email (Extraction)
+        # Checked AFTER Drive patterns to ensure Drive-based requests take priority
+        if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
+            tasks = self._gmail_to_sheets_tasks(text, lowered)
+            return RequestPlan(
+                raw_text=text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
                 confidence=0.7,
                 no_service_detected=False,
                 source="heuristic",
