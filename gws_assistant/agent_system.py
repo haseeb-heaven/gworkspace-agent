@@ -1334,7 +1334,7 @@ _WEB_SEARCH_LEADING_PHRASES: tuple[str, ...] = (
 
 _WEB_SEARCH_TRAILING_SPLITS = re.compile(
     r"\s+(?:and|then|,|;|extract|use|save|store|write|append|create|send|email|share|"
-    r"with proper|in 20\d\d|so that|to a|to the|to my)\b",
+    r"with proper|so that|to a|to the|to my)\b",
     re.IGNORECASE,
 )
 
