@@ -356,12 +356,15 @@ class WorkspaceAgentSystem:
         # Pattern L: Explicit Code Execution / Computation
         if "code" in services or "computation" in services:
             if any(kw in lowered for kw in ("calculate", "compute", "prime", "sum", "script", "python")):
+                # Generate proper Python code from the natural language request
+                # instead of passing the raw text which would cause a SyntaxError
+                generated_code = _generate_computation_code(lowered, text)
                 tasks = [
                     PlannedTask(
                         id="task-1",
                         service="code",
                         action="execute",
-                        parameters={"code": text},
+                        parameters={"code": generated_code},
                         reason="Direct computation request."
                     )
                 ]
