@@ -80,6 +80,13 @@ class FakeRunner(GWSRunner):
                 ),
             )
 
+        if args[:4] == ["sheets", "spreadsheets", "values", "append"]:
+            return ExecutionResult(
+                success=True,
+                command=[_BIN, *args],
+                stdout='{"updates":{"updatedRows":2,"updatedCells":6,"updatedRange":"Sheet1!A1:C2"}}',
+            )
+
         if args[:3] == ["drive", "files", "export"]:
             return ExecutionResult(
                 success=True,
@@ -282,7 +289,7 @@ class TestWebSearchToSheets:
         report = executor.execute(plan)
         assert report.success is True
 
-        append_cmd = next(c for c in runner.commands if c[:4] == ["sheets", "spreadsheets", "values"])
+        append_cmd = next(c for c in runner.commands if c[:4] == ["sheets", "spreadsheets", "values", "append"])
         json_payload = append_cmd[append_cmd.index("--json") + 1]
         # Search results must reach the sheet — no Gmail snippet leakage.
         assert "LangGraph" in json_payload

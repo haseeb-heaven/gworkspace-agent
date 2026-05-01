@@ -136,7 +136,7 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout='{"spreadsheetId":"sheet-1","properties":{"title":"Verified Sheet"}}',
+                stdout='{"spreadsheetId":"sheet-1","properties":{"title":"Verified Sheet"},"sheets":[{"properties":{"title":"Verified Sheet"},"data":{}}]}',
             )
         if args[:3] == ["drive", "files", "list"]:
             return ExecutionResult(

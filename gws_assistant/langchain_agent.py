@@ -311,7 +311,7 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     # gmail.list_messages or drive.list_files for "Search the web for X".
     if (
         any(kw in lowered for kw in _web_search_intent_keywords())
-        and "search.web_search" not in actions_in_plan
+        and "web_search" not in actions_in_plan
     ):
         logging.info(
             "Plan incomplete: user asked for a web search but plan has no search.web_search task."
