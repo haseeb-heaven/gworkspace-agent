@@ -1401,11 +1401,21 @@ def _extract_quoted(text: str) -> str | None:
 
 
 def _extract_sheet_title(text: str) -> str | None:
-    return _extract_quoted(text)
+    m = re.search(r"(?:named|called|titled|sheet|spreadsheet)\s+[\'\"]([^\'\"]+)[\'\"]", text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Fall back to last quoted string, not first
+    matches = RE_EXTRACT_QUOTED.findall(text)
+    return matches[-1] if matches else None
 
 
 def _extract_doc_title(text: str) -> str | None:
-    return _extract_quoted(text)
+    m = re.search(r"(?:named|called|titled|doc|document)\s+[\'\"]([^\'\"]+)[\'\"]", text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Fall back to last quoted string, not first
+    matches = RE_EXTRACT_QUOTED.findall(text)
+    return matches[-1] if matches else None
 
 
 def _first_int(text: str) -> int | None:
