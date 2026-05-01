@@ -48,9 +48,7 @@ _WEB_SEARCH_INTENT_PHRASES: tuple[str, ...] = (
     "find online",
     "find on the web",
     "browse the web",
-    "scrape",
     "from the web",
-    "on the web",
     "from the internet",
     "on the internet",
 )
@@ -622,8 +620,8 @@ $last_export_file_content"""
 
         query = _web_search_query_from_text(text)
         recipient = _extract_email(text) or self.config.default_recipient_email
-        sheet_title = _extract_quoted(text) or "Web Search Results"
-        doc_title = _extract_quoted(text) or "Web Search Notes"
+        sheet_title = _extract_sheet_title(text) or "Web Search Results"
+        doc_title = _extract_doc_title(text) or "Web Search Notes"
         chain: list[str] = []
         tasks: list[PlannedTask] = []
 
@@ -641,19 +639,9 @@ $last_export_file_content"""
 
         # Step 2: optional code transform (sort/format/extract).
         if wants_code:
-            order_desc = any(
-                kw in lowered
-                for kw in ("expensive", "descending", "high to low", "highest first", "most expensive")
-            )
-            order_flag = "True" if order_desc else "False"
-            sort_key = "1"  # Default: sort by the second column (typically price).
             code = (
                 "rows = $search_summary_rows\n"
                 "# rows is a list of [title, snippet, url] entries.\n"
-                "try:\n"
-                "    rows = sorted(rows, key=lambda r: r[" + sort_key + "], reverse=" + order_flag + ")\n"
-                "except Exception:\n"
-                "    pass\n"
                 "result = rows\n"
             )
             tasks.append(
@@ -1521,6 +1509,8 @@ def _is_slides_to_email_request(text: str) -> bool:
 
 
 def _is_sheet_creation_request(text: str) -> bool:
+    if _has_explicit_web_search_intent(text):
+        return False
     # Avoid matching "create email" or "create doc"
     if "email" in text or "doc" in text or "folder" in text:
         # If it's "create a sheet", it's fine. If it's "create an email", it's not.
