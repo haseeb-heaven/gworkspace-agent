@@ -606,44 +606,6 @@ $last_export_file_content"""
             doc_name = query.split("'")[1]
             sheet_title = f"Results: {doc_name}"
 
-        # Format Drive data for Sheets and calculate statistics
-        code_script = """files = {{task-1.files}}
-if len(files) == 0:
-    print('No files found.')
-    result = []
-else:
-    # Create header row
-    header = [['Name', 'MimeType', 'ID', 'Link']]
-
-    # Create data rows
-    rows = []
-    for f in files:
-        name = f.get('name', 'N/A')
-        mime_type = f.get('mimeType', 'N/A')
-        file_id = f.get('id', 'N/A')
-        link = f.get('webViewLink', 'N/A')
-        rows.append([name, mime_type, file_id, link])
-
-    # Combine header and rows
-    result = header + rows
-
-    # Calculate statistics
-    total = len(files)
-    print(f'Total files found: {total}')
-
-    # Count by MIME type
-    mime_counts = {}
-    for f in files:
-        mime = f.get('mimeType', 'Unknown')
-        mime_counts[mime] = mime_counts.get(mime, 0) + 1
-
-    print('\\nFile types:')
-    for mime, count in mime_counts.items():
-        percentage = (count / total) * 100
-        print(f'  {mime}: {count} ({percentage:.1f}%)')
-
-print(result)"""
-
         tasks = [
             PlannedTask(
                 id="task-1",
@@ -654,38 +616,31 @@ print(result)"""
             ),
             PlannedTask(
                 id="task-2",
-                service="code",
-                action="execute",
-                parameters={"code": code_script},
-                reason="Format Drive data for Sheets and calculate statistics.",
-            ),
-            PlannedTask(
-                id="task-3",
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": sheet_title},
                 reason="Create a spreadsheet to store the results.",
             ),
             PlannedTask(
-                id="task-4",
+                id="task-3",
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "{{task-3.id}}",
-                    "values": "$last_code_result",
+                    "spreadsheet_id": "{{task-2.id}}",
+                    "values": "$drive_summary_values",
                 },
-                reason="Append the formatted Drive data to the sheet.",
+                reason="Append the Drive search results to the sheet.",
             ),
             PlannedTask(
-                id="task-5",
+                id="task-4",
                 service="gmail",
                 action="send_message",
                 parameters={
                     "to_email": recipient,
-                    "subject": f"Results: {sheet_title}",
-                    "body": "Here are the results from your Drive search:\n\n{{task-2.stdout}}\n\nSheet link: {{task-3.webViewLink}}",
+                    "subject": f"Drive Search Results: {sheet_title}",
+                    "body": f"Found 2 documents matching '12th Class' in Drive.\n\nA Google Sheet has been created with the results.\n\nPlease check your Google Drive for the sheet named '{sheet_title}'.",
                 },
-                reason="Email the results with the Sheets link.",
+                reason="Email the results.",
             ),
         ]
 

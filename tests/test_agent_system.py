@@ -376,12 +376,16 @@ class TestDriveToSheetsToEmailHeuristic:
         # This request has both "document" (Drive) and "email" (Gmail) keywords
         # It should route to Drive → Sheets → Gmail, not Gmail → Sheets
         plan = agent.plan(
-            "Search document '12th Class' and convert that to table format in Sheets and then send me test@example.com"
+            "Search document '12th Class' and convert that to table format in Sheets and then show me total percentage and send that sheets link and append that to email"
         )
         assert plan.no_service_detected is False
         # First task should be Drive, not Gmail
         assert plan.tasks[0].service == "drive"
         assert plan.tasks[0].action == "list_files"
+        # Should have 4 tasks: drive.list_files -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message
+        assert len(plan.tasks) == 4
+        assert plan.tasks[1].service == "sheets"
+        assert plan.tasks[1].action == "create_spreadsheet"
 
 
 class TestWebSearchQueryExtraction:
