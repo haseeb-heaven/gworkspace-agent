@@ -32,6 +32,15 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_export_file_content": "last_export_file_content",
     "$last_export_content":      "last_export_file_content",
     "$last_file_content":        "last_export_file_content",
+    "$last_contacts_list":       "last_contacts_list",
+    "$contacts_summary_table":   "contacts_summary_table",
+    "$contacts_summary_count":   "contacts_summary_count",
+    "$last_admin_activities":    "last_admin_activities",
+    "$admin_summary_table":      "admin_summary_table",
+    "$admin_summary_count":      "admin_summary_count",
+    "$last_chat_spaces":         "last_chat_spaces",
+    "$chat_summary_table":       "chat_summary_table",
+    "$chat_summary_count":       "chat_summary_count",
 
     # Standardized output contracts mapping (legacy -> new)
     "$drive_summary_values":    "drive_summary_rows",

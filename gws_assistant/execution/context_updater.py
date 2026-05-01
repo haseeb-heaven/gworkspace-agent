@@ -193,6 +193,80 @@ class ContextUpdaterMixin:
                 details_list = context.setdefault("gmail_details_values", [])
                 details_list.append(row)
 
+        if "connections" in data or "people" in data:
+            conns = data.get("connections") or data.get("people")
+            if conns and isinstance(conns, list):
+                rows = []
+                for person in conns:
+                    if not isinstance(person, dict):
+                        continue
+
+                    def first_val(items, key):
+                        if isinstance(items, list) and items:
+                            return items[0].get(key, "")
+                        return ""
+
+                    name = first_val(person.get("names"), "displayName")
+                    email = first_val(person.get("emailAddresses"), "value")
+                    phone = first_val(person.get("phoneNumbers"), "value")
+                    rows.append([name, email, phone])
+
+                context["contacts_summary_rows"] = rows
+                context["contacts_summary_values"] = [r.copy() for r in rows]
+
+                table_lines = ["| Name | Email | Phone |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+                
+                table_str = "\n".join(table_lines)
+                context["contacts_summary_table"] = table_str
+                context["last_contacts_list"] = table_str
+                context["contacts_summary_count"] = len(conns)
+
+        if "activities" in data or ("items" in data and task and task.service == "admin"):
+            items = data.get("activities") or data.get("items")
+            if items and isinstance(items, list):
+                rows = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    event_type = item.get("id", {}).get("uniqueQualifier", "Event")
+                    actor = item.get("actor", {}).get("email", "Unknown")
+                    time_val = item.get("id", {}).get("time", "Unknown Time")
+                    rows.append([event_type, actor, time_val])
+
+                context["admin_summary_rows"] = rows
+                table_lines = ["| Event | Actor | Time |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+                
+                table_str = "\n".join(table_lines)
+                context["admin_summary_table"] = table_str
+                context["last_admin_activities"] = table_str
+                context["admin_summary_count"] = len(items)
+
+        if "spaces" in data:
+            spaces = data["spaces"]
+            if spaces and isinstance(spaces, list):
+                rows = []
+                for s in spaces:
+                    if not isinstance(s, dict):
+                        continue
+                    rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
+
+                context["chat_summary_rows"] = rows
+                table_lines = ["| Space Name | Resource Name | Type |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+                
+                table_str = "\n".join(table_lines)
+                context["chat_summary_table"] = table_str
+                context["last_chat_spaces"] = table_str
+                context["chat_summary_count"] = len(spaces)
+
         if "messages" in data:
             msgs = data["messages"]
             if msgs and isinstance(msgs, list):
