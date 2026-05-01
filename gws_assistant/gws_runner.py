@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import subprocess
-import json
 from pathlib import Path
 from typing import Any
 
 from .models import AppConfigModel, ExecutionResult
-
-import re
 
 # Windows CreateProcess has a hard limit of ~32 767 characters for the entire
 # command-line string.  Any single CLI argument larger than this threshold will
@@ -49,7 +48,8 @@ def _validate_args(args: list[str]) -> None:
         "drive", "gmail", "sheets", "docs", "calendar", "admin-reports",
         "reports", "tasks", "people", "chat", "classroom", "forms",
         "keep", "meet", "events", "modelarmor", "workflow", "wf",
-        "script", "schema", "search", "admin", "code", "computation"
+        "script", "schema", "search", "admin", "code", "computation",
+        "slides"
     }
 
     if not args:
@@ -164,7 +164,7 @@ class GWSRunner:
         # Interpret 0 as no timeout (infinite)
         if timeout == 0:
             timeout = None
-        
+
         _validate_args(args)
         command = [str(self.gws_binary_path), *args]
 

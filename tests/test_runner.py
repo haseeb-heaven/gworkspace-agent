@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import pytest
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from gws_assistant.gws_runner import GWSRunner, _validate_args
 

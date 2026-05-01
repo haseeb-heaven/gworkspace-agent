@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from gws_assistant.langgraph_workflow import create_workflow, WorkflowNodes
-from gws_assistant.models import PlannedTask, RequestPlan, StructuredToolResult, ReflectionDecision, TaskExecution
+import pytest
+
+from gws_assistant.langgraph_workflow import WorkflowNodes
+from gws_assistant.models import PlannedTask, ReflectionDecision, RequestPlan, StructuredToolResult, TaskExecution
 
 
 @pytest.fixture
@@ -85,13 +86,13 @@ class TestWorkflowNodes:
     def test_execute_task_node_success(self, nodes, mock_executor):
         plan = RequestPlan(raw_text="test", tasks=[PlannedTask(id="1", service="gmail", action="send", parameters={})])
         state = {"plan": plan, "current_task_index": 0, "context": {}, "executions": []}
-        
+
         mock_res = MagicMock()
         mock_res.success = True
         mock_res.output = {"parsed_payload": {"id": "m123"}}
         mock_res.to_structured_result.return_value = StructuredToolResult(success=True, output={"id": "m123"}, error=None)
         mock_executor.execute_single_task.return_value = mock_res
-        
+
         result = nodes.execute_task_node(state)
         assert result["error"] is None
         assert len(result["executions"]) == 1
@@ -136,10 +137,10 @@ class TestWorkflowNodes:
     def test_reflect_node_replan(self, nodes, mock_executor, mock_config):
         mock_config.max_replans = 1
         mock_executor.reflect_on_error.return_value = (ReflectionDecision(action="replan", reason="Need new plan"), False)
-        
+
         state = {"error": "failed", "current_attempt": 1, "context": {"replan_count": 0}, "plan": MagicMock()}
         result = nodes.reflect_node(state)
-        
+
         assert result["reflection"].action == "replan"
         assert result["context"]["replan_count"] == 1
         assert result["current_attempt"] == 0
@@ -160,7 +161,7 @@ class TestWorkflowNodes:
         mock_res = MagicMock()
         mock_res.success = True
         executions = [TaskExecution(task=plan.tasks[0], result=mock_res)]
-        
+
         state = {"plan": plan, "executions": executions, "context": {}}
         result = nodes.format_output_node(state)
         assert "final_output" in result

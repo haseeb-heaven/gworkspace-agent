@@ -1,9 +1,12 @@
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
+
 from gws_assistant.intent_parser import IntentParser
 from gws_assistant.models import AppConfigModel
-from pathlib import Path
+
 
 @pytest.fixture
 def parser():
@@ -84,7 +87,7 @@ def test_parse_with_llm_success(parser):
     mock_completion = MagicMock()
     mock_completion.choices = [MagicMock(message=MagicMock(content='{"service": "gmail", "action": "send_message", "parameters": {"to": "a@b.com"}, "confidence": 0.9}'))]
     mock_client.chat.completions.create.return_value = mock_completion
-    
+
     with patch.object(parser, "client", mock_client):
         result = parser.parse("send mail to a@b.com")
         assert result.service == "gmail"

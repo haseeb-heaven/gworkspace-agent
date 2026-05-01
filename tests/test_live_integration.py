@@ -83,7 +83,7 @@ def test_live_workspace_sheet_and_email_flow():
     verify_email_result = runner.run(verify_email_cmd, timeout_seconds=30)
     assert verify_email_result.success, f"Verification failed! Email {message_id} not found."
     assert message_id in verify_email_result.stdout or verify_email_result.stdout != ""
-    
+
     # Cleanup: Delete the created spreadsheet to avoid polluting the workspace
     # Since there's no native 'delete_spreadsheet' in planner, we delete via drive
     delete_sheet_cmd = planner.build_command("drive", "delete_file", {"file_id": spreadsheet_id})

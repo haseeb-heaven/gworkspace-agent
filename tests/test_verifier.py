@@ -1,15 +1,15 @@
 """Comprehensive tests for execution/verifier.py — covers TripleVerifier, validate_artifact_content, VerifierMixin."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
 from gws_assistant.execution.verifier import (
-    validate_artifact_content,
     TripleVerifier,
     VerifierMixin,
+    validate_artifact_content,
 )
-
 
 # ---------- validate_artifact_content ----------
 
@@ -25,7 +25,7 @@ class TestValidateArtifactContent:
     def test_null_string_raises(self):
         with pytest.raises(ValueError, match="invalid value"):
             validate_artifact_content("null")
-            
+
     def test_nan_string_raises(self):
         with pytest.raises(ValueError, match="invalid value"):
             validate_artifact_content("NaN")

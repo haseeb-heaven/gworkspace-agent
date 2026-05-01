@@ -1,7 +1,7 @@
+import hashlib
 import json
 import logging
 import os
-import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -297,7 +297,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                     result.error = f"Path traversal blocked while reading exported file: {saved_file}"
                                     result.stdout = json.dumps({"error": result.error})
                                     return result
-                                    
+
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
                                     file_content = f.read().lstrip("\ufeff")
                             except Exception as e:

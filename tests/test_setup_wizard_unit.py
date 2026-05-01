@@ -1,13 +1,10 @@
 """Tests for setup_wizard module — covers discover_gws_binary and helper functions."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from gws_assistant.setup_wizard import discover_gws_binary, _quote, _render_env
+from gws_assistant.setup_wizard import _quote, _render_env, discover_gws_binary
 
 
 class TestDiscoverGwsBinary:

@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from gws_assistant.tools.e2b_sandbox import execute_with_e2b
+
 
 def test_execute_with_e2b_missing_lib():
     with patch("gws_assistant.tools.e2b_sandbox.Sandbox", None):
@@ -17,7 +18,7 @@ def test_execute_with_e2b_success(mock_sandbox_class):
     mock_execution.results = [MagicMock(json='{"x": 1}', value={"x": 1})]
     mock_execution.error = None
     mock_sbx.run_code.return_value = mock_execution
-    
+
     result = execute_with_e2b("print('hello')", "key")
     assert result["success"] is True
     assert result["output"]["stdout"] == "hello"
@@ -32,7 +33,7 @@ def test_execute_with_e2b_error(mock_sandbox_class):
     mock_execution.results = []
     mock_execution.error = MagicMock(name="RuntimeError", value="failure")
     mock_sbx.run_code.return_value = mock_execution
-    
+
     result = execute_with_e2b("1/0", "key")
     assert result["success"] is False
     assert "RuntimeError" in result["error"]

@@ -1,9 +1,10 @@
 """Unit tests for llm_client.py — covers helper functions and call_llm logic."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
-from litellm.exceptions import RateLimitError, AuthenticationError
+
+import pytest
+from litellm.exceptions import AuthenticationError, RateLimitError
 
 from gws_assistant.llm_client import _build_api_kwargs, call_llm
 

@@ -1,13 +1,14 @@
 import os
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
+
 from gws_assistant.tools.telegram import redact_sensitive, send_telegram
+
 
 def test_redact_sensitive():
     # Test pattern matching
     assert redact_sensitive("sk-12345678901234567890") == "[REDACTED]"
     assert redact_sensitive("Bearer 12345.67890.abcde") == "[REDACTED]"
-    
+
     # Test env var matching
     with patch.dict(os.environ, {"MY_SECRET_TOKEN": "supersecret"}):
         assert redact_sensitive("my token is supersecret") == "my token is [REDACTED]"
@@ -24,7 +25,7 @@ def test_send_telegram_success(mock_request, mock_urlopen):
     mock_response.__enter__.return_value = mock_response
     mock_response.read.return_value = b'{"ok": true}'
     mock_urlopen.return_value = mock_response
-    
+
     with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "456"}):
         assert send_telegram("hello") is True
         mock_urlopen.assert_called_once()
@@ -33,6 +34,6 @@ def test_send_telegram_success(mock_request, mock_urlopen):
 def test_send_telegram_failure(mock_urlopen):
     from urllib.error import URLError
     mock_urlopen.side_effect = URLError("failed")
-    
+
     with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "456"}):
         assert send_telegram("hello") is False
