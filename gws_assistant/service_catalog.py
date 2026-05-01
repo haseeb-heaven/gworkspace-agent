@@ -404,8 +404,18 @@ SERVICES: dict[str, ServiceSpec] = {
                     ),
                     ParameterSpec("sources", "Sources (DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE)", "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE", required=False),
                 ),
+            "get_person": ActionSpec(
+                key="get_person",
+                label="Get person",
+                description="Get a specific person's profile by resourceName. Returns: {resourceName, names[], emailAddresses[], phoneNumbers[]}.",
+                keywords=("get", "show", "read", "person", "contact"),
+                parameters=(
+                    ParameterSpec("resourceName", "Person resource name (e.g. people/c123)", "people/c123"),
+                    ParameterSpec("personFields", "Fields to return", "names,emailAddresses,phoneNumbers", required=False),
+                ),
             ),
         },
+    ),
     ),
     "chat": ServiceSpec(
         key="chat",
