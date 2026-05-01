@@ -17,7 +17,7 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Search and Append verification
-    run_task("Find an email about 'invoice' and save the snippet to a Google Sheet.", expected=["Planned", "completed"], service="gmail")
+    run_task("Find an email about 'invoice' and save the snippet to a Google Sheet.", expected=["Planned", "completed"], service="sheets")
 
 
 @pytest.mark.live_integration
@@ -26,7 +26,7 @@ def test_manual_3():
     run_task(
         "Search for 'urgent', save the top result to a document, and reply back to the sender via email.",
         expected=["Planned", "completed"],
-        service="gmail"
+        service="docs"
     )
 
 

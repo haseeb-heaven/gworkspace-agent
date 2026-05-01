@@ -282,6 +282,42 @@ class WorkspaceAgentSystem:
                 source="heuristic",
             )
 
+        # Pattern L: Explicit Code Execution / Computation
+        if "code" in services or "computation" in services:
+            if any(kw in lowered for kw in ("calculate", "compute", "prime", "sum", "script", "python")):
+                tasks = [
+                    PlannedTask(
+                        id="task-1",
+                        service="code",
+                        action="execute",
+                        parameters={"code": text},
+                        reason="Direct computation request."
+                    )
+                ]
+                if "email" in lowered or "send" in lowered:
+                    recipient = _extract_email(text) or self.config.default_recipient_email
+                    tasks.append(
+                        PlannedTask(
+                            id="task-2",
+                            service="gmail",
+                            action="send_message",
+                            parameters={
+                                "to_email": recipient,
+                                "subject": "Computation Results",
+                                "body": "Here are the results of the computation:\n\n{{task-1.stdout}}",
+                            },
+                            reason="Email the computation results."
+                        )
+                    )
+                return RequestPlan(
+                    raw_text=text,
+                    tasks=tasks,
+                    summary=f"Planned {len(tasks)} tasks: code.execute" + (" -> gmail.send_message" if len(tasks) > 1 else ""),
+                    confidence=0.8,
+                    no_service_detected=False,
+                    source="heuristic",
+                )
+
         # Pattern J: Slides -> Email
         if "slides" in services and "gmail" in services and _is_slides_to_email_request(lowered):
             tasks = self._slides_to_email_tasks(text, lowered)
@@ -627,22 +663,27 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
 
     def _sheets_creation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         title = _extract_quoted(text) or "New Spreadsheet"
-        return [
+        tasks = [
             PlannedTask(
                 id="task-1",
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": title},
                 reason=f"Create spreadsheet '{title}'.",
-            ),
-            PlannedTask(
-                id="task-2",
-                service="sheets",
-                action="append_values",
-                parameters={"spreadsheet_id": "{{task-1.id}}", "values": _extract_data_rows(text)},
-                reason="Add data rows to the sheet.",
-            ),
+            )
         ]
+        values = _extract_data_rows(text)
+        if values:
+            tasks.append(
+                PlannedTask(
+                    id="task-2",
+                    service="sheets",
+                    action="append_values",
+                    parameters={"spreadsheet_id": "{{task-1.id}}", "values": values},
+                    reason="Add data rows to the sheet.",
+                )
+            )
+        return tasks
 
     def _admin_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         recipient = _extract_email(text) or self.config.default_recipient_email

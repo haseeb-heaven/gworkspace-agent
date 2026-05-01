@@ -351,6 +351,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 "create_event",
                 "create_task",
                 "create_note",
+                "create_form",
             )
             if task.action in creation_actions:
                 resource_id = (
@@ -360,6 +361,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     or result.output.get("document_id")
                     or result.output.get("id")
                     or result.output.get("name")
+                    or result.output.get("formId")
                 )
                 if resource_id:
                     if not self.verify_resource(task.service, resource_id):

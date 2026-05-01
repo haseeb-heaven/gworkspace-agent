@@ -371,6 +371,7 @@ class VerificationEngine:
                         "resourceName",
                         "threadId",
                         "name",
+                        "formId",
                     ]
                 )
                 if not has_id:
@@ -439,6 +440,13 @@ class VerificationEngine:
                 task_status = result.get("status")
                 if task_status and task_status not in ("needsAction", "completed"):
                     raise VerificationError(tool_name, f"Invalid task status {task_status}", "status")
+
+        # CATEGORY 9 - FORMS
+        if service == "forms" or "form" in tool_name:
+            if isinstance(result, dict):
+                if "create" in tool_name:
+                    if not result.get("formId") and not result.get("id"):
+                        raise VerificationError(tool_name, "Create form missing formId")
 
     @classmethod
     def verify_attachment_sent(cls, params: dict, result: Any) -> None:

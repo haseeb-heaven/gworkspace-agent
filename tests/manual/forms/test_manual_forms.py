@@ -14,4 +14,4 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Create verification
-    run_task("Create a new Google Form titled 'Customer Feedback Survey'.", expected=["Created", "Customer Feedback Survey"], service="forms", expected_fields={"title": "Customer Feedback Survey"})
+    run_task("Create a Google Form titled 'User Feedback Survey'.", expected=["Command succeeded", "User Feedback Survey"], service="forms", expected_fields={"info": {"title": "User Feedback Survey"}})
