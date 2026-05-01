@@ -5,6 +5,8 @@ from unittest.mock import patch
 import pytest
 
 from gws_assistant.agent_system import WorkspaceAgentSystem
+
+pytestmark = pytest.mark.integration
 from gws_assistant.execution.executor import PlanExecutor
 from gws_assistant.langgraph_workflow import run_workflow
 from gws_assistant.models import AppConfigModel
@@ -14,7 +16,7 @@ from tests.fakes.fake_google_workspace import FakeGoogleWorkspace
 @pytest.fixture
 def config():
     return AppConfigModel(
-        provider="openai",
+        provider=random.choice(["openai","google", 
         model="gpt-4o",
         api_key="test_key",
         llm_fallback_models=[],
