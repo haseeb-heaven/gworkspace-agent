@@ -304,8 +304,9 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     # If user explicitly asks for a *web* search but the plan has no search
     # task → incomplete. This catches plans that hallucinate
     # gmail.list_messages or drive.list_files for "Search the web for X".
+    # Use word-boundary matching to match _has_explicit_web_search_intent behavior.
     if (
-        any(kw in lowered for kw in _web_search_intent_keywords())
+        any(re.search(r"\b" + re.escape(kw) + r"\b", lowered) for kw in _web_search_intent_keywords())
         and "web_search" not in actions_in_plan
     ):
         logging.info(
