@@ -81,7 +81,7 @@ def test_triple_verifier_checks_calendar_event_with_expected_fields():
     runner = Runner()
     verifier = TripleVerifier(runner, sleep_seconds=0)
 
-    assert verifier.verify_resource("calendar", "evt-1", {"summary": "Planning Review"}) is True
+    assert verifier.verify_resource_by_id("calendar", "evt-1", {"summary": "Planning Review"}) is True
     assert len(runner.calls) == 3
     assert all(call[:3] == ["calendar", "events", "get"] for call in runner.calls)
 

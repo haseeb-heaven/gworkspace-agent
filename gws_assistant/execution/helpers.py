@@ -17,11 +17,20 @@ class HelpersMixin:
         # This will be provided by ResolverMixin
         ...
 
-    def _think(self, *args, **kwargs) -> str:
+    def _generate_execution_thought(self, *args, **kwargs) -> str:
+        """Generate a thought/reasoning message during execution (placeholder for future use)."""
         return "Thought: Proceeding with planned task."
 
-    def _should_replan(self, *args, **kwargs) -> bool:
+    def _should_trigger_replanning(self, *args, **kwargs) -> bool:
+        """Determine if execution should trigger re-planning (placeholder for future use)."""
         return False
+
+    # Backward compatibility aliases for tests that mock the old method names
+    def _think(self, *args, **kwargs) -> str:
+        return self._generate_execution_thought(*args, **kwargs)
+
+    def _should_replan(self, *args, **kwargs) -> bool:
+        return self._should_trigger_replanning(*args, **kwargs)
 
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""

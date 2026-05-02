@@ -150,7 +150,7 @@ def run_task(
             runner = GWSRunner(binary_path, logging.getLogger("triple_verifier"), config=config)
             verifier = TripleVerifier(runner, attempts=2, sleep_seconds=1)
 
-            success = verifier.verify_resource(service, resource_id, expected_fields)
+            success = verifier.verify_resource_by_id(service, resource_id, expected_fields)
             if not success:
                 pytest.fail(
                     f"Triple verification failed for {service} {resource_id}. "
