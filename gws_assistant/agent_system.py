@@ -1190,7 +1190,7 @@ import re
 
 data = {data_str}
 
-def get_sort_key(row, index, is_numeric):
+def get_sort_key(row, index, is_numeric) -> float | str:
     try:
         if not isinstance(row, (list, tuple)) or not len(row) > index:
             return 0 if is_numeric else ""

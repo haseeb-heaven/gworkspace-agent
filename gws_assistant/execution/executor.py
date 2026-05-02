@@ -147,6 +147,48 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 self.logger.warning(f"SAFETY BLOCK: {e}")
                 return ExecutionResult(success=False, command=["<blocked>"], error=str(e))
 
+            # 3. Inject confirmation markers for verification engine after safety check passes
+            # This allows the verification engine to know that safety confirmation was obtained
+            destructive_ops = None
+            if hasattr(self, "config") and self.config:
+                destructive_ops = self.config.verification_destructive_operations
+                
+            if task.is_destructive(destructive_ops=destructive_ops):
+                task.parameters["_safety_confirmed"] = True
+
+            # Bulk confirmation injection
+            from gws_assistant.safety_guard import BULK_KEYWORDS
+            # Combine with config indicators (Bug 2)
+            all_bulk_keywords = set(BULK_KEYWORDS)
+            if hasattr(self, "config") and self.config:
+                all_bulk_keywords.update(self.config.verification_bulk_indicators)
+            
+            # Use same filtering logic as CHECK 5 (Bug 6)
+            filtered_params = {k: v for k, v in task.parameters.items() if not k.startswith("_")}
+            params_str = str(filtered_params).lower()
+            
+            # Use word-boundary regex (Bug 7)
+            has_bulk_keywords = False
+            for kw in all_bulk_keywords:
+                if re.search(r"\b" + re.escape(kw) + r"\b", params_str):
+                    has_bulk_keywords = True
+                    break
+                    
+            is_bulk_tool = any(kw in (task.action or "").lower() for kw in ["batch", "bulk"])
+            has_star_query = task.parameters.get("query") == "*" or task.parameters.get("q") == "*"
+            
+            if has_bulk_keywords or is_bulk_tool or has_star_query:
+                task.parameters["_bulk_confirmed"] = True
+
+            # 4. Pre-execution verification (Bug 1)
+            # This ensures safety/bulk gates are enforced BEFORE the operation executes
+            try:
+                VerificationEngine.verify_pre_execution(f"{task.service}_{task.action}", task.parameters)
+            except VerificationError as e:
+                from gws_assistant.exceptions import VerificationError as ExistingVerificationError
+                self.logger.error(f"Pre-execution verification failed: {e}")
+                raise ExistingVerificationError(str(e))
+
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 
         op_key = self._idempotency_key(task)
@@ -331,7 +373,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 # Use service_action format for verification engine
                 VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
             except VerificationError as e:
-                if e.severity == "ERROR":
+                from gws_assistant.verification_engine import VerificationSeverity
+
+                if e.severity == VerificationSeverity.ERROR or e.severity == VerificationSeverity.CRITICAL:
                     from gws_assistant.exceptions import VerificationError as ExistingVerificationError
 
                     logger.error(f"Verification engine caught an error: {e}")

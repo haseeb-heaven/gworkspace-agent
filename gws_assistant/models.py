@@ -65,6 +65,40 @@ class AppConfigModel:
     current_key_idx: int = 0
     rotation_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
+    # Verification Engine Configuration
+    verification_exact_placeholders: set[str] = field(default_factory=lambda: {
+        "none", "null", "n/a", "na", "undefined",
+        "todo", "fixme", "placeholder", "example", "sample", "dummy",
+        "your_value", "insert_here", "replace_me", "changeme", "default",
+        "fake", "mock", "temporary", "tbd", "missing"
+    })
+    verification_numeric_placeholders: set[str] = field(default_factory=lambda: {"0000", "1234", "9999", "00000000"})
+    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@example.com"})
+    verification_email_placeholder_domains: list[str] = field(default_factory=lambda: ["@test.com"])
+    verification_destructive_operations: set[str] = field(default_factory=lambda: {
+        "drive_delete_file", "drive_empty_trash", "drive_move_to_trash", "drive_batch_delete",
+        "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
+        "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
+        "docs_delete_document",
+        "calendar_delete_event", "calendar_delete_calendar",
+        "contacts_delete_contact",
+    })
+    verification_bulk_indicators: list[str] = field(default_factory=lambda: ["batch", "bulk", "multiple"])
+    verification_id_fields: list[str] = field(default_factory=lambda: [
+        "file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"
+    ])
+    verification_content_fields: list[str] = field(default_factory=lambda: ["body", "content", "message", "text", "description"])
+    verification_create_id_fields: list[str] = field(default_factory=lambda: [
+        "id", "documentId", "spreadsheetId", "fileId", "messageId",
+        "resourceName", "threadId", "name", "formId", "taskId", "contactId"
+    ])
+    verification_suspicious_patterns: dict[str, str] = field(default_factory=lambda: {
+        "delete_all": r"delete.*all",
+        "remove_everything": r"remove.*everything",
+        "wipe_all": r"wipe.*all",
+        "clear_all": r"clear.*all",
+    })
+
     def rotate_api_key(self) -> str | None:
         keys = self.llm_api_keys
         if not keys:
@@ -104,6 +138,29 @@ class PlannedTask:
     reason: str = ""
     # NOTE: Same slots=True rule applies — no leading underscore.
     sequence_index: int = 0
+
+    def is_destructive(self, destructive_ops: set[str] | None = None) -> bool:
+        """Check if this task is a destructive operation.
+        
+        Args:
+            destructive_ops: Optional set of full tool names (service_action) 
+                           that are considered destructive. If provided,
+                           this takes precedence over the default list.
+        """
+        full_name = f"{self.service}_{self.action}"
+        if destructive_ops is not None:
+            return full_name in destructive_ops
+
+        # Default fallback list of known destructive actions
+        destructive = {
+            "drive": ["delete_file", "empty_trash", "move_to_trash", "batch_delete"],
+            "gmail": ["delete_message", "trash_message", "batch_delete", "empty_trash"],
+            "sheets": ["delete_spreadsheet", "clear_all_data", "delete_sheet_tab"],
+            "docs": ["delete_document"],
+            "calendar": ["delete_event", "delete_calendar"],
+            "contacts": ["delete_contact"],
+        }
+        return self.service in destructive and self.action in destructive.get(self.service, [])
 
 
 # ---------------------------------------------------------------------------

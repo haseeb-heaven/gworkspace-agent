@@ -9,7 +9,7 @@ from gws_assistant.models import ExecutionResult
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_for_log(value):
+def _sanitize_for_log(value) -> str:
     text = str(value).replace("\n", "\\n").replace("\r", "\\r")
     text = text.replace("\t", "\\t")
     if len(text) > 500:
