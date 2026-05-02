@@ -173,9 +173,10 @@ class WorkspaceAgentSystem:
         # we'll implement a basic proxy method here that uses the existing workflow runner.
         from gws_assistant.langgraph_workflow import run_workflow
         from gws_assistant.execution.resolver import ExecutionContextResolver
+        import asyncio
 
         executor = ExecutionContextResolver(self.config, self.logger)
-        return run_workflow(task, self.config, self, executor, self.logger)
+        return await asyncio.to_thread(run_workflow, task, self.config, self, executor, self.logger)
 
     def summarize(self, text: str) -> str:
         """Summarize text using the configured LLM."""
