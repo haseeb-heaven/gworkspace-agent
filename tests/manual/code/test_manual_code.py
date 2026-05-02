@@ -8,10 +8,12 @@ from tests.manual.shared import run_task
 
 
 @pytest.mark.live_integration
-def test_manual_1():
-    # Execution and email verification
+def test_manual_1() -> None:
+    """Execute a Fibonacci script and verify it runs, emails, and outputs 55."""
     run_task(
-        "Write a python script to calculate the first 10 fibonacci numbers, execute it, and email the results.",
-        expected=["Command succeeded", "Sent", "55"],  # 10th Fibonacci is 55 (0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55)
+        # Prompt explicitly requests 1-indexed sequence [1,1,2,3,5,8,13,21,34,55]
+        "Write a python script that prints the first 10 Fibonacci numbers "
+        "starting from 1 (i.e. 1,1,2,3,5,8,13,21,34,55), execute it, and email the results.",
+        expected=["Command succeeded", "Sent", "55"],  # F(10)=55 in the 1-indexed sequence
         service="code"
     )

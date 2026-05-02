@@ -1,12 +1,12 @@
 """Tests for the human gate module."""
 
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from gws_assistant.human_gate.console_gate import ConsoleFallbackGate
-from gws_assistant.human_gate.telegram_gate import TelegramHumanGate
 from gws_assistant.human_gate.factory import get_human_gate
+from gws_assistant.human_gate.telegram_gate import TelegramHumanGate
 
 # Ensure tests have required markers
 pytestmark = pytest.mark.asyncio
@@ -21,7 +21,7 @@ def mock_env(monkeypatch):
 async def test_console_gate_ask_text():
     """Test console gate ask_text."""
     gate = ConsoleFallbackGate()
-    with patch("builtins.print") as mock_print:
+    with patch("builtins.print"):
         with patch("builtins.input", return_value="answer"):
             res = await gate.ask_text("What?")
             assert res == "answer"  # nosec

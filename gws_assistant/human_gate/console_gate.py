@@ -8,6 +8,8 @@ from gws_assistant.human_gate.base import HumanGateBase
 logger = logging.getLogger(__name__)
 
 
+_TIMEOUT_MSG = "\n⏰ Timeout — action cancelled"
+
 class ConsoleFallbackGate(HumanGateBase):
     """Fallback implementation that uses the console (CLI) to prompt the user."""
 
@@ -24,11 +26,11 @@ class ConsoleFallbackGate(HumanGateBase):
                 timeout=timeout
             )
         except asyncio.TimeoutError:
-            print("\n⏰ Timeout — action cancelled")
+            print(_TIMEOUT_MSG)
             raise TimeoutError("Timed out waiting for input")
 
     def _sync_ask_approval(self, action: str, details: str) -> bool:
-        print(f"\n⚠️ Approval Required")
+        print("\n⚠️ Approval Required")
         print(f"Action: {action}")
         print(f"Details: {details}")
         while True:
@@ -46,7 +48,7 @@ class ConsoleFallbackGate(HumanGateBase):
                 timeout=timeout
             )
         except asyncio.TimeoutError:
-            print("\n⏰ Timeout — action cancelled")
+            print(_TIMEOUT_MSG)
             raise TimeoutError("Timed out waiting for approval")
 
     def _sync_ask_choice(self, question: str, choices: list[str]) -> str:
@@ -70,7 +72,7 @@ class ConsoleFallbackGate(HumanGateBase):
                 timeout=timeout
             )
         except asyncio.TimeoutError:
-            print("\n⏰ Timeout — action cancelled")
+            print(_TIMEOUT_MSG)
             raise TimeoutError("Timed out waiting for choice")
 
     def _sync_notify(self, message: str) -> None:

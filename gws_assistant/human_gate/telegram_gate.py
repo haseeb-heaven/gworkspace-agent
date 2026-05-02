@@ -147,7 +147,7 @@ class TelegramHumanGate(HumanGateBase):
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
 
-    async def ask_text(self, question: str, context: str = "", timeout: float = 300) -> str:
+    async def ask_text(self, question: str, context: str = "", timeout: float | None = None) -> str:
         """Ask a free-text question."""
         if not self._app or not self.chat_id:
             raise RuntimeError("Telegram Human Gate not started or not configured")
@@ -173,7 +173,8 @@ class TelegramHumanGate(HumanGateBase):
             async with self.lock:
                 self.msg_to_qid[msg.message_id] = qid
 
-            return await asyncio.wait_for(future, timeout=timeout)
+            effective_timeout = self.question_timeout if timeout is None else timeout
+            return await asyncio.wait_for(future, timeout=effective_timeout)
         except asyncio.TimeoutError:
             await self.notify("⏰ Timeout — action cancelled")
             raise TimeoutError("Timed out waiting for text reply")
@@ -181,7 +182,7 @@ class TelegramHumanGate(HumanGateBase):
             async with self.lock:
                 self.pending.pop(qid, None)
 
-    async def ask_approval(self, action: str, details: str, timeout: float = 60) -> bool:
+    async def ask_approval(self, action: str, details: str, timeout: float | None = None) -> bool:
         """Ask for approval with yes/no buttons."""
         if not self._app or not self.chat_id:
             raise RuntimeError("Telegram Human Gate not started or not configured")
@@ -209,7 +210,8 @@ class TelegramHumanGate(HumanGateBase):
                 reply_markup=reply_markup
             )
 
-            result = await asyncio.wait_for(future, timeout=timeout)
+            effective_timeout = self.approval_timeout if timeout is None else timeout
+            result = await asyncio.wait_for(future, timeout=effective_timeout)
             return result == "yes"
         except asyncio.TimeoutError:
             await self.notify("⏰ Timeout — action cancelled")
@@ -249,7 +251,8 @@ class TelegramHumanGate(HumanGateBase):
                 reply_markup=reply_markup
             )
 
-            return await asyncio.wait_for(future, timeout=timeout)
+            effective_timeout = self.question_timeout if timeout is None else timeout
+            return await asyncio.wait_for(future, timeout=effective_timeout)
         except asyncio.TimeoutError:
             await self.notify("⏰ Timeout — action cancelled")
             raise TimeoutError("Timed out waiting for choice")
