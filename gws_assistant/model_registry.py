@@ -62,15 +62,14 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/nvidia/nemotron-super-49b-v1:free",
     "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free",
     "openrouter/groq/llama-3.3-70b-versatile",
-    "openrouter/groq/llama3-70b-8192",
+    "openrouter/groq/llama-3.1-70b-versatile",
     "openrouter/groq/llama-3.1-8b-instant",
     "openrouter/groq/llama-3.1-8b-instant:free",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
-    "groq/llama3-70b-8192",
+    "groq/llama-3.1-70b-versatile",
     "groq/llama-3.1-8b-instant",
-    "groq/llama3-groq-70b-8192-tool-use-preview",
-    "groq/llama-3-groq-70b-8192-tool-use-preview",
+
     # ── Ollama (local, tool-calling confirmed) ──────────────────────
     "ollama/llama3.1",
     "ollama/llama3.2",

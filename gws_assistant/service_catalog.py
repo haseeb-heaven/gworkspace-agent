@@ -738,7 +738,7 @@ SERVICES: dict[str, ServiceSpec] = {
         key="code",
         label="Code Execution",
         aliases=("code", "python", "computation", "compute", "script"),
-        description="Execute Python code in a restricted sandbox for logic, math, data processing, and sorting. Output is captured as stdout and return values.",
+        description="Execute Python code in a restricted sandbox for logic, math, data processing, and sorting. Output is captured as stdout and return values. NEVER import external libraries like 'requests', 'os', or 'subprocess' — the environment is strictly offline.",
         actions={
             "execute": ActionSpec(
                 key="execute",
@@ -746,7 +746,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Run a block of Python code. Captured results are available as $code_output.",
                 keywords=("run", "execute", "python", "code", "sort", "calculate", "math", "compute"),
                 parameters=(
-                    ParameterSpec("code", "Python code to execute", "sorted([3, 1, 2])"),
+                    ParameterSpec("code", "Python code to execute. MUST use multi-line indentation for loops/if-blocks. DO NOT use semicolons.", "data = {{task-1}}\nresult = [x for x in data if x > 10]"),
                     ParameterSpec(
                         "file_path",
                         "Optional: Local path to write the output to (e.g. 'data.txt')",

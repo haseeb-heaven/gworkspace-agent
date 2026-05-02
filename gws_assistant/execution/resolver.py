@@ -53,6 +53,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$web_search_rows":         "search_summary_rows",
     "$web_search_summary":      "search_summary_table",
     "$sheet_email_body":        "sheet_summary_table",
+    "$search_rows":             "search_summary_rows",
+    "$search_results":          "search_summary_rows",
 
     # Include the new standardized ones too to resolve if called explicitly
     "$drive_metadata_rows":     "drive_metadata_rows",
