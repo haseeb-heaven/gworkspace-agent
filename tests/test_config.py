@@ -19,6 +19,8 @@ def _required(monkeypatch):
     monkeypatch.setenv("GWS_BINARY_PATH", r"d:\Code\gworkspace-agent\gws.exe")
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("LLM_MODEL", "openrouter/nvidia/nemotron-super-49b-v1:free")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
 
 
 def test_config_prefers_openrouter_when_openrouter_key_present(monkeypatch):

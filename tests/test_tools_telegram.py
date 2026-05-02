@@ -2,6 +2,13 @@ import os
 from unittest.mock import MagicMock, patch
 
 from gws_assistant.tools.telegram import redact_sensitive, send_telegram
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def mock_telegram_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
 
 
 def test_redact_sensitive():
