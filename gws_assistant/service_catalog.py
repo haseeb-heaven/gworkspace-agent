@@ -31,7 +31,7 @@ SERVICES: dict[str, ServiceSpec] = {
             "upload_file": ActionSpec(
                 key="upload_file",
                 label="Upload file",
-                description="Upload a local file to Google Drive. Returns: {id, name, mimeType}.",
+                description="Upload a local file to Google Drive. Supports documents (doc, docx, pdf, txt, csv, md, html), spreadsheets (xls, xlsx, ods), presentations (ppt, pptx, odp), images (png, jpg, gif, svg, webp), audio (mp3, wav, ogg, flac, m4a), video (mp4, mkv, avi, mov, wmv, webm, mpeg), archives (zip, tar, gz, 7z), and code files (py, js, json, yaml). Returns: {id, name, mimeType}.",
                 keywords=("upload", "add", "put", "drive"),
                 parameters=(
                     ParameterSpec("file_path", "Local path to the file to upload", "README.md"),
@@ -64,7 +64,7 @@ SERVICES: dict[str, ServiceSpec] = {
             "export_file": ActionSpec(
                 key="export_file",
                 label="Export file",
-                description="Read or download the content of a file. Use this for both Google Workspace documents (Doc/Sheet/Slide) and regular files (txt, csv, pdf) to retrieve their text or binary content.",
+                description="Read or download the content of a file. Supports Google Workspace docs (export to docx, pdf, txt, odt, html, csv, xlsx, ods, pptx, odp) and regular files (images, audio, video, pdf, zip, office files) via direct download. Returns the saved file path and content metadata.",
                 keywords=("export", "download", "read", "content", "text", "binary", "attachment"),
                 parameters=(
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
