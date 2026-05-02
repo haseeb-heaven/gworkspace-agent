@@ -8,9 +8,7 @@ Sheets, Slides, Gmail, and other GWS services.
 from __future__ import annotations
 
 import mimetypes
-import os
 from pathlib import Path
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Common file extension -> MIME type mappings

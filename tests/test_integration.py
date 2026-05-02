@@ -251,3 +251,78 @@ def test_flow7_memory_recall_affects_planning(config, logger, tmp_path):
     past = system.memory.recall_similar("send email to boss about project")
     assert len(past) > 0
     assert past[0]["goal"] == "send email to boss"
+
+
+@pytest.mark.search
+@patch("gws_assistant.tools.web_search.web_search_tool")
+def test_flow8_web_search_only_no_workspace_task(mock_web_search, config, logger):
+    """Web search with no save/email intent should hit web_search_node -> persist_memory."""
+    mock_web_search.invoke.return_value = {
+        "results": [{"title": "Python", "content": "A language", "link": "https://python.org"}]
+    }
+    fake_gws = FakeGoogleWorkspace()
+    output = run_integration_test("Search the web for Python programming language", config, logger, fake_gws)
+    assert output is not None
+    mock_web_search.invoke.assert_called_once()
+
+
+@pytest.mark.code
+def test_flow9_code_execution_workflow(config, logger):
+    """A computation request should hit generate_code -> code_execution -> reflect_node."""
+    fake_gws = FakeGoogleWorkspace()
+    output = run_integration_test("calculate the sum of numbers from 1 to 10", config, logger, fake_gws)
+    assert output is not None
+
+
+@pytest.mark.sheets
+def test_flow10_search_to_sheets_workflow(config, logger):
+    """Directly exercise SearchToSheetsWorkflow to hit execution/workflows.py."""
+    from gws_assistant.execution.workflows import SearchToSheetsWorkflow
+
+    class MockWebSearch:
+        def web_search(self, query):
+            return {"results": [{"title": "A", "content": "B", "link": "http://c"}]}
+
+    class MockSheets:
+        def create_spreadsheet(self, title):
+            return {"spreadsheetId": "sheet_123"}
+
+        def append_values(self, spreadsheet_id, range_name, values):
+            pass
+
+    workflow = SearchToSheetsWorkflow(web_search=MockWebSearch(), sheets=MockSheets())
+    result = workflow.execute("test query", title="Test Results")
+    assert result is True
+
+
+@pytest.mark.drive
+def test_flow11_drive_metadata_summarize(config, logger):
+    """Directly exercise drive_metadata to hit execution/drive_metadata.py."""
+    from gws_assistant.execution.drive_metadata import summarize
+
+    payload = {
+        "files": [
+            {"name": "file1", "mimeType": "application/pdf", "webViewLink": "http://a"},
+            {"name": "file2", "mimeType": "image/png", "webViewLink": "http://b"},
+        ]
+    }
+    result = summarize(payload)
+    assert result["count"] == 2
+    assert "PDF" in result["table"]
+    assert "Image" in result["table"]
+
+
+@pytest.mark.drive
+def test_flow12_verifier_validate_artifact(config, logger):
+    """Directly exercise verifier validation to hit execution/verifier.py."""
+    from gws_assistant.execution.verifier import validate_artifact_content
+
+    validate_artifact_content("valid text", "test")
+    validate_artifact_content({"key": "value"}, "test")
+    validate_artifact_content(["a", "b"], "test")
+
+    with pytest.raises(ValueError, match="invalid value"):
+        validate_artifact_content("{{unresolved}}", "test")
+
+    with pytest.raises(ValueError, match="None"):
+        validate_artifact_content(None, "test")

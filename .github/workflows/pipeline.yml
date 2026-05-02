@@ -269,7 +269,7 @@ jobs:
           OPENAI_API_KEY: fake_key_for_testing
           LLM_API_KEY: fake_key_for_testing
         run: |
-          pytest tests/test_integration.py \
+          pytest tests/test_integration*.py \
             -v \
             -m "not live_integration" \
             --cov=gws_assistant.langgraph_workflow \

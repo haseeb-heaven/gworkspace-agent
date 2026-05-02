@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 
 from gws_assistant.gws_runner import GWSRunner
-from gws_assistant.models import AppConfigModel
 from gws_assistant.planner import CommandPlanner
 
 
