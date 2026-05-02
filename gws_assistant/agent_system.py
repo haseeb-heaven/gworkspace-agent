@@ -126,6 +126,13 @@ _WEB_SEARCH_INTENT_PHRASES: tuple[str, ...] = (
     "from the internet",
     "on the internet",
     "scrape",
+    "search for",
+    "find out",
+    "search around",
+    "search about",
+    "cheapest",
+    "best price",
+    "available in the market",
 )
 
 
@@ -786,7 +793,7 @@ print(result)"""
                 parameters={
                     "to_email": recipient,
                     "subject": f"Document Conversion: {sheet_title}",
-                    "body": f"Your document '12th Class' has been converted to table format in Google Sheets.\n\nPlease check your Google Drive for the sheet named '{sheet_title}'.",
+                    "body": f"Your document has been converted to table format in Google Sheets.\n\nPlease check your Google Drive for the sheet named '{sheet_title}'.\n\nGoogle Sheet: $last_spreadsheet_url",
                 },
                 reason="Email the results.",
             ),
