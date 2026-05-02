@@ -169,11 +169,11 @@ class WorkspaceAgentSystem:
         """Execute a task end-to-end (used by standalone entry points)."""
         from gws_assistant.langgraph_workflow import run_workflow
         from gws_assistant.execution.executor import PlanExecutor
-        from gws_assistant.gws_runner import GwsRunner
+        from gws_assistant.gws_runner import GWSRunner
         import asyncio
 
         # Ensure we construct the proper PlanExecutor instead of hallucinated classes
-        runner = GwsRunner()
+        runner = GWSRunner(self.config.gws_binary_path, self.logger, config=self.config)
         executor = PlanExecutor(planner=self, runner=runner, config=self.config, logger=self.logger)
         return await asyncio.to_thread(run_workflow, task, self.config, self, executor, self.logger)
 
