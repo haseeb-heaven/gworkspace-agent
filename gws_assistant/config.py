@@ -38,7 +38,7 @@ class AppConfig:
                 return cls._cached_config
 
             env_file_path = Path(".env").expanduser().resolve()
-            load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
+            load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
 
             ci_mode = _to_bool(os.getenv("CI"), default=False)
 

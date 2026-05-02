@@ -46,8 +46,8 @@ def send_telegram_message(message: str, max_retries: int = 3):
     env = dotenv_values(env_path)
 
     # Use value from .env or fallback to system environment variables
-    token = env.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = env.get("TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN") or env.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or env.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         print(
             "Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured in .env or environment.", file=sys.stderr

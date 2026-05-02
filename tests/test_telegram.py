@@ -17,9 +17,19 @@ from gws_assistant.telegram_app import (
 @pytest.fixture(autouse=True)
 def mock_telegram_env(monkeypatch):
     """Ensure Telegram env vars are always mocked in this test file."""
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "987654321")
     monkeypatch.setenv("CI", "true")  # Bypass binary checks
+
+    from gws_assistant.config import AppConfig
+    AppConfig.clear_cache()
+
+    with patch("gws_assistant.config.load_dotenv"), \
+         patch("gws_assistant.tools.telegram.load_dotenv"), \
+         patch("dotenv.load_dotenv"):
+        yield
+
+    AppConfig.clear_cache()
 
 
 @pytest.fixture
@@ -40,7 +50,7 @@ def mock_config():
         max_retries=3,
         langchain_enabled=True,
         telegram_bot_token="test_bot_token",
-        telegram_chat_id="12345",
+        telegram_chat_id="987654321",
     )
     return config
 
@@ -48,10 +58,12 @@ def mock_config():
 @pytest.fixture
 def mock_update():
     update = AsyncMock(spec=Update)
+    update.update_id = 10001
     chat = MagicMock(spec=Chat)
-    chat.id = 12345
+    chat.id = 987654321
     update.effective_chat = chat
     message = AsyncMock(spec=Message)
+    message.message_id = 20002
     update.effective_message = message
     return update
 

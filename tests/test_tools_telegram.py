@@ -8,8 +8,18 @@ from gws_assistant.tools.telegram import redact_sensitive, send_telegram
 
 @pytest.fixture(autouse=True)
 def mock_telegram_env(monkeypatch):
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "987654321")
+    
+    from gws_assistant.config import AppConfig
+    AppConfig.clear_cache()
+    
+    with patch("gws_assistant.config.load_dotenv"), \
+         patch("gws_assistant.tools.telegram.load_dotenv"), \
+         patch("dotenv.load_dotenv"):
+        yield
+    
+    AppConfig.clear_cache()
 
 
 def test_redact_sensitive():
