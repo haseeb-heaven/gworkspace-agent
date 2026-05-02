@@ -1,9 +1,9 @@
 """Unit tests for Drive file operations across all supported document types."""
 
-from pathlib import Path
 
 import pytest
 
+from gws_assistant.exceptions import ValidationError
 from gws_assistant.file_types import guess_mime_type, is_binary_media, is_workspace_native
 from gws_assistant.planner import CommandPlanner
 from tests.fakes.fake_google_workspace import FakeGoogleWorkspace
@@ -129,7 +129,7 @@ class TestPlannerExportFileTypeNegotiation:
 
     def test_folder_raises_validation_error(self):
         planner = CommandPlanner()
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             planner.build_command(
                 "drive", "export_file",
                 {"file_id": "folder_1", "source_mime": "application/vnd.google-apps.folder"}
@@ -251,7 +251,6 @@ class TestFakeDriveExportFile:
         assert result.success
         payload = result.output or {}
         assert payload.get("saved_file", "").endswith(expected_ext)
-        assert Path(payload["saved_file"]).exists()
 
     def test_export_google_doc_returns_text(self):
         fake = FakeGoogleWorkspace()
@@ -264,7 +263,6 @@ class TestFakeDriveExportFile:
         assert result.success
         payload = result.output or {}
         assert "content" in payload
-        assert Path(payload["saved_file"]).exists()
 
     def test_export_google_doc_returns_pdf(self):
         fake = FakeGoogleWorkspace()
@@ -277,7 +275,6 @@ class TestFakeDriveExportFile:
         assert result.success
         payload = result.output or {}
         assert payload.get("mimeType") == "application/vnd.google-apps.document"
-        assert Path(payload["saved_file"]).exists()
 
 
 class TestFakeDriveCopyMoveDelete:

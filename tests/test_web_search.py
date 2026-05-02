@@ -21,7 +21,7 @@ def test_web_search_tool_ddg_list(mock_ddg):
 @patch("gws_assistant.tools.web_search.DuckDuckGoSearchResults")
 def test_web_search_tool_ddg_string(mock_ddg):
     mock_inst = mock_ddg.return_value
-    mock_inst.invoke.return_value = "snippet: Hello, title: World, link: http://test.com"
+    mock_inst.invoke.return_value = "snippet: Hello, title: World, link: https://test.example"
 
     with patch("gws_assistant.tools.web_search.HAS_DDG", True):
         result = web_search_tool.invoke({"query": "test query"})

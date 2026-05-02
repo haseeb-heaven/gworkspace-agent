@@ -19,7 +19,7 @@ def test_render_env():
         "LLM_PROVIDER": "openai",
         "OPENROUTER_API_KEY": "sk-123",
         "OPENROUTER_MODEL": "gpt-4o",
-        "OPENROUTER_BASE_URL": "http://api.com",
+        "OPENROUTER_BASE_URL": "https://api.example",
         "TAVILY_API_KEY": "tv-123",
         "DEFAULT_RECIPIENT_EMAIL": "test@test.com",
         "LANGCHAIN_ENABLED": "true",

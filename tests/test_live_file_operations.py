@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -25,11 +26,14 @@ def live_runner() -> GWSRunner | None:
     if os.getenv("RUN_LIVE_INTEGRATION") != "true":
         pytest.skip("RUN_LIVE_INTEGRATION is not enabled.")
 
-    gws_binary = Path(
-        os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")
-    ).expanduser()
-    if not gws_binary.exists():
-        pytest.skip("GWS_BINARY_PATH does not exist for live integration run.")
+    raw_path = os.getenv("GWS_BINARY_PATH")
+    if raw_path:
+        gws_binary = Path(raw_path).expanduser()
+    else:
+        found = shutil.which("gws.exe" if os.name == "nt" else "gws")
+        if not found:
+            pytest.skip("GWS_BINARY_PATH does not exist for live integration run.")
+        gws_binary = Path(found)
 
     import logging
     logger = logging.getLogger("live-file-ops")

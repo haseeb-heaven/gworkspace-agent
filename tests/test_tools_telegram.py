@@ -1,8 +1,9 @@
 import os
 from unittest.mock import MagicMock, patch
 
-from gws_assistant.tools.telegram import redact_sensitive, send_telegram
 import pytest
+
+from gws_assistant.tools.telegram import redact_sensitive, send_telegram
 
 
 @pytest.fixture(autouse=True)

@@ -7,8 +7,8 @@ from gws_assistant.execution.drive_metadata import summarize
 def test_summarize_count():
     payload = {
         "files": [
-            {"name": "file1", "mimeType": "application/vnd.google-apps.document", "webViewLink": "http://link1"},
-            {"name": "file2", "mimeType": "application/vnd.google-apps.spreadsheet", "webViewLink": "http://link2"},
+            {"name": "file1", "mimeType": "application/vnd.google-apps.document", "webViewLink": "https://link1.example"},
+            {"name": "file2", "mimeType": "application/vnd.google-apps.spreadsheet", "webViewLink": "https://link2.example"},
         ]
     }
     result = summarize(payload)
@@ -19,7 +19,7 @@ def test_summarize_count():
 def test_summarize_table_headers():
     payload = {
         "files": [
-            {"name": "file1", "mimeType": "application/vnd.google-apps.document", "webViewLink": "http://link1"},
+            {"name": "file1", "mimeType": "application/vnd.google-apps.document", "webViewLink": "https://link1.example"},
         ]
     }
     result = summarize(payload)
@@ -42,7 +42,7 @@ def test_full_agent_path():
     # Full agent path: drive.list_files → summarize() → gmail body is a string not a list
     payload = {
         "files": [
-            {"name": "file1", "mimeType": "application/vnd.google-apps.document", "webViewLink": "http://link1"},
+            {"name": "file1", "mimeType": "application/vnd.google-apps.document", "webViewLink": "https://link1.example"},
         ]
     }
     result = summarize(payload)

@@ -15,7 +15,6 @@ from gws_assistant.execution.executor import PlanExecutor
 from gws_assistant.langgraph_workflow import run_workflow
 from gws_assistant.models import AppConfigModel
 from tests.fakes.fake_google_workspace import FakeGoogleWorkspace
-import os
 
 
 @pytest.fixture(autouse=True)

@@ -7,8 +7,8 @@ import re
 from datetime import date
 from typing import Any
 
+from .file_types import RE_FILE_PATH
 from .langchain_agent import plan_with_langchain
-from .file_types import RE_FILE_PATH, is_workspace_native
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
 
@@ -1404,12 +1404,15 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         elif service == "drive" and action == "move_file":
             ids = RE_EXTRACT_ID.findall(lowered)
             parameters["file_id"] = ids[0] if ids else ""
-            parameters["folder_id"] = ids[1] if len(ids) > 1 else ""
-            if not parameters["folder_id"]:
+            if len(ids) > 1:
+                parameters["folder_id"] = ids[1]
+            else:
                 # Try to find folder name in quotes if only one ID is present
                 folder_name = _extract_quoted(lowered)
                 if folder_name:
                     parameters["folder_id"] = f"name contains '{folder_name}'"
+                # If neither a second ID nor a quoted folder name is found,
+                # leave folder_id unset so the planner requests clarification.
         elif service == "drive" and action == "update_file_metadata":
             parameters["file_id"] = _extract_id(lowered) or ""
             parameters["name"] = _extract_quoted(lowered) or ""
@@ -1449,9 +1452,9 @@ def get_sort_key(row, index, is_numeric):
     try:
         if not isinstance(row, (list, tuple)) or not len(row) > index:
             return 0 if is_numeric else ""
-        
+
         val = row[index]
-        
+
         if is_numeric:
             match = re.search(r'[-+]?[\d,.]+', str(val))
             if match:
@@ -1465,7 +1468,7 @@ def get_sort_key(row, index, is_numeric):
 try:
     sort_index = {sort_index}
     is_numeric = {numeric_sort}
-    
+
     if isinstance(data, list) and data:
         if isinstance(data[0], (list, tuple)):
              if all(len(r) > sort_index for r in data):
@@ -1474,7 +1477,7 @@ try:
                 print(f"Sorting failed: Inconsistent row lengths, cannot sort on index {{sort_index}}.")
         else:
              data = sorted(data, reverse={rev})
-    
+
 except Exception as exc:
     print(f"Sorting failed: {{exc}} — leaving data unsorted")
 

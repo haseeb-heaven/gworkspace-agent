@@ -12,8 +12,10 @@ import re
 from pathlib import Path
 
 # Matches file paths after upload/add/put keywords, or bare absolute/relative paths.
+# Quoted paths may contain spaces; unquoted paths must not.
 RE_FILE_PATH = re.compile(
-    r"(?:upload|add|put)\s+(?:file\s+)?['\"]?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})['\"]?|"
+    r"(?:upload|add|put)\s+(?:file\s+)?['\"]([A-Za-z0-9_./\\~: -]+\.[A-Za-z0-9]{1,10})['\"]|"
+    r"(?:upload|add|put)\s+(?:file\s+)?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})|"
     r"\b([A-Z]:[A-Za-z0-9_./\\~-]+\.[A-Za-z0-9]{1,10})\b|"
     r"\b(/[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
     r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b",
@@ -208,11 +210,26 @@ def is_workspace_native(mime_type: str | None) -> bool:
     return mime_type.startswith("application/vnd.google-apps.")
 
 
+# Common archive MIME types that should be treated as binary media.
+_ARCHIVE_MIME_TYPES: frozenset[str] = frozenset({
+    "application/zip",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-bzip2",
+    "application/x-7z-compressed",
+    "application/vnd.rar",
+})
+
+
 def is_binary_media(mime_type: str | None) -> bool:
     """Return True for image, audio, video, archive, or PDF types."""
     if not mime_type:
         return False
-    return mime_type.startswith(("image/", "audio/", "video/", "application/zip")) or mime_type == "application/pdf"
+    return (
+        mime_type.startswith(("image/", "audio/", "video/"))
+        or mime_type in _ARCHIVE_MIME_TYPES
+        or mime_type == "application/pdf"
+    )
 
 
 def supported_export_formats(source_mime: str | None) -> list[str] | None:

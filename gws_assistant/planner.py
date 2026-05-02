@@ -19,7 +19,7 @@ from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import UnsupportedServiceError, ValidationError
-from .file_types import default_export_mime, guess_mime_type, is_workspace_native
+from .file_types import default_export_mime, guess_mime_type, supported_export_formats
 from .gmail_query_builder import sanitize_gmail_query
 from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
@@ -324,8 +324,9 @@ class CommandPlanner:
                     "Please search specifically for documents or list folder contents."
                 )
 
-            # Non-Workspace files (PDFs, images, audio, video, Office, etc.) use alt=media download.
-            if source_mime and not is_workspace_native(source_mime):
+            # Non-exportable files (PDFs, images, audio, video, Office, and non-exportable
+            # Workspace types such as shortcuts or scripts) use alt=media download.
+            if source_mime and supported_export_formats(source_mime) is None:
                 return [
                     "drive",
                     "files",

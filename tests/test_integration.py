@@ -281,14 +281,15 @@ def test_flow10_search_to_sheets_workflow(config, logger):
 
     class MockWebSearch:
         def web_search(self, query):
-            return {"results": [{"title": "A", "content": "B", "link": "http://c"}]}
+            return {"results": [{"title": "A", "content": "B", "link": "https://c.example"}]}
 
     class MockSheets:
         def create_spreadsheet(self, title):
             return {"spreadsheetId": "sheet_123"}
 
         def append_values(self, spreadsheet_id, range_name, values):
-            pass
+            """Intentional no-op: SearchToSheetsWorkflow validates success via return value."""
+            ...
 
     workflow = SearchToSheetsWorkflow(web_search=MockWebSearch(), sheets=MockSheets())
     result = workflow.execute("test query", title="Test Results")
@@ -302,8 +303,8 @@ def test_flow11_drive_metadata_summarize(config, logger):
 
     payload = {
         "files": [
-            {"name": "file1", "mimeType": "application/pdf", "webViewLink": "http://a"},
-            {"name": "file2", "mimeType": "image/png", "webViewLink": "http://b"},
+            {"name": "file1", "mimeType": "application/pdf", "webViewLink": "https://a.example"},
+            {"name": "file2", "mimeType": "image/png", "webViewLink": "https://b.example"},
         ]
     }
     result = summarize(payload)

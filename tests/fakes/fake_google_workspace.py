@@ -62,6 +62,12 @@ class FakeGoogleWorkspace(GWSRunner):
     def validate_binary(self) -> bool:
         return True
 
+    def _find_file(self, file_id: str) -> dict[str, Any] | None:
+        """Search both pre-canned files and dynamically created/uploaded files."""
+        return _find_file_by_id(file_id) or next(
+            (f for f in self._created_files if f["id"] == file_id), None
+        )
+
     def run(self, args: list[str], timeout_seconds: int | None = None) -> ExecutionResult:
         self.call_count += 1
 
@@ -209,7 +215,7 @@ class FakeGoogleWorkspace(GWSRunner):
             elif "people" in args and "get" in args:
                 action = "get_person"
         elif service == "tasks":
-            if "taskLists" in args and "list" in args:
+            if any(a.lower() == "tasklists" for a in args) and "list" in args:
                 action = "list_tasklists"
             elif "tasks" in args and "list" in args:
                 action = "list_tasks"
@@ -339,13 +345,13 @@ class FakeGoogleWorkspace(GWSRunner):
                 # 1. Try to extract specific field filters
                 name_filters = re.findall(r"name\s+contains\s+['\"](.+?)['\"]", q, re.IGNORECASE)
                 mime_filters = re.findall(r"mimeType\s*=\s*['\"](.+?)['\"]", q, re.IGNORECASE)
-                
+
                 # 2. Fallback to generic quoted terms if no field-specific filters found
                 if not name_filters and not mime_filters:
                     generic_terms = re.findall(r"['\"](.+?)['\"]", q)
                     if generic_terms:
                         name_filters = generic_terms
-                
+
                 if name_filters or mime_filters:
                     filtered = []
                     for f in files:
@@ -353,12 +359,12 @@ class FakeGoogleWorkspace(GWSRunner):
                         if name_filters:
                             # ALL name terms must match (for multi-word queries)
                             name_match = all(t.lower() in f["name"].lower() for t in name_filters)
-                        
+
                         mime_match = True
                         if mime_filters:
                             # ANY mime term must match (usually only one)
                             mime_match = any(t.lower() == f["mimeType"].lower() for t in mime_filters)
-                        
+
                         if name_match and mime_match:
                             filtered.append(f)
                     files = filtered
@@ -414,7 +420,7 @@ class FakeGoogleWorkspace(GWSRunner):
         # get_file / export_file
         if action in ("get_file", "export_file"):
             file_id = params.get("fileId") or params.get("file_id", "file123")
-            file_info = _find_file_by_id(file_id) or _find_file_by_id("file123")
+            file_info = self._find_file(file_id) or self._find_file("file123")
             if not file_info:
                 return {"error": f"File {file_id} not found"}
 
@@ -466,7 +472,7 @@ class FakeGoogleWorkspace(GWSRunner):
         # update_file (covers move_to_trash, rename, metadata update, move)
         if action == "update_file":
             fid = params.get("fileId") or params.get("file_id", "")
-            file_info = _find_file_by_id(fid)
+            file_info = self._find_file(fid)
             if not file_info:
                 file_info = {"id": fid, "name": "Unknown", "mimeType": "application/octet-stream"}
             # Trash
@@ -488,7 +494,7 @@ class FakeGoogleWorkspace(GWSRunner):
         # copy_file
         if action == "copy_file":
             fid = params.get("fileId") or params.get("file_id", "file123")
-            orig = _find_file_by_id(fid) or {"id": fid, "name": "Original", "mimeType": "application/octet-stream"}
+            orig = self._find_file(fid) or {"id": fid, "name": "Original", "mimeType": "application/octet-stream"}
             copy_name = params.get("name") or f"Copy of {orig['name']}"
             copy_id = f"copy_{fid}"
             return {"id": copy_id, "name": copy_name, "mimeType": orig["mimeType"], "webViewLink": f"https://drive.google.com/file/d/{copy_id}/view"}
