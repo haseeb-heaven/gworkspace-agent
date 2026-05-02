@@ -8,7 +8,17 @@ Sheets, Slides, Gmail, and other GWS services.
 from __future__ import annotations
 
 import mimetypes
+import re
 from pathlib import Path
+
+# Matches file paths after upload/add/put keywords, or bare absolute/relative paths.
+RE_FILE_PATH = re.compile(
+    r"(?:upload|add|put)\s+(?:file\s+)?['\"]?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})['\"]?|"
+    r"\b([A-Z]:[A-Za-z0-9_./\\~-]+\.[A-Za-z0-9]{1,10})\b|"
+    r"\b(/[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
+    r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Common file extension -> MIME type mappings

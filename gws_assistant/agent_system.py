@@ -8,6 +8,7 @@ from datetime import date
 from typing import Any
 
 from .langchain_agent import plan_with_langchain
+from .file_types import RE_FILE_PATH, is_workspace_native
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
 
@@ -25,13 +26,6 @@ RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|mo
 RE_EXTRACT_ID = re.compile(r"\b([a-zA-Z0-9_-]{25,})\b")
 RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,})\b")
 RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
-RE_EXTRACT_FILE_PATH = re.compile(
-    r"(?:upload|add|put)\s+(?:file\s+)?['\"]?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})['\"]?|"
-    r"\b([A-Z]:[A-Za-z0-9_./\\~-]+\.[A-Za-z0-9]{1,10})\b|"
-    r"\b(/[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
-    r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b",
-    re.IGNORECASE,
-)
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
 RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](.+?)['\"]")
 RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
@@ -1408,8 +1402,14 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["file_id"] = _extract_id(lowered) or ""
             parameters["name"] = _extract_quoted(lowered) or "Copy"
         elif service == "drive" and action == "move_file":
-            parameters["file_id"] = _extract_id(lowered) or ""
-            parameters["folder_id"] = ""
+            ids = RE_EXTRACT_ID.findall(lowered)
+            parameters["file_id"] = ids[0] if ids else ""
+            parameters["folder_id"] = ids[1] if len(ids) > 1 else ""
+            if not parameters["folder_id"]:
+                # Try to find folder name in quotes if only one ID is present
+                folder_name = _extract_quoted(lowered)
+                if folder_name and folder_name.lower() not in lowered.split(folder_name.lower())[0]:
+                     parameters["folder_id"] = f"name contains '{folder_name}'"
         elif service == "drive" and action == "update_file_metadata":
             parameters["file_id"] = _extract_id(lowered) or ""
             parameters["name"] = _extract_quoted(lowered) or ""
@@ -1719,7 +1719,7 @@ def _extract_quoted(text: str) -> str | None:
 
 def _extract_file_path(text: str) -> str | None:
     """Extract a local file path from natural language for upload operations."""
-    match = RE_EXTRACT_FILE_PATH.search(text)
+    match = RE_FILE_PATH.search(text)
     if match:
         return next(g for g in match.groups() if g is not None)
     return None

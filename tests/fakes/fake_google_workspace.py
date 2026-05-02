@@ -4,6 +4,7 @@ Mocks Google Workspace API responses for all major services and file types.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -233,6 +234,9 @@ class FakeGoogleWorkspace(GWSRunner):
                 except Exception:
                     pass
                 i += 2
+            elif args[i] == "--upload" and i + 1 < len(args):
+                params["file_path"] = args[i + 1]
+                i += 2
             elif args[i].startswith("--") and i + 1 < len(args) and not args[i + 1].startswith("--"):
                 key = args[i][2:]
                 params[key] = args[i + 1]
@@ -331,13 +335,25 @@ class FakeGoogleWorkspace(GWSRunner):
         if action == "list_files":
             q = params.get("q", "")
             files = list(_FAKE_DRIVE_FILES)
-            # Simple substring filter for testing
             if q:
-                filtered = []
-                for f in files:
-                    if any(term.lower() in f["name"].lower() or term.lower() in f["mimeType"].lower() for term in q.replace("'", "").split()):
-                        filtered.append(f)
-                files = filtered
+                # Extract quoted literals first
+                quoted = re.findall(r"['\"](.+?)['\"]", q)
+                if quoted:
+                    terms = [t.lower() for t in quoted]
+                else:
+                    # Fallback: ignore Drive query keywords
+                    keywords = {"name", "contains", "mimetype", "and", "or", "not", "in", "parents", "trashed"}
+                    terms = [t.lower() for t in q.replace("'", "").replace("(", "").replace(")", "").split() if t.lower() not in keywords and len(t) > 2]
+                
+                if terms:
+                    filtered = []
+                    for f in files:
+                        name_lower = f["name"].lower()
+                        mime_lower = f["mimeType"].lower()
+                        # Match if ANY of the extracted terms are in name or mimeType
+                        if any(term in name_lower or term in mime_lower for term in terms):
+                             filtered.append(f)
+                    files = filtered
             return {"files": files, "nextPageToken": None}
 
         # upload_file

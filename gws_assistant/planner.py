@@ -269,27 +269,17 @@ class CommandPlanner:
                 "create",
                 "--upload",
                 file_path,
+            ]
+            mime = guess_mime_type(file_path)
+            if mime:
+                cmd.extend(["--upload-content-type", mime])
+
+            cmd.extend([
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
                 json.dumps({"name": name}, ensure_ascii=True),
-            ]
-            mime = guess_mime_type(file_path)
-            if mime:
-                # Insert --upload-content-type right after --upload and file_path
-                cmd = [
-                    "drive",
-                    "files",
-                    "create",
-                    "--upload",
-                    file_path,
-                    "--upload-content-type",
-                    mime,
-                    "--params",
-                    json.dumps({"fields": "id,name,mimeType,webViewLink"}),
-                    "--json",
-                    json.dumps({"name": name}, ensure_ascii=True),
-                ]
+            ])
             return cmd
 
         if action == "get_file":
@@ -347,10 +337,7 @@ class CommandPlanner:
                 ]
 
             # Google Workspace native files use the export endpoint with negotiated MIME type.
-            mime_type = default_export_mime(source_mime, requested_mime) if requested_mime != "media" else requested_mime
-
-            # If the user explicitly asks for media/download
-            if mime_type == "media":
+            if requested_mime == "media":
                 return [
                     "drive",
                     "files",
@@ -360,6 +347,8 @@ class CommandPlanner:
                     "-o",
                     f"scratch/exports/download_{file_id}",
                 ]
+
+            mime_type = default_export_mime(source_mime, requested_mime)
 
             return [
                 "drive",
