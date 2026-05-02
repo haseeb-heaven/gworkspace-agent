@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-05-03
+
+### Added
+- **5-Step Verification Engine** - Strict, non-bypassable verification system with severity levels (CRITICAL, ERROR, WARNING)
+  - CHECK 1: Parameter Validation - validates input parameters for correctness and completeness
+  - CHECK 2: Permission & Scope Validation - verifies operation is within allowed scopes and user permissions
+  - CHECK 3: Result Validation - validates operation result structure and success status
+  - CHECK 4: Data Integrity & Consistency Validation - verifies data consistency across operations
+  - CHECK 5: Idempotency & Safety Validation - validates operation safety and retry safety
+- VerificationSeverity enum with CRITICAL, ERROR, and WARNING levels
+- Enhanced VerificationError class with check_number and severity parameters
+- Pre-execution verification to catch issues before operations run
+- Bulk operation protection requiring `_bulk_confirmed=true` for operations affecting >10 items
+- Destructive operation protection requiring `_safety_confirmed=true` for dangerous operations
+- Configurable verification behavior via environment variables
+- Safety guard integration for destructive operations
+- Email recipient enforcement via security policy
+- Scope validation framework for OAuth permissions
+- Data corruption detection with truncation markers
+- Referential integrity checks for parent/child relationships
+- Word-boundary regex matching for bulk keyword detection (prevents false positives)
+- Backward compatibility with validation tests
+
+### Fixed
+- Bandit B101 security warnings in test files by adding # nosec B101 comments
+- Type annotation issues in agent_system.py and safety_guard.py
+- Missing import re in executor.py
+- Backward compatibility issues with validation tests
+- Check ordering issue where destructive check ran before bulk check
+- False positive bulk detection from "all" keyword in verification_bulk_indicators
+
+### Changed
+- VerificationEngine.verify() now runs all 5 checks in sequence with proper logging
+- Enhanced verification engine with configurable severity-based error handling
+- Improved error messages with check numbers and severity levels
+- Bulk confirmation implicitly satisfies destructive confirmation for operations that are both
+- Removed "all" from default verification_bulk_indicators to prevent false positives on common English words
+
+### Security
+- Enhanced verification engine with strict 5-check system that cannot be bypassed
+- Pre-execution verification to prevent destructive operations from running before validation
+- Improved bulk operation detection with word-boundary regex matching
+- Enhanced scope validation for OAuth permissions
+- Data corruption detection mechanisms
+
+---
+
 ## [0.7.0] - 2026-05-02
 
 ### Added

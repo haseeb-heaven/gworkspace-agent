@@ -29,13 +29,14 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 ---
 
 ## Version
-Latest: **v0.7.0**  
+Latest: **v0.8.0**  
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ---
 
 ## Key Features
 
+- **5-Step Verification Engine** - Strict, non-bypassable verification system with severity levels (CRITICAL, ERROR, WARNING) that validates parameters, permissions, results, data integrity, and idempotency
 - **Hybrid ReAct + LangGraph Engine** — LLM-driven planner generates a typed DAG of tasks; LangGraph executes nodes with full state persistence and smart retry logic
 - **Multi-Service Orchestration** — a single natural language request can chain Gmail, Drive, Sheets, Docs, Calendar, and Code execution in one plan
 - **Long-Term Memory via Mem0** — agent learns from past interactions and recalls user preferences across sessions
