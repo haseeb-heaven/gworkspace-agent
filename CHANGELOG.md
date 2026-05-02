@@ -2,73 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.6.1] - 2026-04-30
+## [0.7.0] - 2026-05-02
+
+### Added
+- Comprehensive file type support with MIME type detection for uploads, exports, and downloads
+- File types module with support for Google Workspace, Office, OpenDocument, images, audio, video, archives, and code files
+- Drive file operations: upload, copy, move, rename, update metadata, delete, and trash
+- Enhanced export format negotiation for Google Workspace native files (Docs, Sheets, Slides, Drawings)
+- Binary media detection and handling for images, audio, video, and PDF files
+- Integration tests for all file types and Drive lifecycle operations
+- Live integration tests for end-to-end file operations
+- Agent planning system with heuristic fallback and LLM-based planning
+- Semantic memory backend for conversation context
+- Restricted Python code execution sandbox for security
+- Triple verification engine for automated resource validation
+- Service catalog with 60+ Google Workspace tool definitions
+- Safety guard system for destructive operations
+- LLM client with automatic API key rotation and fallback
+- LangGraph-based execution workflow
+- CI/CD pipeline with comprehensive testing and security scanning
+- Custom PR/MR automation skills
+
 ### Fixed
-- Fixed `WorkflowNodes.plan_node` calling `self._append_history` instead of module-level `_append_history`
-- Fixed `WorkflowNodes.format_output_node` returning hardcoded placeholder instead of using `self.formatter`
-- Fixed API key rotation loop retrying same key for non-OpenRouter models in `call_llm`
-- Pinned Snyk GitHub Action to `v1.0.0` instead of mutable `@master` ref
+- Web search query extraction to properly truncate at chaining clauses
+- Document title extraction to handle "call that" syntax
+- Drive → Sheets → Gmail workflow to export actual document content
+- Image attachment handling in Drive → Email workflow (uses Drive links instead of binary export)
+- Sorting logic for code execution with proper numeric sorting
+- Email detection to avoid false positives from search topics
+- Web search routing to prevent Gmail list_messages for web search prompts
+- Placeholder resolution for Gmail body parameter
+- Pattern ordering to prioritize Drive-based requests over Gmail
+- Sheet guards to prevent incorrect metadata pattern matching
+- Idempotency cache side effects in executor
+- Gmail verification in tests
+- Telegram race conditions
+- Path traversal vulnerabilities in planner
+- JSON parsing errors in executor
+- Argument validation across multiple components
 
-## [0.6.0] - 2026-04-30
-### Added
-- Implemented comprehensive unit and manual integration test suites.
-- Enhanced core agent functionality across CLI, GUI, and Web interfaces.
-
-## [1.5.0] - Sandbox and Workspace Safety
-### Added
-- **Sandbox Mode**: Implemented an interactive mode to intercept destructive actions (delete, write) and prompt for confirmation.
-- **Read-Only Mode**: Added failsafe defaults that block state-changing workspace operations.
-- **CLI Options**: Added `--sandbox` / `--no-sandbox` and `--read-only` / `--read-write` override flags.
 ### Changed
-- Rewrote the README with comprehensive setup instructions, interface documentation, and troubleshooting guides.
-### Fixed
-- Refined task generation and strict service detection.
-- Fixed code execution context updates and 6 execution bugs in resolver and executor.
-- Fixed bugs in `planner.py` regarding command argument mapping.
+- Improved heuristic pattern matching and service detection
+- Enhanced verification engine with better resource validation
+- Refactored fake Google Workspace test double for comprehensive file operation mocking
+- Consolidated security workflows in CI/CD pipeline
+- Improved error messages and logging throughout the system
 
-## [1.4.0] - Telegram Bot Optimization & Agent Orchestration
-### Added
-- Implemented `WorkspaceAgentSystem` for natural-language request planning using LLMs with a heuristic fallback.
-- Added infinite timeout for GWS tasks executed via Telegram to handle complex API operations.
-### Changed
-- Finalized Telegram bot stability, including API key rotation and direct chat fallback retries.
-- Secured unit tests by excluding `live_integration` tests by default.
-### Fixed
-- Resolved merge conflicts and orchestrated complex branch integrations (PR #6, #8, #10).
-- Removed hardcoded email redirection, delegating it to central security policy.
+### Security
+- Added Restricted Python sandbox for code execution
+- Implemented safety guard for destructive operations
+- Enhanced path validation and input sanitization
+- Consolidated Snyk security scanning
 
-## [1.3.0] - Verification Engine & Semantic Memory
-### Added
-- **VerificationEngine**: Introduced a post-execution and pre-execution data integrity validator to ensure correct API payloads.
-- **Long-Term Memory**: Implemented a multi-layered local JSONL-based memory system.
-- Added self-hosted Mem0 instances support via `MEM0_HOST`.
-### Changed
-- Applied comprehensive `ruff` linting across the codebase.
-- Added end-to-end integration tests for end-to-end Google Workspace Agent flows.
-### Fixed
-- Fixed Mem0 `user_id` filters and resolved search redundancies.
-- Addressed missing dependencies (`portalocker`) and `read_mem0` failures.
+---
 
-## [1.2.0] - Core Framework & Service Coverage
-### Added
-- Built the core agent framework with modular execution, batch task processing, and robust shared data models (`AppConfigModel`, `ExecutionResult`).
-- Finalized 100% CRUD test coverage for 7 core Workspace services (Gmail, Drive, Sheets, Docs, Calendar, Keep, Tasks).
-- Implemented OpenRouter API key rotation and rate-limit handling across LLM layers.
-### Changed
-- Refactored `execution.py` into a modular package (`execution/` directory) and enforced dynamic configuration.
-- Established a structured test framework with dynamic `pytest` service-based markers.
-### Fixed
-- Fixed bug causing `slots=True` configuration dropping mutations by renaming `_current_key_idx`.
-- Pre-compiled frequently used regex patterns in the execution engine to improve performance.
+## [0.6.1] - Previous Release
 
-## [1.1.0] - Initial LangGraph Architecture & Intent Parsing
 ### Added
-- **LangGraph Workflow**: Initialized DAG-based workflow for assistant task planning, execution, and reflection.
-- **IntentParser**: Added LLM-based extraction with a heuristic fallback for generating plans offline.
-- Added GWS subprocess runner (`GWSRunner`) with CLI argument size handling and backoff retries.
-- Implemented drive export file resolution, folder validation, and Drive-to-Gmail heuristic flows.
-### Changed
-- Hardened agentic email enforcement and sanitized heuristic planning with strict recipient overrides.
-### Fixed
-- Refined heuristic service detection and improved code execution output visibility.
-- Prevented replan loops by improving parameter extraction and heuristic code generation.
+- Initial Google Workspace assistant functionality
+- Basic Drive, Gmail, Calendar, and Sheets integration
+- CLI and GUI interfaces
