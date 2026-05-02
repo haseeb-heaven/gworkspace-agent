@@ -17,8 +17,15 @@ def test_heuristic_plans_drive_sheet_email(monkeypatch, tmp_path):
     monkeypatch.setenv("GWS_BINARY_PATH", str(tmp_path / "gws"))
     monkeypatch.setenv("MEM0_API_KEY", "")
     monkeypatch.setenv("MEM0_USER_ID", "test-user")
+    # Clear fallback models to avoid validation errors from user's .env
+    # Set to empty string (not delete) to prevent load_dotenv from re-loading from .env
+    monkeypatch.setenv("LLM_FALLBACK_MODEL", "")
+    monkeypatch.setenv("LLM_FALLBACK_MODEL2", "")
+    monkeypatch.setenv("LLM_FALLBACK_MODEL3", "")
 
     logger = logging.getLogger("test")
+    # Clear config cache to ensure environment changes take effect
+    AppConfig.clear_cache()
     config = AppConfig.from_env()
     config.use_heuristic_fallback = True
     config.langchain_enabled = False

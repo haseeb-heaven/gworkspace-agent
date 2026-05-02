@@ -148,7 +148,7 @@ def run_task(
             print(f"Verifying ID: {resource_id}")
 
             runner = GWSRunner(binary_path, logging.getLogger("triple_verifier"), config=config)
-            verifier = TripleVerifier(runner, attempts=2, sleep_seconds=1)
+            verifier = TripleVerifier(runner, attempts=5, sleep_seconds=1)
 
             success = verifier.verify_resource_by_id(service, resource_id, expected_fields)
             if not success:

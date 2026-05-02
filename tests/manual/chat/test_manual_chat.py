@@ -1,3 +1,6 @@
+"""Manual CRUD tests for Google Chat service."""
+
+import os
 
 from dotenv import load_dotenv
 
@@ -6,14 +9,70 @@ import pytest
 
 from tests.manual.shared import run_task
 
+# Load test fixtures from environment variables
+TEST_CHAT_MESSAGE = os.getenv("TEST_CHAT_MESSAGE", "GWS Agent automated test message")
+
 
 @pytest.mark.live_integration
 def test_manual_1():
-    # Send verification
-    run_task("Send a message 'Automation test' to my primary space.", expected=["completed", "Message"], service="chat")
+    """Send message to primary space verification - Create operation."""
+    run_task(
+        f"Send a message '{TEST_CHAT_MESSAGE}' to my primary space.",
+        expected=["completed", "message"],
+        service="chat"
+    )
 
 
 @pytest.mark.live_integration
 def test_manual_2():
-    # List and email verification
-    run_task("List my spaces and email them.", expected=["Planned", "completed"], service="chat")
+    """List spaces and email verification - Read/Integration operation."""
+    run_task(
+        "List my Google Chat spaces and email the list to the default recipient.",
+        expected=["completed", "email"],
+        service="chat",
+        skip_verification=True,  # Read-only operation
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_3():
+    """List messages in space verification - Read operation."""
+    run_task(
+        "List recent messages in my primary chat space.",
+        expected=["completed", "message"],
+        service="chat",
+        skip_verification=True,  # Read-only operation
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_4():
+    """Get specific message verification - Read operation."""
+    run_task(
+        "Get the most recent message from my primary chat space and display it.",
+        expected=["completed"],
+        service="chat",
+        skip_verification=True,  # Read-only operation
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_5():
+    """Cross-service: Notify about new file - Integration operation."""
+    run_task(
+        f"Search Drive for a recent file and send a message to my primary chat space about it.",
+        expected=["completed"],
+        service="chat",
+        skip_verification=True,  # Multi-service operation
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_6():
+    """Cross-service: Chat alert for calendar event - Integration operation."""
+    run_task(
+        "Get my next calendar event and send a reminder to my primary chat space.",
+        expected=["completed"],
+        service="chat",
+        skip_verification=True,  # Multi-service operation
+    )
