@@ -336,23 +336,31 @@ class FakeGoogleWorkspace(GWSRunner):
             q = params.get("q", "")
             files = list(_FAKE_DRIVE_FILES)
             if q:
-                # Extract quoted literals first
-                quoted = re.findall(r"['\"](.+?)['\"]", q)
-                if quoted:
-                    terms = [t.lower() for t in quoted]
-                else:
-                    # Fallback: ignore Drive query keywords
-                    keywords = {"name", "contains", "mimetype", "and", "or", "not", "in", "parents", "trashed"}
-                    terms = [t.lower() for t in q.replace("'", "").replace("(", "").replace(")", "").split() if t.lower() not in keywords and len(t) > 2]
+                # 1. Try to extract specific field filters
+                name_filters = re.findall(r"name\s+contains\s+['\"](.+?)['\"]", q, re.IGNORECASE)
+                mime_filters = re.findall(r"mimeType\s*=\s*['\"](.+?)['\"]", q, re.IGNORECASE)
                 
-                if terms:
+                # 2. Fallback to generic quoted terms if no field-specific filters found
+                if not name_filters and not mime_filters:
+                    generic_terms = re.findall(r"['\"](.+?)['\"]", q)
+                    if generic_terms:
+                        name_filters = generic_terms
+                
+                if name_filters or mime_filters:
                     filtered = []
                     for f in files:
-                        name_lower = f["name"].lower()
-                        mime_lower = f["mimeType"].lower()
-                        # Match if ANY of the extracted terms are in name or mimeType
-                        if any(term in name_lower or term in mime_lower for term in terms):
-                             filtered.append(f)
+                        name_match = True
+                        if name_filters:
+                            # ALL name terms must match (for multi-word queries)
+                            name_match = all(t.lower() in f["name"].lower() for t in name_filters)
+                        
+                        mime_match = True
+                        if mime_filters:
+                            # ANY mime term must match (usually only one)
+                            mime_match = any(t.lower() == f["mimeType"].lower() for t in mime_filters)
+                        
+                        if name_match and mime_match:
+                            filtered.append(f)
                     files = filtered
             return {"files": files, "nextPageToken": None}
 

@@ -1408,8 +1408,8 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             if not parameters["folder_id"]:
                 # Try to find folder name in quotes if only one ID is present
                 folder_name = _extract_quoted(lowered)
-                if folder_name and folder_name.lower() not in lowered.split(folder_name.lower())[0]:
-                     parameters["folder_id"] = f"name contains '{folder_name}'"
+                if folder_name:
+                    parameters["folder_id"] = f"name contains '{folder_name}'"
         elif service == "drive" and action == "update_file_metadata":
             parameters["file_id"] = _extract_id(lowered) or ""
             parameters["name"] = _extract_quoted(lowered) or ""

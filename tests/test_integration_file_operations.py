@@ -46,6 +46,8 @@ def config():
         default_recipient_email="test@example.com",
         read_only_mode=False,
         sandbox_enabled=False,
+        no_confirm=False,
+        force_dangerous=False,
     )
 
 

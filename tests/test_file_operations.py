@@ -55,7 +55,9 @@ class TestPlannerExportFileTypeNegotiation:
             {"file_id": "gdoc_fgh", "source_mime": "application/vnd.google-apps.document"}
         )
         assert "export" in cmd
-        assert "text/plain" in cmd[-3]  # default export mime
+        import json
+        params = json.loads(cmd[cmd.index("--params") + 1])
+        assert params["mimeType"] == "text/plain"
 
     def test_workspace_spreadsheet_uses_export_csv(self):
         planner = CommandPlanner()
@@ -64,7 +66,9 @@ class TestPlannerExportFileTypeNegotiation:
             {"file_id": "gsheet_ijk", "source_mime": "application/vnd.google-apps.spreadsheet"}
         )
         assert "export" in cmd
-        assert "text/csv" in cmd[-3]
+        import json
+        params = json.loads(cmd[cmd.index("--params") + 1])
+        assert params["mimeType"] == "text/csv"
 
     def test_workspace_presentation_uses_export_pdf(self):
         planner = CommandPlanner()
@@ -73,7 +77,9 @@ class TestPlannerExportFileTypeNegotiation:
             {"file_id": "gslides_lmn", "source_mime": "application/vnd.google-apps.presentation"}
         )
         assert "export" in cmd
-        assert "application/pdf" in cmd[-3]
+        import json
+        params = json.loads(cmd[cmd.index("--params") + 1])
+        assert params["mimeType"] == "application/pdf"
 
     def test_pdf_uses_download_endpoint(self):
         planner = CommandPlanner()
@@ -82,7 +88,9 @@ class TestPlannerExportFileTypeNegotiation:
             {"file_id": "pdf_jkl_4", "source_mime": "application/pdf"}
         )
         assert "get" in cmd
-        assert "alt" in cmd[-3]
+        import json
+        params = json.loads(cmd[cmd.index("--params") + 1])
+        assert params["alt"] == "media"
 
     def test_image_png_uses_download_endpoint(self):
         planner = CommandPlanner()
@@ -91,7 +99,9 @@ class TestPlannerExportFileTypeNegotiation:
             {"file_id": "img_stu_7", "source_mime": "image/png"}
         )
         assert "get" in cmd
-        assert "media" in cmd[-3]
+        import json
+        params = json.loads(cmd[cmd.index("--params") + 1])
+        assert params["alt"] == "media"
 
     def test_video_mp4_uses_download_endpoint(self):
         planner = CommandPlanner()
@@ -137,7 +147,9 @@ class TestPlannerExportFileTypeNegotiation:
             }
         )
         assert "export" in cmd
-        assert "application/pdf" in cmd[-3]
+        import json
+        params = json.loads(cmd[cmd.index("--params") + 1])
+        assert params["mimeType"] == "application/pdf"
 
     def test_media_flag_uses_download(self):
         planner = CommandPlanner()

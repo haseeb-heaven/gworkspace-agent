@@ -26,7 +26,7 @@ def live_runner() -> GWSRunner | None:
         pytest.skip("RUN_LIVE_INTEGRATION is not enabled.")
 
     gws_binary = Path(
-        (os.getenv("GWS_BINARY_PATH") or os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"))
+        os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")
     ).expanduser()
     if not gws_binary.exists():
         pytest.skip("GWS_BINARY_PATH does not exist for live integration run.")

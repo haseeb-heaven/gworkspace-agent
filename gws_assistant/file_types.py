@@ -253,14 +253,15 @@ def default_export_mime(source_mime: str | None, requested_mime: str | None = No
 
 def export_extension_for_mime(mime_type: str) -> str:
     """Return a sensible file extension for a MIME type."""
-    ext = mimetypes.guess_extension(mime_type)
-    if ext:
-        return ext
-
     # Override map reverse lookup (first match)
     for e, m in _EXTENSION_TO_MIME.items():
         if m == mime_type:
             return "." + e
+
+    # Fallback only if not in our map
+    ext = mimetypes.guess_extension(mime_type)
+    if ext:
+        return ext
 
     return ".bin"
 
