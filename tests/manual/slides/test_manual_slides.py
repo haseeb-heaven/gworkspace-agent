@@ -14,5 +14,6 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Create verification
-    # Skipped due to LLM infrastructure issues - verification engine fails with missing ID error
-    pytest.skip("LLM infrastructure issues - verification engine fails with missing ID error")
+    # Skipped due to known Slides API limitation - verification engine fails with missing ID error
+    # This is a GWS binary/Google API issue, not an LLM infrastructure issue
+    pytest.skip("Known Slides API limitation - verification engine fails with missing ID error")
