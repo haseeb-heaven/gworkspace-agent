@@ -12,13 +12,14 @@ import re
 from pathlib import Path
 
 # Matches file paths after upload/add/put keywords, or bare absolute/relative paths.
-# Quoted paths may contain spaces; unquoted paths must not.
+# Quoted paths may contain spaces and special characters; unquoted paths are more restricted.
 RE_FILE_PATH = re.compile(
-    r"(?:upload|add|put)\s+(?:file\s+)?['\"]([A-Za-z0-9_./\\~: -]+\.[A-Za-z0-9]{1,10})['\"]|"
+    r"(?:upload|add|put)\s+(?:file\s+)?['\"]([^'\"<>|?*]+?\.[A-Za-z0-9]{1,10})['\"]|"
     r"(?:upload|add|put)\s+(?:file\s+)?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})|"
     r"\b([A-Z]:[A-Za-z0-9_./\\~-]+\.[A-Za-z0-9]{1,10})\b|"
     r"\b(/[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
-    r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b",
+    r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
+    r"\b(\\\\[A-Za-z0-9_.$ -]+\\[A-Za-z0-9_.$ -]+\\[^'\"<>|?*]+?\.[A-Za-z0-9]{1,10})\b",
     re.IGNORECASE,
 )
 
@@ -193,7 +194,14 @@ _NON_WORKSPACE_DOWNLOAD_MIMES: frozenset[str] = frozenset(
 
 
 def guess_mime_type(file_path: str | Path) -> str | None:
-    """Return MIME type for *file_path*, checking our override map first."""
+    """Guess the MIME type of a file based on its extension.
+
+    Example:
+        >>> guess_mime_type("data.xlsx")
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        >>> guess_mime_type("notes.txt")
+        'text/plain'
+    """
     path = Path(file_path)
     ext = path.suffix.lstrip(".").lower()
     if ext in _EXTENSION_TO_MIME:
@@ -280,7 +288,12 @@ def export_extension_for_mime(mime_type: str) -> str:
     if ext:
         return ext
 
-    return ".bin"
+    # Fallback logic for unknown MIME types
+    if mime_type.startswith("text/"):
+        return ".txt"
+
+    # Default to .dat for unknown binary formats as it is more descriptive than .bin
+    return ".dat"
 
 
 def upload_command_flags(file_path: str | Path) -> dict[str, str]:

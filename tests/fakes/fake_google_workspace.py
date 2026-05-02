@@ -280,7 +280,7 @@ class FakeGoogleWorkspace(GWSRunner):
     # Service handlers
     # ------------------------------------------------------------------
 
-    def _handle_gmail(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_gmail(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_messages":
             return {
                 "messages": [
@@ -312,7 +312,7 @@ class FakeGoogleWorkspace(GWSRunner):
             return {}
         return {}
 
-    def _handle_sheets(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_sheets(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "create_spreadsheet":
             return {
                 "spreadsheetId": "fake_sheet_id_123",
@@ -502,21 +502,21 @@ class FakeGoogleWorkspace(GWSRunner):
 
         return {}
 
-    def _handle_docs(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_docs(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "create_document":
             return {"documentId": "fake_doc_id_456", "title": params.get("title", "Untitled Doc"), "documentUrl": "https://docs.google.com/document/d/fake_doc_id_456"}
         if action == "batch_update":
             return {"documentId": params.get("documentId", "fake_doc_id_456"), "body": {"content": []}}
         return {}
 
-    def _handle_slides(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_slides(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "create_presentation":
             return {"presentationId": "fake_slide_id_789", "title": params.get("title", "Untitled Presentation"), "presentationUrl": "https://docs.google.com/presentation/d/fake_slide_id_789"}
         if action == "get_presentation":
             return {"presentationId": params.get("presentationId", "fake_slide_id_789"), "title": "Test Presentation", "slides": []}
         return {}
 
-    def _handle_calendar(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_calendar(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_events":
             return {"items": [{"id": "evt1", "summary": "Team Sync", "start": {"dateTime": "2026-04-15T10:00:00Z"}, "end": {"dateTime": "2026-04-15T11:00:00Z"}}]}
         if action == "create_event":
@@ -529,7 +529,7 @@ class FakeGoogleWorkspace(GWSRunner):
             return {"id": params.get("eventId", "evt1"), "summary": params.get("summary", "Updated Event")}
         return {}
 
-    def _handle_chat(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_chat(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_spaces":
             return {"spaces": [{"name": "spaces/AAAA1234", "displayName": "Engineering", "type": "ROOM"}]}
         if action == "send_message":
@@ -538,14 +538,14 @@ class FakeGoogleWorkspace(GWSRunner):
             return {"messages": [{"name": "spaces/AAAA1234/messages/1", "text": "Hi team", "sender": {"displayName": "Alice"}, "createTime": "2026-04-15T10:00:00Z"}]}
         return {}
 
-    def _handle_keep(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_keep(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_notes":
             return {"notes": [{"name": "notes/1", "title": "Shopping", "body": "Milk, Eggs"}]}
         if action == "create_note":
             return {"name": "notes/new_1", "title": params.get("title", "New Note"), "body": params.get("body", "")}
         return {}
 
-    def _handle_meet(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_meet(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_conferences":
             return {"spaces": [{"name": "spaces/MEET123", "meetingUri": "https://meet.google.com/abc-defg-hij", "activeConference": False}]}
         if action == "get_conference":
@@ -554,14 +554,14 @@ class FakeGoogleWorkspace(GWSRunner):
             return {"name": f"spaces/NEWMEET{self.call_count}", "meetingUri": f"https://meet.google.com/new-{self.call_count}"}
         return {}
 
-    def _handle_contacts(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_contacts(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_contacts":
             return {"connections": [{"names": [{"displayName": "Alice Smith"}], "emailAddresses": [{"value": "alice@example.com"}], "phoneNumbers": [{"value": "+1-555-0100"}]}]}
         if action == "get_person":
             return {"resourceName": params.get("resourceName", "people/c123"), "names": [{"displayName": "Alice Smith"}], "emailAddresses": [{"value": "alice@example.com"}]}
         return {}
 
-    def _handle_tasks(self, action: str, params: dict[str, Any]) -> Any:
+    def _handle_tasks(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         if action == "list_tasklists":
             return {"items": [{"id": "tl1", "title": "My Tasks", "updated": "2026-04-15T10:00:00Z"}]}
         if action == "list_tasks":
