@@ -262,6 +262,8 @@ class CommandPlanner:
 
         if action == "upload_file":
             file_path = self._required_text(params, "file_path")
+            if not os.path.exists(file_path):
+                raise ValidationError(f"File not found: {file_path}")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
             cmd = [
                 "drive",

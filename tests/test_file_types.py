@@ -148,8 +148,8 @@ class TestExportExtensionForMime:
     def test_csv(self):
         assert export_extension_for_mime("text/csv") == ".csv"
 
-    def test_unknown_returns_bin(self):
-        assert export_extension_for_mime("application/x-custom-thing") == ".bin"
+    def test_unknown_returns_dat(self):
+        assert export_extension_for_mime("application/x-custom-thing") == ".dat"
 
 
 class TestUploadCommandFlags:

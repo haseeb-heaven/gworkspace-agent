@@ -1,6 +1,8 @@
 """Unit tests for Drive file operations across all supported document types."""
 
 
+from unittest.mock import patch
+
 import pytest
 
 from gws_assistant.exceptions import ValidationError
@@ -28,20 +30,23 @@ class TestPlannerUploadMimeDetection:
         ],
     )
     def test_upload_includes_content_type_flag(self, file_path: str, expected_mime: str):
-        planner = CommandPlanner()
-        cmd = planner.build_command("drive", "upload_file", {"file_path": file_path})
+        with patch("gws_assistant.planner.os.path.exists", return_value=True):
+            planner = CommandPlanner()
+            cmd = planner.build_command("drive", "upload_file", {"file_path": file_path})
         assert "--upload-content-type" in cmd
         idx = cmd.index("--upload-content-type")
         assert cmd[idx + 1] == expected_mime
 
     def test_upload_without_extension_has_no_content_type(self):
-        planner = CommandPlanner()
-        cmd = planner.build_command("drive", "upload_file", {"file_path": "/tmp/README"})
+        with patch("gws_assistant.planner.os.path.exists", return_value=True):
+            planner = CommandPlanner()
+            cmd = planner.build_command("drive", "upload_file", {"file_path": "/tmp/README"})
         assert "--upload-content-type" not in cmd
 
     def test_upload_custom_name_preserved(self):
-        planner = CommandPlanner()
-        cmd = planner.build_command("drive", "upload_file", {"file_path": "/tmp/old.pdf", "name": "new_report.pdf"})
+        with patch("gws_assistant.planner.os.path.exists", return_value=True):
+            planner = CommandPlanner()
+            cmd = planner.build_command("drive", "upload_file", {"file_path": "/tmp/old.pdf", "name": "new_report.pdf"})
         assert "new_report.pdf" in cmd[-1]  # --json payload contains name
 
 
