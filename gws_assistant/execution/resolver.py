@@ -258,6 +258,9 @@ class ResolverMixin:
 
         return task
 
+    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
+        return self._resolve_placeholders(val, context, use_repr_for_complex, depth)
+
     def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context.
 

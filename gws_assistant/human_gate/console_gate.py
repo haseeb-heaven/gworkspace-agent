@@ -50,6 +50,8 @@ class ConsoleFallbackGate(HumanGateBase):
             raise TimeoutError("Timed out waiting for approval")
 
     def _sync_ask_choice(self, question: str, choices: list[str]) -> str:
+        if not choices:
+            raise ValueError("choices cannot be empty")
         print(f"\n❓ {question}")
         for i, choice in enumerate(choices, 1):
             print(f"  {i}. {choice}")

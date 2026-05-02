@@ -109,7 +109,7 @@ class TelegramHumanGate(HumanGateBase):
     async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming inline keyboard callbacks."""
         query = update.callback_query
-        if not query or str(query.message.chat_id) != str(self.chat_id):
+        if not query or not query.message or str(query.message.chat_id) != str(self.chat_id):
             return
 
         await query.answer()  # Remove loading spinner
