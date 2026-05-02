@@ -14,5 +14,4 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Create verification
-    # Now works with heuristic mode
-    run_task("Create a new Google Form.", expected=["completed"], service="forms", skip_verification=True)
+    run_task("Create a Google Form titled 'User Feedback Survey'.", expected=["Command succeeded", "User Feedback Survey"], service="forms", expected_fields={"info": {"title": "User Feedback Survey"}})

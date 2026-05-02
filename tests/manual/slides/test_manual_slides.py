@@ -14,6 +14,4 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Create verification
-    # Skipped due to known Slides API limitation - verification engine fails with missing ID error
-    # This is a GWS binary/Google API issue, not an LLM infrastructure issue
-    pytest.skip("Known Slides API limitation - verification engine fails with missing ID error")
+    run_task("Create a new Google Slides presentation titled 'Project Proposal'.", expected=["Command succeeded", "Project Proposal"], service="slides", expected_fields={"title": "Project Proposal"})

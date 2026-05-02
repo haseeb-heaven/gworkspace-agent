@@ -44,7 +44,7 @@ def run_task(
     cwd = Path(__file__).resolve().parents[2]
     script_path = cwd / "gws_cli.py"
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(  # nosec  # noqa: S603
         [sys.executable, str(script_path), "--task", task_string],
         capture_output=True,
         text=True,

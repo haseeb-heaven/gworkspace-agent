@@ -47,13 +47,12 @@ def test_manual_3():
 @pytest.mark.live_integration
 def test_manual_4():
     # Rename/Move verification
-    # First create the folder if it doesn't exist, then rename it
-    # This works with both LLM and heuristic mode
     run_task(
-        f"Create a folder named '{TEST_FOLDER_NAME}' if it doesn't exist, then rename it to '{TEST_RENAMED_FOLDER_NAME}'.",
-        expected=["completed"],
+        f"Search for a file named '{TEST_FOLDER_NAME}', rename it to '{TEST_RENAMED_FOLDER_NAME}', "
+        "and then move it to the root of my Google Drive if it's not already there.",
+        expected=["Planned", "completed", TEST_RENAMED_FOLDER_NAME],
         service="drive",
-        skip_verification=True  # May have idempotent behavior
+        expected_fields={"name": TEST_RENAMED_FOLDER_NAME},
     )
 
 

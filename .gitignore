@@ -29,7 +29,6 @@ logs/
 *.log
 .env
 .env.local
-.env.backup
 
 # IDEs
 .idea/

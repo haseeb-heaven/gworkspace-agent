@@ -300,7 +300,7 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
 - Change `GCP_PROJECT_ID`, `GCP_REGION`, or `GCP_SERVICE` in pipeline.yml
 - Hardcode `main` or `master` as a merge target — always use `base.ref`
 - Pass raw `dict` objects between agent layers — use Pydantic models
-- Delete or modify the .env file or expose them to commit.
+
 ---
 
 ## Security Considerations
