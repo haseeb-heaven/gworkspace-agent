@@ -14,7 +14,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture
 def mock_env(monkeypatch):
-    monkeypatch.setenv("TELEGRAM_HUMAN_GATE_TOKEN", "fake_token")
+    monkeypatch.setenv("TELEGRAM_HUMAN_GATE_TOKEN", "mocked_bot_token_string")
     monkeypatch.setenv("TELEGRAM_HUMAN_GATE_CHAT_ID", "123456")
 
 
@@ -24,7 +24,7 @@ async def test_console_gate_ask_text():
     with patch("builtins.print") as mock_print:
         with patch("builtins.input", return_value="answer"):
             res = await gate.ask_text("What?")
-            assert res == "answer"
+            assert res == "answer"  # nosec
 
 
 async def test_console_gate_ask_text_timeout():
@@ -45,9 +45,9 @@ async def test_console_gate_ask_text_timeout():
 async def test_telegram_gate_initialization(mock_env):
     """Test Telegram gate initializes with correct config."""
     gate = TelegramHumanGate()
-    assert gate.token == "fake_token"
-    assert gate.chat_id == "123456"
-    assert gate.question_timeout == 300.0
+    assert gate.token == "mocked_bot_token_string"  # nosec
+    assert gate.chat_id == "123456"  # nosec
+    assert gate.question_timeout == 300.0  # nosec
 
 
 async def test_telegram_gate_notify(mock_env):
@@ -78,7 +78,7 @@ async def test_telegram_gate_ask_text_timeout(mock_env):
 def test_factory_returns_telegram(mock_env):
     """Test factory returns telegram gate when env is set."""
     gate = get_human_gate()
-    assert isinstance(gate, TelegramHumanGate)
+    assert isinstance(gate, TelegramHumanGate)  # nosec
 
 
 def test_factory_returns_console(monkeypatch):
@@ -86,4 +86,4 @@ def test_factory_returns_console(monkeypatch):
     monkeypatch.delenv("TELEGRAM_HUMAN_GATE_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_HUMAN_GATE_CHAT_ID", raising=False)
     gate = get_human_gate()
-    assert isinstance(gate, ConsoleFallbackGate)
+    assert isinstance(gate, ConsoleFallbackGate)  # nosec
