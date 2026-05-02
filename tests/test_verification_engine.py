@@ -238,7 +238,7 @@ def test_5_check_system_check_2_permission_scope_critical():
 
 def test_5_check_system_check_2_missing_scopes():
     """Test CHECK 2: Specifically test missing scopes validation."""
-    params = {"_granted_scopes": ["https://www.googleapis.com/auth/gmail.readonly"]}
+    params = {"to": "valid@example.org", "subject": "Hello", "body": "This is a body", "_granted_scopes": ["https://www.googleapis.com/auth/gmail.readonly"]}
     result = {"success": True}
     # gmail requires .modify
     with pytest.raises(VerificationError, match=r"\[CHECK 2\].*Missing required scopes"):
