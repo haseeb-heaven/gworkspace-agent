@@ -420,7 +420,8 @@ class FakeGoogleWorkspace(GWSRunner):
         # get_file / export_file
         if action in ("get_file", "export_file"):
             file_id = params.get("fileId") or params.get("file_id", "file123")
-            file_info = self._find_file(file_id) or self._find_file("file123")
+            file_info = self._find_file(file_id) or self._find_file("doc_abc_1")
+
             if not file_info:
                 return {"error": f"File {file_id} not found"}
 
