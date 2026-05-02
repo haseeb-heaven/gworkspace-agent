@@ -25,6 +25,13 @@ RE_DRIVE_QUERY_SPLIT = re.compile(r"\s+(and|then|to|save|write|export|extract|mo
 RE_EXTRACT_ID = re.compile(r"\b([a-zA-Z0-9_-]{25,})\b")
 RE_EXTRACT_EMAIL = re.compile(r"\b([A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,})\b")
 RE_EXTRACT_QUOTED = re.compile(r'["\'](.+?)["\']')
+RE_EXTRACT_FILE_PATH = re.compile(
+    r"(?:upload|add|put)\s+(?:file\s+)?['\"]?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})['\"]?|"
+    r"\b([A-Z]:[A-Za-z0-9_./\\~-]+\.[A-Za-z0-9]{1,10})\b|"
+    r"\b(/[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
+    r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b",
+    re.IGNORECASE,
+)
 RE_FIRST_INT = re.compile(r"\b(\d{1,3})\b")
 RE_EXTRACT_DATA_ROWS = re.compile(r"['\"](.+?)['\"]")
 RE_EXTRACT_DATA_PATTERN = re.compile(r"([A-Za-z0-9 _]+)\s*,\s*(\d+)")
@@ -1395,6 +1402,21 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["start_date"] = date.today().isoformat()  # Default to today for heuristic
         elif service == "drive" and action == "create_folder":
             parameters["folder_name"] = _extract_quoted(lowered) or "New Folder"
+        elif service == "drive" and action == "upload_file":
+            parameters["file_path"] = _extract_file_path(lowered) or ""
+        elif service == "drive" and action == "copy_file":
+            parameters["file_id"] = _extract_id(lowered) or ""
+            parameters["name"] = _extract_quoted(lowered) or "Copy"
+        elif service == "drive" and action == "move_file":
+            parameters["file_id"] = _extract_id(lowered) or ""
+            parameters["folder_id"] = ""
+        elif service == "drive" and action == "update_file_metadata":
+            parameters["file_id"] = _extract_id(lowered) or ""
+            parameters["name"] = _extract_quoted(lowered) or ""
+        elif service == "drive" and action == "delete_file":
+            parameters["file_id"] = _extract_id(lowered) or ""
+        elif service == "drive" and action == "move_to_trash":
+            parameters["file_id"] = _extract_id(lowered) or ""
         elif service == "docs" and action == "create_document":
             parameters["title"] = _extract_quoted(lowered) or "New Document"
         elif service == "sheets" and action == "create_spreadsheet":
@@ -1650,6 +1672,14 @@ def _extract_email(text: str) -> str | None:
 def _extract_quoted(text: str) -> str | None:
     match = RE_EXTRACT_QUOTED.search(text)
     return match.group(1) if match else None
+
+
+def _extract_file_path(text: str) -> str | None:
+    """Extract a local file path from natural language for upload operations."""
+    match = RE_EXTRACT_FILE_PATH.search(text)
+    if match:
+        return next(g for g in match.groups() if g is not None)
+    return None
 
 
 def _extract_sheet_title(text: str) -> str | None:
