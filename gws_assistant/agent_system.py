@@ -1440,7 +1440,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                         sort_index = 1
                         numeric_sort = True
 
-                code = f"""
+                code = rf"""
 import re
 
 data = {data_str}
