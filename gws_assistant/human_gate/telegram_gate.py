@@ -180,9 +180,6 @@ class TelegramHumanGate(HumanGateBase):
         finally:
             async with self.lock:
                 self.pending.pop(qid, None)
-                # Clean up reverse mapping to prevent memory leak
-                self.msg_to_qid = {k: v for k, v in self.msg_to_qid.items() if v != qid}
-
 
     async def ask_approval(self, action: str, details: str, timeout: float = 60) -> bool:
         """Ask for approval with yes/no buttons."""

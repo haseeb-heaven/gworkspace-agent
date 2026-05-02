@@ -167,15 +167,14 @@ class WorkspaceAgentSystem:
 
     async def run(self, task: str) -> str:
         """Execute a task end-to-end (used by standalone entry points)."""
-        # Note: In a real integration, this would invoke the LangGraph workflow.
-        # Since this file defines the core agent structure but doesn't have the explicit
-        # langgraph runner directly bound to it as a method (it usually uses run_workflow),
-        # we'll implement a basic proxy method here that uses the existing workflow runner.
         from gws_assistant.langgraph_workflow import run_workflow
-        from gws_assistant.execution.resolver import ExecutionContextResolver
+        from gws_assistant.execution.executor import PlanExecutor
+        from gws_assistant.gws_runner import GwsRunner
         import asyncio
 
-        executor = ExecutionContextResolver(self.config, self.logger)
+        # Ensure we construct the proper PlanExecutor instead of hallucinated classes
+        runner = GwsRunner()
+        executor = PlanExecutor(planner=self, runner=runner, config=self.config, logger=self.logger)
         return await asyncio.to_thread(run_workflow, task, self.config, self, executor, self.logger)
 
     def summarize(self, text: str) -> str:

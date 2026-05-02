@@ -105,9 +105,11 @@ async def test_telegram_gate_ask_approval(mock_env):
         qid = list(gate.pending.keys())[0]
         gate.pending[qid].set_result("yes")
 
-    asyncio.create_task(simulate_callback())
+    task = asyncio.create_task(simulate_callback())
 
     result = await gate.ask_approval("Action", "Details")
+
+    await task
     assert result is True  # nosec
     gate._app.bot.send_message.assert_called_once()
 
@@ -129,9 +131,11 @@ async def test_telegram_gate_ask_choice(mock_env):
         # set answer for mock simulation
         gate.pending[qid].set_result("opt1")
 
-    asyncio.create_task(simulate_callback())
+    task = asyncio.create_task(simulate_callback())
 
     result = await gate.ask_choice("Question", ["opt1", "opt2"])
+
+    await task
     assert result == "opt1"  # nosec
     gate._app.bot.send_message.assert_called_once()
 
