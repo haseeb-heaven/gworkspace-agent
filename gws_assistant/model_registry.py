@@ -69,6 +69,10 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-70b-versatile",
     "groq/llama-3.1-8b-instant",
+    # ── Cerebras (fast inference, tool-calling confirmed) ───────────
+    "cerebras/llama3.1-70b",
+    "cerebras/llama3.1-8b",
+    "cerebras/llama-3.3-70b",
 
     # ── Ollama (local, tool-calling confirmed) ──────────────────────
     "ollama/llama3.1",

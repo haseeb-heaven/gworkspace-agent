@@ -27,10 +27,10 @@ def test_cli_module_help_smoke():
 def test_gws_binary_help_smoke():
     env_file = dotenv_values(ROOT / ".env")
     gws_path = os.getenv("GWS_BINARY_PATH") or env_file.get("GWS_BINARY_PATH")
-    
+
     if not gws_path:
         pytest.skip("GWS_BINARY_PATH not configured")
-        
+
     if not os.path.isabs(gws_path):
         gws_path = str(ROOT / gws_path)
 
@@ -38,7 +38,7 @@ def test_gws_binary_help_smoke():
         # Try appending .exe on Windows if missing
         if sys.platform == "win32" and not gws_path.lower().endswith(".exe"):
             gws_path += ".exe"
-            
+
     if not os.path.exists(gws_path):
         pytest.skip(f"GWS_BINARY_PATH not found or invalid: {gws_path}")
 

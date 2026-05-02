@@ -270,6 +270,26 @@ class ResolverMixin:
             # Depth exceeded — return as-is to prevent stack overflow.
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
+
+        # Additional safety: check for circular references in context
+        if isinstance(val, dict) or isinstance(val, list):
+            # Use id() to detect if we've seen this object before
+            if not hasattr(self, '_resolve_cache'):
+                self._resolve_cache: set[int] = set()
+            obj_id = id(val)
+            if obj_id in self._resolve_cache:
+                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d", obj_id)
+                return val if isinstance(val, dict) else []
+            self._resolve_cache.add(obj_id)
+            try:
+                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
+                return result
+            finally:
+                self._resolve_cache.discard(obj_id)
+        else:
+            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
+
+    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
