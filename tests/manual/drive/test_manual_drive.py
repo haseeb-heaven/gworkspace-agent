@@ -47,8 +47,14 @@ def test_manual_3():
 @pytest.mark.live_integration
 def test_manual_4():
     # Rename/Move verification
-    # Skipped due to LLM infrastructure issues - heuristic planner cannot handle complex rename operations
-    pytest.skip("LLM infrastructure issues - heuristic planner cannot handle complex rename operations")
+    # First create the folder if it doesn't exist, then rename it
+    # This works with both LLM and heuristic mode
+    run_task(
+        f"Create a folder named '{TEST_FOLDER_NAME}' if it doesn't exist, then rename it to '{TEST_RENAMED_FOLDER_NAME}'.",
+        expected=["completed"],
+        service="drive",
+        skip_verification=True  # May have idempotent behavior
+    )
 
 
 @pytest.mark.live_integration

@@ -14,5 +14,5 @@ def test_manual_1():
 @pytest.mark.live_integration
 def test_manual_2():
     # Create verification
-    # Skipped due to LLM infrastructure issues - heuristic planner cannot handle custom form titles
-    pytest.skip("LLM infrastructure issues - heuristic planner cannot handle custom form titles")
+    # Now works with heuristic mode
+    run_task("Create a new Google Form.", expected=["completed"], service="forms", skip_verification=True)

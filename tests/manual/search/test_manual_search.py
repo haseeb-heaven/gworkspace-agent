@@ -5,8 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()  # Load .env at module level
 import pytest
 
-from tests.manual.shared import run_task
-
 TEST_WEB_SEARCH_QUERY = os.getenv("TEST_WEB_SEARCH_QUERY", "Agentic AI Google Workspace")
 
 
