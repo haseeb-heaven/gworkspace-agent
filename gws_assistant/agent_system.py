@@ -164,6 +164,19 @@ class WorkspaceAgentSystem:
 
         self.memory = get_memory_backend(config, logger)
 
+
+    async def run(self, task: str) -> str:
+        """Execute a task end-to-end (used by standalone entry points)."""
+        # Note: In a real integration, this would invoke the LangGraph workflow.
+        # Since this file defines the core agent structure but doesn't have the explicit
+        # langgraph runner directly bound to it as a method (it usually uses run_workflow),
+        # we'll implement a basic proxy method here that uses the existing workflow runner.
+        from gws_assistant.langgraph_workflow import run_workflow
+        from gws_assistant.execution.resolver import ExecutionContextResolver
+
+        executor = ExecutionContextResolver(self.config, self.logger)
+        return run_workflow(task, self.config, self, executor, self.logger)
+
     def summarize(self, text: str) -> str:
         """Summarize text using the configured LLM."""
         if not text or not self._use_langchain:
