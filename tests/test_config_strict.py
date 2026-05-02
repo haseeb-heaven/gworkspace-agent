@@ -38,5 +38,6 @@ def test_config_raises_value_error_if_gws_binary_missing(monkeypatch):
     """Test that ValueError is raised if GWS_BINARY_PATH is missing."""
     monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "test@example.com")
     monkeypatch.delenv("GWS_BINARY_PATH", raising=False)
+    monkeypatch.delenv("CI", raising=False)
     with pytest.raises(ValueError, match="GWS_BINARY_PATH must be set in .env"):
         AppConfig.from_env()

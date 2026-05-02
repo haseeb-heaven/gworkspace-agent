@@ -127,7 +127,6 @@ _WEB_SEARCH_INTENT_PHRASES: tuple[str, ...] = (
     "from the internet",
     "on the internet",
     "scrape",
-    "search for",
     "find out",
     "search around",
     "search about",
@@ -1668,7 +1667,6 @@ _WEB_SEARCH_LEADING_PHRASES: tuple[str, ...] = (
     "find online",
     "find on the web",
     "browse the web for",
-    "search for",
 )
 
 _WEB_SEARCH_TRAILING_SPLITS = re.compile(
