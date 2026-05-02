@@ -480,8 +480,7 @@ class VerificationEngine:
 
     @classmethod
     def verify_document_not_empty(cls, tool_name: str, params: dict, result: Any) -> None:
-        normalized = tool_name.split("_", 1)[1] if "_" in tool_name else tool_name
-        if normalized in ("create_document", "append_values", "create_spreadsheet", "write_sheet", "write_values"):
+        if tool_name in ("create_document", "append_values", "create_spreadsheet", "write_sheet", "write_values"):
             content = params.get("content")
             values = params.get("values")
             if content is not None and str(content).strip() == "":

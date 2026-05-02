@@ -5,14 +5,14 @@ from gws_assistant.verification_engine import VerificationEngine, VerificationEr
 
 # CATEGORY 1: PLACEHOLDER DETECTION & GENERAL
 def test_placeholder_detection():
-    assert VerificationEngine._is_placeholder("{{some_value}}") is True
-    assert VerificationEngine._is_placeholder("[TBD]") is True
-    assert VerificationEngine._is_placeholder("<replace_me>") is True
-    assert VerificationEngine._is_placeholder("todo") is True
-    assert VerificationEngine._is_placeholder("noreply@example.com") is True
-    assert VerificationEngine._is_placeholder("0000") is True
-    assert VerificationEngine._is_placeholder("...") is True
-    assert VerificationEngine._is_placeholder("valid_string") is False
+    assert VerificationEngine._is_placeholder("{{some_value}}") is True  # nosec
+    assert VerificationEngine._is_placeholder("[TBD]") is True  # nosec
+    assert VerificationEngine._is_placeholder("<replace_me>") is True  # nosec
+    assert VerificationEngine._is_placeholder("todo") is True  # nosec
+    assert VerificationEngine._is_placeholder("noreply@example.com") is True  # nosec
+    assert VerificationEngine._is_placeholder("0000") is True  # nosec
+    assert VerificationEngine._is_placeholder("...") is True  # nosec
+    assert VerificationEngine._is_placeholder("valid_string") is False  # nosec
 
 
 def test_general_verification_fail_none():
