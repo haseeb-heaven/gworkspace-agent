@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_COMMANDS = ["mail", "docs", "sheet", "calendar", "notes"]
 
 # Backwards-compatible module-level name; real state now lives per Application in bot_data.
-pending_confirmations = {}
+pending_confirmations: dict[int, asyncio.Future] = {}
 
 
 def _pending_confirmations(context: ContextTypes.DEFAULT_TYPE) -> dict[int, asyncio.Future]:

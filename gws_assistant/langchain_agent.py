@@ -628,7 +628,7 @@ def plan_with_langchain(
         "6. DRIVE QUERIES: use 'q' parameter for drive.list_files. "
         "7. EMAIL ACTIONS: use gmail.send_message for sending. "
         "8. EXPORTS: use drive.export_file to read content. "
-        "9. WEB SEARCH: When the user says 'search the web', 'search online', 'search the internet', 'web search', 'browse the web', 'google for', 'look it up online', 'look up online', 'find online', 'find on the web', 'on the web', 'from the web', 'on the internet', 'from the internet', 'scrape', or otherwise asks for information that lives OUTSIDE the user's Google Workspace, the FIRST task MUST be search.web_search. NEVER substitute gmail.list_messages, drive.list_files, or any Workspace lookup for a web search. If the user is explicitly looking inside Drive/Gmail/Sheets, then DO NOT use search.web_search. "
+        "9. WEB SEARCH: When the user says 'search for', 'find out', 'search the web', 'search online', 'search the internet', 'web search', 'browse the web', 'google for', 'look it up online', 'look up online', 'find online', 'find on the web', 'on the web', 'from the web', 'on the internet', 'from the internet', 'scrape', 'cheapest', 'best price', 'available in the market', or otherwise asks for information that lives OUTSIDE the user's Google Workspace, the FIRST task MUST be search.web_search. NEVER substitute gmail.list_messages, drive.list_files, or any Workspace lookup for a web search. If the user is explicitly looking inside Drive/Gmail/Sheets, then DO NOT use search.web_search. "
         "10. DATA STRUCTURES: drive.list_files returns {{{{files: [...]}}}}, gmail.list_messages returns {{{{messages: [...]}}}}. "
         "11. LEGACY: you may use $drive_file_ids or $gmail_message_ids for the most recent search results. "
         "12. GMAIL: use $gmail_message_body_text for decoded text. "
@@ -646,6 +646,9 @@ def plan_with_langchain(
         "23. SUMMARIZATION: Include a 'summary' field that lists the full sequence of actions to be taken (e.g., '1. List messages, 2. Fetch details, 3. Create Sheet, 4. Append Data, 5. Send Email')."
         "24. SUMMARIZATION: When writing to a Doc or Sheet from search results, synthesize and summarize the information. Do NOT include raw search snippets like 'Jan 1, 2024 ...' in the final output."
         "25. SMART RESOLUTION: You can use the shorthand {{{{ :key }}}} (e.g. {{{{ :spreadsheetId }}}}) to reference the most recent occurrence of a result key from ANY previous task. This is more robust than using task-N indices. "
+        "26. PYTHON SYNTAX VALIDITY: In code.execute, you MUST use standard multi-line indentation for all blocks (if, for, while, try). NEVER combine multiple statements on a single line using semicolons if they include control structures. BAD: 'for x in list: if x > 0: print(x)'. GOOD: 'for x in list:\n    if x > 0:\n        print(x)'. Your code will be executed in a restricted environment where single-line semicolon hacks for loops will fail."
+        "27. DATA HANDLING: NEVER embed large data structures (like search results or file lists) directly as literals in your Python code. ALWAYS reference them using placeholders like {{{{task-N}}}} or {{{{ :key }}}} at the start of your script. This prevents syntax errors and ensures the code remains manageable."
+        "28. SANDBOX CONSTRAINTS: In code.execute, NEVER import external libraries like 'requests', 'os', 'subprocess', or 'urllib'. The environment is strictly offline. Only 'json', 'math', 'datetime', 're', and 'collections' are pre-approved. If you need external data, you MUST use the search.web_search tool as a previous task step."
         "\n\nIMPORTANT: You MUST respond with a valid JSON object matching the requested schema."
     )
 

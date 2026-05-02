@@ -31,6 +31,8 @@ _BANNED_PATTERNS = [
     r"\bsocket\b",
     r"\bopen\(",
     r"__import__",
+    r"\brequests\b",
+    r"\burllib\b",
 ]
 
 
@@ -346,6 +348,19 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
         else _DEFAULT_TIMEOUT_SECONDS
     )
     validation_error = _validate_submitted_code(code, timeout_seconds=timeout_seconds)
+    if validation_error and "SyntaxError" in validation_error and ";" in code:
+        # AI Robustness: Many LLMs (especially on Groq/OpenRouter) tend to emit
+        # "one-liners" with semicolons that break Python's block syntax.
+        # We try to expand them into multi-line code and re-validate.
+        # This is a heuristic: split by semicolon followed by space.
+        fixed_code = code.replace("; ", "\n").replace(";", "\n")
+        second_validation = _validate_submitted_code(fixed_code, timeout_seconds=timeout_seconds)
+        if not second_validation:
+            from gws_assistant.logging_utils import get_logger
+            get_logger(__name__).info("AI Robustness: Auto-fixed semicolon syntax in one-liner code block.")
+            code = fixed_code
+            validation_error = None
+
     if validation_error:
         return StructuredToolResult(
             success=False,

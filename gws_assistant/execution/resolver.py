@@ -53,6 +53,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$web_search_rows":         "search_summary_rows",
     "$web_search_summary":      "search_summary_table",
     "$sheet_email_body":        "sheet_summary_table",
+    "$search_rows":             "search_summary_rows",
+    "$search_results":          "search_summary_rows",
 
     # Include the new standardized ones too to resolve if called explicitly
     "$drive_metadata_rows":     "drive_metadata_rows",
@@ -268,6 +270,28 @@ class ResolverMixin:
             # Depth exceeded — return as-is to prevent stack overflow.
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
+
+        # Additional safety: check for circular references in context
+        if isinstance(val, dict) or isinstance(val, list):
+            # Use id() to detect if we've seen this object before
+            if not hasattr(self, '_resolve_cache'):
+                self._resolve_cache: dict[int, Any] = {}
+            obj_id = id(val)
+            if obj_id in self._resolve_cache:
+                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
+                return self._resolve_cache[obj_id]
+            # Create an empty clone and store it in the cache before recursion
+            clone = {} if isinstance(val, dict) else []
+            self._resolve_cache[obj_id] = clone
+            try:
+                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
+                return result
+            finally:
+                del self._resolve_cache[obj_id]
+        else:
+            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
+
+    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None) -> Any:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
@@ -494,8 +518,18 @@ class ResolverMixin:
                     self.logger.debug(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
                     return resolved_item
 
+            if clone is not None:
+                # Use the memoized clone for circular reference handling
+                for i, item in enumerate(val):
+                    clone.append(self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1))
+                return clone
             return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1) for item in val]
         elif isinstance(val, dict):
+            if clone is not None:
+                # Use the memoized clone for circular reference handling
+                for k, v in val.items():
+                    clone[k] = self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1)
+                return clone
             return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1) for k, v in val.items()}
         return val
 

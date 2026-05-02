@@ -69,7 +69,7 @@ class LocalMemory(MemoryBackend):
     def __init__(self, config: AppConfigModel, logger: logging.Logger | None = None):
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
-        self.logger.info("Local episodic memory initialized (JSONL).")
+        self.logger.debug("Local episodic memory initialized (JSONL).")
 
         # Load from config, fallback to home directory
         mem_dir = getattr(self.config, "memory_dir", None)
@@ -312,7 +312,7 @@ class Mem0Memory(LocalMemory):
                 if config.mem0_host:
                     kwargs["host"] = config.mem0_host
                 self.client = MemoryClient(**kwargs)
-                self.logger.info("Mem0 long-term memory client initialized (hosted).")
+                self.logger.debug("Mem0 long-term memory client initialized (hosted).")
             except ImportError:
                 self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
             except Exception as e:
@@ -322,7 +322,7 @@ class Mem0Memory(LocalMemory):
                 from mem0 import Memory
 
                 self.client = Memory()
-                self.logger.info("Mem0 long-term memory client initialized (local).")
+                self.logger.debug("Mem0 long-term memory client initialized (local).")
             except ImportError:
                 self.logger.warning("mem0ai library not installed. Long-term memory disabled.")
             except Exception as e:
