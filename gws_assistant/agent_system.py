@@ -39,8 +39,6 @@ def _generate_computation_code(lowered: str, text: str) -> str:
     Handles common patterns like fibonacci, prime numbers, sums, etc.
     Returns safe Python code that can run in the RestrictedPython sandbox.
     """
-    import re
-
     # Try to extract number from text (e.g., "first 10 fibonacci")
     num_match = re.search(r"(\d+)\s*(?:st|nd|rd|th)?\s*fibonacci", lowered)
     if num_match or "fibonacci" in lowered:
@@ -283,272 +281,10 @@ class WorkspaceAgentSystem:
                 no_service_detected=True,
             )
 
-        # MULTI-TASK HEURISTICS (General Patterns)
-
-        # Pattern WS-*: Web Search-driven workflows.
-        # These run BEFORE the gmail-/drive-led patterns so that requests like
-        # "Search the web for X, save to Sheet, send email" do not get routed
-        # to gmail.list_messages or drive.list_files.
-        if "search" in services and _has_explicit_web_search_intent(lowered):
-            ws_plan = self._web_search_pattern_tasks(text, lowered, services)
-            if ws_plan is not None:
-                tasks, summary_chain = ws_plan
-                return RequestPlan(
-                    raw_text=text,
-                    tasks=tasks,
-                    summary=f"Planned {len(tasks)} tasks: {summary_chain}",
-                    confidence=0.85,
-                    no_service_detected=False,
-                    source="heuristic",
-                )
-
-        # Pattern A1: Drive Metadata Only (e.g. counts, tables, summaries)
-        if (
-            "drive" in services
-            and _is_metadata_only_request(lowered)
-            and not ("gmail" in services and _is_drive_to_email_request(lowered))
-            and not _is_drive_folder_move_request(lowered)
-        ):
-            tasks = self._drive_metadata_computation_tasks(text, lowered)
-            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: {task_chain}",
-                confidence=0.75,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern A-Metadata: Drive Metadata -> Code -> Gmail
-        if "drive" in services and "gmail" in services and _is_drive_metadata_to_email_request(lowered):
-            tasks = self._drive_metadata_to_gmail_tasks(text, lowered)
-            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: {task_chain}",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern A2: Drive -> Sheets -> Gmail (Search, Export, Email)
-        # Must come BEFORE Pattern A to ensure Sheet requests take priority
-        if "drive" in services and "sheets" in services and "gmail" in services and _is_drive_to_sheets_to_email_request(lowered):
-            tasks = self._drive_to_sheets_to_gmail_tasks(text, lowered)
-            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: {task_chain}",
-                confidence=0.75,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern A: Drive -> Gmail (Search & Email)
-        if "drive" in services and "gmail" in services and _is_drive_to_email_request(lowered):
-            tasks = self._drive_to_gmail_tasks(text, lowered)
-            task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: {task_chain}",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern C: Drive Folder & Move
-        if "drive" in services and _is_drive_folder_move_request(lowered):
-            tasks = self._drive_folder_move_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: drive.create_folder -> drive.list_files -> drive.move_file",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern B: Gmail -> Sheets -> Email (Extraction)
-        # Checked AFTER Drive patterns to ensure Drive-based requests take priority
-        if "gmail" in services and "sheets" in services and _is_gmail_to_sheets_request(lowered):
-            tasks = self._gmail_to_sheets_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
-                confidence=0.7,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern D: Sheet Creation & Data
-        if "sheets" in services and _is_sheet_creation_request(lowered):
-            tasks = self._sheets_creation_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: sheets.create_spreadsheet -> sheets.append_values -> sheets.get_values -> code.execute",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern F: Gmail List & Get (Always fetch details for searches)
-        if (
-            len(services) == 1
-            and services[0] == "gmail"
-            and any(kw in lowered for kw in ("list", "search", "find", "show"))
-        ):
-            tasks = self._gmail_list_and_get_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> gmail.get_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern G: Sheet -> Email
-        if "sheets" in services and "gmail" in services and _is_sheet_to_email_request(lowered):
-            tasks = self._sheet_to_email_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: sheets.get_values -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern H: Docs -> Email
-        if "docs" in services and "gmail" in services and _is_docs_to_email_request(lowered):
-            tasks = self._docs_to_email_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: docs.create_document -> docs.get_document -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern I: Forms Sync
-        if "forms" in services and _is_forms_sync_request(lowered):
-            tasks = self._forms_sync_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: forms.create_form -> forms.batch_update",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern L: Explicit Code Execution / Computation
-        if "code" in services or "computation" in services:
-            if any(kw in lowered for kw in ("calculate", "compute", "prime", "sum", "script", "python")):
-                # Generate proper Python code from the natural language request
-                # instead of passing the raw text which would cause a SyntaxError
-                generated_code = _generate_computation_code(lowered, text)
-                tasks = [
-                    PlannedTask(
-                        id="task-1",
-                        service="code",
-                        action="execute",
-                        parameters={"code": generated_code},
-                        reason="Direct computation request."
-                    )
-                ]
-                if "email" in lowered or "send" in lowered:
-                    recipient = _extract_email(text) or self.config.default_recipient_email
-                    tasks.append(
-                        PlannedTask(
-                            id="task-2",
-                            service="gmail",
-                            action="send_message",
-                            parameters={
-                                "to_email": recipient,
-                                "subject": "Computation Results",
-                                "body": "Here are the results of the computation:\n\n{{task-1.stdout}}",
-                            },
-                            reason="Email the computation results."
-                        )
-                    )
-                return RequestPlan(
-                    raw_text=text,
-                    tasks=tasks,
-                    summary=f"Planned {len(tasks)} tasks: code.execute" + (" -> gmail.send_message" if len(tasks) > 1 else ""),
-                    confidence=0.8,
-                    no_service_detected=False,
-                    source="heuristic",
-                )
-
-        # Pattern J: Slides -> Email
-        if "slides" in services and "gmail" in services and _is_slides_to_email_request(lowered):
-            tasks = self._slides_to_email_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: slides.get_presentation -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern K: Admin -> Email
-        if "admin" in services and "gmail" in services and any(kw in lowered for kw in ("reports", "activities", "logs", "audit")):
-            tasks = self._admin_to_email_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: admin.list_activities -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern L: Contacts -> Email
-        if "contacts" in services and "gmail" in services and any(kw in lowered for kw in ("contacts", "people", "users", "directory", "members")):
-            tasks = self._contacts_to_email_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: contacts.list_directory_people -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern M: Chat -> Email (skip when user explicitly wants to send a chat message)
-        _send_kw = ("send a message", "post a message", "send message", "post message")
-        _has_send_intent = any(kw in lowered for kw in _send_kw)
-        if "chat" in services and "gmail" in services and any(kw in lowered for kw in ("spaces", "messages", "chat")) and not _has_send_intent:
-            tasks = self._chat_to_email_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: chat.list_spaces -> gmail.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
-
-        # Pattern N: Chat Send Message (Heuristic Search for Space)
-        if "chat" in services and _has_send_intent and "spaces/" not in lowered:
-            tasks = self._chat_send_message_tasks(text, lowered)
-            return RequestPlan(
-                raw_text=text,
-                tasks=tasks,
-                summary=f"Planned {len(tasks)} tasks: chat.list_spaces -> chat.send_message",
-                confidence=0.8,
-                no_service_detected=False,
-                source="heuristic",
-            )
+        # Use Strategy Pattern for heuristic planning
+        plan = _plan_with_strategies(text, lowered, services, self.config, self.logger, self)
+        if plan:
+            return plan
 
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
@@ -593,7 +329,7 @@ class WorkspaceAgentSystem:
 
     def _drive_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
 
         exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
         skip_export = any(word in lowered for word in exclusion_words)
@@ -656,7 +392,7 @@ $last_export_file_content"""
     def _drive_metadata_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         """Drive metadata with explicit email intent: list files -> compute table -> send email."""
         query = _drive_query_from_text(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
         page_size = _first_int(lowered) or 50
 
         code = (
@@ -702,7 +438,7 @@ $last_export_file_content"""
     def _drive_to_sheets_to_gmail_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         """Drive → Sheets → Gmail workflow: search Drive, export document content to Sheets, email the link."""
         query = _drive_query_from_text(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
 
         # Extract the document name from the query for the sheet title
         sheet_title = "Results"
@@ -884,7 +620,7 @@ print(result)"""
                 )
             )
 
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
         sheet_title = _extract_sheet_title(text) or "Web Search Results"
         doc_title = _extract_doc_title(text) or "Web Search Notes"
         chain: list[str] = []
@@ -1003,7 +739,7 @@ print(result)"""
 
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
         return [
             PlannedTask(
                 id="task-1",
@@ -1054,7 +790,7 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
 
     def _sheet_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         s_id = _extract_id(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
 
         tasks = []
         if not s_id:
@@ -1099,7 +835,7 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
     def _drive_folder_move_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _drive_query_from_text(text)
         folder_name = _extract_quoted(text) or "Organized Files"
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
 
         return [
             PlannedTask(
@@ -1163,7 +899,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         return tasks
 
     def _admin_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
         if not recipient:
             raise ValueError(
                 "No recipient email found in _admin_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
@@ -1193,7 +929,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         ]
 
     def _contacts_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
         if not recipient:
             raise ValueError(
                 "No recipient email found in _contacts_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
@@ -1222,7 +958,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         ]
 
     def _chat_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
         if not recipient:
             raise ValueError(
                 "No recipient email found in _chat_to_email_tasks; cannot plan gmail.send_message with to_email=None. "
@@ -1271,7 +1007,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
     def _docs_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         d_id = _extract_id(text)
         title = _extract_quoted(text) or "New Document"
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
 
         tasks = []
         if "create" in lowered or "new" in lowered:
@@ -1343,7 +1079,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
 
     def _slides_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         p_id = _extract_id(text)
-        recipient = _extract_email(text) or self.config.default_recipient_email
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
 
         tasks = []
         if not p_id:
@@ -1410,7 +1146,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["spreadsheet_id"] = _extract_id(lowered) or "{{task-1.id}}"
             parameters["range"] = "Sheet1!A1"
         elif service == "gmail" and action == "send_message":
-            parameters["to_email"] = _extract_email(lowered) or self.config.default_recipient_email
+            parameters["to_email"] = _extract_email(lowered, default=self.config.default_recipient_email)
             parameters["subject"] = "GWorkspace Notification"
             parameters["body"] = f"Update regarding your request: {lowered[:100]}..."
         elif service == "calendar" and action == "create_event":
@@ -1725,7 +1461,17 @@ def _extract_id(text: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _extract_email(text: str) -> str | None:
+def _extract_email(text: str, default: str | None = None, warn_on_default: bool = True) -> str | None:
+    """Extract email address from text.
+
+    Args:
+        text: Text to search for email addresses
+        default: Default email to return if no email found (None to return None)
+        warn_on_default: Whether to log a warning when using the default
+
+    Returns:
+        Extracted email address, default if provided and no email found, or None
+    """
     matches = RE_EXTRACT_EMAIL.findall(text)
     if matches:
         # Try to find one preceded by 'to ' (case-insensitive)
@@ -1734,6 +1480,12 @@ def _extract_email(text: str) -> str | None:
                 return m.replace(" ", "")
         # Fallback to last match (usually the recipient)
         return matches[-1].replace(" ", "")
+    if default is not None:
+        if warn_on_default:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("No email found in text '%s', using default: %s", text[:100], default)
+        return default
     return None
 
 
@@ -1946,3 +1698,726 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
             rows.append([m.group(1).strip(), m.group(2).strip()])
 
     return rows
+
+
+# ============================================================================
+# STRATEGY PATTERN FOR HEURISTIC PLANNING
+# ============================================================================
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass
+class PlanningContext:
+    """Context data passed to planning strategies."""
+    text: str
+    lowered: str
+    services: list[str]
+    config: AppConfigModel
+    logger: logging.Logger
+
+
+class PlanningStrategy(ABC):
+    """Base class for heuristic planning strategies."""
+
+    @abstractmethod
+    def matches(self, ctx: PlanningContext) -> bool:
+        """Return True if this strategy applies to the given context."""
+        pass
+
+    @abstractmethod
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
+        """Execute the strategy and return a plan, or None if not applicable."""
+        pass
+
+    @abstractmethod
+    def priority(self) -> int:
+        """Return priority (higher = checked first)."""
+        pass
+
+
+class WebSearchStrategy(PlanningStrategy):
+    """Pattern WS-*: Web Search-driven workflows."""
+
+    def priority(self) -> int:
+        return 100  # Highest priority to avoid misrouting to gmail/drive
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "search" in ctx.services
+            and _has_explicit_web_search_intent(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
+        ws_plan = agent._web_search_pattern_tasks(ctx.text, ctx.lowered, ctx.services)
+        if ws_plan is not None:
+            tasks, summary_chain = ws_plan
+            return RequestPlan(
+                raw_text=ctx.text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: {summary_chain}",
+                confidence=0.85,
+                no_service_detected=False,
+                source="heuristic",
+            )
+        return None
+
+
+class DriveMetadataOnlyStrategy(PlanningStrategy):
+    """Pattern A1: Drive Metadata Only (e.g. counts, tables, summaries)."""
+
+    def priority(self) -> int:
+        return 90
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "drive" in ctx.services
+            and _is_metadata_only_request(ctx.lowered)
+            and not ("gmail" in ctx.services and _is_drive_to_email_request(ctx.lowered))
+            and not _is_drive_folder_move_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_metadata_computation_tasks(ctx.text, ctx.lowered)
+        task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {task_chain}",
+            confidence=0.75,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class DriveMetadataToEmailStrategy(PlanningStrategy):
+    """Pattern A-Metadata: Drive Metadata -> Code -> Gmail."""
+
+    def priority(self) -> int:
+        return 85
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "drive" in ctx.services
+            and "gmail" in ctx.services
+            and _is_drive_metadata_to_email_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_metadata_to_gmail_tasks(ctx.text, ctx.lowered)
+        task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {task_chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class DriveToSheetsToEmailStrategy(PlanningStrategy):
+    """Pattern A2: Drive -> Sheets -> Gmail (Search, Export, Email)."""
+
+    def priority(self) -> int:
+        return 80
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "drive" in ctx.services
+            and "sheets" in ctx.services
+            and "gmail" in ctx.services
+            and _is_drive_to_sheets_to_email_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_to_sheets_to_gmail_tasks(ctx.text, ctx.lowered)
+        task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {task_chain}",
+            confidence=0.75,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class DriveToEmailStrategy(PlanningStrategy):
+    """Pattern A: Drive -> Gmail (Search & Email)."""
+
+    def priority(self) -> int:
+        return 70
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "drive" in ctx.services
+            and "gmail" in ctx.services
+            and _is_drive_to_email_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_to_gmail_tasks(ctx.text, ctx.lowered)
+        task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {task_chain}",
+            confidence=0.7,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class DriveFolderMoveStrategy(PlanningStrategy):
+    """Pattern C: Drive Folder & Move."""
+
+    def priority(self) -> int:
+        return 65
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return "drive" in ctx.services and _is_drive_folder_move_request(ctx.lowered)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_folder_move_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: drive.create_folder -> drive.list_files -> drive.move_file",
+            confidence=0.7,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class GmailToSheetsStrategy(PlanningStrategy):
+    """Pattern B: Gmail -> Sheets -> Email (Extraction)."""
+
+    def priority(self) -> int:
+        return 60
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "gmail" in ctx.services
+            and "sheets" in ctx.services
+            and _is_gmail_to_sheets_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._gmail_to_sheets_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> sheets.create_spreadsheet -> sheets.append_values -> gmail.send_message",
+            confidence=0.7,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class SheetCreationStrategy(PlanningStrategy):
+    """Pattern D: Sheet Creation & Data."""
+
+    def priority(self) -> int:
+        return 55
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return "sheets" in ctx.services and _is_sheet_creation_request(ctx.lowered)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._sheets_creation_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: sheets.create_spreadsheet -> sheets.append_values -> sheets.get_values -> code.execute",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class GmailListAndGetStrategy(PlanningStrategy):
+    """Pattern F: Gmail List & Get (Always fetch details for searches)."""
+
+    def priority(self) -> int:
+        return 50
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            len(ctx.services) == 1
+            and ctx.services[0] == "gmail"
+            and any(kw in ctx.lowered for kw in ("list", "search", "find", "show"))
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._gmail_list_and_get_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: gmail.list_messages -> gmail.get_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class SheetToEmailStrategy(PlanningStrategy):
+    """Pattern G: Sheet -> Email."""
+
+    def priority(self) -> int:
+        return 45
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "sheets" in ctx.services
+            and "gmail" in ctx.services
+            and _is_sheet_to_email_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._sheet_to_email_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: sheets.get_values -> gmail.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class DocsToEmailStrategy(PlanningStrategy):
+    """Pattern H: Docs -> Email."""
+
+    def priority(self) -> int:
+        return 40
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "docs" in ctx.services
+            and "gmail" in ctx.services
+            and _is_docs_to_email_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._docs_to_email_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: docs.create_document -> docs.get_document -> gmail.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class FormsSyncStrategy(PlanningStrategy):
+    """Pattern I: Forms Sync."""
+
+    def priority(self) -> int:
+        return 35
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return "forms" in ctx.services and _is_forms_sync_request(ctx.lowered)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._forms_sync_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: forms.create_form -> forms.batch_update",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class CodeExecutionStrategy(PlanningStrategy):
+    """Pattern L: Explicit Code Execution / Computation."""
+
+    def priority(self) -> int:
+        return 30
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return "code" in ctx.services or "computation" in ctx.services
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        if any(kw in ctx.lowered for kw in ("calculate", "compute", "prime", "sum", "script", "python")):
+            generated_code = _generate_computation_code(ctx.lowered, ctx.text)
+            tasks = [
+                PlannedTask(
+                    id="task-1",
+                    service="code",
+                    action="execute",
+                    parameters={"code": generated_code},
+                    reason="Direct computation request."
+                )
+            ]
+            if "email" in ctx.lowered or "send" in ctx.lowered:
+                recipient = _extract_email(ctx.text, default=ctx.config.default_recipient_email)
+                tasks.append(
+                    PlannedTask(
+                        id="task-2",
+                        service="gmail",
+                        action="send_message",
+                        parameters={
+                            "to_email": recipient,
+                            "subject": "Computation Results",
+                            "body": "Here are the results of the computation:\n\n{{task-1.stdout}}",
+                        },
+                        reason="Email the computation results."
+                    )
+                )
+            return RequestPlan(
+                raw_text=ctx.text,
+                tasks=tasks,
+                summary=f"Planned {len(tasks)} tasks: code.execute" + (" -> gmail.send_message" if len(tasks) > 1 else ""),
+                confidence=0.8,
+                no_service_detected=False,
+                source="heuristic",
+            )
+        return None
+
+
+class SlidesToEmailStrategy(PlanningStrategy):
+    """Pattern J: Slides -> Email."""
+
+    def priority(self) -> int:
+        return 25
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "slides" in ctx.services
+            and "gmail" in ctx.services
+            and _is_slides_to_email_request(ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._slides_to_email_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: slides.get_presentation -> gmail.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class AdminToEmailStrategy(PlanningStrategy):
+    """Pattern K: Admin -> Email."""
+
+    def priority(self) -> int:
+        return 20
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "admin" in ctx.services
+            and "gmail" in ctx.services
+            and any(kw in ctx.lowered for kw in ("reports", "activities", "logs", "audit"))
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._admin_to_email_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: admin.list_activities -> gmail.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class ContactsToEmailStrategy(PlanningStrategy):
+    """Pattern L: Contacts -> Email."""
+
+    def priority(self) -> int:
+        return 15
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "contacts" in ctx.services
+            and "gmail" in ctx.services
+            and any(kw in ctx.lowered for kw in ("contacts", "people", "users", "directory", "members"))
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._contacts_to_email_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: contacts.list_directory_people -> gmail.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class ChatToEmailStrategy(PlanningStrategy):
+    """Pattern M: Chat -> Email (skip when user explicitly wants to send a chat message)."""
+
+    def priority(self) -> int:
+        return 10
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        _send_kw = ("send a message", "post a message", "send message", "post message")
+        _has_send_intent = any(kw in ctx.lowered for kw in _send_kw)
+        return (
+            "chat" in ctx.services
+            and "gmail" in ctx.services
+            and any(kw in ctx.lowered for kw in ("spaces", "messages", "chat"))
+            and not _has_send_intent
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._chat_to_email_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: chat.list_spaces -> gmail.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class ChatSendMessageStrategy(PlanningStrategy):
+    """Pattern N: Chat Send Message (Heuristic Search for Space)."""
+
+    def priority(self) -> int:
+        return 5
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        _send_kw = ("send a message", "post a message", "send message", "post message")
+        _has_send_intent = any(kw in ctx.lowered for kw in _send_kw)
+        return "chat" in ctx.services and _has_send_intent and "spaces/" not in ctx.lowered
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._chat_send_message_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: chat.list_spaces -> chat.send_message",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+# Strategy registry - ordered by priority (highest first)
+_PLANNING_STRATEGIES: list[PlanningStrategy] = [
+    WebSearchStrategy(),
+    DriveMetadataOnlyStrategy(),
+    DriveMetadataToEmailStrategy(),
+    DriveToSheetsToEmailStrategy(),
+    DriveToEmailStrategy(),
+    DriveFolderMoveStrategy(),
+    GmailToSheetsStrategy(),
+    SheetCreationStrategy(),
+    GmailListAndGetStrategy(),
+    SheetToEmailStrategy(),
+    DocsToEmailStrategy(),
+    FormsSyncStrategy(),
+    CodeExecutionStrategy(),
+    SlidesToEmailStrategy(),
+    AdminToEmailStrategy(),
+    ContactsToEmailStrategy(),
+    ChatToEmailStrategy(),
+    ChatSendMessageStrategy(),
+]
+
+
+def _plan_with_strategies(text: str, lowered: str, services: list[str], config: AppConfigModel, logger: logging.Logger, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
+    """Execute planning strategies in priority order.
+
+    Returns the first matching strategy's plan, or None if no strategy matches.
+    """
+    ctx = PlanningContext(text=text, lowered=lowered, services=services, config=config, logger=logger)
+    
+    for strategy in sorted(_PLANNING_STRATEGIES, key=lambda s: s.priority(), reverse=True):
+        if strategy.matches(ctx):
+            logger.debug(f"Planning strategy matched: {strategy.__class__.__name__}")
+            plan = strategy.execute(ctx, agent)
+            if plan:
+                return plan
+    
+    return None
+
+
+# ============================================================================
+# TYPE-SAFE PARAMETER HANDLING
+# ============================================================================
+
+from enum import Enum
+
+
+class ParameterType(Enum):
+    """Type-safe parameter types for magic string references."""
+    STRING = "string"
+    INTEGER = "integer"
+    FLOAT = "float"
+    BOOLEAN = "boolean"
+    LIST = "list"
+    DICT = "dict"
+    TASK_REFERENCE = "task_reference"  # e.g., {{task-1.id}}
+    CONTEXT_REFERENCE = "context_reference"  # e.g., $last_export_file_content
+    EMAIL = "email"
+    FILE_ID = "file_id"
+    SPREADSHEET_ID = "spreadsheet_id"
+    DOCUMENT_ID = "document_id"
+
+
+class TypedParameter:
+    """Type-safe wrapper for parameters with validation.
+
+    This class provides type safety for magic string references like
+    $last_export_file_content, {{task-1.files[0].id}}, etc.
+    """
+
+    def __init__(
+        self,
+        value: Any,
+        param_type: ParameterType,
+        required: bool = True,
+        default: Any = None,
+        description: str = ""
+    ):
+        self.value = value
+        self.param_type = param_type
+        self.required = required
+        self.default = default
+        self.description = description
+
+    def validate(self) -> bool:
+        """Validate the parameter value against its type."""
+        if self.value is None:
+            if not self.required:
+                self.value = self.default
+                return True
+            return False
+
+        # Type validation
+        if self.param_type == ParameterType.STRING:
+            return isinstance(self.value, str)
+        elif self.param_type == ParameterType.INTEGER:
+            return isinstance(self.value, int)
+        elif self.param_type == ParameterType.FLOAT:
+            return isinstance(self.value, (int, float))
+        elif self.param_type == ParameterType.BOOLEAN:
+            return isinstance(self.value, bool)
+        elif self.param_type == ParameterType.LIST:
+            return isinstance(self.value, list)
+        elif self.param_type == ParameterType.DICT:
+            return isinstance(self.value, dict)
+        elif self.param_type == ParameterType.EMAIL:
+            return isinstance(self.value, str) and "@" in self.value
+        elif self.param_type in (ParameterType.FILE_ID, ParameterType.SPREADSHEET_ID, ParameterType.DOCUMENT_ID):
+            return isinstance(self.value, str) and len(self.value) >= 20
+        elif self.param_type in (ParameterType.TASK_REFERENCE, ParameterType.CONTEXT_REFERENCE):
+            # These are template strings that will be resolved at runtime
+            return isinstance(self.value, str)
+
+        return True
+
+    def resolve(self, context: dict[str, Any]) -> Any:
+        """Resolve template references against the provided context.
+
+        Args:
+            context: Dictionary containing task results and context variables
+
+        Returns:
+            Resolved value with proper type coercion
+        """
+        if not isinstance(self.value, str):
+            return self.value
+
+        # Resolve task references like {{task-1.id}}
+        if "{{" in self.value and "}}" in self.value:
+            from .execution.resolver import ResolverMixin
+            # Create a temporary resolver instance to handle placeholder resolution
+            class TempResolver(ResolverMixin):
+                def __init__(self):
+                    self.logger = logging.getLogger(__name__)
+                    self.config = None
+                    self.runner = None
+
+            resolver = TempResolver()
+            resolved = resolver._resolve_placeholders(self.value, context)
+            self.value = resolved
+
+        # Resolve context references like $last_export_file_content
+        elif self.value.startswith("$"):
+            key = self.value[1:]  # Remove $ prefix
+            if key in context:
+                self.value = context[key]
+            elif self.required and self.default is not None:
+                self.value = self.default
+                logging.getLogger(__name__).warning(
+                    "Context key '%s' not found, using default value", key
+                )
+
+        return self.value
+
+
+# Common context keys with their expected types
+CONTEXT_KEY_TYPES: dict[str, ParameterType] = {
+    "last_export_file_content": ParameterType.STRING,
+    "gmail_message_ids": ParameterType.LIST,
+    "last_spreadsheet_id": ParameterType.SPREADSHEET_ID,
+    "last_document_id": ParameterType.DOCUMENT_ID,
+    "last_file_id": ParameterType.FILE_ID,
+    "drive_file_ids": ParameterType.LIST,
+    "last_spreadsheet_url": ParameterType.STRING,
+    "last_document_url": ParameterType.STRING,
+    "last_code_result": ParameterType.STRING,
+    "code_output": ParameterType.STRING,
+    "drive_summary_values": ParameterType.LIST,
+    "gmail_summary_values": ParameterType.LIST,
+    "search_summary_rows": ParameterType.LIST,
+}
+
+
+def validate_typed_parameters(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """Validate and resolve typed parameters.
+
+    Args:
+        parameters: Dictionary of parameter names to TypedParameter instances or raw values
+        context: Execution context containing task results and variables
+
+    Returns:
+        Validated and resolved parameters dictionary
+
+    Raises:
+        ValueError: If a required parameter fails validation
+    """
+    resolved_params = {}
+    logger = logging.getLogger(__name__)
+
+    for key, value in parameters.items():
+        if isinstance(value, TypedParameter):
+            # Resolve template references
+            resolved_value = value.resolve(context)
+            
+            # Validate type
+            if not value.validate():
+                if value.required:
+                    raise ValueError(
+                        f"Parameter '{key}' failed validation. "
+                        f"Expected type: {value.param_type.value}, "
+                        f"Got: {type(resolved_value).__name__}. "
+                        f"Description: {value.description}"
+                    )
+                else:
+                    logger.warning(
+                        "Optional parameter '%s' failed validation, using default", key
+                    )
+                    resolved_value = value.default
+            
+            resolved_params[key] = resolved_value
+        else:
+            # Raw value - pass through as-is (backward compatibility)
+            resolved_params[key] = value
+
+    return resolved_params
