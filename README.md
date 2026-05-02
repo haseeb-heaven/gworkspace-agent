@@ -237,6 +237,25 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 ---
 
+
+## Two-Way Human Gate
+The system provides a standalone, two-way notification and approval system via Telegram. It runs independently from the main bot.
+
+### Configuration
+Update your `.env` with a separate Telegram bot token for the Human Gate:
+```env
+TELEGRAM_HUMAN_GATE_TOKEN=your-human-gate-token
+TELEGRAM_HUMAN_GATE_CHAT_ID=your-personal-chat-id
+TELEGRAM_QUESTION_TIMEOUT=300
+TELEGRAM_APPROVAL_TIMEOUT=60
+```
+
+### Usage
+Run the standalone runner or inject it directly into the `AgentSystem` for programmatic usage.
+```bash
+python gws_telegram_gate.py --demo
+```
+
 ## Interfaces
 
 | Interface | Command | Description |
