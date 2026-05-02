@@ -1428,17 +1428,60 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             data_str = list_match.group(1) if list_match else "[]"
             if "sort" in lowered:
                 rev = "True" if any(kw in lowered for kw in ("expensive", "descending", "reverse")) else "False"
-                parameters["code"] = f"""data = {data_str}
+                sort_index = 1  # Default index
+                numeric_sort = False
+
+                sort_by_match = re.search(r"sort by (\w+)", lowered)
+                if sort_by_match:
+                    sort_key_name = sort_by_match.group(1).lower()
+                    if sort_key_name in ("name", "title"):
+                        sort_index = 0
+                    elif sort_key_name == "price":
+                        sort_index = 1
+                        numeric_sort = True
+
+                code = f"""
+import re
+
+data = {data_str}
+
+def get_sort_key(row, index, is_numeric):
+    try:
+        if not isinstance(row, (list, tuple)) or not len(row) > index:
+            return 0 if is_numeric else ""
+        
+        val = row[index]
+        
+        if is_numeric:
+            match = re.search(r'[-+]?[\d,.]+', str(val))
+            if match:
+                return float(match.group(0).replace(',', ''))
+            return 0.0
+        else:
+            return str(val).lower()
+    except (ValueError, TypeError, IndexError):
+        return 0.0 if is_numeric else ""
+
 try:
-    sort_index = 1
-    if all(isinstance(r, (list, tuple)) and len(r) > sort_index for r in data):
-        data = sorted(data, key=lambda r: (str(r[sort_index]).lower(),), reverse={rev})
-    else:
-        data = sorted(data, reverse={rev})
-except (ValueError, TypeError) as exc:
+    sort_index = {sort_index}
+    is_numeric = {numeric_sort}
+    
+    if isinstance(data, list) and data:
+        if isinstance(data[0], (list, tuple)):
+             if all(len(r) > sort_index for r in data):
+                data = sorted(data, key=lambda r: get_sort_key(r, sort_index, is_numeric), reverse={rev})
+             else:
+                print(f"Sorting failed: Inconsistent row lengths, cannot sort on index {{sort_index}}.")
+        else:
+             data = sorted(data, reverse={rev})
+    
+except Exception as exc:
     print(f"Sorting failed: {{exc}} — leaving data unsorted")
+
 result = data
-print(result)"""
+print(result)
+"""
+                parameters["code"] = code
             else:
                 # Try to generate generic processing code for "convert to table" etc
                 parameters["code"] = f"""# Processed data from previous steps
