@@ -51,6 +51,11 @@ class HelpersMixin:
             context["search_summary_table"] = "\n\n".join(markdown_lines)
             context["search_summary_count"] = len(results)
 
+            # Update result_data with these calculated fields so they end up in task_results
+            result_data["rows"] = table_values
+            result_data["markdown"] = "\n\n".join(markdown_lines)
+            result_data["summary_table"] = "\n\n".join(markdown_lines)
+
             return ExecutionResult(
                 success=True, command=["web_search", query], stdout=json.dumps(result_data), output=result_data
             )

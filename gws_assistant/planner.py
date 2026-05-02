@@ -934,6 +934,27 @@ class CommandPlanner:
         if action == "get_form":
             form_id = self._required_text(params, "form_id")
             return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
+        if action == "batch_update":
+            form_id = self._required_text(params, "form_id")
+            requests = params.get("requests")
+            if not isinstance(requests, list):
+                if isinstance(requests, str):
+                    try:
+                        requests = json.loads(requests)
+                    except json.JSONDecodeError:
+                        raise ValidationError("Parameter 'requests' must be a JSON list of requests.")
+                else:
+                    raise ValidationError("Parameter 'requests' must be a list of requests.")
+
+            return [
+                "forms",
+                "forms",
+                "batchUpdate",
+                "--params",
+                json.dumps({"formId": form_id}),
+                "--json",
+                json.dumps({"requests": requests}, ensure_ascii=True),
+            ]
         raise ValidationError(f"Unsupported forms action: {action}")
 
     def _build_tasks_command(self, action: str, params: dict[str, Any]) -> list[str]:

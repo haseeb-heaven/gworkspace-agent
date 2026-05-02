@@ -430,18 +430,24 @@ def create_agent(
         return None
 
 
-def _build_catalog_prompt() -> str:
+def _build_catalog_prompt(request_text: str = "") -> str:
     """Build a rich, LLM-readable catalog section from service_catalog descriptions.
 
-    Format per action:
-      - service_key.action_key — short description
-        params: param1 (required), param2 (optional)
-
-    This replaces the old bare 'service_key: action1, action2' listing which
-    gave the LLM no guidance on what each action does or what parameters it needs.
+    If request_text is provided, we filter the catalog to only include services
+    detected in the request (plus core services like 'code' and 'search'). This
+    keeps the prompt size manageable for models with low TPM/token limits (like Groq).
     """
     lines: list[str] = []
-    for s_key, s_spec in SERVICES.items():
+    from .agent_system import _detect_services_in_order
+
+    detected = set(_detect_services_in_order(request_text.lower())) if request_text else set(SERVICES.keys())
+    # Always include core utility services
+    detected.update({"code", "computation", "search", "gmail"})
+
+    for s_key in sorted(SERVICES.keys()):
+        if s_key not in detected:
+            continue
+        s_spec = SERVICES[s_key]
         svc_desc = f" — {s_spec.description}" if s_spec.description else ""
         lines.append(f"[{s_key}]{svc_desc}")
         for a_key, a_spec in s_spec.actions.items():
@@ -601,7 +607,7 @@ def plan_with_langchain(
     3. Each candidate plan is validated by is_valid_plan() before acceptance.
     4. If every model is exhausted, return None so the heuristic planner takes over.
     """
-    catalog_summary = _build_catalog_prompt()
+    catalog_summary = _build_catalog_prompt(text)
 
     # Bug D fix: quadruple-escape all braces to '{{{{' / '}}}}'
     catalog_summary_escaped = catalog_summary.replace("{", "{{{{").replace("}", "}}}}")

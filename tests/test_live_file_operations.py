@@ -45,6 +45,19 @@ def planner() -> CommandPlanner:
     return CommandPlanner()
 
 
+@pytest.fixture
+def live_tmp_path() -> Path:
+    """Return a project-local temp directory for upload files.
+
+    The GWS binary on Windows rejects --upload paths outside the current
+    working directory, so we create test files inside the repo instead of
+    using pytest's system temp root.
+    """
+    base = Path(__file__).resolve().parent.parent / "scratch" / "live_test_files"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
 @pytest.fixture(scope="module")
 def test_folder_id(live_runner: GWSRunner, planner: CommandPlanner):
     """Create a temporary test folder and yield its ID; delete it after the module."""
@@ -64,9 +77,9 @@ def test_folder_id(live_runner: GWSRunner, planner: CommandPlanner):
 
 
 @pytest.mark.live_integration
-def test_live_upload_and_download_pdf(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_upload_and_download_pdf(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a PDF and download it back."""
-    pdf = tmp_path / "test_doc.pdf"
+    pdf = live_tmp_path / "test_doc.pdf"
     pdf.write_bytes(b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\ntrailer\n<< /Root 1 0 R >>\n%%EOF")
 
     upload_cmd = planner.build_command("drive", "upload_file", {"file_path": str(pdf), "name": "test_doc.pdf"})
@@ -89,9 +102,9 @@ def test_live_upload_and_download_pdf(live_runner: GWSRunner, planner: CommandPl
 
 
 @pytest.mark.live_integration
-def test_live_upload_and_download_txt(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_upload_and_download_txt(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a text file and download it back."""
-    txt = tmp_path / "notes.txt"
+    txt = live_tmp_path / "notes.txt"
     txt.write_text("Hello from live integration test!")
 
     upload_cmd = planner.build_command("drive", "upload_file", {"file_path": str(txt), "name": "notes.txt"})
@@ -114,9 +127,9 @@ def test_live_upload_and_download_txt(live_runner: GWSRunner, planner: CommandPl
 
 
 @pytest.mark.live_integration
-def test_live_upload_and_download_csv(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_upload_and_download_csv(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a CSV and download it back."""
-    csv_file = tmp_path / "data.csv"
+    csv_file = live_tmp_path / "data.csv"
     csv_file.write_text("name,score\nAlice,100\nBob,95")
 
     upload_cmd = planner.build_command("drive", "upload_file", {"file_path": str(csv_file), "name": "data.csv"})
@@ -139,9 +152,9 @@ def test_live_upload_and_download_csv(live_runner: GWSRunner, planner: CommandPl
 
 
 @pytest.mark.live_integration
-def test_live_upload_and_download_image_png(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_upload_and_download_image_png(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a PNG image and download it back."""
-    img = tmp_path / "test_image.png"
+    img = live_tmp_path / "test_image.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x00\x00\x00\x01\x01\x00\x05\xfe\x02\xfe\x00\x00\x00\x00IEND\xaeB`\x82")
 
     upload_cmd = planner.build_command("drive", "upload_file", {"file_path": str(img), "name": "test_image.png"})
@@ -165,9 +178,9 @@ def test_live_upload_and_download_image_png(live_runner: GWSRunner, planner: Com
 
 
 @pytest.mark.live_integration
-def test_live_upload_and_download_mp4(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_upload_and_download_mp4(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a minimal MP4 video and download it back."""
-    vid = tmp_path / "test_video.mp4"
+    vid = live_tmp_path / "test_video.mp4"
     # Minimal valid MP4 header (ftyp box)
     vid.write_bytes(b"\x00\x00\x00\x20ftypisom\x00\x00\x00\x00isommp41\x00\x00\x00\x00")
 
@@ -190,9 +203,9 @@ def test_live_upload_and_download_mp4(live_runner: GWSRunner, planner: CommandPl
 
 
 @pytest.mark.live_integration
-def test_live_upload_and_download_mp3(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_upload_and_download_mp3(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a minimal MP3 audio file and download it back."""
-    audio = tmp_path / "test_audio.mp3"
+    audio = live_tmp_path / "test_audio.mp3"
     # Minimal MP3 frame header
     audio.write_bytes(b"\xff\xfb\x90\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 
@@ -215,9 +228,9 @@ def test_live_upload_and_download_mp3(live_runner: GWSRunner, planner: CommandPl
 
 
 @pytest.mark.live_integration
-def test_live_copy_rename_move_trash(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, tmp_path: Path):
+def test_live_copy_rename_move_trash(live_runner: GWSRunner, planner: CommandPlanner, test_folder_id: str, live_tmp_path: Path):
     """Upload a file, copy it, rename the copy, move it, then trash it."""
-    txt = tmp_path / "lifecycle.txt"
+    txt = live_tmp_path / "lifecycle.txt"
     txt.write_text("lifecycle test")
 
     # Upload
@@ -247,10 +260,26 @@ def test_live_copy_rename_move_trash(live_runner: GWSRunner, planner: CommandPla
     assert rename_res.success, f"Rename failed: {rename_res.error or rename_res.stderr}"
 
     # Move copy to test folder
-    move_res = live_runner.run(
-        planner.build_command("drive", "move_file", {"file_id": copy_id, "folder_id": test_folder_id}),
+    # The planner emits a placeholder for removeParents that the executor resolves.
+    # In a direct runner call we must fetch the current parents first.
+    get_res = live_runner.run(
+        planner.build_command("drive", "get_file", {"file_id": copy_id}),
         timeout_seconds=90,
     )
+    assert get_res.success, f"Get parents failed: {get_res.error or get_res.stderr}"
+    get_payload = json.loads(get_res.stdout or "{}")
+    current_parents = get_payload.get("parents", [])
+    remove_parents = current_parents[0] if current_parents else ""
+
+    move_cmd = [
+        "drive", "files", "update",
+        "--params", json.dumps({
+            "fileId": copy_id,
+            "addParents": test_folder_id,
+            "removeParents": remove_parents,
+        }),
+    ]
+    move_res = live_runner.run(move_cmd, timeout_seconds=90)
     assert move_res.success, f"Move failed: {move_res.error or move_res.stderr}"
 
     # Trash original
@@ -304,11 +333,11 @@ def test_live_create_google_sheet_and_export_csv(live_runner: GWSRunner, planner
     sheet_id = create_payload.get("spreadsheetId")
     assert sheet_id
 
-    # Append some data
+    # Append some data (range without sheet name works with the GWS binary)
     append_res = live_runner.run(
         planner.build_command("sheets", "append_values", {
             "spreadsheet_id": sheet_id,
-            "range": "Sheet1!A1",
+            "range": "A1",
             "values": [["Name", "Score"], ["Alice", "100"]],
         }),
         timeout_seconds=90,

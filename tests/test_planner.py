@@ -60,6 +60,23 @@ def test_build_gmail_send_message_command():
     assert "--json" in args
 
 
+def test_build_forms_batch_update_command():
+    planner = CommandPlanner()
+    args = planner.build_command(
+        "forms",
+        "batch_update",
+        {
+            "form_id": "form-1",
+            "requests": [{"updateFormInfo": {"info": {"title": "New Title"}, "updateMask": "title"}}],
+        },
+    )
+    assert args[:3] == ["forms", "forms", "batchUpdate"]
+    assert "--params" in args
+    assert "formId" in args[args.index("--params") + 1]
+    assert "--json" in args
+    assert "requests" in args[args.index("--json") + 1]
+
+
 def test_build_gmail_send_message_rejects_attachments_during_planning():
     planner = CommandPlanner()
     with pytest.raises(ValidationError, match="materialized at execution time"):

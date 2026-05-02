@@ -722,6 +722,16 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("get", "open", "read", "form"),
                 parameters=(ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),),
             ),
+            "batch_update": ActionSpec(
+                key="batch_update",
+                label="Update form",
+                description="Update a Google Form (add questions, update info). 'requests' must be a list of update requests.",
+                keywords=("update", "edit", "modify", "add question", "batch"),
+                parameters=(
+                    ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),
+                    ParameterSpec("requests", "List of update requests", "[{'createItem': {...}}]", required=True),
+                ),
+            ),
         },
     ),
     "code": ServiceSpec(

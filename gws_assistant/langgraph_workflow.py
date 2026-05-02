@@ -388,9 +388,21 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         context["search_summary_table"] = markdown_table
         context["search_summary_rows"] = rows
         context["search_summary_count"] = len(result.get("results", []))
-
-        # We can still store the LLM summary for use if needed
         context["search_llm_summary"] = summary
+
+        # Populate task_results for placeholder resolution in subsequent tasks
+        results_map = context.setdefault("task_results", {})
+        search_payload = {
+            "results": result.get("results", []),
+            "summary": summary,
+            "rows": rows,
+            "markdown": markdown_table,
+            "query": state["user_text"]
+        }
+        results_map["web_search"] = search_payload
+        # If this search Satisfies the first task (often planned as search), populate task-1
+        if "task-1" not in results_map:
+            results_map["task-1"] = search_payload
 
         return {
             "final_output": f"Web Search Result:\n\n{summary}",

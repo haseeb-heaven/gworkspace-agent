@@ -137,19 +137,32 @@ def validate_planned_task(task: "PlannedTask") -> None:
         )
     # Detect obviously unresolved placeholder values that should have been
     # caught by _resolve_task but slipped through.
-    # Skip validation for 'body' parameter in gmail.send_message as it may contain
-    # intentional placeholders or unresolved values in test contexts.
-    _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_", "___UNRESOLVED_PLACEHOLDER___")
+    # Skip validation for certain parameters that may contain intentional placeholders
+    # or where we want to let the execution fail with a real error instead of a validation error.
+    _STUB_PATTERNS = (
+        "{{task",
+        "$gmail_message_ids",
+        "PLACEHOLDER_",
+        "___UNRESOLVED_PLACEHOLDER___",
+        "{{spreadsheet_id}}",
+        "{{document_id}}",
+        "{{file_id}}",
+        "{{message_id}}",
+    )
     for key, val in task.parameters.items():
         # Skip body parameter validation for Gmail send_message
         if task.service == "gmail" and task.action == "send_message" and key == "body":
             continue
+        # Skip code parameter validation for code.execute - allow it to fail in sandbox
+        if task.service in ("code", "computation") and task.action == "execute" and key == "code":
+            continue
+
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
                 if pat in val:
                     raise ValidationError(
                         f"PlannedTask id={task.id!r} {task.service}.{task.action}: "
-                        f"parameter {key!r} contains unresolved stub {val!r}."
+                        f"parameter '{key}' contains unresolved stub \"{val}\"."
                     )
 
 

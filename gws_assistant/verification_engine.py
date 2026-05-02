@@ -394,7 +394,8 @@ class VerificationEngine:
         if service == "gmail" or "message" in action or "email" in action or "send" in action:
             if isinstance(result, dict):
                 # For lists, messages might be under a list
-                if "list" in tool_name and ("messages" in result or "threads" in result):
+                is_list_op = "list" in tool_name or "search" in tool_name
+                if is_list_op and ("messages" in result or "threads" in result or not result):
                     pass
                 else:
                     msg_id = result.get("id") or result.get("messageId")
@@ -404,6 +405,7 @@ class VerificationEngine:
                         and "send" not in tool_name
                         and "delete" not in tool_name
                         and "trash" not in tool_name
+                        and not is_list_op
                     ):
                         raise VerificationError(tool_name, "Result missing id or message_id")
 
