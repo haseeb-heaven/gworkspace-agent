@@ -25,6 +25,8 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("LLM_FALLBACK_MODEL3", raising=False)
     monkeypatch.setenv("MEM0_API_KEY", "")
     monkeypatch.setenv("MEM0_USER_ID", "test-user")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
 
 
 @pytest.mark.gmail

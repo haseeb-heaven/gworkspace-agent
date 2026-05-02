@@ -88,29 +88,43 @@ class TestTelegramMainValidation(unittest.TestCase):
 
     def test_main_rejects_oversized_message(self):
         import subprocess
+        env = os.environ.copy()
+        env["TELEGRAM_BOT_TOKEN"] = "mock_token"
+        env["TELEGRAM_CHAT_ID"] = "mock_chat"
         result = subprocess.run(
             [sys.executable, self.SCRIPT_PATH, "A" * 4097],
             capture_output=True,
             text=True,
+            env=env,
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("too long", result.stderr.lower())
 
     def test_main_accepts_message_at_limit(self):
         import subprocess
+        env = os.environ.copy()
+        env["TELEGRAM_BOT_TOKEN"] = "mock_token"
+        env["TELEGRAM_CHAT_ID"] = "mock_chat"
+        # Mocking the success by preventing the actual URL call via token check in script?
+        # Actually, if we just want to check validation, we can just ensure it doesn't fail on "too long"
         result = subprocess.run(
             [sys.executable, self.SCRIPT_PATH, "A" * 4096],
             capture_output=True,
             text=True,
+            env=env,
         )
         self.assertNotIn("too long", result.stderr.lower())
 
     def test_main_rejects_non_string_is_unreachable_via_cli(self):
         import subprocess
+        env = os.environ.copy()
+        env["TELEGRAM_BOT_TOKEN"] = "mock_token"
+        env["TELEGRAM_CHAT_ID"] = "mock_chat"
         result = subprocess.run(
             [sys.executable, self.SCRIPT_PATH, "hello"],
             capture_output=True,
             text=True,
+            env=env,
         )
         stderr = result.stderr.lower()
         self.assertNotIn("must be a string", stderr)

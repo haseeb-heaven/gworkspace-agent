@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any
 
+from .file_types import RE_FILE_PATH
 from .models import AppConfigModel, Intent
 from .service_catalog import SERVICES, normalize_service
 
@@ -27,6 +28,7 @@ RE_INTENT_TITLE_MATCH_QUOTED = re.compile(r"(?:titled|named|called)\s+['\"](.+?)
 RE_INTENT_TITLE_MATCH_UNQUOTED = re.compile(r"(?:titled|named|called)\s+([a-zA-Z0-9_-]+)")
 RE_INTENT_VALUES_MATCH = re.compile(r"(\[\[.+?\]\])")
 RE_INTENT_SUBJECT_MATCH = re.compile(r"subject ['\"](.+?)['\"]")
+# Matches file paths after upload/add/put keywords, or bare absolute/relative paths.
 
 try:
     from openai import OpenAI
@@ -356,5 +358,13 @@ class IntentParser:
                 params["body"] = lowered.split("body ")[1].strip()
             except IndexError:
                 pass
+
+        # 6. Extract file path for upload operations
+        path_match = RE_FILE_PATH.search(text)
+        if path_match:
+            file_path = next(g for g in path_match.groups() if g is not None)
+            if file_path:
+                params["file_path"] = file_path
+                self.logger.debug("DEBUG: Found file_path=%s", file_path)
 
         return params

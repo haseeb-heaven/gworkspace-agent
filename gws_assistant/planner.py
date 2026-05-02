@@ -19,6 +19,7 @@ from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import UnsupportedServiceError, ValidationError
+from .file_types import default_export_mime, guess_mime_type, supported_export_formats
 from .gmail_query_builder import sanitize_gmail_query
 from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
@@ -262,17 +263,24 @@ class CommandPlanner:
         if action == "upload_file":
             file_path = self._required_text(params, "file_path")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
-            return [
+            cmd = [
                 "drive",
                 "files",
                 "create",
                 "--upload",
                 file_path,
+            ]
+            mime = guess_mime_type(file_path)
+            if mime:
+                cmd.extend(["--upload-content-type", mime])
+
+            cmd.extend([
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
                 json.dumps({"name": name}, ensure_ascii=True),
-            ]
+            ])
+            return cmd
 
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
@@ -309,24 +317,16 @@ class CommandPlanner:
             requested_mime = str(params.get("mime_type") or "").strip()
             source_mime = str(params.get("source_mime") or "").strip()
 
-            # PRIMARY: use source_mime if available to determine best export format
-            # Only certain types support the 'export' endpoint.
-            # Folders, Shortcuts, Scripts, and regular files MUST use 'get' with 'alt=media'.
-            exportable_mimes = {
-                "application/vnd.google-apps.document",
-                "application/vnd.google-apps.spreadsheet",
-                "application/vnd.google-apps.presentation",
-                "application/vnd.google-apps.drawing",
-            }
-            is_workspace_doc = source_mime in exportable_mimes
+            # Folders CANNOT be exported or downloaded as media.
             if source_mime == "application/vnd.google-apps.folder":
-                # Folders CANNOT be exported or downloaded as media.
-                # Returning a ValidationError here helps the agent realize it picked a folder instead of a document.
                 raise ValidationError(
-                    f"File '{file_id}' is a folder and cannot be read as document content. Please search specifically for documents or list folder contents."
+                    f"File '{file_id}' is a folder and cannot be read as document content. "
+                    "Please search specifically for documents or list folder contents."
                 )
 
-            if source_mime and not is_workspace_doc:
+            # Non-exportable files (PDFs, images, audio, video, Office, and non-exportable
+            # Workspace types such as shortcuts or scripts) use alt=media download.
+            if source_mime and supported_export_formats(source_mime) is None:
                 return [
                     "drive",
                     "files",
@@ -337,21 +337,8 @@ class CommandPlanner:
                     f"scratch/exports/download_{file_id}",
                 ]
 
-            if source_mime == "application/vnd.google-apps.document":
-                mime_type = requested_mime or "text/plain"
-            elif source_mime == "application/vnd.google-apps.spreadsheet":
-                if not requested_mime or requested_mime == "text/plain":
-                    mime_type = "text/csv"
-                else:
-                    mime_type = requested_mime
-            elif source_mime == "application/vnd.google-apps.presentation":
-                mime_type = requested_mime or "application/pdf"
-            else:
-                # If no source_mime, respect requested_mime or default to PDF
-                mime_type = requested_mime or "application/pdf"
-
-            # If the user explicitly asks for media/download or it's already a PDF and they want it
-            if mime_type == "media" or (source_mime == "application/pdf" and mime_type == "application/pdf"):
+            # Google Workspace native files use the export endpoint with negotiated MIME type.
+            if requested_mime == "media":
                 return [
                     "drive",
                     "files",
@@ -361,6 +348,8 @@ class CommandPlanner:
                     "-o",
                     f"scratch/exports/download_{file_id}",
                 ]
+
+            mime_type = default_export_mime(source_mime, requested_mime)
 
             return [
                 "drive",

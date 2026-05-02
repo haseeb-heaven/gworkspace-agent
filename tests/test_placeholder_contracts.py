@@ -1,5 +1,5 @@
 def test_drive_summary_values_alias_resolves():
-    context = {"drive_summary_rows": [["file.pdf", "application/pdf", "http://link"]]}
+    context = {"drive_summary_rows": [["file.pdf", "application/pdf", "https://link.example"]]}
     # simulate resolver lookup for $drive_summary_values
     from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
     canonical = LEGACY_PLACEHOLDER_MAP.get("$drive_summary_values")

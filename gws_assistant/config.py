@@ -187,6 +187,8 @@ class AppConfig:
 
             sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
             read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=False)
+            no_confirm = _to_bool(os.getenv("NO_CONFIRM"), default=False)
+            force_dangerous = _to_bool(os.getenv("FORCE_DANGEROUS"), default=False)
 
             cls._cached_config = AppConfigModel(
                 provider=provider,
@@ -224,6 +226,8 @@ class AppConfig:
                 telegram_confirmation_timeout_seconds=telegram_confirmation_timeout_seconds,
                 sandbox_enabled=sandbox_enabled,
                 read_only_mode=read_only_mode,
+                no_confirm=no_confirm,
+                force_dangerous=force_dangerous,
                 llm_fallback_models=llm_fallback_models,
                 groq_api_key=groq_api_key,
                 openai_api_key=openai_api_key,

@@ -7,6 +7,7 @@ import re
 from datetime import date
 from typing import Any
 
+from .file_types import RE_FILE_PATH
 from .langchain_agent import plan_with_langchain
 from .models import AppConfigModel, PlannedTask, RequestPlan
 from .service_catalog import SERVICES
@@ -1395,6 +1396,30 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["start_date"] = date.today().isoformat()  # Default to today for heuristic
         elif service == "drive" and action == "create_folder":
             parameters["folder_name"] = _extract_quoted(lowered) or "New Folder"
+        elif service == "drive" and action == "upload_file":
+            parameters["file_path"] = _extract_file_path(lowered) or ""
+        elif service == "drive" and action == "copy_file":
+            parameters["file_id"] = _extract_id(lowered) or ""
+            parameters["name"] = _extract_quoted(lowered) or "Copy"
+        elif service == "drive" and action == "move_file":
+            ids = RE_EXTRACT_ID.findall(lowered)
+            parameters["file_id"] = ids[0] if ids else ""
+            if len(ids) > 1:
+                parameters["folder_id"] = ids[1]
+            else:
+                # Try to find folder name in quotes if only one ID is present
+                folder_name = _extract_quoted(lowered)
+                if folder_name:
+                    parameters["folder_id"] = f"name contains '{folder_name}'"
+                # If neither a second ID nor a quoted folder name is found,
+                # leave folder_id unset so the planner requests clarification.
+        elif service == "drive" and action == "update_file_metadata":
+            parameters["file_id"] = _extract_id(lowered) or ""
+            parameters["name"] = _extract_quoted(lowered) or ""
+        elif service == "drive" and action == "delete_file":
+            parameters["file_id"] = _extract_id(lowered) or ""
+        elif service == "drive" and action == "move_to_trash":
+            parameters["file_id"] = _extract_id(lowered) or ""
         elif service == "docs" and action == "create_document":
             parameters["title"] = _extract_quoted(lowered) or "New Document"
         elif service == "sheets" and action == "create_spreadsheet":
@@ -1427,9 +1452,9 @@ def get_sort_key(row, index, is_numeric):
     try:
         if not isinstance(row, (list, tuple)) or not len(row) > index:
             return 0 if is_numeric else ""
-        
+
         val = row[index]
-        
+
         if is_numeric:
             match = re.search(r'[-+]?[\d,.]+', str(val))
             if match:
@@ -1443,7 +1468,7 @@ def get_sort_key(row, index, is_numeric):
 try:
     sort_index = {sort_index}
     is_numeric = {numeric_sort}
-    
+
     if isinstance(data, list) and data:
         if isinstance(data[0], (list, tuple)):
              if all(len(r) > sort_index for r in data):
@@ -1452,7 +1477,7 @@ try:
                 print(f"Sorting failed: Inconsistent row lengths, cannot sort on index {{sort_index}}.")
         else:
              data = sorted(data, reverse={rev})
-    
+
 except Exception as exc:
     print(f"Sorting failed: {{exc}} — leaving data unsorted")
 
@@ -1693,6 +1718,14 @@ def _extract_email(text: str) -> str | None:
 def _extract_quoted(text: str) -> str | None:
     match = RE_EXTRACT_QUOTED.search(text)
     return match.group(1) if match else None
+
+
+def _extract_file_path(text: str) -> str | None:
+    """Extract a local file path from natural language for upload operations."""
+    match = RE_FILE_PATH.search(text)
+    if match:
+        return next(g for g in match.groups() if g is not None)
+    return None
 
 
 def _extract_sheet_title(text: str) -> str | None:

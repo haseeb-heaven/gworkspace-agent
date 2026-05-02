@@ -14,6 +14,14 @@ from gws_assistant.telegram_app import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_telegram_env(monkeypatch):
+    """Ensure Telegram env vars are always mocked in this test file."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("CI", "true")  # Bypass binary checks
+
+
 @pytest.fixture
 def mock_config():
     config = AppConfigModel(

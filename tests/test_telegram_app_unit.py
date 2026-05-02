@@ -9,6 +9,13 @@ import pytest
 from gws_assistant.telegram_app import auth_check, handle_text, split_and_send
 
 
+@pytest.fixture(autouse=True)
+def mock_telegram_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("CI", "true")
+
+
 @pytest.mark.asyncio
 async def test_auth_check_blocks_no_chat():
     """auth_check returns False when update has no effective_chat."""
