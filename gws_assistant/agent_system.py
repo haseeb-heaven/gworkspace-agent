@@ -914,6 +914,35 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             ),
         ]
 
+    def _drive_folder_upload_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        folder_name = _extract_quoted(text) or "New Folder"
+        # Extract file path from text - look for patterns like "upload 'X'", "copy 'X'", "save 'X'"
+        # Try to match quoted string after upload/copy/save keywords first
+        file_match = re.search(r'(?:upload|copy|save)\s+["\047]([^"\047]{1,200})["\047]', text, re.IGNORECASE)
+        if not file_match:
+            # Fallback: any quoted string in the text (prefer second one if multiple)
+            quoted_strings = re.findall(r'["\047]([^"\047]{1,200})["\047]', text)
+            file_path = quoted_strings[1] if len(quoted_strings) > 1 else (quoted_strings[0] if quoted_strings else "README.md")
+        else:
+            file_path = file_match.group(1)
+        
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="create_folder",
+                parameters={"folder_name": folder_name},
+                reason=f"Create folder '{folder_name}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="drive",
+                action="upload_file",
+                parameters={"file_path": file_path, "folder_id": "{{task-1.id}}"},
+                reason=f"Upload {file_path} to the folder.",
+            ),
+        ]
+
     def _sheets_creation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         title = _extract_quoted(text) or "New Spreadsheet"
         tasks = [
@@ -1675,8 +1704,18 @@ def _is_sheet_to_email_request(text: str) -> bool:
 
 
 def _is_drive_folder_move_request(text: str) -> bool:
+    # Exclude upload/copy requests - those should use upload_file, not move_file
+    if any(t in text for t in ("upload", "copy", "save")):
+        return False
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
 
+
+def _is_drive_folder_upload_request(text: str) -> bool:
+    return (
+        any(t in text for t in ("drive", "folder"))
+        and any(t in text for t in ("upload", "copy", "save"))
+        and "create" in text
+    )
 
 def _is_docs_to_email_request(text: str) -> bool:
     if _has_explicit_web_search_intent(text):
@@ -1930,6 +1969,28 @@ class DriveFolderMoveStrategy(PlanningStrategy):
             source="heuristic",
         )
 
+
+
+class DriveFolderUploadStrategy(PlanningStrategy):
+    """Pattern C2: Drive Folder & Upload."""
+
+    def priority(self) -> int:
+        return 70  # Higher priority than move strategy
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return "drive" in ctx.services and _is_drive_folder_upload_request(ctx.lowered)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_folder_upload_tasks(ctx.text, ctx.lowered)
+        task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {task_chain}",
+            confidence=0.75,
+            no_service_detected=False,
+            source="heuristic",
+        )
 
 class GmailToSheetsStrategy(PlanningStrategy):
     """Pattern B: Gmail -> Sheets -> Email (Extraction)."""
@@ -2283,6 +2344,7 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = [
     DriveMetadataToEmailStrategy(),
     DriveToSheetsToEmailStrategy(),
     DriveToEmailStrategy(),
+    DriveFolderUploadStrategy(),
     DriveFolderMoveStrategy(),
     DriveDeleteByNameStrategy(),
     GmailToSheetsStrategy(),
