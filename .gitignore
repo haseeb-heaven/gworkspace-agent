@@ -48,6 +48,7 @@ artifacts/
 .skill
 *.skill
 skills/
+!skills/*/SKILL.md
 .gemini
 $params
 .git
