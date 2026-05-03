@@ -1745,7 +1745,11 @@ def _is_sheet_to_email_request(text: str) -> bool:
 def _is_drive_folder_move_request(text: str) -> bool:
     # Exclude upload/copy requests - those should use upload_file, not move_file.
     # Use word boundaries so "saved"/"copyrighted" don't false-match "save"/"copy".
-    if re.search(r"\b(?:upload|copy|save)\b", text, re.IGNORECASE):
+    # upload and copy block unconditionally; save only blocks when attached to file/path
+    if re.search(r"\b(?:upload|copy)\b", text, re.IGNORECASE):
+        return False
+    # save only blocks when followed by path/file-like tokens (to/as/into + token, quotes, slashes)
+    if re.search(r"\bsave\b(?:\s+(?:to|as|into)\s+\S+|\s+['\"][^'\"]{1,200}['\"])", text, re.IGNORECASE):
         return False
     lowered = text.lower()
     return any(t in lowered for t in ("drive", "file")) and any(t in lowered for t in ("move", "folder", "organize"))

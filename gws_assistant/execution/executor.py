@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from gws_assistant.exceptions import SafetyBlockedError
-from gws_assistant.models import ExecutionResult
+from gws_assistant.models import ExecutionResult, ValidationError
 from gws_assistant.verification_engine import VerificationEngine, VerificationError
 
 from .context_updater import ContextUpdaterMixin
@@ -274,7 +274,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         # 2. Build the command using already-resolved parameters
         try:
             args = self.planner.build_command(task.service, task.action, task.parameters)
-        except ValueError as exc:
+        except (ValueError, ValidationError) as exc:
             return ExecutionResult(success=False, command=[], error=str(exc))
         except Exception as exc:
             self.logger.exception("Unexpected build_command failure for %s.%s", task.service, task.action)
