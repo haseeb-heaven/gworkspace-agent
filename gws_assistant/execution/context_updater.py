@@ -1,6 +1,9 @@
 import base64
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ContextUpdaterMixin:
@@ -438,8 +441,9 @@ class ContextUpdaterMixin:
             # GWS might return the list directly - validate it looks like drive files
             if data and isinstance(data[0], dict) and any(k in data[0] for k in ("id", "name", "mimeType")):
                 files = data
-        
+
         if files and isinstance(files, list):
+            logger.info(f"DEBUG: Found {len(files)} drive files in context update")
             context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
             rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
@@ -453,10 +457,12 @@ class ContextUpdaterMixin:
                 table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
             context["drive_metadata_table"] = "\n".join(table_lines)
             context["drive_summary_table"] = "\n".join(table_lines)
+            logger.info(f"DEBUG: Set drive_metadata_table with {len(table_lines)} lines")
 
             # Create a simple list of file links
             file_links = [f.get("webViewLink", "") for f in files if f.get("webViewLink")]
             context["drive_file_links"] = "\n".join(file_links)
+            logger.info(f"DEBUG: Set drive_file_links with {len(file_links)} links")
 
             context["drive_file_count"] = len(files)
             context["drive_summary_count"] = len(files)
