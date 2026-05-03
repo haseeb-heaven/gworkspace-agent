@@ -438,12 +438,17 @@ class ContextUpdaterMixin:
         files = None
         if "files" in data:
             files = data["files"]
+            logger.info(f"DEBUG: Found 'files' key in data, type={type(files)}, len={len(files) if isinstance(files, list) else 'N/A'}")
         elif "items" in data:
             files = data["items"]
+            logger.info(f"DEBUG: Found 'items' key in data, type={type(files)}")
         elif isinstance(data, list):
             # GWS might return the list directly - validate it looks like drive files
             if data and isinstance(data[0], dict) and any(k in data[0] for k in ("id", "name", "mimeType")):
                 files = data
+                logger.info(f"DEBUG: Data is a list with drive file structure")
+
+        logger.info(f"DEBUG: files variable = {files}, type={type(files)}, is_list={isinstance(files, list)}")
 
         if files and isinstance(files, list):
             logger.info(f"DEBUG: Found {len(files)} drive files in context update")
