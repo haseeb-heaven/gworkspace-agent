@@ -265,6 +265,12 @@ class CommandPlanner:
             if not os.path.exists(file_path):
                 raise ValidationError(f"File not found: {file_path}")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
+            folder_id = str(params.get("folder_id") or "").strip() if params.get("folder_id") else ""
+
+            payload: dict[str, Any] = {"name": name}
+            if folder_id:
+                payload["parents"] = [folder_id]
+
             cmd = [
                 "drive",
                 "files",
@@ -280,7 +286,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps({"name": name}, ensure_ascii=True),
+                json.dumps(payload, ensure_ascii=True),
             ])
             return cmd
 

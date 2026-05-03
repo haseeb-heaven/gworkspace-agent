@@ -141,9 +141,9 @@ class PlannedTask:
 
     def is_destructive(self, destructive_ops: set[str] | None = None) -> bool:
         """Check if this task is a destructive operation.
-        
+
         Args:
-            destructive_ops: Optional set of full tool names (service_action) 
+            destructive_ops: Optional set of full tool names (service_action)
                            that are considered destructive. If provided,
                            this takes precedence over the default list.
         """

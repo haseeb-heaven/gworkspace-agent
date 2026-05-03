@@ -193,11 +193,11 @@ class VerificationEngine:
     def verify_pre_execution(cls, tool_name: str, params: dict) -> None:
         """
         Perform pre-execution safety and parameter validation checks.
-        
+
         Args:
             tool_name: Name of the tool in service_action format.
             params: Parameters being passed to the tool.
-            
+
         Raises:
             VerificationError: If any pre-execution check fails.
         """

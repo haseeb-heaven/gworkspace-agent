@@ -8,9 +8,13 @@ import pytest
 
 from gws_assistant.agent_system import (
     NO_SERVICE_MESSAGE,
+    DriveFolderUploadStrategy,
+    PlanningContext,
     WorkspaceAgentSystem,
     _detect_services_in_order,
     _has_explicit_web_search_intent,
+    _is_drive_folder_move_request,
+    _is_drive_folder_upload_request,
     _is_drive_to_email_request,
     _is_drive_to_sheets_to_email_request,
     _is_gmail_to_sheets_request,
@@ -559,3 +563,422 @@ class TestWebSearchPlanRouting:
         assert "drive" in services
         assert "list_files" in actions
         assert "send_message" in actions
+
+
+# ---------------------------------------------------------------------------
+# _is_drive_folder_move_request — modified to exclude upload/copy/save
+# ---------------------------------------------------------------------------
+
+
+class TestIsDriveFolderMoveRequest:
+    """_is_drive_folder_move_request must return False for upload/copy/save verbs."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "move files in drive to a folder",
+            "organize my drive files into a folder",
+            "move this file to a new folder",
+        ],
+    )
+    def test_returns_true_for_move_and_organize(self, text):
+        assert _is_drive_folder_move_request(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "upload a file to drive and create a folder",
+            "copy the file to a drive folder",
+            "save to drive folder",
+        ],
+    )
+    def test_returns_false_when_upload_copy_save_present(self, text):
+        assert _is_drive_folder_move_request(text) is False
+
+    def test_returns_false_for_unrelated_text(self):
+        assert _is_drive_folder_move_request("send an email") is False
+
+    def test_word_boundaries_prevent_substring_matches(self):
+        # "saved", "copyrighted", "unsaved" should not match "save" or "copy"
+        assert _is_drive_folder_move_request("move my saved files to a drive folder") is True
+        assert _is_drive_folder_move_request("organize my copyrighted files on drive") is True
+        assert _is_drive_folder_move_request("move unsaved drafts to a drive folder") is True
+
+
+# ---------------------------------------------------------------------------
+# _is_drive_folder_upload_request — new function
+# ---------------------------------------------------------------------------
+
+
+class TestIsDriveFolderUploadRequest:
+    """_is_drive_folder_upload_request detects upload-to-folder patterns."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "create a drive folder and upload the file",
+            "create folder in drive then copy the file there",
+            "create a new drive folder and save the report",
+            "upload 'report.pdf' to a new folder in drive, create the folder first",
+            "create folder and copy file to drive",
+        ],
+    )
+    def test_returns_true_for_upload_patterns(self, text):
+        assert _is_drive_folder_upload_request(text) is True
+
+    def test_returns_false_without_drive_or_folder(self):
+        # Neither "drive" nor "folder"
+        assert _is_drive_folder_upload_request("create and upload and save") is False
+
+    def test_returns_false_without_upload_copy_or_save(self):
+        # Has "drive" + "create" but no upload verb
+        assert _is_drive_folder_upload_request("create a folder in drive") is False
+
+    def test_returns_false_without_create_keyword(self):
+        # Has "drive" + "upload" but no "create" - should not match (requires explicit folder creation)
+        assert _is_drive_folder_upload_request("upload a file to drive") is False
+
+    def test_returns_false_for_pure_move_request(self):
+        # Move requests must not trigger upload
+        assert _is_drive_folder_upload_request("move files in drive to a folder") is False
+
+    def test_word_boundaries_prevent_substring_matches(self):
+        # "saved", "copyrighted", "unsaved" should not match "save" or "copy"
+        assert _is_drive_folder_upload_request("upload my saved files to drive") is True
+        assert _is_drive_folder_upload_request("copy copyrighted content to folder") is True
+
+
+# ---------------------------------------------------------------------------
+# WorkspaceAgentSystem._drive_folder_upload_tasks — new method
+# ---------------------------------------------------------------------------
+
+
+class TestDriveFolderUploadTasks:
+    """_drive_folder_upload_tasks must produce exactly 2 planned tasks."""
+
+    def setup_method(self, tmp_path=None):
+        # Use a temporary config without a real binary
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self._config = AppConfigModel(
+            provider="openai",
+            model="gpt-4.1-mini",
+            api_key=None,
+            llm_fallback_models=[],
+            base_url=None,
+            timeout_seconds=30,
+            gws_binary_path=os.path.join(self._tmp, "gws"),
+            log_file_path=os.path.join(self._tmp, "assistant.log"),
+            log_level="INFO",
+            verbose=False,
+            env_file_path=os.path.join(self._tmp, ".env"),
+            setup_complete=True,
+            max_retries=3,
+            langchain_enabled=False,
+            use_heuristic_fallback=True,
+            default_recipient_email="test@example.com",
+        )
+        self._agent = WorkspaceAgentSystem(
+            config=self._config, logger=logging.getLogger("test")
+        )
+
+    def test_returns_exactly_two_tasks(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'Backups' and upload 'notes.txt'", "create folder 'backups' and upload 'notes.txt'"
+        )
+        assert len(tasks) == 2
+
+    def test_first_task_is_create_folder(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'Reports' and upload 'data.csv'", "create folder 'reports' and upload 'data.csv'"
+        )
+        assert tasks[0].service == "drive"
+        assert tasks[0].action == "create_folder"
+
+    def test_second_task_is_upload_file(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'Reports' and upload 'data.csv'", "create folder 'reports' and upload 'data.csv'"
+        )
+        assert tasks[1].service == "drive"
+        assert tasks[1].action == "upload_file"
+
+    def test_folder_name_extracted_from_quoted_string(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'MyArchive' and upload 'document.pdf'",
+            "create folder 'myarchive' and upload 'document.pdf'",
+        )
+        assert tasks[0].parameters["folder_name"] == "MyArchive"
+
+    def test_file_path_extracted_after_upload_keyword(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create 'Docs' folder and upload 'report.pdf' to drive",
+            "create 'docs' folder and upload 'report.pdf' to drive",
+        )
+        assert tasks[1].parameters["file_path"] == "report.pdf"
+
+    def test_file_path_extracted_after_copy_keyword(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'Archive' and copy 'backup.zip' to it",
+            "create folder 'archive' and copy 'backup.zip' to it",
+        )
+        assert tasks[1].parameters["file_path"] == "backup.zip"
+
+    def test_file_path_extracted_after_save_keyword(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'Logs' and save 'app.log' there",
+            "create folder 'logs' and save 'app.log' there",
+        )
+        assert tasks[1].parameters["file_path"] == "app.log"
+
+    def test_upload_task_uses_task1_id_placeholder_as_folder_id(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'Output' and upload 'result.txt'",
+            "create folder 'output' and upload 'result.txt'",
+        )
+        assert tasks[1].parameters["folder_id"] == "{{task-1.id}}"
+
+    def test_folder_name_defaults_to_new_folder_when_no_quotes(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create a folder and upload the file", "create a folder and upload the file"
+        )
+        assert tasks[0].parameters["folder_name"] == "New Folder"
+
+    def test_file_path_defaults_to_empty_string_when_no_quotes(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create a folder and upload the file", "create a folder and upload the file"
+        )
+        assert tasks[1].parameters["file_path"] == ""
+
+    def test_second_quoted_string_used_as_file_path_when_no_keyword(self):
+        # When no upload/copy/save precedes a quote, the second quoted string becomes file_path
+        tasks = self._agent._drive_folder_upload_tasks(
+            "put 'MyFolder' folder and include 'data.csv' inside",
+            "put 'myfolder' folder and include 'data.csv' inside",
+        )
+        assert tasks[0].parameters["folder_name"] == "MyFolder"
+        assert tasks[1].parameters["file_path"] == "data.csv"
+
+    def test_single_quoted_string_used_as_folder_name_file_defaults(self):
+        # Only one quoted string: used for folder_name; file_path defaults to empty string
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create a folder named 'ProjectFiles' and upload a file",
+            "create a folder named 'projectfiles' and upload a file",
+        )
+        assert tasks[0].parameters["folder_name"] == "ProjectFiles"
+        assert tasks[1].parameters["file_path"] == ""
+
+    def test_task_ids_are_task_1_and_task_2(self):
+        tasks = self._agent._drive_folder_upload_tasks(
+            "create folder 'X' and upload 'Y.txt'",
+            "create folder 'x' and upload 'y.txt'",
+        )
+        assert tasks[0].id == "task-1"
+        assert tasks[1].id == "task-2"
+
+
+# ---------------------------------------------------------------------------
+# DriveFolderUploadStrategy — new strategy class
+# ---------------------------------------------------------------------------
+
+
+class TestDriveFolderUploadStrategy:
+    """DriveFolderUploadStrategy must have correct priority and matching logic."""
+
+    def _make_ctx(self, text: str, services: list[str]) -> PlanningContext:
+        cfg = AppConfigModel(
+            provider="openai",
+            model="gpt-4.1-mini",
+            api_key=None,
+            llm_fallback_models=[],
+            base_url=None,
+            timeout_seconds=30,
+            gws_binary_path="/tmp/gws",
+            log_file_path="/tmp/assistant.log",
+            log_level="INFO",
+            verbose=False,
+            env_file_path="/tmp/.env",
+            setup_complete=True,
+            max_retries=3,
+            langchain_enabled=False,
+            use_heuristic_fallback=True,
+            default_recipient_email="test@example.com",
+        )
+        return PlanningContext(
+            text=text,
+            lowered=text.lower(),
+            services=services,
+            config=cfg,
+            logger=logging.getLogger("test"),
+        )
+
+    def test_priority_returns_72(self):
+        strategy = DriveFolderUploadStrategy()
+        assert strategy.priority() == 72
+
+    def test_matches_when_drive_in_services_and_upload_request(self):
+        strategy = DriveFolderUploadStrategy()
+        ctx = self._make_ctx(
+            "create a drive folder and upload the file", ["drive"]
+        )
+        assert strategy.matches(ctx) is True
+
+    def test_does_not_match_when_drive_not_in_services(self):
+        strategy = DriveFolderUploadStrategy()
+        ctx = self._make_ctx(
+            "create a drive folder and upload the file", ["gmail"]
+        )
+        assert strategy.matches(ctx) is False
+
+    def test_does_not_match_when_upload_request_pattern_fails(self):
+        strategy = DriveFolderUploadStrategy()
+        # No upload/copy/save verb -> pattern fails
+        ctx = self._make_ctx("list files in drive folder", ["drive"])
+        assert strategy.matches(ctx) is False
+
+
+    def test_execute_returns_request_plan_with_two_tasks(self, tmp_path):
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        cfg = AppConfigModel(
+            provider="openai",
+            model="gpt-4.1-mini",
+            api_key=None,
+            llm_fallback_models=[],
+            base_url=None,
+            timeout_seconds=30,
+            gws_binary_path=os.path.join(tmp, "gws"),
+            log_file_path=os.path.join(tmp, "assistant.log"),
+            log_level="INFO",
+            verbose=False,
+            env_file_path=os.path.join(tmp, ".env"),
+            setup_complete=True,
+            max_retries=3,
+            langchain_enabled=False,
+            use_heuristic_fallback=True,
+            default_recipient_email="test@example.com",
+        )
+        agent = WorkspaceAgentSystem(config=cfg, logger=logging.getLogger("test"))
+        strategy = DriveFolderUploadStrategy()
+        text = "create a drive folder 'Archive' and upload 'notes.txt'"
+        ctx = PlanningContext(
+            text=text,
+            lowered=text.lower(),
+            services=["drive"],
+            config=cfg,
+            logger=logging.getLogger("test"),
+        )
+        plan = strategy.execute(ctx, agent)
+        assert len(plan.tasks) == 2
+        assert plan.no_service_detected is False
+        assert plan.source == "heuristic"
+
+    def test_execute_returns_confidence_0_75(self, tmp_path):
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        cfg = AppConfigModel(
+            provider="openai",
+            model="gpt-4.1-mini",
+            api_key=None,
+            llm_fallback_models=[],
+            base_url=None,
+            timeout_seconds=30,
+            gws_binary_path=os.path.join(tmp, "gws"),
+            log_file_path=os.path.join(tmp, "assistant.log"),
+            log_level="INFO",
+            verbose=False,
+            env_file_path=os.path.join(tmp, ".env"),
+            setup_complete=True,
+            max_retries=3,
+            langchain_enabled=False,
+            use_heuristic_fallback=True,
+            default_recipient_email="test@example.com",
+        )
+        agent = WorkspaceAgentSystem(config=cfg, logger=logging.getLogger("test"))
+        strategy = DriveFolderUploadStrategy()
+        text = "create a drive folder and upload 'data.csv'"
+        ctx = PlanningContext(
+            text=text,
+            lowered=text.lower(),
+            services=["drive"],
+            config=cfg,
+            logger=logging.getLogger("test"),
+        )
+        plan = strategy.execute(ctx, agent)
+        assert plan.confidence == 0.75
+
+    def test_execute_summary_includes_task_count(self, tmp_path):
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        cfg = AppConfigModel(
+            provider="openai",
+            model="gpt-4.1-mini",
+            api_key=None,
+            llm_fallback_models=[],
+            base_url=None,
+            timeout_seconds=30,
+            gws_binary_path=os.path.join(tmp, "gws"),
+            log_file_path=os.path.join(tmp, "assistant.log"),
+            log_level="INFO",
+            verbose=False,
+            env_file_path=os.path.join(tmp, ".env"),
+            setup_complete=True,
+            max_retries=3,
+            langchain_enabled=False,
+            use_heuristic_fallback=True,
+            default_recipient_email="test@example.com",
+        )
+        agent = WorkspaceAgentSystem(config=cfg, logger=logging.getLogger("test"))
+        strategy = DriveFolderUploadStrategy()
+        text = "create a drive folder and upload 'report.pdf'"
+        ctx = PlanningContext(
+            text=text,
+            lowered=text.lower(),
+            services=["drive"],
+            config=cfg,
+            logger=logging.getLogger("test"),
+        )
+        plan = strategy.execute(ctx, agent)
+        assert "2" in plan.summary
+        assert "drive.create_folder" in plan.summary
+        assert "drive.upload_file" in plan.summary
+
+
+# ---------------------------------------------------------------------------
+# Integration: agent.plan() routes to DriveFolderUploadStrategy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.drive
+def test_agent_plans_drive_folder_upload(tmp_path):
+    """agent.plan() must select the upload strategy, not the move strategy."""
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("create a folder in drive and upload 'report.pdf'")
+
+    assert plan.no_service_detected is False
+    actions = [t.action for t in plan.tasks]
+    assert "create_folder" in actions
+    assert "upload_file" in actions
+    assert "move_file" not in actions
+
+
+@pytest.mark.drive
+def test_agent_upload_strategy_extracts_folder_and_file(tmp_path):
+    """Folder name and file path are correctly extracted from quoted strings."""
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("create folder 'MyDocs' and upload 'readme.md' to drive")
+
+    create_task = next(t for t in plan.tasks if t.action == "create_folder")
+    upload_task = next(t for t in plan.tasks if t.action == "upload_file")
+    assert create_task.parameters["folder_name"] == "MyDocs"
+    assert upload_task.parameters["file_path"] == "readme.md"
+    assert upload_task.parameters["folder_id"] == "{{task-1.id}}"
+
+
+@pytest.mark.drive
+def test_agent_upload_request_does_not_use_move_strategy(tmp_path):
+    """A request with 'upload' must not be routed to the move strategy."""
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("create a drive folder and upload the file, save it there")
+
+    actions = [t.action for t in plan.tasks]
+    assert "move_file" not in actions

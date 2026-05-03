@@ -90,3 +90,110 @@ def test_build_gmail_send_message_rejects_attachments_during_planning():
                 "attachments": ["/etc/passwd"],
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# drive.upload_file — folder_id support (PR change)
+# ---------------------------------------------------------------------------
+
+
+import json
+import tempfile
+
+
+class TestUploadFileWithFolderId:
+    """CommandPlanner.build_command('drive', 'upload_file', ...) folder_id support."""
+
+    planner = CommandPlanner()
+
+    def _make_temp_file(self, suffix=".txt") -> str:
+        fd, path = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        return path
+
+    def test_upload_without_folder_id_has_no_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" not in body
+
+    def test_upload_with_folder_id_adds_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "folder-abc123"}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" in body
+        assert body["parents"] == ["folder-abc123"]
+
+    def test_upload_with_empty_folder_id_has_no_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": ""}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" not in body
+
+    def test_upload_with_whitespace_folder_id_has_no_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "   "}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" not in body
+
+    def test_upload_with_placeholder_folder_id_adds_parents(self):
+        # Task-chain placeholders like {{task-1.id}} are non-empty -> should add parents
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "{{task-1.id}}"}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" in body
+        assert body["parents"] == ["{{task-1.id}}"]
+
+    def test_upload_payload_still_contains_name(self):
+        tmp = self._make_temp_file(suffix=".csv")
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "folder-xyz"}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "name" in body
+
+    def test_upload_command_starts_with_drive_files_create(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "some-folder"}
+        )
+        assert args[:3] == ["drive", "files", "create"]
+
+    def test_upload_command_includes_upload_flag(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "some-folder"}
+        )
+        assert "--upload" in args
+        upload_idx = args.index("--upload")
+        assert args[upload_idx + 1] == tmp
+
+    def test_upload_rejects_missing_file(self):
+        with pytest.raises(ValidationError, match="File not found"):
+            self.planner.build_command(
+                "drive",
+                "upload_file",
+                {"file_path": "/nonexistent/path/file.txt", "folder_id": "folder-1"},
+            )
+
+    def test_upload_json_is_ascii_safe(self):
+        # ensure_ascii=True means non-ASCII chars are escaped
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive",
+            "upload_file",
+            {"file_path": tmp, "folder_id": "folder-\u00e9"},
+        )
+        json_str = args[args.index("--json") + 1]
+        # The JSON string should be representable as pure ASCII bytes
+        json_str.encode("ascii")  # raises if non-ASCII present

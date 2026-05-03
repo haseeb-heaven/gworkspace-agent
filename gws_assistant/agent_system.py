@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date
+from enum import Enum
 from typing import Any
 
 from .file_types import RE_FILE_PATH
@@ -914,6 +917,50 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             ),
         ]
 
+    def _drive_folder_upload_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        # Extract file path from text using _extract_file_path to handle both quoted and unquoted paths
+        file_path_match = RE_FILE_PATH.search(text)
+        file_path = ""
+        text_without_file = text
+
+        if file_path_match:
+            # Extract the matched file path from whichever group matched
+            file_path = next((g for g in file_path_match.groups() if g is not None), "")
+            # Remove only the matched span from the original text to avoid clobbering other matches
+            start, end = file_path_match.span()
+            text_without_file = text[:start] + text[end:]
+
+        # Extract folder name from the remaining text (after removing the file path span)
+        folder_name = _extract_quoted(text_without_file)
+
+        # Fallback: try to extract quoted strings from original text if no folder name found
+        if not folder_name:
+            quoted_strings = re.findall(r'["\047]([^"\047]{1,200})["\047]', text)
+            # Filter out the file_path if it was quoted
+            remaining_quotes = [q for q in quoted_strings if q != file_path]
+            if remaining_quotes:
+                folder_name = remaining_quotes[0]
+            else:
+                folder_name = "New Folder"
+
+        # Return tasks even if file_path is empty - verification engine will catch missing file
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="create_folder",
+                parameters={"folder_name": folder_name},
+                reason=f"Create folder '{folder_name}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="drive",
+                action="upload_file",
+                parameters={"file_path": file_path, "folder_id": "{{task-1.id}}"},
+                reason=f"Upload {file_path} to the folder.",
+            ),
+        ]
+
     def _sheets_creation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         title = _extract_quoted(text) or "New Spreadsheet"
         tasks = [
@@ -1675,7 +1722,22 @@ def _is_sheet_to_email_request(text: str) -> bool:
 
 
 def _is_drive_folder_move_request(text: str) -> bool:
-    return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
+    # Exclude upload/copy requests - those should use upload_file, not move_file
+    # Use word boundaries to avoid matching substrings like "saved", "copyrighted"
+    if re.search(r"\b(?:upload|copy|save)\b", text, re.IGNORECASE):
+        return False
+    lowered = text.lower()
+    return any(t in lowered for t in ("drive", "file")) and any(t in lowered for t in ("move", "folder", "organize"))
+
+
+def _is_drive_folder_upload_request(text: str) -> bool:
+    # Use word boundaries to avoid matching substrings like "saved", "copyrighted"
+    has_target = re.search(r"\b(?:drive|folder)\b", text, re.IGNORECASE)
+    has_action = re.search(r"\b(?:upload|copy|save)\b", text, re.IGNORECASE)
+    # Require explicit folder-creation intent
+    has_create = re.search(r"\b(?:create|new|make)(?:\s+folder)?\b", text, re.IGNORECASE)
+    return bool(has_target and has_action and has_create)
+
 
 
 def _is_docs_to_email_request(text: str) -> bool:
@@ -1743,9 +1805,6 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
 # ============================================================================
 # STRATEGY PATTERN FOR HEURISTIC PLANNING
 # ============================================================================
-
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 
 @dataclass
@@ -1816,6 +1875,7 @@ class DriveMetadataOnlyStrategy(PlanningStrategy):
             and _is_metadata_only_request(ctx.lowered)
             and not ("gmail" in ctx.services and _is_drive_to_email_request(ctx.lowered))
             and not _is_drive_folder_move_request(ctx.lowered)
+            and not _is_drive_folder_upload_request(ctx.lowered)
         )
 
     def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
@@ -1929,6 +1989,30 @@ class DriveFolderMoveStrategy(PlanningStrategy):
             no_service_detected=False,
             source="heuristic",
         )
+
+
+
+class DriveFolderUploadStrategy(PlanningStrategy):
+    """Pattern C2: Drive Folder & Upload."""
+
+    def priority(self) -> int:
+        return 72  # Higher priority than move strategy (65) and DriveToEmailStrategy (70)
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return "drive" in ctx.services and _is_drive_folder_upload_request(ctx.lowered)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_folder_upload_tasks(ctx.text, ctx.lowered)
+        task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {task_chain}",
+            confidence=0.75,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
 
 
 class GmailToSheetsStrategy(PlanningStrategy):
@@ -2283,6 +2367,7 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = [
     DriveMetadataToEmailStrategy(),
     DriveToSheetsToEmailStrategy(),
     DriveToEmailStrategy(),
+    DriveFolderUploadStrategy(),
     DriveFolderMoveStrategy(),
     DriveDeleteByNameStrategy(),
     GmailToSheetsStrategy(),
@@ -2320,8 +2405,6 @@ def _plan_with_strategies(text: str, lowered: str, services: list[str], config: 
 # ============================================================================
 # TYPE-SAFE PARAMETER HANDLING
 # ============================================================================
-
-from enum import Enum
 
 
 class ParameterType(Enum):
