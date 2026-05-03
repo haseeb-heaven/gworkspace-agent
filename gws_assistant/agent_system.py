@@ -98,6 +98,17 @@ print(result)
 result = result"""
 
     # Default: simple calculator for expressions
+    # Try to extract a simple arithmetic expression (e.g. "15 * 24")
+    expr_match = re.search(r"(\d+)\s*([+\-*/])\s*(\d+)", lowered)
+    if expr_match:
+        a, op, b = int(expr_match.group(1)), expr_match.group(2), int(expr_match.group(3))
+        ops = {"+": "+", "-": "-", "*": "*", "/": "/"}
+        code_op = ops.get(op, "+")
+        return f"""# Computation request: {text}
+result = {a} {code_op} {b}
+print(result)
+result = result"""
+
     return f"""# Computation request: {text}
 # Note: This is a heuristic-generated computation.
 # For complex computations, please use the LLM-powered planning mode.
