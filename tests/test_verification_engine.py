@@ -253,8 +253,8 @@ def test_5_check_system_check_3_result_validation():
         VerificationEngine.verify("gmail_send_message", params, result)
 
 
-def test_5_check_system_check_4_data_integrity():
-    """Test CHECK 4: Data Integrity & Consistency Validation."""
+def test_5_check_system_check_1_parameter_validation():
+    """Test CHECK 1: Parameter Validation."""
     params = {"title": "Doc", "content": ""}
     result = {"id": "doc-123"}
     with pytest.raises(VerificationError, match=r"\[CHECK 1\]"):
