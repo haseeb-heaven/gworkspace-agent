@@ -686,6 +686,27 @@ class VerificationEngine:
                     tool_name, params, field="body", min_length=5, block_placeholders=True
                 )
 
+                # Additional check: detect unresolved placeholders that weren't resolved by the resolver
+                # This catches cases where $drive_metadata_table, $drive_file_links, etc. are still in the body
+                body = params.get("body", "")
+                if body:
+                    from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP, _UNRESOLVED_MARKER
+                    unresolved_placeholders = []
+                    for placeholder in LEGACY_PLACEHOLDER_MAP.keys():
+                        if placeholder in str(body):
+                            unresolved_placeholders.append(placeholder)
+                    if _UNRESOLVED_MARKER in str(body):
+                        unresolved_placeholders.append(_UNRESOLVED_MARKER)
+                    
+                    if unresolved_placeholders:
+                        raise VerificationError(
+                            tool_name,
+                            f"Email body contains unresolved placeholders that were not resolved: {', '.join(unresolved_placeholders)}. "
+                            f"Ensure the context is properly populated before sending the email.",
+                            severity=VerificationSeverity.ERROR,
+                            field="body"
+                        )
+
             attachments = params.get("attachments")
             if attachments:
                 if not isinstance(attachments, list):
