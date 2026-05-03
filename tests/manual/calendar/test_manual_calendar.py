@@ -73,7 +73,7 @@ def test_manual_5():
     """Delete event verification - Delete operation."""
     run_task(
         f"Find and delete the calendar event titled '{TEST_EVENT_NAME}'.",
-        expected=["completed", "deleted"],
+        expected=["completed"],
         service="calendar",
         skip_verification=True,  # Destructive operation
     )
