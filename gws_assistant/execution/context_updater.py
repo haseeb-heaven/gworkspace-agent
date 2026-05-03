@@ -415,36 +415,44 @@ class ContextUpdaterMixin:
                 if not context.get("gmail_details_values"):
                     context["gmail_details_values"] = []
 
+        # Handle drive file listings - check multiple possible response formats
+        files = None
         if "files" in data:
             files = data["files"]
-            if files and isinstance(files, list):
-                context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
+        elif "items" in data:
+            files = data["items"]
+        elif isinstance(data, list) and task and task.service == "drive":
+            # GWS might return the list directly
+            files = data
+        
+        if files and isinstance(files, list):
+            context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
-                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
-                context["drive_metadata_rows"] = rows
-                context["drive_summary_rows"] = rows
-                context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
+            rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+            context["drive_metadata_rows"] = rows
+            context["drive_summary_rows"] = rows
+            context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
 
-                table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
-                for r in rows:
-                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
-                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
-                context["drive_metadata_table"] = "\n".join(table_lines)
-                context["drive_summary_table"] = "\n".join(table_lines)
+            table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
+            for r in rows:
+                safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+            context["drive_metadata_table"] = "\n".join(table_lines)
+            context["drive_summary_table"] = "\n".join(table_lines)
 
-                # Create a simple list of file links
-                file_links = [f.get("webViewLink", "") for f in files if f.get("webViewLink")]
-                context["drive_file_links"] = "\n".join(file_links)
+            # Create a simple list of file links
+            file_links = [f.get("webViewLink", "") for f in files if f.get("webViewLink")]
+            context["drive_file_links"] = "\n".join(file_links)
 
-                context["drive_file_count"] = len(files)
-                context["drive_summary_count"] = len(files)
+            context["drive_file_count"] = len(files)
+            context["drive_summary_count"] = len(files)
 
-                if len(files) > 0:
-                    non_folder = next((f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"), files[0])
-                    if "mimeType" in non_folder:
-                        context["last_file_mime"] = non_folder["mimeType"]
-                    if "webViewLink" in non_folder:
-                        context["last_file_url"] = non_folder["webViewLink"]
+            if len(files) > 0:
+                non_folder = next((f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"), files[0])
+                if "mimeType" in non_folder:
+                    context["last_file_mime"] = non_folder["mimeType"]
+                if "webViewLink" in non_folder:
+                    context["last_file_url"] = non_folder["webViewLink"]
 
         if "id" in data and task and task.service == "drive" and task.action == "create_folder":
             context["last_folder_id"] = data["id"]
