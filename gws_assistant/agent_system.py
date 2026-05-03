@@ -1707,7 +1707,7 @@ def _is_sheet_to_email_request(text: str) -> bool:
 
 def _is_drive_folder_move_request(text: str) -> bool:
     # Exclude upload/copy requests - those should use upload_file, not move_file
-    if any(t in text for t in ("upload", "copy", "save")):
+    if re.search(r'\b(?:upload|copy|save)\b', text):
         return False
     return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
 
