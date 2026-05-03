@@ -36,6 +36,7 @@ class AppConfigModel:
     llm_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
+    drive_folder_name: str = "New Folder"
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
     mem0_host: str | None = None
@@ -73,7 +74,7 @@ class AppConfigModel:
         "fake", "mock", "temporary", "tbd", "missing"
     })
     verification_numeric_placeholders: set[str] = field(default_factory=lambda: {"0000", "1234", "9999", "00000000"})
-    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@domain.com"})
+    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@domain.com", "noreply@example.com"})
     verification_email_placeholder_domains: list[str] = field(default_factory=lambda: ["@test.com"])
     verification_destructive_operations: set[str] = field(default_factory=lambda: {
         "drive_delete_file", "drive_empty_trash", "drive_move_to_trash", "drive_batch_delete",
@@ -141,9 +142,9 @@ class PlannedTask:
 
     def is_destructive(self, destructive_ops: set[str] | None = None) -> bool:
         """Check if this task is a destructive operation.
-        
+
         Args:
-            destructive_ops: Optional set of full tool names (service_action) 
+            destructive_ops: Optional set of full tool names (service_action)
                            that are considered destructive. If provided,
                            this takes precedence over the default list.
         """

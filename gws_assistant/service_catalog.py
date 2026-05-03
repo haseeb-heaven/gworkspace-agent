@@ -36,6 +36,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("file_path", "Local path to the file to upload", "README.md"),
                     ParameterSpec("name", "Optional: name for the file on Drive", "Uploaded File", required=False),
+                    ParameterSpec("folder_id", "Optional: ID of the folder to upload the file into", "", required=False),
                 ),
             ),
             "get_file": ActionSpec(

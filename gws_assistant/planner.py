@@ -265,6 +265,20 @@ class CommandPlanner:
             if not os.path.exists(file_path):
                 raise ValidationError(f"File not found: {file_path}")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
+            folder_id = str(params.get("folder_id") or "").strip()
+
+            # Reject unresolved placeholder folder ids - if the planner is asked to
+            # upload to a folder produced by a previous task and that task failed to
+            # resolve, fail loudly rather than silently uploading to Drive root.
+            if folder_id and (folder_id.startswith("{{") or folder_id.startswith("<") or folder_id.lower() in {"none", "null"}):
+                raise ValidationError(
+                    f"Unresolved placeholder folder_id '{folder_id}' - upstream task did not produce a folder id"
+                )
+
+            payload: dict[str, Any] = {"name": name}
+            if folder_id:
+                payload["parents"] = [folder_id]
+
             cmd = [
                 "drive",
                 "files",
@@ -280,7 +294,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps({"name": name}, ensure_ascii=True),
+                json.dumps(payload, ensure_ascii=True),
             ])
             return cmd
 

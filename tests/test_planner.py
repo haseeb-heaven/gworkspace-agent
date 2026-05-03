@@ -90,3 +90,58 @@ def test_build_gmail_send_message_rejects_attachments_during_planning():
                 "attachments": ["/etc/passwd"],
             },
         )
+
+
+# -----------------------------------------------------------------------------
+# Drive upload_file - folder_id parents support (PR #76 / #78)
+# -----------------------------------------------------------------------------
+
+
+def test_drive_upload_file_without_folder_id_omits_parents(tmp_path):
+    """Without folder_id, the JSON payload must NOT include a 'parents' field."""
+    import json as _json
+
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"hello")
+
+    planner = CommandPlanner()
+    args = planner.build_command(
+        "drive", "upload_file", {"file_path": str(file_path)}
+    )
+    assert args[:4] == ["drive", "files", "create", "--upload"]
+    payload = _json.loads(args[args.index("--json") + 1])
+    assert "parents" not in payload
+    assert payload["name"] == "report.pdf"
+
+
+def test_drive_upload_file_with_folder_id_sets_parents(tmp_path):
+    """With folder_id, the JSON payload must set parents=[folder_id]."""
+    import json as _json
+
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"hello")
+
+    planner = CommandPlanner()
+    args = planner.build_command(
+        "drive",
+        "upload_file",
+        {"file_path": str(file_path), "folder_id": "1AbCdEFg123"},
+    )
+    payload = _json.loads(args[args.index("--json") + 1])
+    assert payload["parents"] == ["1AbCdEFg123"]
+
+
+def test_drive_upload_file_rejects_unresolved_placeholder_folder_id(tmp_path):
+    """Silent fallback to drive root for an unresolved placeholder is dangerous;
+    raise ValidationError instead.
+    """
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"hello")
+
+    planner = CommandPlanner()
+    with pytest.raises(ValidationError, match="Unresolved placeholder folder_id"):
+        planner.build_command(
+            "drive",
+            "upload_file",
+            {"file_path": str(file_path), "folder_id": "{{task-1.id}}"},
+        )

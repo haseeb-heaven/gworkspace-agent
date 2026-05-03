@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date
+from enum import Enum
 from typing import Any
 
 from .file_types import RE_FILE_PATH
 from .langchain_agent import plan_with_langchain
-from .models import AppConfigModel, PlannedTask, RequestPlan
+from .models import AppConfigModel, PlannedTask, RequestPlan, ValidationError
 from .service_catalog import SERVICES
 
 RE_CODE_LIST = re.compile(r"(\[.+?\])")
@@ -915,19 +918,45 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         ]
 
     def _drive_folder_upload_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        folder_name = _extract_quoted(text) or "New Folder"
-        # Extract file path from text - look for patterns like "upload 'X'", "copy 'X'", "save 'X'"
-        # Try to match quoted string after upload/copy/save keywords first
-        file_match = re.search(r'(?:upload|copy|save)\s+["\047]([^"\047]{1,200})["\047]', text, re.IGNORECASE)
-        if not file_match:
-            # Fallback: any quoted string in the text (prefer second one if multiple)
-            quoted_strings = re.findall(r'["\047]([^"\047]{1,200})["\047]', text)
-            # Skip the first quoted string if it was already used as folder_name
-            remaining = [q for q in quoted_strings if q != folder_name] if folder_name != "New Folder" else quoted_strings
-            file_path = remaining[0] if remaining else "README.md"
-        else:
-            file_path = file_match.group(1)
-        
+        # Try to find a folder name with explicit "folder 'X'" framing first so we
+        # do not accidentally consume a quoted file path as the folder name.
+        folder_name = None
+        folder_match = re.search(
+            r"folder\s+(?:named\s+|called\s+)?[\"\047]([^\"\047]{1,200})[\"\047]",
+            text,
+            re.IGNORECASE,
+        )
+        if folder_match:
+            folder_name = folder_match.group(1)
+
+        # Extract file path from text - look for patterns like "upload 'X'", "copy 'X'", "save 'X'".
+        file_match = re.search(
+            r"(?:upload|copy|save|put|add)\s+(?:the\s+|a\s+|an\s+)?[\"\047]([^\"\047]{1,200})[\"\047]",
+            text,
+            re.IGNORECASE,
+        )
+        file_path = file_match.group(1) if file_match else None
+
+        # Fallback: scan all quoted strings and disambiguate by ordering.
+        if folder_name is None or file_path is None:
+            quoted_strings = re.findall(r"[\"\047]([^\"\047]{1,200})[\"\047]", text)
+            unused = [q for q in quoted_strings if q not in {folder_name, file_path}]
+            if folder_name is None and unused:
+                folder_name = unused.pop(0)
+            if file_path is None and unused:
+                file_path = unused.pop(0)
+
+        # Defaults: pull folder name from config (DRIVE_FOLDER_NAME) and refuse to
+        # silently invent a file path - planner runs a separate validation step that
+        # surfaces a clear error to the user instead of uploading the wrong file.
+        configured_folder = getattr(self.config, "drive_folder_name", "New Folder") or "New Folder"
+        folder_name = folder_name or configured_folder
+        if not file_path:
+            raise ValidationError(
+                "No file path found in request. "
+                "Quote the file you want to upload, e.g. \"upload 'report.pdf' to drive\"."
+            )
+
         return [
             PlannedTask(
                 id="task-1",
@@ -1713,10 +1742,21 @@ def _is_drive_folder_move_request(text: str) -> bool:
 
 
 def _is_drive_folder_upload_request(text: str) -> bool:
-    return (
-        any(t in text for t in ("drive", "folder"))
-        and any(t in text for t in ("upload", "copy", "save"))
-    )
+    """Detect a 'create folder + upload file' request.
+
+    Uses word-boundary matching to avoid false positives like "saved" matching
+    "save" or "copyrighted" matching "copy". Also requires an explicit
+    creation/upload intent so generic phrasings like "show drive folder" do
+    not accidentally trigger this strategy.
+    """
+    if not re.search(r"\b(?:drive|folder)\b", text):
+        return False
+    if not re.search(r"\b(?:upload|copy|save|put|add)\b", text):
+        return False
+    # Only fire if there is an explicit creation intent for the folder side
+    # of the workflow (otherwise a plain "upload to drive" is handled by the
+    # standard upload strategy).
+    return bool(re.search(r"\b(?:create|new|fresh|make)\b", text))
 
 def _is_docs_to_email_request(text: str) -> bool:
     if _has_explicit_web_search_intent(text):
@@ -1783,9 +1823,6 @@ def _extract_data_rows(text: str) -> list[list[Any]]:
 # ============================================================================
 # STRATEGY PATTERN FOR HEURISTIC PLANNING
 # ============================================================================
-
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 
 @dataclass
@@ -1973,10 +2010,15 @@ class DriveFolderMoveStrategy(PlanningStrategy):
 
 
 class DriveFolderUploadStrategy(PlanningStrategy):
-    """Pattern C2: Drive Folder & Upload."""
+    """Pattern C2: Drive Folder & Upload.
+
+    Slightly higher priority than DriveToEmailStrategy (70) so an explicit
+    "create folder + upload" request is not consumed by the more general
+    drive->gmail strategy when both happen to match.
+    """
 
     def priority(self) -> int:
-        return 70  # Higher priority than move strategy
+        return 72
 
     def matches(self, ctx: PlanningContext) -> bool:
         return "drive" in ctx.services and _is_drive_folder_upload_request(ctx.lowered)
@@ -2338,29 +2380,36 @@ class ChatSendMessageStrategy(PlanningStrategy):
         )
 
 
-# Strategy registry - ordered by priority (highest first)
-_PLANNING_STRATEGIES: list[PlanningStrategy] = [
-    WebSearchStrategy(),
-    DriveMetadataOnlyStrategy(),
-    DriveMetadataToEmailStrategy(),
-    DriveToSheetsToEmailStrategy(),
-    DriveToEmailStrategy(),
-    DriveFolderUploadStrategy(),
-    DriveFolderMoveStrategy(),
-    DriveDeleteByNameStrategy(),
-    GmailToSheetsStrategy(),
-    SheetCreationStrategy(),
-    GmailListAndGetStrategy(),
-    SheetToEmailStrategy(),
-    DocsToEmailStrategy(),
-    FormsSyncStrategy(),
-    CodeExecutionStrategy(),
-    SlidesToEmailStrategy(),
-    AdminToEmailStrategy(),
-    ContactsToEmailStrategy(),
-    ChatToEmailStrategy(),
-    ChatSendMessageStrategy(),
-]
+# Strategy registry - automatically sorted by priority (highest first) so the
+# declaration order of strategies above is independent of dispatch order. Within
+# the same priority, earlier-declared strategies still win because
+# `sorted(...)` is stable.
+_PLANNING_STRATEGIES: list[PlanningStrategy] = sorted(
+    [
+        WebSearchStrategy(),
+        DriveMetadataOnlyStrategy(),
+        DriveMetadataToEmailStrategy(),
+        DriveToSheetsToEmailStrategy(),
+        DriveFolderUploadStrategy(),
+        DriveToEmailStrategy(),
+        DriveFolderMoveStrategy(),
+        DriveDeleteByNameStrategy(),
+        GmailToSheetsStrategy(),
+        SheetCreationStrategy(),
+        GmailListAndGetStrategy(),
+        SheetToEmailStrategy(),
+        DocsToEmailStrategy(),
+        FormsSyncStrategy(),
+        CodeExecutionStrategy(),
+        SlidesToEmailStrategy(),
+        AdminToEmailStrategy(),
+        ContactsToEmailStrategy(),
+        ChatToEmailStrategy(),
+        ChatSendMessageStrategy(),
+    ],
+    key=lambda s: s.priority(),
+    reverse=True,
+)
 
 
 def _plan_with_strategies(text: str, lowered: str, services: list[str], config: AppConfigModel, logger: logging.Logger, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
@@ -2383,8 +2432,6 @@ def _plan_with_strategies(text: str, lowered: str, services: list[str], config: 
 # ============================================================================
 # TYPE-SAFE PARAMETER HANDLING
 # ============================================================================
-
-from enum import Enum
 
 
 class ParameterType(Enum):

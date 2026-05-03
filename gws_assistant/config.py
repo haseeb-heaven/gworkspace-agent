@@ -82,6 +82,8 @@ class AppConfig:
             if not default_recipient_email:
                 raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
 
+            drive_folder_name = (os.getenv("DRIVE_FOLDER_NAME") or "New Folder").strip() or "New Folder"
+
             provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
             openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
             generic_key = (os.getenv("LLM_API_KEY") or "").strip()
@@ -233,7 +235,7 @@ class AppConfig:
             )
             verification_exact_emails = _to_set(
                 os.getenv("VERIFICATION_EXACT_EMAILS"),
-                default={"noreply@domain.com"}
+                default={"noreply@domain.com", "noreply@example.com"}
             )
             verification_email_placeholder_domains = _to_list(
                 os.getenv("VERIFICATION_EMAIL_PLACEHOLDER_DOMAINS"),
@@ -303,6 +305,7 @@ class AppConfig:
                 llm_api_keys=llm_api_keys,
                 max_context_snippet_len=max_snippet_len,
                 default_recipient_email=default_recipient_email,
+                drive_folder_name=drive_folder_name,
                 mem0_api_key=mem0_api_key,
                 mem0_user_id=mem0_user_id,
                 mem0_host=mem0_host,

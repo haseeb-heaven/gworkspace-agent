@@ -559,3 +559,109 @@ class TestWebSearchPlanRouting:
         assert "drive" in services
         assert "list_files" in actions
         assert "send_message" in actions
+
+
+# -----------------------------------------------------------------------------
+# Drive folder + upload heuristic strategy
+# -----------------------------------------------------------------------------
+
+
+class TestDriveFolderUploadHeuristic:
+    """Coverage for `_is_drive_folder_upload_request`, `_is_drive_folder_move_request`,
+    and `_drive_folder_upload_tasks`. These were added by the
+    `DriveFolderUploadStrategy` change but had no unit coverage previously.
+    """
+
+    def test_upload_request_is_detected_for_explicit_create_and_upload(self):
+        from gws_assistant.agent_system import _is_drive_folder_upload_request
+
+        assert _is_drive_folder_upload_request(
+            "create a new folder in drive and upload 'report.pdf'"
+        ) is True
+
+    def test_upload_request_uses_word_boundaries_for_save(self):
+        """`saved` must NOT match `save` (substring regression)."""
+        from gws_assistant.agent_system import _is_drive_folder_upload_request
+
+        assert _is_drive_folder_upload_request(
+            "show me the latest saved drive folder"
+        ) is False
+
+    def test_upload_request_uses_word_boundaries_for_copy(self):
+        """`copyrighted` must NOT match `copy` (substring regression)."""
+        from gws_assistant.agent_system import _is_drive_folder_upload_request
+
+        assert _is_drive_folder_upload_request(
+            "list copyrighted drive folders"
+        ) is False
+
+    def test_upload_request_requires_creation_intent(self):
+        """A bare `upload to drive` (no folder creation) must not match this strategy."""
+        from gws_assistant.agent_system import _is_drive_folder_upload_request
+
+        assert _is_drive_folder_upload_request(
+            "upload report.pdf to drive"
+        ) is False
+
+    def test_move_request_excludes_upload_substring_safely(self):
+        """`uploaded` must NOT cause the move detector to bail out (word boundary)."""
+        from gws_assistant.agent_system import _is_drive_folder_move_request
+
+        # Real move request with a benign mention containing "upload" as substring.
+        assert _is_drive_folder_move_request(
+            "move the file into the uploads folder"
+        ) is True
+
+    def test_drive_folder_upload_tasks_uses_explicit_folder_framing(self, tmp_path):
+        """Folder name must come from `folder 'X'` framing, not the upload target."""
+        agent = WorkspaceAgentSystem(
+            config=_config(tmp_path), logger=logging.getLogger("test")
+        )
+        text = "Create a new folder 'MyProject' in drive and upload 'report.pdf'"
+        tasks = agent._drive_folder_upload_tasks(text, text.lower())
+
+        assert tasks[0].action == "create_folder"
+        assert tasks[0].parameters["folder_name"] == "MyProject"
+        assert tasks[1].action == "upload_file"
+        assert tasks[1].parameters["file_path"] == "report.pdf"
+        # The placeholder must reference task-1 so the executor can resolve it
+        # at runtime and pass `folder_id` to `upload_file`.
+        assert tasks[1].parameters["folder_id"] == "{{task-1.id}}"
+
+    def test_drive_folder_upload_tasks_does_not_collapse_single_quoted_string(self, tmp_path):
+        """When only one quoted string exists it must be treated as the file path,
+        not silently reused as the folder name (quoted-string collapse regression).
+        """
+        agent = WorkspaceAgentSystem(
+            config=_config(tmp_path), logger=logging.getLogger("test")
+        )
+        text = "Create a new folder in drive and upload 'report.pdf'"
+        tasks = agent._drive_folder_upload_tasks(text, text.lower())
+
+        # Folder name should come from config default, NOT from the single quoted string.
+        assert tasks[0].parameters["folder_name"] != "report.pdf"
+        assert tasks[1].parameters["file_path"] == "report.pdf"
+
+    def test_drive_folder_upload_tasks_raises_when_no_file_path_provided(self, tmp_path):
+        """Refuse to fall back to a hardcoded file - surface a clear error."""
+        from gws_assistant.models import ValidationError
+
+        agent = WorkspaceAgentSystem(
+            config=_config(tmp_path), logger=logging.getLogger("test")
+        )
+        with pytest.raises(ValidationError, match="file path"):
+            agent._drive_folder_upload_tasks(
+                "Create a new drive folder and upload something",
+                "create a new drive folder and upload something",
+            )
+
+    def test_drive_folder_upload_tasks_uses_configured_folder_name_default(self, tmp_path):
+        """Without explicit folder framing, the default must come from `drive_folder_name`."""
+        config = _config(tmp_path)
+        config.drive_folder_name = "ConfiguredDefault"
+        agent = WorkspaceAgentSystem(
+            config=config, logger=logging.getLogger("test")
+        )
+        text = "Create a new drive folder and upload 'report.pdf'"
+        tasks = agent._drive_folder_upload_tasks(text, text.lower())
+        assert tasks[0].parameters["folder_name"] == "ConfiguredDefault"

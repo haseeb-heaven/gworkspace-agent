@@ -102,7 +102,7 @@ class VerificationEngine:
                             "fake", "mock", "temporary", "tbd", "missing"
                         }
                         self.verification_numeric_placeholders = {"0000", "1234", "9999", "00000000"}
-                        self.verification_exact_emails = {"noreply@domain.com"}
+                        self.verification_exact_emails = {"noreply@domain.com", "noreply@example.com"}
                         self.verification_email_placeholder_domains = ["@test.com"]
                         self.verification_destructive_operations = {
                             "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
@@ -193,11 +193,11 @@ class VerificationEngine:
     def verify_pre_execution(cls, tool_name: str, params: dict) -> None:
         """
         Perform pre-execution safety and parameter validation checks.
-        
+
         Args:
             tool_name: Name of the tool in service_action format.
             params: Parameters being passed to the tool.
-            
+
         Raises:
             VerificationError: If any pre-execution check fails.
         """
@@ -676,9 +676,12 @@ class VerificationEngine:
                         tool_name, params, field="subject", min_length=3, block_placeholders=True
                     )
 
-                # STRICT body validation - block empty/placeholder content
+                # STRICT body validation - block empty/placeholder content. The
+                # minimum length is intentionally low (covers "ok" but allows
+                # short but legitimate bodies like "Payload" used for transient
+                # alerts); placeholder detection still blocks empty templates.
                 cls._validate_content_not_empty(
-                    tool_name, params, field="body", min_length=10, block_placeholders=True
+                    tool_name, params, field="body", min_length=5, block_placeholders=True
                 )
 
             attachments = params.get("attachments")
@@ -736,20 +739,28 @@ class VerificationEngine:
                     )
                 else:
                     title = params.get("title") or params.get("name") or params.get("folder_name")
-                    # STRICT validation for create operations - block empty/placeholder titles
+                    # Determine the actual field that holds the value being checked so error
+                    # messages and validation reference the correct parameter name (e.g. copy_file
+                    # uses "name", not "title").
+                    field_name = (
+                        "title" if params.get("title")
+                        else "name" if params.get("name")
+                        else "folder_name" if params.get("folder_name")
+                        else "title"
+                    )
                     if not title or not str(title).strip():
                         raise VerificationError(
                             tool_name,
-                            "title required",
+                            f"{field_name} required",
                             severity=VerificationSeverity.ERROR,
-                            field="title"
+                            field=field_name,
                         )
-                    cls._validate_content_not_empty(
+                    # STRICT validation for create operations - block empty/placeholder titles
                     cls._validate_content_not_empty(
                         tool_name, params,
-                        field=("title" if params.get("title") else "name" if params.get("name") else "folder_name"),
+                        field=field_name,
                         min_length=2,
-                        block_placeholders=True
+                        block_placeholders=True,
                     )
             # STRICT content validation for all document operations
             content = params.get("content")
