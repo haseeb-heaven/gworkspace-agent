@@ -39,7 +39,10 @@ class ContextUpdaterMixin:
         Callers must be aware that the dict they pass will be mutated.
         """
         if not isinstance(data, dict):
+            logger.info(f"DEBUG: _update_context_from_result called with non-dict data: {type(data)}")
             return
+
+        logger.info(f"DEBUG: _update_context_from_result called for task={task.service if task else 'None'}.{task.action if task else 'None'}, data keys: {list(data.keys())}")
 
         for id_field in ["documentId", "spreadsheetId", "message_id", "id", "presentationId"]:
             if id_field in data:
