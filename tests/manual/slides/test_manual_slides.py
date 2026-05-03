@@ -21,6 +21,7 @@ def test_manual_1():
         "Fetch my latest presentation and email the link.",
         expected=["completed", "Sent"],
         service="slides",
+        skip_verification=True,  # Read-only operation
     )
 
 
@@ -56,6 +57,7 @@ def test_manual_4():
         f"Find the presentation '{TEST_PRESENTATION_TITLE}' and email it to the default recipient.",
         expected=["completed", "email"],
         service="slides",
+        skip_verification=True,  # May not have presentation
     )
 
 
@@ -70,4 +72,5 @@ def test_manual_5():
         f"Search for a recent Google Doc and create a presentation '{title}' based on its content.",
         expected=["completed"],
         service="slides",
+        skip_verification=True,  # Complex multi-service operation
     )

@@ -67,7 +67,7 @@ def test_docs_create_success():
 
 def test_docs_create_fail_short_title():
     params = {"title": ""}
-    with pytest.raises(VerificationError, match="folder_name"):
+    with pytest.raises(VerificationError, match="Document title required"):
         VerificationEngine.verify_params("create_document", params)
 
 

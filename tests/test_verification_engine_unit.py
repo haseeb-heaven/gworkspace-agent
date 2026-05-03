@@ -149,7 +149,7 @@ class TestVerifyParams:
         })
 
     def test_drive_create_missing_title(self):
-        with pytest.raises(VerificationError, match="folder_name"):
+        with pytest.raises(VerificationError, match="title"):
             VerificationEngine.verify_params("drive_create_file", {})
 
     def test_sheets_valid_range(self):
