@@ -745,12 +745,12 @@ class VerificationEngine:
                             field="title"
                         )
                     cls._validate_content_not_empty(
+                    cls._validate_content_not_empty(
                         tool_name, params,
-                        field=("title" if "title" in params else "name" if "name" in params else "folder_name"),
+                        field=("title" if params.get("title") else "name" if params.get("name") else "folder_name"),
                         min_length=2,
                         block_placeholders=True
                     )
-
             # STRICT content validation for all document operations
             content = params.get("content")
             if content is not None and "create" in tool_name:
