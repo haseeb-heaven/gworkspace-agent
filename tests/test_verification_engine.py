@@ -269,11 +269,13 @@ def test_5_check_system_check_1_empty_content_validation():
 
 def test_5_check_system_check_4_data_integrity():
     """Test CHECK 4: Data Integrity & Consistency Validation."""
-    # Use non-empty params to bypass CHECK 1, but trigger CHECK 4 with inconsistent result
+    # Use non-empty params to bypass CHECK 1, and a result with an ID to pass CHECK 3,
+    # but with truncated content to trigger CHECK 4.4 (data truncation detection)
     params = {"title": "Valid Doc", "content": "Some content"}
-    result = {}  # Empty result when content was provided should trigger CHECK 4
+    result = {"documentId": "doc-123", "content": ""}  # Truncated content triggers CHECK 4
     with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
         VerificationEngine.verify("create_document", params, result)
+
 
 
 def test_5_check_system_check_5_idempotency_safety_critical():
