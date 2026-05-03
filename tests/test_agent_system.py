@@ -644,8 +644,9 @@ class TestIsDriveFolderUploadRequest:
 
     def test_word_boundaries_prevent_substring_matches(self):
         # "saved", "copyrighted", "unsaved" should not match "save" or "copy"
-        assert _is_drive_folder_upload_request("upload my saved files to drive") is True
-        assert _is_drive_folder_upload_request("copy copyrighted content to folder") is True
+        # Explicit folder target required without create intent
+        assert _is_drive_folder_upload_request("upload my saved files to folder 'X' in drive") is True
+        assert _is_drive_folder_upload_request("copy copyrighted content into the folder") is True
 
 
 # ---------------------------------------------------------------------------
@@ -742,8 +743,8 @@ class TestDriveFolderUploadTasks:
             "create folder 'X' and upload 'Y.txt'",
             "create folder 'x' and upload 'y.txt'",
         )
-        assert tasks[0].id == "task-1"
-        assert tasks[1].id == "task-2"
+        assert tasks[0].id == "task-1"  # nosec B101: Test assertion
+        assert tasks[1].id == "task-2"  # nosec B101: Test assertion
 
     def test_raises_when_no_file_path_can_be_extracted(self):
         """Refuse to silently upload an empty/placeholder file path. Per round 1+2

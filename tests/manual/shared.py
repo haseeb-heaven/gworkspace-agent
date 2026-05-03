@@ -21,6 +21,7 @@ def run_task(
     expected_fields: dict[str, object] | None = None,
     *,
     skip_verification: bool = False,
+    read_only: bool = False,
 ) -> None:
     """Run a manual task and perform triple verification if *service* is provided.
 
@@ -82,6 +83,9 @@ def run_task(
 
     # Tier 2 & 3: Live Resource Verification
     # Services without persistent GWS resources — skip triple verification
+    if read_only:
+        print("--- Skipping Triple Verification for read-only/conditional operation ---")
+        return
     _NON_VERIFIABLE_SERVICES = frozenset({"code", "search", "computation"})
     if service and service in _NON_VERIFIABLE_SERVICES:
         print(f"--- Skipping Triple Verification for non-resource service: {service} ---")

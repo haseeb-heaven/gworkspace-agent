@@ -1763,10 +1763,13 @@ def _is_drive_folder_upload_request(text: str) -> bool:
         return False
     if not re.search(r"\b(?:upload|copy|save|put|add)\b", text, re.IGNORECASE):
         return False
-    # Only fire if there is an explicit creation intent for the folder side
-    # of the workflow (otherwise a plain "upload to drive" is handled by the
-    # standard upload strategy).
-    return bool(re.search(r"\b(?:create|new|fresh|make)\b", text, re.IGNORECASE))
+    # Fire if there is an explicit creation intent OR explicit folder target phrasing
+    has_create_intent = bool(re.search(r"\b(?:create|new|fresh|make)\b", text, re.IGNORECASE))
+    has_explicit_folder_target = bool(
+        re.search(r"\b(?:to|into)\s+(?:the\s+)?folder\b", text, re.IGNORECASE)
+        or re.search(r"\bfolder\s+(?:named\s+|called\s+)?['\"]", text, re.IGNORECASE)
+    )
+    return has_create_intent or has_explicit_folder_target
 
 def _is_docs_to_email_request(text: str) -> bool:
     if _has_explicit_web_search_intent(text):
@@ -2033,8 +2036,12 @@ class DriveFolderUploadStrategy(PlanningStrategy):
     def matches(self, ctx: PlanningContext) -> bool:
         return "drive" in ctx.services and _is_drive_folder_upload_request(ctx.lowered)
 
-    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
-        tasks = agent._drive_folder_upload_tasks(ctx.text, ctx.lowered)
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
+        try:
+            tasks = agent._drive_folder_upload_tasks(ctx.text, ctx.lowered)
+        except ValidationError:
+            # If no file path found, fall through to other strategies
+            return None
         task_chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
         return RequestPlan(
             raw_text=ctx.text,
@@ -2430,7 +2437,7 @@ def _plan_with_strategies(text: str, lowered: str, services: list[str], config: 
     """
     ctx = PlanningContext(text=text, lowered=lowered, services=services, config=config, logger=logger)
 
-    for strategy in sorted(_PLANNING_STRATEGIES, key=lambda s: s.priority(), reverse=True):
+    for strategy in _PLANNING_STRATEGIES:
         if strategy.matches(ctx):
             logger.debug(f"Planning strategy matched: {strategy.__class__.__name__}")
             plan = strategy.execute(ctx, agent)

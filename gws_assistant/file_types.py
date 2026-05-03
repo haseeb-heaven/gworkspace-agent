@@ -14,8 +14,8 @@ from pathlib import Path
 # Matches file paths after upload/add/put keywords, or bare absolute/relative paths.
 # Quoted paths may contain spaces and special characters; unquoted paths are more restricted.
 RE_FILE_PATH = re.compile(
-    r"(?:upload|add|put)\s+(?:file\s+)?['\"]([^'\"<>|?*]+?\.[A-Za-z0-9]{1,10})['\"]|"
-    r"(?:upload|add|put)\s+(?:file\s+)?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})|"
+    r"(?:upload|add|put|copy|save)\s+(?:file\s+)?['\"]([^'\"<>|?*]+?\.[A-Za-z0-9]{1,10})['\"]|"
+    r"(?:upload|add|put|copy|save)\s+(?:file\s+)?([A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10})|"
     r"\b([A-Z]:[A-Za-z0-9_./\\~-]+\.[A-Za-z0-9]{1,10})\b|"
     r"\b(/[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"
     r"\b(./[A-Za-z0-9_./~-]+\.[A-Za-z0-9]{1,10})\b|"

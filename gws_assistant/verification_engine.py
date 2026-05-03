@@ -721,7 +721,7 @@ class VerificationEngine:
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if "create" in tool_name or "copy" in tool_name:
                 # Special handling for create_document to provide specific error message
-                if tool_name == "create_document":
+                if tool_name == "create_document" or action == "create_document":
                     title = params.get("title")
                     if not title or not str(title).strip():
                         raise VerificationError(

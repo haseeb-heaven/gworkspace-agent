@@ -20,7 +20,7 @@ def test_manual_1():
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and list the top 5 results.",
         expected=["Planned", "completed"],
         service="drive",
-        skip_verification=True,  # Read-only operation
+        read_only=True,  # Read-only operation
     )
 
 
@@ -42,7 +42,7 @@ def test_manual_3():
         f"Search for a document named '{TEST_DOC_QUERY}', and if found, export it to PDF.",
         expected=["Planned", "completed"],
         service="drive",
-        skip_verification=True,  # May not have document
+        read_only=True,  # May not have document
     )
 
 
@@ -55,7 +55,7 @@ def test_manual_4():
         f"Create a folder named '{TEST_FOLDER_NAME}' if it doesn't exist, then rename it to '{TEST_RENAMED_FOLDER_NAME}'.",
         expected=["completed"],
         service="drive",
-        skip_verification=True,  # May not have folder
+        read_only=True,  # May not have folder
     )
 
 
@@ -66,7 +66,7 @@ def test_manual_5():
         "Find a recent file in Drive and create a copy of it.",
         expected=["completed"],
         service="drive",
-        skip_verification=True,  # May not have files to copy
+        read_only=True,  # May not have files to copy
     )
 
 
@@ -77,7 +77,7 @@ def test_manual_6():
         "List all PDFs in Drive and export the first one if found.",
         expected=["completed"],
         service="drive",
-        skip_verification=True,  # May not have PDFs
+        read_only=True,  # May not have PDFs
     )
 
 
@@ -89,7 +89,7 @@ def test_manual_7():
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and email the results to me",
         expected=["completed"],
         service="gmail",  # The final action is sending email
-        skip_verification=True,  # Email may not be configured
+        read_only=True,  # Email may not be configured
     )
 
 
@@ -101,5 +101,5 @@ def test_manual_8():
         f"Search drive for '{TEST_DOC_QUERY}' and send me a summary table via email",
         expected=["completed"],
         service="gmail",  # The final action is sending email
-        skip_verification=True,  # Email may not be configured
+        read_only=True,  # Email may not be configured
     )
