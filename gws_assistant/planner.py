@@ -270,7 +270,11 @@ class CommandPlanner:
             # Reject unresolved placeholder folder ids - if the planner is asked to
             # upload to a folder produced by a previous task and that task failed to
             # resolve, fail loudly rather than silently uploading to Drive root.
-            if folder_id and (folder_id.startswith("{{") or folder_id.startswith("<") or folder_id.lower() in {"none", "null"}):
+            if folder_id and (
+                folder_id.startswith("{{")
+                or folder_id.startswith("<")
+                or folder_id.lower() in {"none", "null"}
+            ):
                 raise ValidationError(
                     f"Unresolved placeholder folder_id '{folder_id}' - upstream task did not produce a folder id"
                 )

@@ -92,56 +92,111 @@ def test_build_gmail_send_message_rejects_attachments_during_planning():
         )
 
 
-# -----------------------------------------------------------------------------
-# Drive upload_file - folder_id parents support (PR #76 / #78)
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# drive.upload_file — folder_id support
+# ---------------------------------------------------------------------------
 
 
-def test_drive_upload_file_without_folder_id_omits_parents(tmp_path):
-    """Without folder_id, the JSON payload must NOT include a 'parents' field."""
-    import json as _json
-
-    file_path = tmp_path / "report.pdf"
-    file_path.write_bytes(b"hello")
-
-    planner = CommandPlanner()
-    args = planner.build_command(
-        "drive", "upload_file", {"file_path": str(file_path)}
-    )
-    assert args[:4] == ["drive", "files", "create", "--upload"]
-    payload = _json.loads(args[args.index("--json") + 1])
-    assert "parents" not in payload
-    assert payload["name"] == "report.pdf"
+import json
+import tempfile
 
 
-def test_drive_upload_file_with_folder_id_sets_parents(tmp_path):
-    """With folder_id, the JSON payload must set parents=[folder_id]."""
-    import json as _json
-
-    file_path = tmp_path / "report.pdf"
-    file_path.write_bytes(b"hello")
+class TestUploadFileWithFolderId:
+    """CommandPlanner.build_command('drive', 'upload_file', ...) folder_id support."""
 
     planner = CommandPlanner()
-    args = planner.build_command(
-        "drive",
-        "upload_file",
-        {"file_path": str(file_path), "folder_id": "1AbCdEFg123"},
-    )
-    payload = _json.loads(args[args.index("--json") + 1])
-    assert payload["parents"] == ["1AbCdEFg123"]
 
+    def _make_temp_file(self, suffix=".txt") -> str:
+        fd, path = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        return path
 
-def test_drive_upload_file_rejects_unresolved_placeholder_folder_id(tmp_path):
-    """Silent fallback to drive root for an unresolved placeholder is dangerous;
-    raise ValidationError instead.
-    """
-    file_path = tmp_path / "report.pdf"
-    file_path.write_bytes(b"hello")
+    def test_upload_without_folder_id_has_no_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" not in body
 
-    planner = CommandPlanner()
-    with pytest.raises(ValidationError, match="Unresolved placeholder folder_id"):
-        planner.build_command(
+    def test_upload_with_folder_id_adds_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "folder-abc123"}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" in body
+        assert body["parents"] == ["folder-abc123"]
+
+    def test_upload_with_empty_folder_id_has_no_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": ""}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" not in body
+
+    def test_upload_with_whitespace_folder_id_has_no_parents(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "   "}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "parents" not in body
+
+    def test_upload_rejects_unresolved_placeholder_folder_id(self):
+        """An unresolved task-chain placeholder (e.g. ``{{task-1.id}}``) must NOT
+        leak through to the Drive API — Drive returns an opaque 400 in that
+        case. Surface a ValidationError so the orchestrator can re-plan.
+        """
+        tmp = self._make_temp_file()
+        with pytest.raises(ValidationError, match="Unresolved placeholder folder_id"):
+            self.planner.build_command(
+                "drive",
+                "upload_file",
+                {"file_path": tmp, "folder_id": "{{task-1.id}}"},
+            )
+
+    def test_upload_payload_still_contains_name(self):
+        tmp = self._make_temp_file(suffix=".csv")
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "folder-xyz"}
+        )
+        body = json.loads(args[args.index("--json") + 1])
+        assert "name" in body
+
+    def test_upload_command_starts_with_drive_files_create(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "some-folder"}
+        )
+        assert args[:3] == ["drive", "files", "create"]
+
+    def test_upload_command_includes_upload_flag(self):
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
+            "drive", "upload_file", {"file_path": tmp, "folder_id": "some-folder"}
+        )
+        assert "--upload" in args
+        upload_idx = args.index("--upload")
+        assert args[upload_idx + 1] == tmp
+
+    def test_upload_rejects_missing_file(self):
+        with pytest.raises(ValidationError, match="File not found"):
+            self.planner.build_command(
+                "drive",
+                "upload_file",
+                {"file_path": "/nonexistent/path/file.txt", "folder_id": "folder-1"},
+            )
+
+    def test_upload_json_is_ascii_safe(self):
+        # ensure_ascii=True means non-ASCII chars are escaped
+        tmp = self._make_temp_file()
+        args = self.planner.build_command(
             "drive",
             "upload_file",
-            {"file_path": str(file_path), "folder_id": "{{task-1.id}}"},
+            {"file_path": tmp, "folder_id": "folder-\u00e9"},
         )
+        json_str = args[args.index("--json") + 1]
+        # The JSON string should be representable as pure ASCII bytes
+        json_str.encode("ascii")  # raises if non-ASCII present

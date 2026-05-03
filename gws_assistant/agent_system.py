@@ -937,7 +937,15 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         )
         file_path = file_match.group(1) if file_match else None
 
-        # Fallback: scan all quoted strings and disambiguate by ordering.
+        # Fallback to a plain (unquoted) path token via the shared file-path
+        # regex - keeps backward-compatibility with develop's behaviour of
+        # accepting `upload report.pdf to drive folder 'X'`.
+        if file_path is None:
+            file_path_match = RE_FILE_PATH.search(text)
+            if file_path_match:
+                file_path = next((g for g in file_path_match.groups() if g is not None), None)
+
+        # Final fallback: scan all quoted strings and disambiguate by ordering.
         if folder_name is None or file_path is None:
             quoted_strings = re.findall(r"[\"\047]([^\"\047]{1,200})[\"\047]", text)
             unused = [q for q in quoted_strings if q not in {folder_name, file_path}]
@@ -1735,10 +1743,12 @@ def _is_sheet_to_email_request(text: str) -> bool:
 
 
 def _is_drive_folder_move_request(text: str) -> bool:
-    # Exclude upload/copy requests - those should use upload_file, not move_file
-    if re.search(r'\b(?:upload|copy|save)\b', text):
+    # Exclude upload/copy requests - those should use upload_file, not move_file.
+    # Use word boundaries so "saved"/"copyrighted" don't false-match "save"/"copy".
+    if re.search(r"\b(?:upload|copy|save)\b", text, re.IGNORECASE):
         return False
-    return any(t in text for t in ("drive", "file")) and any(t in text for t in ("move", "folder", "organize"))
+    lowered = text.lower()
+    return any(t in lowered for t in ("drive", "file")) and any(t in lowered for t in ("move", "folder", "organize"))
 
 
 def _is_drive_folder_upload_request(text: str) -> bool:
@@ -1749,14 +1759,14 @@ def _is_drive_folder_upload_request(text: str) -> bool:
     creation/upload intent so generic phrasings like "show drive folder" do
     not accidentally trigger this strategy.
     """
-    if not re.search(r"\b(?:drive|folder)\b", text):
+    if not re.search(r"\b(?:drive|folder)\b", text, re.IGNORECASE):
         return False
-    if not re.search(r"\b(?:upload|copy|save|put|add)\b", text):
+    if not re.search(r"\b(?:upload|copy|save|put|add)\b", text, re.IGNORECASE):
         return False
     # Only fire if there is an explicit creation intent for the folder side
     # of the workflow (otherwise a plain "upload to drive" is handled by the
     # standard upload strategy).
-    return bool(re.search(r"\b(?:create|new|fresh|make)\b", text))
+    return bool(re.search(r"\b(?:create|new|fresh|make)\b", text, re.IGNORECASE))
 
 def _is_docs_to_email_request(text: str) -> bool:
     if _has_explicit_web_search_intent(text):
@@ -1893,6 +1903,7 @@ class DriveMetadataOnlyStrategy(PlanningStrategy):
             and _is_metadata_only_request(ctx.lowered)
             and not ("gmail" in ctx.services and _is_drive_to_email_request(ctx.lowered))
             and not _is_drive_folder_move_request(ctx.lowered)
+            and not _is_drive_folder_upload_request(ctx.lowered)
         )
 
     def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
@@ -2008,7 +2019,6 @@ class DriveFolderMoveStrategy(PlanningStrategy):
         )
 
 
-
 class DriveFolderUploadStrategy(PlanningStrategy):
     """Pattern C2: Drive Folder & Upload.
 
@@ -2034,6 +2044,7 @@ class DriveFolderUploadStrategy(PlanningStrategy):
             no_service_detected=False,
             source="heuristic",
         )
+
 
 class GmailToSheetsStrategy(PlanningStrategy):
     """Pattern B: Gmail -> Sheets -> Email (Extraction)."""
