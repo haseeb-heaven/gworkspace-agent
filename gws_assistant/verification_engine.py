@@ -677,6 +677,14 @@ class VerificationEngine:
                     )
 
                 # STRICT body validation - block empty/placeholder content
+                body = params.get("body")
+                if body is None or not str(body).strip():
+                    raise VerificationError(
+                        tool_name,
+                        "Body required",
+                        severity=VerificationSeverity.ERROR,
+                        field="body"
+                    )
                 cls._validate_content_not_empty(
                     tool_name, params, field="body", min_length=10, block_placeholders=True
                 )
@@ -737,6 +745,13 @@ class VerificationEngine:
                 else:
                     title = params.get("title") or params.get("name") or params.get("folder_name")
                     # STRICT validation for create operations - block empty/placeholder titles
+                    if not title or not str(title).strip():
+                        raise VerificationError(
+                            tool_name,
+                            "title required",
+                            severity=VerificationSeverity.ERROR,
+                            field="title"
+                        )
                     cls._validate_content_not_empty(
                         tool_name, params,
                         field=("title" if params.get("title") else "name" if params.get("name") else "folder_name"),
@@ -883,6 +898,14 @@ class VerificationEngine:
         if service == "tasks" or "task" in tool_name:
             if "create" in tool_name or "insert" in tool_name:
                 # STRICT task title validation
+                title = params.get("title")
+                if not title or not str(title).strip():
+                    raise VerificationError(
+                        tool_name,
+                        "Task title required",
+                        severity=VerificationSeverity.ERROR,
+                        field="title"
+                    )
                 cls._validate_content_not_empty(
                     tool_name, params, field="title", min_length=2, block_placeholders=True
                 )
@@ -919,7 +942,7 @@ class VerificationEngine:
                 if not first_name and not display_name:
                     raise VerificationError(
                         tool_name,
-                        "Contact must have first_name or display_name - cannot create contact with no name",
+                        "Contact must have first_name or display_name",
                         severity=VerificationSeverity.ERROR,
                         field="first_name"
                     )
