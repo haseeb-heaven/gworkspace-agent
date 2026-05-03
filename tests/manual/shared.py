@@ -41,6 +41,7 @@ def run_task(
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    env["NO_CONFIRM"] = "true"
     # Ensure we are in the project root
     cwd = Path(__file__).resolve().parents[2]
     script_path = cwd / "gws_cli.py"
