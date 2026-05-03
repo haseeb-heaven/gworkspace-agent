@@ -717,14 +717,32 @@ class VerificationEngine:
         # CATEGORY 3 - GOOGLE DRIVE / DOCUMENT
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if "create" in tool_name or "copy" in tool_name:
-                title = params.get("title") or params.get("name") or params.get("folder_name")
-                # STRICT validation for create operations - block empty/placeholder titles
-                cls._validate_content_not_empty(
-                    tool_name, params,
-                    field=("title" if params.get("title") else "name" if params.get("name") else "folder_name"),
-                    min_length=2,
-                    block_placeholders=True
-                )
+                # Special handling for create_document to provide specific error message
+                if tool_name == "create_document":
+                    title = params.get("title")
+                    if not title or not str(title).strip():
+                        raise VerificationError(
+                            tool_name,
+                            "Document title required",
+                            severity=VerificationSeverity.ERROR,
+                            field="title"
+                        )
+                    # STRICT validation for create operations - block empty/placeholder titles
+                    cls._validate_content_not_empty(
+                        tool_name, params,
+                        field="title",
+                        min_length=2,
+                        block_placeholders=True
+                    )
+                else:
+                    title = params.get("title") or params.get("name") or params.get("folder_name")
+                    # STRICT validation for create operations - block empty/placeholder titles
+                    cls._validate_content_not_empty(
+                        tool_name, params,
+                        field=("title" if params.get("title") else "name" if params.get("name") else "folder_name"),
+                        min_length=2,
+                        block_placeholders=True
+                    )
 
             # STRICT content validation for all document operations
             content = params.get("content")
