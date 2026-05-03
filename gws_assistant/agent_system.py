@@ -1487,6 +1487,35 @@ print('Processing task: {lowered}')"""
             ),
         ]
 
+    def _calendar_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Calendar: find event and email details to default recipient."""
+        recipient = _extract_email(text, default=self.config.default_recipient_email)
+        if not recipient:
+            raise ValueError(
+                "No recipient email found; cannot plan calendar-to-email task with to_email=None. "
+                "Please provide an email address or configure default_recipient_email."
+            )
+        return [
+            PlannedTask(
+                id="task-1",
+                service="calendar",
+                action="list_events",
+                parameters={"maxResults": 1},
+                reason="Find the next upcoming calendar event.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={
+                    "to_email": recipient,
+                    "subject": "Calendar Event Details",
+                    "body": "Here are the details of the next calendar event:\n\n{{task-1.stdout}}",
+                },
+                reason="Email the event details to the recipient.",
+            ),
+        ]
+
 
 def _detect_services_in_order(text: str) -> list[str]:
     hits: list[tuple[int, str]] = []
@@ -1560,6 +1589,15 @@ def _detect_action(service: str, text: str) -> str | None:
                 return "get_event"
             # Without ID, default to list_events
             return "list_events"
+
+    if service == "gmail":
+        if any(kw in lowered for kw in ("send", "compose", "write", "share", "email", "mail")):
+            return "send_message"
+        if any(kw in lowered for kw in ("list", "search", "find", "show", "inbox", "get")):
+            # If ID is present, it's a 'get', else 'list'
+            if re.search(r"\b([a-zA-Z0-9_-]{35,65})\b", text):
+                return "get_message"
+            return "list_messages"
 
     best_action = None
     best_score = 0
@@ -2639,6 +2677,32 @@ class CalendarFindDeleteStrategy(PlanningStrategy):
         )
 
 
+class CalendarToEmailStrategy(PlanningStrategy):
+    """Pattern: Calendar -> Email (Find event and email details)."""
+
+    def priority(self) -> int:
+        return 52
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "calendar" in ctx.services
+            and "gmail" in ctx.services
+            and any(kw in ctx.lowered for kw in ("email", "send", "mail"))
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._calendar_to_email_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
 # Strategy registry - automatically sorted by priority (highest first) so the
 # declaration order of strategies above is independent of dispatch order. Within
 # the same priority, earlier-declared strategies still win because
@@ -2668,6 +2732,7 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = sorted(
         CalendarCrudStrategy(),
         CalendarCreateUpdateStrategy(),
         CalendarFindDeleteStrategy(),
+        CalendarToEmailStrategy(),
     ],
     key=lambda s: s.priority(),
     reverse=True,
