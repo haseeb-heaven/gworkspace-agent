@@ -653,7 +653,7 @@ class VerificationEngine:
             action = tool_name
 
         # CATEGORY 2 - GMAIL
-        if service == "gmail" or "message" in action or "email" in action or "send" in action:
+        if service == "gmail" or "email" in action or ("send" in action and service == "gmail"):
             if "send" in tool_name or "reply" in tool_name or "forward" in tool_name:
                 to = params.get("to") or params.get("to_email")
                 if to is None or to == [] or cls._is_placeholder(str(to)) or not cls._is_valid_email(str(to)):
