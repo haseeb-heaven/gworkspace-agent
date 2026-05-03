@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0] - 2026-05-04
+
+### Added
+- DriveFolderUploadStrategy heuristic for folder+upload requests
+- Calendar multi-step heuristic strategies
+- CalendarToEmailStrategy for cross-service calendar->email operations
+- TasksFindDeleteStrategy for multi-step task deletion
+- TasksFindAndUpdateStrategy and tasks context tracking
+- DRIVE_FOLDER_NAME variable to environment files
+
+### Fixed
+- Harden invalid data and attachment checks in verification
+- Handle empty drive file lists by setting fallback context values
+- Detect drive file lists without task service check
+- Resolve calendar events placeholder and add context tracking
+- Handle drive.list_files with direct list response format
+- Halt on unresolved placeholders in email body
+- Skip CHECK 5 idempotency check for slides operations
+- Add form output formatter to display form title
+- Make heuristic code execution compute arithmetic expressions instead of placeholder
+- Narrow Gmail validation to exclude chat send_message
+- Improve calendar action detection in heuristic planner
+- Pass q parameter in calendar list_events command
+- Catch ValidationError and refine save regex
+- Address multiple review comments and test assertion fixes
+- Fix Drive ID validation, TypedDict safety, and delete-by-name strategy
+- Sync pyproject.toml to v0.8.0 to match README and CHANGELOG
+
+### Changed
+- Enhanced verification engine with stricter checks
+- Improved context updater with better debug logging
+- Enhanced calendar-to-email workflow with placeholder resolution
+- Improved test coverage for verification engine
+
+---
+
 ## [0.8.0] - 2026-05-03
 
 ### Added
