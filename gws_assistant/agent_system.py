@@ -922,7 +922,9 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         if not file_match:
             # Fallback: any quoted string in the text (prefer second one if multiple)
             quoted_strings = re.findall(r'["\047]([^"\047]{1,200})["\047]', text)
-            file_path = quoted_strings[1] if len(quoted_strings) > 1 else (quoted_strings[0] if quoted_strings else "README.md")
+            # Skip the first quoted string if it was already used as folder_name
+            remaining = [q for q in quoted_strings if q != folder_name] if folder_name != "New Folder" else quoted_strings
+            file_path = remaining[0] if remaining else "README.md"
         else:
             file_path = file_match.group(1)
         
