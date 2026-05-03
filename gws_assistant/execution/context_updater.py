@@ -38,7 +38,7 @@ class ContextUpdaterMixin:
         if not isinstance(data, dict):
             return
 
-        for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
+        for id_field in ["documentId", "spreadsheetId", "message_id", "id", "presentationId"]:
             if id_field in data:
                 val = data[id_field]
                 data["id"] = val
@@ -48,6 +48,8 @@ class ContextUpdaterMixin:
                     data["document_id"] = val
                 if id_field == "spreadsheetId":
                     data["spreadsheet_id"] = val
+                if id_field == "presentationId":
+                    data["presentation_id"] = val
                 break
 
         if "stdout" in data and "parsed_value" not in data:
@@ -132,6 +134,55 @@ class ContextUpdaterMixin:
             if "htmlLink" in data:
                 context["last_event_url"] = data["htmlLink"]
                 context["last_calendar_event_url"] = data["htmlLink"]
+
+        # Tasks: track task ID and title for multi-step workflows
+        if task and task.service == "tasks":
+            if "id" in data:
+                context["last_task_id"] = data["id"]
+                context["last_tasks_task_id"] = data["id"]
+            if "title" in data:
+                context["last_task_title"] = data["title"]
+                context["last_tasks_task_title"] = data["title"]
+            # Handle list_tasks results (list of tasks with id and title)
+            if task.action == "list_tasks":
+                tasks = data.get("items") or data.get("tasks") or []
+                if tasks and isinstance(tasks, list) and len(tasks) > 0:
+                    first_task = tasks[0]
+                    if isinstance(first_task, dict):
+                        task_id = first_task.get("id")
+                        task_title = first_task.get("title")
+                        if task_id:
+                            data["id"] = task_id
+                            context["last_task_id"] = task_id
+                            context["last_tasks_task_id"] = task_id
+                        if task_title:
+                            context["last_task_title"] = task_title
+                            context["last_tasks_task_title"] = task_title
+
+        # Keep notes: track resource name (id) and title for multi-step workflows
+        if task and task.service == "keep":
+            if "name" in data:
+                data["id"] = data["name"]
+                context["last_note_name"] = data["name"]
+                context["last_keep_note_name"] = data["name"]
+            if "title" in data:
+                context["last_note_title"] = data["title"]
+                context["last_keep_note_title"] = data["title"]
+            # Handle list_notes results (list of notes with name and title)
+            if task.action == "list_notes":
+                notes = data.get("items") or data.get("notes") or []
+                if notes and isinstance(notes, list) and len(notes) > 0:
+                    first_note = notes[0]
+                    if isinstance(first_note, dict):
+                        note_name = first_note.get("name")
+                        note_title = first_note.get("title")
+                        if note_name:
+                            data["id"] = note_name
+                            context["last_note_name"] = note_name
+                            context["last_keep_note_name"] = note_name
+                        if note_title:
+                            context["last_note_title"] = note_title
+                            context["last_keep_note_title"] = note_title
 
         if "meetingUri" in data:
             context["last_meeting_url"] = data["meetingUri"]

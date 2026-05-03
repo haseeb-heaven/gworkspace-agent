@@ -1498,6 +1498,52 @@ print('Processing task: {lowered}')"""
             ),
         ]
 
+    def _keep_find_delete_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Keep: find note by title then delete it."""
+        note_title = _extract_calendar_event_title(text, 0) or "Note"
+        # Keep notes use resource names like "notes/abc123"; we list first then extract the name
+        return [
+            PlannedTask(
+                id="task-1",
+                service="keep",
+                action="list_notes",
+                parameters={"page_size": 20},
+                reason=f"List Keep notes to find '{note_title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="keep",
+                action="delete_note",
+                parameters={"name": "{{task-1.id}}"},
+                reason=f"Delete the found Keep note '{note_title}'.",
+            ),
+        ]
+
+    def _tasks_find_update_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Tasks: find task by title in tasklist then update it."""
+        task_title = _extract_calendar_event_title(text, 0) or "Task"
+        updated_title = _extract_calendar_event_title(text, 1) or f"{task_title} Updated"
+        # Extract tasklist title
+        tasklist_match = re.search(r"in ['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+        tasklist_title = tasklist_match.group(1) if tasklist_match else "My Tasks"
+        
+        return [
+            PlannedTask(
+                id="task-1",
+                service="tasks",
+                action="list_tasks",
+                parameters={"tasklist_title": tasklist_title},
+                reason=f"List tasks in '{tasklist_title}' to find '{task_title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="tasks",
+                action="update_task",
+                parameters={"task_id": "{{task-1.id}}", "title": updated_title},
+                reason=f"Update the found task to '{updated_title}'.",
+            ),
+        ]
+
     def _calendar_to_email_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         """Calendar: find event and email details to default recipient."""
         recipient = _extract_email(text, default=self.config.default_recipient_email)
@@ -2688,6 +2734,60 @@ class CalendarFindDeleteStrategy(PlanningStrategy):
         )
 
 
+class KeepFindDeleteStrategy(PlanningStrategy):
+    """Pattern: Keep Find -> Delete."""
+
+    def priority(self) -> int:
+        return 51
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            len(ctx.services) == 1
+            and ctx.services[0] == "keep"
+            and any(kw in ctx.lowered for kw in ("find", "search", "delete", "remove"))
+            and ("delete" in ctx.lowered or "remove" in ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._keep_find_delete_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class TasksFindAndUpdateStrategy(PlanningStrategy):
+    """Pattern: Tasks Find -> Update."""
+
+    def priority(self) -> int:
+        return 51
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            len(ctx.services) == 1
+            and ctx.services[0] == "tasks"
+            and any(kw in ctx.lowered for kw in ("find", "search", "update", "modify", "change"))
+            and ("update" in ctx.lowered or "modify" in ctx.lowered or "change" in ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._tasks_find_update_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
 class CalendarToEmailStrategy(PlanningStrategy):
     """Pattern: Calendar -> Email (Find event and email details)."""
 
@@ -2744,6 +2844,8 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = sorted(
         CalendarCreateUpdateStrategy(),
         CalendarFindDeleteStrategy(),
         CalendarToEmailStrategy(),
+        KeepFindDeleteStrategy(),
+        TasksFindAndUpdateStrategy(),
     ],
     key=lambda s: s.priority(),
     reverse=True,
