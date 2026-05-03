@@ -677,14 +677,6 @@ class VerificationEngine:
                     )
 
                 # STRICT body validation - block empty/placeholder content
-                body = params.get("body")
-                if body is None or not str(body).strip():
-                    raise VerificationError(
-                        tool_name,
-                        "Body required",
-                        severity=VerificationSeverity.ERROR,
-                        field="body"
-                    )
                 cls._validate_content_not_empty(
                     tool_name, params, field="body", min_length=10, block_placeholders=True
                 )
@@ -754,7 +746,7 @@ class VerificationEngine:
                         )
                     cls._validate_content_not_empty(
                         tool_name, params,
-                        field=("title" if params.get("title") else "name" if params.get("name") else "folder_name"),
+                        field=("title" if "title" in params else "name" if "name" in params else "folder_name"),
                         min_length=2,
                         block_placeholders=True
                     )
