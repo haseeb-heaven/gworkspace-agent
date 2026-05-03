@@ -434,9 +434,10 @@ class ContextUpdaterMixin:
             files = data["files"]
         elif "items" in data:
             files = data["items"]
-        elif isinstance(data, list) and task and task.service == "drive":
-            # GWS might return the list directly
-            files = data
+        elif isinstance(data, list):
+            # GWS might return the list directly - validate it looks like drive files
+            if data and isinstance(data[0], dict) and any(k in data[0] for k in ("id", "name", "mimeType")):
+                files = data
         
         if files and isinstance(files, list):
             context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
