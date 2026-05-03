@@ -7,6 +7,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Add project root to sys.path for imports when run as subprocess
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from gws_assistant.tools.telegram import redact_sensitive
 
 # Try to import dotenv, fallback gracefully

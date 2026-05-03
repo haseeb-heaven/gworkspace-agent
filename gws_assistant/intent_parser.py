@@ -249,6 +249,24 @@ class IntentParser:
             if "folder" in lowered:
                 return "create_folder"
 
+        if service == "calendar":
+            # Priority: find/search/list events before get/update/delete which need event_id
+            if any(kw in lowered for kw in ("find", "search", "list", "show", "upcoming", "next", "view")):
+                return "list_events"
+            if any(kw in lowered for kw in ("create", "schedule", "add", "new", "make")):
+                return "create_event"
+            if any(kw in lowered for kw in ("delete", "remove", "cancel", "trash")):
+                return "delete_event"
+            if any(kw in lowered for kw in ("update", "edit", "modify", "change", "reschedule")):
+                return "update_event"
+            # get_event requires event_id, only use if we have an ID in the text
+            if any(kw in lowered for kw in ("get", "details", "fetch")):
+                # Check if we have an event ID (calendar event IDs are typically 20+ chars)
+                if RE_INTENT_ID_MATCH.search(text):
+                    return "get_event"
+                # Without ID, default to list_events
+                return "list_events"
+
         # Fallback to scoring for other services
         best_action = None
         best_score = -999

@@ -1435,9 +1435,30 @@ def _detect_services_in_order(text: str) -> list[str]:
 
 
 def _detect_action(service: str, text: str) -> str | None:
+    lowered = text.lower()
+
+    # Special handling for calendar service to prioritize list_events over get_event
+    if service == "calendar":
+        # Priority: find/search/list events before get/update/delete which need event_id
+        if any(kw in lowered for kw in ("find", "search", "list", "show", "upcoming", "next", "view")):
+            return "list_events"
+        if any(kw in lowered for kw in ("create", "schedule", "add", "new", "make")):
+            return "create_event"
+        if any(kw in lowered for kw in ("delete", "remove", "cancel", "trash")):
+            return "delete_event"
+        if any(kw in lowered for kw in ("update", "edit", "modify", "change", "reschedule")):
+            return "update_event"
+        # get_event requires event_id, only use if we have keywords suggesting direct access
+        if any(kw in lowered for kw in ("get", "details", "fetch")):
+            # Check if we have an event ID pattern (calendar event IDs are typically 20+ chars of alphanumeric)
+            id_match = re.search(r"\b([a-zA-Z0-9_-]{20,60})\b", text)
+            if id_match:
+                return "get_event"
+            # Without ID, default to list_events
+            return "list_events"
+
     best_action = None
     best_score = 0
-    lowered = text.lower()
 
     for action_key, action_spec in SERVICES[service].actions.items():
         # Check negative keywords first - if any exist, this action is disqualified
