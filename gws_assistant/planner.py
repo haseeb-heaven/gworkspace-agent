@@ -602,12 +602,16 @@ class CommandPlanner:
     def _build_calendar_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_events":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
+            list_params: dict[str, Any] = {"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}
+            query = str(params.get("q") or "").strip()
+            if query:
+                list_params["q"] = query
             return [
                 "calendar",
                 "events",
                 "list",
                 "--params",
-                json.dumps({"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}),
+                json.dumps(list_params),
             ]
 
         if action == "create_event":
