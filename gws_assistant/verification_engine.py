@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from enum import Enum
 from typing import Any
@@ -294,6 +295,12 @@ class VerificationEngine:
         # Use the existing verification logic but with ERROR severity
         try:
             cls.verify_params(tool_name, params)
+            cls._validate_no_invalid_payload_data(
+                tool_name,
+                params,
+                location="params",
+                block_empty_strings=False,
+            )
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
             if e.severity == VerificationSeverity.WARNING:
@@ -433,6 +440,7 @@ class VerificationEngine:
         # Use the existing verification logic but with ERROR severity
         try:
             cls.verify_result(tool_name, params, result)
+            cls._validate_no_invalid_payload_data(tool_name, result, location="result")
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
             if e.severity == VerificationSeverity.WARNING:
@@ -655,7 +663,12 @@ class VerificationEngine:
             action = tool_name
 
         # CATEGORY 2 - GMAIL
-        if service == "gmail" or "email" in action or ("send" in action and service == "gmail"):
+        if (
+            service == "gmail"
+            or "email" in action
+            or tool_name in ("send_message", "reply_message", "forward_message")
+            or ("send" in action and service == "gmail")
+        ):
             if "send" in tool_name or "reply" in tool_name or "forward" in tool_name:
                 to = params.get("to") or params.get("to_email")
                 if to is None or to == [] or cls._is_placeholder(str(to)) or not cls._is_valid_email(str(to)):
@@ -686,31 +699,17 @@ class VerificationEngine:
                     tool_name, params, field="body", min_length=5, block_placeholders=True
                 )
 
-                # Additional check: detect unresolved placeholders that weren't resolved by the resolver
-                # This catches cases where $drive_metadata_table, $drive_file_links, etc. are still in the body
-                body = params.get("body", "")
-                if body:
-                    from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP, _UNRESOLVED_MARKER
-                    unresolved_placeholders = []
-                    for placeholder in LEGACY_PLACEHOLDER_MAP.keys():
-                        if placeholder in str(body):
-                            unresolved_placeholders.append(placeholder)
-                    if _UNRESOLVED_MARKER in str(body):
-                        unresolved_placeholders.append(_UNRESOLVED_MARKER)
-                    
-                    if unresolved_placeholders:
-                        raise VerificationError(
-                            tool_name,
-                            f"Email body contains unresolved placeholders that were not resolved: {', '.join(unresolved_placeholders)}. "
-                            f"Ensure the context is properly populated before sending the email.",
-                            severity=VerificationSeverity.ERROR,
-                            field="body"
-                        )
-
             attachments = params.get("attachments")
-            if attachments:
+            if attachments is not None:
                 if not isinstance(attachments, list):
                     attachments = [attachments]
+                if len(attachments) == 0:
+                    raise VerificationError(
+                        tool_name,
+                        "Attachments list cannot be empty when attachments are requested",
+                        severity=VerificationSeverity.ERROR,
+                        field="attachments",
+                    )
                 for att in attachments:
                     if isinstance(att, dict):
                         file_id = att.get("file_id")
@@ -729,6 +728,14 @@ class VerificationEngine:
                         mime_type = att.get("mime_type")
                         if not mime_type or not str(mime_type).strip():
                             raise VerificationError(tool_name, "Attachment must have mime_type", severity=VerificationSeverity.ERROR, field="attachments")
+                        cls._validate_attachment_file(tool_name, att)
+                    elif not att or cls._is_placeholder(str(att)):
+                        raise VerificationError(
+                            tool_name,
+                            "Attachment reference must be a non-empty resolved value",
+                            severity=VerificationSeverity.ERROR,
+                            field="attachments",
+                        )
 
             if "reply" in tool_name:
                 thread_id = params.get("thread_id")
@@ -1171,6 +1178,11 @@ class VerificationEngine:
             if not isinstance(attachments, list):
                 attachments = [attachments]
             if len(attachments) > 0:
+                expected_names = {
+                    str(att.get("filename", "")).strip()
+                    for att in attachments
+                    if isinstance(att, dict) and str(att.get("filename", "")).strip()
+                }
                 # Basic check: result should have something indicating attachments were handled
                 payload = result.get("payload", {})
                 parts = payload.get("parts", []) if isinstance(payload, dict) else []
@@ -1182,6 +1194,19 @@ class VerificationEngine:
                     raise VerificationError(
                         "verify_attachment", "Attachment declared in params but not confirmed in result", severity=VerificationSeverity.WARNING
                     )
+                if expected_names:
+                    confirmed_names = {
+                        str(part.get("filename", "")).strip()
+                        for part in parts
+                        if isinstance(part, dict) and str(part.get("filename", "")).strip()
+                    }
+                    missing_names = expected_names - confirmed_names
+                    if missing_names:
+                        raise VerificationError(
+                            "verify_attachment",
+                            f"Attachment filenames not confirmed in result: {sorted(missing_names)}",
+                            severity=VerificationSeverity.WARNING,
+                        )
 
     @classmethod
     def verify_document_not_empty(cls, tool_name: str, params: dict, result: Any) -> None:
@@ -1199,14 +1224,148 @@ class VerificationEngine:
         if normalized_name in target_actions or tool_name in target_actions:
             content = params.get("content")
             values = params.get("values")
-            if content is not None and str(content).strip() == "":
+            if content is not None and cls._contains_invalid_content(str(content)):
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
             if values is not None and (values == [] or values == [[]]):
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="values")
+            if values is not None:
+                cls._validate_no_invalid_payload_data(tool_name, values, location="values")
 
     # =========================================================================
     # HELPER METHODS
     # =========================================================================
+
+    @classmethod
+    def _validate_no_invalid_payload_data(
+        cls,
+        tool_name: str,
+        payload: Any,
+        location: str,
+        block_empty_strings: bool = True,
+    ) -> None:
+        """Recursively block placeholders, empty generated content, and invalid sentinel values."""
+        for path, value in cls._iter_payload_leaf_values(payload, location):
+            if cls._is_ignored_validation_path(path):
+                continue
+            if isinstance(value, str):
+                if cls._contains_invalid_content(value, block_empty=block_empty_strings):
+                    raise VerificationError(
+                        tool_name,
+                        f"{location} contains invalid, empty, or unresolved placeholder data at {path}",
+                        severity=VerificationSeverity.ERROR,
+                        field=path,
+                    )
+            elif value is None and cls._is_required_data_path(path):
+                raise VerificationError(
+                    tool_name,
+                    f"{location} contains required field with None value at {path}",
+                    severity=VerificationSeverity.ERROR,
+                    field=path,
+                )
+
+    @classmethod
+    def _iter_payload_leaf_values(cls, payload: Any, path: str):
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if str(key).startswith("_"):
+                    continue
+                yield from cls._iter_payload_leaf_values(value, f"{path}.{key}")
+        elif isinstance(payload, list):
+            for index, item in enumerate(payload):
+                yield from cls._iter_payload_leaf_values(item, f"{path}[{index}]")
+        else:
+            yield path, payload
+
+    @classmethod
+    def _is_ignored_validation_path(cls, path: str) -> bool:
+        ignored_suffixes = (
+            ".etag",
+            ".historyId",
+            ".internalDate",
+            ".kind",
+            ".mimeType",
+            ".query",
+            ".q",
+            ".size",
+            ".sizeBytes",
+        )
+        ignored_fragments = (
+            ".headers[",
+            ".labelIds[",
+        )
+        return path.endswith(ignored_suffixes) or any(fragment in path for fragment in ignored_fragments)
+
+    @classmethod
+    def _is_required_data_path(cls, path: str) -> bool:
+        required_tokens = (
+            "body",
+            "content",
+            "description",
+            "documentId",
+            "email",
+            "event_id",
+            "file_id",
+            "filename",
+            "formId",
+            "id",
+            "message",
+            "messageId",
+            "name",
+            "spreadsheetId",
+            "subject",
+            "summary",
+            "task_id",
+            "text",
+            "title",
+        )
+        path_lower = path.lower()
+        return any(token.lower() in path_lower for token in required_tokens)
+
+    @classmethod
+    def _contains_invalid_content(cls, value: str, block_empty: bool = True) -> bool:
+        val_str = str(value).strip()
+        if block_empty and not val_str:
+            return True
+        if not block_empty and not val_str:
+            return False
+        if "___UNRESOLVED_PLACEHOLDER___" in val_str:
+            return True
+        from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+
+        if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
+            return True
+        if cls._is_placeholder(val_str) or cls._has_unresolved_templates(val_str):
+            return True
+        invalid_literals = {"none", "null", "undefined", "nan", "invalid data", "no data"}
+        return val_str.lower() in invalid_literals
+
+    @classmethod
+    def _validate_attachment_file(cls, tool_name: str, attachment: dict) -> None:
+        file_path = attachment.get("file_path")
+        if not file_path:
+            return
+        path_str = str(file_path).strip()
+        if cls._contains_invalid_content(path_str):
+            raise VerificationError(
+                tool_name,
+                "Attachment file_path contains invalid or unresolved data",
+                severity=VerificationSeverity.ERROR,
+                field="attachments",
+            )
+        if not os.path.isfile(path_str):
+            raise VerificationError(
+                tool_name,
+                f"Attachment file does not exist: {path_str}",
+                severity=VerificationSeverity.ERROR,
+                field="attachments",
+            )
+        if os.path.getsize(path_str) <= 0:
+            raise VerificationError(
+                tool_name,
+                f"Attachment file is empty: {path_str}",
+                severity=VerificationSeverity.ERROR,
+                field="attachments",
+            )
 
     @classmethod
     def _is_placeholder(cls, value: str) -> bool:

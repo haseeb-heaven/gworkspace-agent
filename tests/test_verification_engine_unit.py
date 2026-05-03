@@ -143,6 +143,23 @@ class TestVerifyParams:
                 "body": "",
             })
 
+    def test_gmail_send_unresolved_known_placeholder_fails_full_check(self):
+        with pytest.raises(VerificationError, match="unresolved placeholder"):
+            VerificationEngine.verify_pre_execution("gmail_send_message", {
+                "to": "real@example.org",
+                "subject": "Test Subject",
+                "body": "Here are the files:\n\n$drive_metadata_table",
+            })
+
+    def test_gmail_send_empty_attachments_list_fails(self):
+        with pytest.raises(VerificationError, match="Attachments list cannot be empty"):
+            VerificationEngine.verify_params("gmail_send_message", {
+                "to": "real@example.org",
+                "subject": "Test Subject",
+                "body": "Hello, this is a valid body.",
+                "attachments": [],
+            })
+
     def test_drive_create_valid(self):
         VerificationEngine.verify_params("drive_create_file", {
             "title": "My Document",
@@ -214,6 +231,16 @@ class TestVerifyResult:
                 "status": "invalid_status",
             })
 
+    def test_full_verify_result_unresolved_placeholder_fails(self):
+        with pytest.raises(VerificationError, match="unresolved placeholder"):
+            VerificationEngine.verify("docs_create_document", {
+                "title": "Valid Title",
+                "content": "Valid content",
+            }, {
+                "id": "doc123",
+                "content": "___UNRESOLVED_PLACEHOLDER___",
+            })
+
 
 # ---------- verify_attachment_sent ----------
 
@@ -233,6 +260,21 @@ class TestVerifyAttachmentSent:
                 {"attachments": ["file.pdf"]},
                 {"payload": {}},
             )
+
+    def test_empty_attachment_file_fails(self, tmp_path):
+        empty_file = tmp_path / "empty.txt"
+        empty_file.write_text("")
+        with pytest.raises(VerificationError, match="Attachment file is empty"):
+            VerificationEngine.verify_params("gmail_send_message", {
+                "to": "real@example.org",
+                "subject": "Test Subject",
+                "body": "Hello, this is a valid body.",
+                "attachments": [{
+                    "filename": "empty.txt",
+                    "mime_type": "text/plain",
+                    "file_path": str(empty_file),
+                }],
+            })
 
 
 # ---------- verify_document_not_empty ----------

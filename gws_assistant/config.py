@@ -266,7 +266,7 @@ class AppConfig:
             )
             verification_create_id_fields = _to_list(
                 os.getenv("VERIFICATION_CREATE_ID_FIELDS"),
-                default=["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId"]
+                default=["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
             )
             verification_suspicious_patterns = _to_dict(
                 os.getenv("VERIFICATION_SUSPICIOUS_PATTERNS"),

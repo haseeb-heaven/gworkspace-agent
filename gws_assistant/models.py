@@ -91,7 +91,7 @@ class AppConfigModel:
     verification_content_fields: list[str] = field(default_factory=lambda: ["body", "content", "message", "text", "description"])
     verification_create_id_fields: list[str] = field(default_factory=lambda: [
         "id", "documentId", "spreadsheetId", "fileId", "messageId",
-        "resourceName", "threadId", "name", "formId", "taskId", "contactId"
+        "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"
     ])
     verification_suspicious_patterns: dict[str, str] = field(default_factory=lambda: {
         "delete_all": r"delete.*all",

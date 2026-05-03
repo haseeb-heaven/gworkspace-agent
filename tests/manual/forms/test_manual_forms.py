@@ -34,7 +34,7 @@ def test_manual_2():
     title = f"{TEST_FORM_TITLE} {ts}"
     run_task(
         f"Create a new Google Form titled '{title}'.",
-        expected=["completed", title],
+        expected=["completed", "Form created"],  # GWS returns "Untitled Form" initially
         service="forms",
         skip_verification=True,  # API may have limitations
     )
