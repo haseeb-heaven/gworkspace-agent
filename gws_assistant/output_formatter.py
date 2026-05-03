@@ -78,6 +78,8 @@ class HumanReadableFormatter:
             return _format_slides(payload)
         if "documentId" in payload and ("title" in payload or "body" in payload):
             return _format_docs(payload)
+        if "formId" in payload:
+            return _format_forms(payload)
         if "drive_export_content" in payload:
             return str(payload["drive_export_content"]).strip()
         if "content" in payload and "saved_file" in payload:
@@ -210,9 +212,21 @@ def _format_docs(payload: dict[str, Any]) -> str:
     title = str(payload.get("title") or "document")
     doc_id = str(payload.get("documentId") or "")
     snippet = _docs_snippet(payload)
-    lines = [f"Document: {title}", f"Document ID: {doc_id}"]
+    lines = [f"Document: {title}"]
+    if doc_id:
+        lines.append(f"ID: {doc_id}")
     if snippet:
-        lines.append(f"Preview: {snippet}")
+        lines.append(f"Content preview:\n{snippet}")
+    return "\n".join(lines)
+
+
+def _format_forms(payload: dict[str, Any]) -> str:
+    form_id = str(payload.get("formId") or "")
+    info = payload.get("info") or {}
+    title = str(info.get("title") or "Untitled Form")
+    lines = [f"Form created: {title}"]
+    if form_id:
+        lines.append(f"Form ID: {form_id}")
     return "\n".join(lines)
 
 
