@@ -1745,7 +1745,7 @@ def _is_sheet_to_email_request(text: str) -> bool:
 def _is_drive_folder_move_request(text: str) -> bool:
     # Exclude upload/copy requests - those should use upload_file, not move_file.
     # Use word boundaries so "saved"/"copyrighted" don't false-match "save"/"copy".
-    if re.search(r"\b(?:upload|copy|save)\b", text, re.IGNORECASE):
+    if re.search(r"\b(?:upload|copy|save|put|add)\b", text, re.IGNORECASE):
         return False
     lowered = text.lower()
     return any(t in lowered for t in ("drive", "file")) and any(t in lowered for t in ("move", "folder", "organize"))
