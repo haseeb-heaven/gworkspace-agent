@@ -1143,7 +1143,6 @@ class VerificationEngine:
     def verify_document_not_empty(cls, tool_name: str, params: dict, result: Any) -> None:
         """Legacy method: Verify document not empty. Used by CHECK 4."""
         # Normalize tool_name by stripping service prefix (e.g., "docs_create_document" -> "create_document")
-        # Normalize tool_name by stripping service prefix (e.g., "docs_create_document" -> "create_document")
         # Check both the original and the stripped name to handle both prefixed and unprefixed callers
         if "_" in tool_name:
             # Extract just the action part after the service prefix
