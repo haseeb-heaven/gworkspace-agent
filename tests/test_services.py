@@ -663,7 +663,7 @@ class TestExecutionPipelines:
                     {
                         "to_email": "test@gmail.com",
                         "subject": "Secret",
-                        "body": "Payload",
+                        "body": "Payload content here",
                     },
                 ),
             ],

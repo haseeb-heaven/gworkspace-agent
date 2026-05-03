@@ -136,7 +136,7 @@ class TestVerifyParams:
             })
 
     def test_gmail_send_missing_body(self):
-        with pytest.raises(VerificationError, match="Body"):
+        with pytest.raises(VerificationError, match="empty or whitespace"):
             VerificationEngine.verify_params("gmail_send_message", {
                 "to": "real@example.org",
                 "subject": "Test Subject",
@@ -149,7 +149,7 @@ class TestVerifyParams:
         })
 
     def test_drive_create_missing_title(self):
-        with pytest.raises(VerificationError, match="title"):
+        with pytest.raises(VerificationError, match="folder_name"):
             VerificationEngine.verify_params("drive_create_file", {})
 
     def test_sheets_valid_range(self):

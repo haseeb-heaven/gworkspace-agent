@@ -30,7 +30,6 @@ def test_manual_2():
         "List my Google Chat spaces and email the list to the default recipient.",
         expected=["completed", "email"],
         service="chat",
-        skip_verification=True,  # Read-only operation
     )
 
 
@@ -63,7 +62,6 @@ def test_manual_5():
         "Search Drive for a recent file and send a message to my primary chat space about it.",
         expected=["completed"],
         service="chat",
-        skip_verification=True,  # Multi-service operation
     )
 
 
@@ -74,5 +72,4 @@ def test_manual_6():
         "Get my next calendar event and send a reminder to my primary chat space.",
         expected=["completed"],
         service="chat",
-        skip_verification=True,  # Multi-service operation
     )

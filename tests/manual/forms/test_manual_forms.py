@@ -21,7 +21,6 @@ def test_manual_1():
         "Sync test data to Google Forms",
         expected=["completed"],
         service="forms",
-        skip_verification=True,  # Read-only/sync operation
     )
 
 
@@ -36,7 +35,6 @@ def test_manual_2():
         f"Create a new Google Form titled '{title}'.",
         expected=["completed", title],
         service="forms",
-        skip_verification=True,  # API may have limitations
     )
 
 
@@ -69,7 +67,6 @@ def test_manual_5():
         f"Find the form '{TEST_FORM_TITLE}' and email the link to the default recipient.",
         expected=["completed", "email"],
         service="forms",
-        skip_verification=True,  # May not exist
     )
 
 
@@ -84,5 +81,4 @@ def test_manual_6():
         f"Create a Google Form '{title}' with a text question 'What is your feedback?'.",
         expected=["completed"],
         service="forms",
-        skip_verification=True,  # Complex create operation
     )

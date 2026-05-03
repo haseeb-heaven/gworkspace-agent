@@ -21,7 +21,6 @@ def test_manual_1():
         "List my top 5 contacts and email them to the default recipient.",
         expected=["completed", "email"],
         service="contacts",
-        skip_verification=True,  # Read-only operation
     )
 
 
@@ -32,7 +31,6 @@ def test_manual_2():
         "List 5 users in my workspace directory and email the list.",
         expected=["completed", "email"],
         service="contacts",
-        skip_verification=True,  # Read-only operation
     )
 
 
@@ -65,7 +63,6 @@ def test_manual_5():
         "List my top 3 contacts and save their names and emails to a Google Sheet.",
         expected=["completed"],
         service="contacts",
-        skip_verification=True,  # Multi-service operation
     )
 
 
@@ -76,5 +73,4 @@ def test_manual_6():
         "List my contacts and create a Google Doc with their information.",
         expected=["completed"],
         service="contacts",
-        skip_verification=True,  # Multi-service operation
     )

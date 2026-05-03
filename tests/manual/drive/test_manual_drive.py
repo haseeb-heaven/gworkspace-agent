@@ -18,7 +18,7 @@ def test_manual_1():
     # Read/Search verification
     run_task(
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and list the top 5 results.",
-        expected=["Planned", "completed"],
+        expected=["completed"],
         service="drive",
     )
 
@@ -39,7 +39,7 @@ def test_manual_3():
     # Export/Read verification
     run_task(
         f"Search for a document named '{TEST_DOC_QUERY}', and if found, export it to PDF.",
-        expected=["Planned", "completed"],
+        expected=["completed"],
         service="drive",
     )
 
@@ -53,7 +53,6 @@ def test_manual_4():
         f"Create a folder named '{TEST_FOLDER_NAME}' if it doesn't exist, then rename it to '{TEST_RENAMED_FOLDER_NAME}'.",
         expected=["completed"],
         service="drive",
-        skip_verification=True  # May have idempotent behavior
     )
 
 
@@ -64,7 +63,6 @@ def test_manual_5():
         "Find a recent file in Drive and create a copy of it.",
         expected=["completed"],
         service="drive",
-        skip_verification=True  # May not have files to copy
     )
 
 
@@ -87,7 +85,6 @@ def test_manual_7():
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and email the results to me",
         expected=["completed"],
         service="gmail",  # The final action is sending email
-        skip_verification=True  # Email verification is complex
     )
 
 
@@ -99,5 +96,4 @@ def test_manual_8():
         f"Search drive for '{TEST_DOC_QUERY}' and send me a summary table via email",
         expected=["completed"],
         service="gmail",  # The final action is sending email
-        skip_verification=True  # Email verification is complex
     )

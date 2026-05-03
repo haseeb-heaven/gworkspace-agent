@@ -64,7 +64,6 @@ def test_manual_4():
         f"Create a calendar event '{original_name}', then update it to '{updated_name}' with a new description.",
         expected=["completed", updated_name],
         service="calendar",
-        skip_verification=True,  # Complex multi-step
     )
 
 
@@ -95,7 +94,6 @@ def test_manual_6():
         f"and finally delete it.",
         expected=["completed"],
         service="calendar",
-        skip_verification=True,  # Complex multi-step workflow
     )
 
 
@@ -120,5 +118,4 @@ def test_manual_8():
         "Find the next calendar event and email the details to the default recipient.",
         expected=["completed", "email"],
         service="calendar",
-        skip_verification=True,  # Depends on events existing
     )

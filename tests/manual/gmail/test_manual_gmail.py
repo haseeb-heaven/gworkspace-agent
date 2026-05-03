@@ -28,7 +28,6 @@ def test_manual_2():
         f"Find an email about '{TEST_GMAIL_SEARCH_QUERY}' and save the snippet to a Google Sheet.",
         expected=["completed"],
         service="sheets",
-        skip_verification=True  # Skip verification due to potential ID resolution issues
     )
 
 
@@ -107,7 +106,6 @@ def test_manual_9():
         "Search for emails from the last week and create a summary.",
         expected=["completed"],
         service="gmail",
-        skip_verification=True  # Read-only task
     )
 
 
