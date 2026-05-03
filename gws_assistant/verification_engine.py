@@ -762,21 +762,19 @@ class VerificationEngine:
                         min_length=2,
                         block_placeholders=True,
                     )
-            # STRICT content validation for all document operations
+            # NOTE: empty/short ``content`` for document creates is intentionally
+            # NOT enforced here. CHECK 1 already covers placeholder/template
+            # leakage on the *title*; emptiness of ``content`` is data-integrity
+            # territory and is asserted by CHECK 4 (``verify_document_not_empty``).
+            # Enforcing it here too would mask CHECK 4 coverage — see PR #76
+            # round 2 review (``test_5_check_system_check_4_data_integrity``).
             content = params.get("content")
-            if content is not None and "create" in tool_name:
+            if content is not None and "create" in tool_name and str(content).strip():
+                # Only validate non-empty content for placeholder leakage; do
+                # not raise on emptiness (left to CHECK 4).
                 cls._validate_content_not_empty(
-                    tool_name, params, field="content", min_length=5, block_placeholders=True
+                    tool_name, params, field="content", min_length=1, block_placeholders=True
                 )
-                # Additional check for document body content
-                val_str = str(content).strip()
-                if len(val_str) < 10:
-                    raise VerificationError(
-                        tool_name,
-                        f"Document content too short ({len(val_str)} chars) - document would be created with insufficient content",
-                        severity=VerificationSeverity.ERROR,
-                        field="content"
-                    )
 
             for id_field in ["file_id", "document_id", "spreadsheet_id"]:
                 file_id = params.get(id_field)
@@ -908,6 +906,17 @@ class VerificationEngine:
                         "Task title required",
                         severity=VerificationSeverity.ERROR,
                         field="title"
+                    )
+                # Detect placeholder titles (e.g. ``[Replace me]``) and raise a
+                # task-specific message so the caller knows *what* needs to be
+                # supplied, rather than a generic "placeholder value" error.
+                title_str = str(title).strip()
+                if cls._is_placeholder(title_str) or cls._has_unresolved_templates(title_str):
+                    raise VerificationError(
+                        tool_name,
+                        "Task title required - placeholder/template value detected",
+                        severity=VerificationSeverity.ERROR,
+                        field="title",
                     )
                 cls._validate_content_not_empty(
                     tool_name, params, field="title", min_length=2, block_placeholders=True
