@@ -1746,9 +1746,9 @@ def _is_drive_folder_move_request(text: str) -> bool:
     # Exclude upload/copy requests - those should use upload_file, not move_file.
     # Use word boundaries so "saved"/"copyrighted" don't false-match "save"/"copy".
     # upload and copy block unconditionally; save only blocks when attached to file/path
-    if re.search(r"\b(?:upload|copy)\b", text, re.IGNORECASE):
+    if re.search(r"\b(?:upload|copy|put|add)\b", text, re.IGNORECASE):
         return False
-    # save only blocks when followed by path/file-like tokens (to/as/into + token, quotes, slashes)
+    # save only blocks when followed by path/file-like tokens (to/as/into + token, quotes)
     if re.search(r"\bsave\b(?:\s+(?:to|as|into)\s+\S+|\s+['\"][^'\"]{1,200}['\"])", text, re.IGNORECASE):
         return False
     lowered = text.lower()
