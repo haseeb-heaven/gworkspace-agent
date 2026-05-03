@@ -73,7 +73,7 @@ class AppConfigModel:
         "fake", "mock", "temporary", "tbd", "missing"
     })
     verification_numeric_placeholders: set[str] = field(default_factory=lambda: {"0000", "1234", "9999", "00000000"})
-    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@example.com"})
+    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@domain.com"})
     verification_email_placeholder_domains: list[str] = field(default_factory=lambda: ["@test.com"])
     verification_destructive_operations: set[str] = field(default_factory=lambda: {
         "drive_delete_file", "drive_empty_trash", "drive_move_to_trash", "drive_batch_delete",

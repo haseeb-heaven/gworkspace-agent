@@ -315,6 +315,17 @@ class WorkspaceAgentSystem:
         query = _drive_query_from_text(text)
         recipient = _extract_email(text, default=self.config.default_recipient_email)
 
+        # Extract the raw search term for a user-friendly email subject
+        quoted = RE_DRIVE_QUERY_QUOTED.search(text)
+        if quoted:
+            search_term = quoted.group(1).strip()
+        else:
+            match = RE_DRIVE_QUERY_MATCH.search(text)
+            if match:
+                search_term = RE_DRIVE_QUERY_SPLIT.split(match.group(1).strip())[0].strip()
+            else:
+                search_term = "Drive files"
+
         exclusion_words = ("count", "table", "summary", "metadata", "no file content", "do not download", "names only")
         skip_export = any(word in lowered for word in exclusion_words)
 
@@ -337,7 +348,7 @@ $drive_file_links"""
 Please find the content below:
 $last_export_file_content"""
 
-        send_params: dict[str, Any] = {"to_email": recipient, "subject": f"Document: {query}", "body": body_content}
+        send_params: dict[str, Any] = {"to_email": recipient, "subject": f"Document: {search_term}", "body": body_content}
 
         tasks = [
             PlannedTask(
@@ -379,6 +390,17 @@ $last_export_file_content"""
         recipient = _extract_email(text, default=self.config.default_recipient_email)
         page_size = _first_int(lowered) or 50
 
+        # Extract the raw search term for a user-friendly email subject
+        quoted = RE_DRIVE_QUERY_QUOTED.search(text)
+        if quoted:
+            search_term = quoted.group(1).strip()
+        else:
+            match = RE_DRIVE_QUERY_MATCH.search(text)
+            if match:
+                search_term = RE_DRIVE_QUERY_SPLIT.split(match.group(1).strip())[0].strip()
+            else:
+                search_term = "Drive files"
+
         code = (
             "files = {{task-1.files}}\n"
             "count = len(files)\n"
@@ -412,10 +434,33 @@ $last_export_file_content"""
                 action="send_message",
                 parameters={
                     "to_email": recipient,
-                    "subject": f"Drive Metadata Summary: {query}",
+                    "subject": f"Drive Metadata Summary: {search_term}",
                     "body": "Here is the summary you requested:\n\n{{task-2.stdout}}",
                 },
                 reason="Email the metadata summary table.",
+            ),
+        ]
+
+    def _drive_delete_by_name_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Drive delete by name: search first, then delete the first match."""
+        # Extract the file name from quotes
+        file_name = _extract_quoted(lowered) or ""
+        query = f"name contains '{file_name}'"
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="drive",
+                action="list_files",
+                parameters={"q": query, "page_size": 10},
+                reason=f"Search for file named '{file_name}' to get its ID.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="drive",
+                action="delete_file",
+                parameters={"file_id": "{{task-1.id}}"},
+                reason="Delete the found file using its ID.",
             ),
         ]
 
@@ -724,6 +769,17 @@ print(result)"""
     def _gmail_to_sheets_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         query = _gmail_query_from_text(text)
         recipient = _extract_email(text, default=self.config.default_recipient_email)
+
+        # Extract the raw search term for a user-friendly email subject
+        quoted = RE_GMAIL_QUERY_QUOTED.search(text)
+        if quoted:
+            search_term = quoted.group(1).strip()
+        else:
+            match = RE_GMAIL_QUERY_MATCH.search(text)
+            if match:
+                search_term = RE_GMAIL_QUERY_SPLIT.split(match.group(1).strip())[0].strip()
+            else:
+                search_term = "Gmail messages"
         return [
             PlannedTask(
                 id="task-1",
@@ -743,7 +799,7 @@ print(result)"""
                 id="task-3",
                 service="sheets",
                 action="create_spreadsheet",
-                parameters={"title": f"Results: {query}"},
+                parameters={"title": f"Results: {search_term}"},
                 reason="Create spreadsheet for results.",
             ),
             PlannedTask(
@@ -763,7 +819,7 @@ print(result)"""
                 action="send_message",
                 parameters={
                     "to_email": recipient,
-                    "subject": f"Processed: {query}",
+                    "subject": f"Processed: {search_term}",
                     "body": """Hi,
 
 Please find the spreadsheet here: $last_spreadsheet_url""",
@@ -1996,6 +2052,36 @@ class DocsToEmailStrategy(PlanningStrategy):
         )
 
 
+class DriveDeleteByNameStrategy(PlanningStrategy):
+    """Pattern: Drive Delete by Name (Search first, then delete)."""
+
+    def priority(self) -> int:
+        return 36  # Higher than FormsSyncStrategy
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        if "drive" not in ctx.services:
+            return False
+        lowered = ctx.lowered
+        # Check if this is a delete request
+        if not any(kw in lowered for kw in ("delete", "remove")):
+            return False
+        # Check if we have a name in quotes but no valid file ID (25+ chars)
+        has_quoted_name = bool(_extract_quoted(lowered))
+        has_file_id = bool(_extract_id(lowered))
+        return has_quoted_name and not has_file_id
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._drive_delete_by_name_tasks(ctx.text, ctx.lowered)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary="Planned 2 tasks: drive.list_files (search by name) -> drive.delete_file",
+            confidence=0.75,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
 class FormsSyncStrategy(PlanningStrategy):
     """Pattern I: Forms Sync."""
 
@@ -2198,6 +2284,7 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = [
     DriveToSheetsToEmailStrategy(),
     DriveToEmailStrategy(),
     DriveFolderMoveStrategy(),
+    DriveDeleteByNameStrategy(),
     GmailToSheetsStrategy(),
     SheetCreationStrategy(),
     GmailListAndGetStrategy(),
@@ -2219,14 +2306,14 @@ def _plan_with_strategies(text: str, lowered: str, services: list[str], config: 
     Returns the first matching strategy's plan, or None if no strategy matches.
     """
     ctx = PlanningContext(text=text, lowered=lowered, services=services, config=config, logger=logger)
-    
+
     for strategy in sorted(_PLANNING_STRATEGIES, key=lambda s: s.priority(), reverse=True):
         if strategy.matches(ctx):
             logger.debug(f"Planning strategy matched: {strategy.__class__.__name__}")
             plan = strategy.execute(ctx, agent)
             if plan:
                 return plan
-    
+
     return None
 
 
@@ -2383,7 +2470,7 @@ def validate_typed_parameters(parameters: dict[str, Any], context: dict[str, Any
         if isinstance(value, TypedParameter):
             # Resolve template references
             resolved_value = value.resolve(context)
-            
+
             # Validate type
             if not value.validate():
                 if value.required:
@@ -2398,7 +2485,7 @@ def validate_typed_parameters(parameters: dict[str, Any], context: dict[str, Any
                         "Optional parameter '%s' failed validation, using default", key
                     )
                     resolved_value = value.default
-            
+
             resolved_params[key] = resolved_value
         else:
             # Raw value - pass through as-is (backward compatibility)

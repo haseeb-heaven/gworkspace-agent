@@ -60,7 +60,7 @@ def test_manual_4():
 def test_manual_5():
     """Cross-service: Notify about new file - Integration operation."""
     run_task(
-        f"Search Drive for a recent file and send a message to my primary chat space about it.",
+        "Search Drive for a recent file and send a message to my primary chat space about it.",
         expected=["completed"],
         service="chat",
         skip_verification=True,  # Multi-service operation

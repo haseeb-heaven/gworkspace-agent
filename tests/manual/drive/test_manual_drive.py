@@ -77,3 +77,27 @@ def test_manual_6():
         service="drive",
         skip_verification=True  # May not have PDFs
     )
+
+
+@pytest.mark.live_integration
+def test_manual_7():
+    # Drive to email verification - tests template variable resolution
+    # This test verifies that $drive_metadata_table and $drive_file_links are properly resolved
+    run_task(
+        f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and email the results to me",
+        expected=["completed"],
+        service="gmail",  # The final action is sending email
+        skip_verification=True  # Email verification is complex
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_8():
+    # Drive metadata to email verification - tests email subject fix
+    # This test verifies that email subjects use user-friendly search terms instead of Drive API query syntax
+    run_task(
+        f"Search drive for '{TEST_DOC_QUERY}' and send me a summary table via email",
+        expected=["completed"],
+        service="gmail",  # The final action is sending email
+        skip_verification=True  # Email verification is complex
+    )

@@ -165,21 +165,21 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             all_bulk_keywords = set(BULK_KEYWORDS)
             if hasattr(self, "config") and self.config:
                 all_bulk_keywords.update(self.config.verification_bulk_indicators)
-            
+
             # Use same filtering logic as CHECK 5 (Bug 6)
             filtered_params = {k: v for k, v in task.parameters.items() if not k.startswith("_")}
             params_str = str(filtered_params).lower()
-            
+
             # Use word-boundary regex (Bug 7)
             has_bulk_keywords = False
             for kw in all_bulk_keywords:
                 if re.search(r"\b" + re.escape(kw) + r"\b", params_str):
                     has_bulk_keywords = True
                     break
-                    
+
             is_bulk_tool = any(kw in (task.action or "").lower() for kw in ["batch", "bulk"])
             has_star_query = task.parameters.get("query") == "*" or task.parameters.get("q") == "*"
-            
+
             if has_bulk_keywords or is_bulk_tool or has_star_query:
                 task.parameters["_bulk_confirmed"] = True
 

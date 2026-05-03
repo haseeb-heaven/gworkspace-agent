@@ -238,10 +238,10 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("send", "compose", "mail", "email", "share"),
                 negative_keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
-                    ParameterSpec("to_email", "Recipient email address", "person@example.com"),
+                    ParameterSpec("to_email", "Recipient email address", "recipient@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
-                    ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
+                    ParameterSpec("attachments", "Optional local attachment paths", "path/to/file.pdf", required=False),
                 ),
             ),
         },

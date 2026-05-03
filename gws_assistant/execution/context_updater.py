@@ -377,6 +377,10 @@ class ContextUpdaterMixin:
                 context["drive_metadata_table"] = "\n".join(table_lines)
                 context["drive_summary_table"] = "\n".join(table_lines)
 
+                # Create a simple list of file links
+                file_links = [f.get("webViewLink", "") for f in files if f.get("webViewLink")]
+                context["drive_file_links"] = "\n".join(file_links)
+
                 context["drive_file_count"] = len(files)
                 context["drive_summary_count"] = len(files)
 

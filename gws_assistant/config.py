@@ -233,7 +233,7 @@ class AppConfig:
             )
             verification_exact_emails = _to_set(
                 os.getenv("VERIFICATION_EXACT_EMAILS"),
-                default={"noreply@example.com"}
+                default={"noreply@domain.com"}
             )
             verification_email_placeholder_domains = _to_list(
                 os.getenv("VERIFICATION_EMAIL_PLACEHOLDER_DOMAINS"),

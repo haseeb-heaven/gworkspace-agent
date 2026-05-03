@@ -109,9 +109,9 @@ class WorkflowNodes:
 
     def plan_node(self, state: AgentState) -> dict[str, Any]:
         try:
-            plan = self.system.plan(state["user_text"])
+            plan = self.system.plan(state.get("user_text", ""))
             history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
-            self._log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
+            self._log_step("planner", {"user_text": state.get("user_text", "")}, {"tasks": len(plan.tasks), "source": plan.source})
             return {"plan": plan, "error": None, "conversation_history": history}
         except Exception as exc:
             history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
@@ -336,10 +336,10 @@ class WorkflowNodes:
 
             # Save to episodic memory
             from .memory import save_episode
-            save_episode(state["user_text"], [e.task.parameters for e in executions], summary)
+            save_episode(state.get("user_text", ""), [e.task.parameters for e in executions], summary)
 
             # Save to semantic memory
-            memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Outcome: {summary[:200]}"
+            memory_text = f"User task: {state.get('user_text', '')}. Status: Completed successfully. Outcome: {summary[:200]}"
             self.system.memory.add(memory_text, metadata={"type": "task_completion"})
 
         except Exception as e:
@@ -354,7 +354,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     nodes = WorkflowNodes(config, system, executor, logger)
 
     def web_search_node(state: AgentState) -> dict[str, Any]:
-        result = web_search_tool.invoke({"query": state["user_text"]})
+        result = web_search_tool.invoke({"query": state.get("user_text", "")})
         if result.get("error"):
             structured = StructuredToolResult(success=False, output=result, error=result["error"])
             return {"last_result": structured, "error": result["error"]}
@@ -366,7 +366,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             logger.warning("summarize_results failed in web_search_node (ignored): %s", _sum_exc)
         structured = StructuredToolResult(
             success=True,
-            output={"query": state["user_text"], "summary": summary, "results": result.get("results", [])},
+            output={"query": state.get("user_text", ""), "summary": summary, "results": result.get("results", [])},
             error=None,
         )
         context = dict(state.get("context", {}))
@@ -397,7 +397,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "summary": summary,
             "rows": rows,
             "markdown": markdown_table,
-            "query": state["user_text"]
+            "query": state.get("user_text", "")
         }
         results_map["web_search"] = search_payload
         # If this search Satisfies the first task (often planned as search), populate task-1
@@ -463,10 +463,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "and may print intermediate details. NO markdown formatting, just raw code.\n\n"
             "CRITICAL: Do NOT use ANY 'import' statements. All standard libraries are unavailable. "
             "Use only built-in functions and basic logic.\n\n"
-            f"User request:\n{state['user_text']}"
+            f"User request:\n{state.get('user_text', '')}"
         )
         model = create_agent(config, logger)
-        lowered = state["user_text"].lower()
+        lowered = state.get("user_text", "").lower()
         is_computation = any(
             kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers")
         )
@@ -481,11 +481,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     ),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
-            extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
+            extracted = "".join(ch for ch in state.get("user_text", "") if ch.isdigit() or ch in ".+-*/() ")
             generated = f"result = {extracted or '0'}\nprint(result)"
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
-            nodes._log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback"})
+            nodes._log_step("generate_code", {"prompt": state.get("user_text", "")}, {"mode": "heuristic_fallback"})
             return {"context": context, "error": None}
 
         try:
@@ -498,15 +498,15 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
-            numbers = re.findall(r"\b\d+\b", state["user_text"])
-            lowered = state["user_text"].lower()
+            numbers = re.findall(r"\b\d+\b", state.get("user_text", ""))
+            lowered = state.get("user_text", "").lower()
             if len(numbers) >= 2 and ("from" in lowered or "between" in lowered):
                 start, end = numbers[0], numbers[1]
                 rev = "True" if "reverse" in lowered or "descending" in lowered else "False"
                 generated = f"result = list(range({start}, {int(end) + 1}))\nif {rev}: result.reverse()\nprint(result)"
             else:
                 # Basic math extraction
-                extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
+                extracted = "".join(ch for ch in state.get("user_text", "") if ch.isdigit() or ch in ".+-*/() ")
                 # Clean up multiple spaces or invalid sequences
                 cleaned = re.sub(r"\s+", " ", extracted).strip()
                 # If it still looks like multiple numbers, just pick the first or join with +
@@ -516,7 +516,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
-            nodes._log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback_enhanced"})
+            nodes._log_step("generate_code", {"prompt": state.get("user_text", "")}, {"mode": "heuristic_fallback_enhanced"})
             return {"context": context, "error": None}
 
         content = getattr(llm_response, "content", str(llm_response))
@@ -539,14 +539,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         context = dict(state.get("context", {}))
         context["generated_code"] = generated_code
-        nodes._log_step("generate_code", {"prompt": state["user_text"]}, {"generated_code": generated_code})
+        nodes._log_step("generate_code", {"prompt": state.get("user_text", "")}, {"generated_code": generated_code})
         return {"context": context, "error": None}
 
     def route_after_plan(state: AgentState) -> Literal["validate", "format_output", "web_search", "generate_code"]:
         if state.get("error"):
             return "format_output"
         plan = state.get("plan")
-        text = state["user_text"].lower()
+        text = state.get("user_text", "").lower()
 
         has_search_intent = any(kw in text for kw in _SEARCH_INTENT_KEYWORDS)
         has_gws_intent = any(kw in text for kw in _GWS_INTENT_KEYWORDS)
@@ -587,7 +587,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "validate"
         return "persist_memory"
 
-    def route_after_task(state: AgentState) -> Literal["reflect_node"]:
+    def route_after_task(state: AgentState) -> Literal["reflect_node", "persist_memory"]:
+        # Check if last execution was a safety block - if so, stop the workflow
+        executions = state.get("executions", [])
+        if executions:
+            last_result = executions[-1].result
+            if not last_result.success and "User aborted" in str(last_result.error):
+                return "persist_memory"  # Stop workflow on user abort
         return "reflect_node"
 
     def route_after_reflection(

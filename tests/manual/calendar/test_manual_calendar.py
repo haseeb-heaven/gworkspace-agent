@@ -117,7 +117,7 @@ def test_manual_7():
 def test_manual_8():
     """Email event details - Integration operation."""
     run_task(
-        f"Find the next calendar event and email the details to the default recipient.",
+        "Find the next calendar event and email the details to the default recipient.",
         expected=["completed", "email"],
         service="calendar",
         skip_verification=True,  # Depends on events existing

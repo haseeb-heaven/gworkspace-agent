@@ -60,6 +60,7 @@ LEGACY_PLACEHOLDER_MAP = {
     "$drive_metadata_rows":     "drive_metadata_rows",
     "$drive_file_count":        "drive_file_count",
     "$drive_metadata_table":    "drive_metadata_table",
+    "$drive_file_links":        "drive_file_links",
     "$code_output":             "code_output",
     "$code_exit_code":          "code_exit_code",
     "$code_error":              "code_error",
