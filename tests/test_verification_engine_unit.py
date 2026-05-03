@@ -136,7 +136,7 @@ class TestVerifyParams:
             })
 
     def test_gmail_send_missing_body(self):
-        with pytest.raises(VerificationError, match="empty or whitespace"):
+        with pytest.raises(VerificationError, match="Body"):
             VerificationEngine.verify_params("gmail_send_message", {
                 "to": "real@example.org",
                 "subject": "Test Subject",

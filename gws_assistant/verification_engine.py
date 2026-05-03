@@ -942,7 +942,7 @@ class VerificationEngine:
                 if not first_name and not display_name:
                     raise VerificationError(
                         tool_name,
-                        "Contact must have first_name or display_name",
+                        "first_name or display_name required - cannot create contact with no name",
                         severity=VerificationSeverity.ERROR,
                         field="first_name"
                     )
