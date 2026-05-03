@@ -267,6 +267,15 @@ def test_5_check_system_check_1_empty_content_validation():
         VerificationEngine.verify("create_document", params, result)
 
 
+def test_5_check_system_check_4_data_integrity():
+    """Test CHECK 4: Data Integrity & Consistency Validation."""
+    # Use non-empty params to bypass CHECK 1, but trigger CHECK 4 with inconsistent result
+    params = {"title": "Valid Doc", "content": "Some content"}
+    result = {}  # Empty result when content was provided should trigger CHECK 4
+    with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
+        VerificationEngine.verify("create_document", params, result)
+
+
 def test_5_check_system_check_5_idempotency_safety_critical():
     """Test CHECK 5: Idempotency & Safety Validation blocks destructive ops without confirmation."""
     params = {"file_id": "file-123"}

@@ -1716,7 +1716,6 @@ def _is_drive_folder_upload_request(text: str) -> bool:
     return (
         any(t in text for t in ("drive", "folder"))
         and any(t in text for t in ("upload", "copy", "save"))
-        and "create" in text
     )
 
 def _is_docs_to_email_request(text: str) -> bool:
