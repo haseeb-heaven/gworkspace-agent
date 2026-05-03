@@ -43,7 +43,6 @@ google-cloud-sdk
 .gemini
 gcloud
 .agent/
-scratch/
 artifacts/
 .skill
 *.skill
@@ -53,6 +52,9 @@ skills/
 $params
 .git
 docs/
+scratch/
+!scratch/auto_release.sh
+!scratch/auto_release.ps1
 
 # Planning and Local Extensions
 .planning/phases/
@@ -82,6 +84,3 @@ ISSUES.md
 !tests/
 *.orig
 !requirements.txt
-
-# PowerShell
-*.ps1
