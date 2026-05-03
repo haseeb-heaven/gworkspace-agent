@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from gws_assistant.exceptions import SafetyBlockedError
-from gws_assistant.models import ExecutionResult, ValidationError
+from gws_assistant.exceptions import SafetyBlockedError, ValidationError
+from gws_assistant.models import ExecutionResult
 from gws_assistant.verification_engine import VerificationEngine, VerificationError
 
 from .context_updater import ContextUpdaterMixin
