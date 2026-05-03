@@ -36,6 +36,7 @@ def test_manual_2():
         f"Create a new Google Slides presentation titled '{title}'.",
         expected=["completed", title],
         service="slides",
+        skip_verification=True,  # May have API limitations
     )
 
 

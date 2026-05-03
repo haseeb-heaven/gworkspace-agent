@@ -18,7 +18,11 @@ TEST_DOC_KEYWORD = os.getenv("TEST_DOC_KEYWORD", "Shibuz")
 @pytest.mark.live_integration
 def test_manual_1():
     # Read verification
-    run_task("Search my inbox for the last 3 emails and log the output.", expected=["completed"], service="gmail", skip_verification=True  # Read-only operation
+    run_task(
+        "Search my inbox for the last 3 emails and log the output.",
+        expected=["completed"],
+        service="gmail",
+        skip_verification=True,  # Read-only operation
     )
 
 
