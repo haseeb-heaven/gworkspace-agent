@@ -1383,6 +1383,110 @@ print('Processing task: {lowered}')"""
             ),
         ]
 
+    def _calendar_create_update_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Calendar: create event then update it to a new name."""
+        from datetime import date, timedelta
+
+        original_title = _extract_calendar_event_title(text, 0) or "New Event"
+        updated_title = _extract_calendar_event_title(text, 1) or f"{original_title} Updated"
+
+        # Determine date: tomorrow if mentioned, otherwise today
+        if "tomorrow" in lowered:
+            event_date = (date.today() + timedelta(days=1)).isoformat()
+        else:
+            event_date = date.today().isoformat()
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="calendar",
+                action="create_event",
+                parameters={"summary": original_title, "start_date": event_date},
+                reason=f"Create calendar event '{original_title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="calendar",
+                action="update_event",
+                parameters={
+                    "event_id": "{{task-1.id}}",
+                    "summary": updated_title,
+                    "description": "Updated via GWorkspace Agent",
+                },
+                reason=f"Update the event to '{updated_title}'.",
+            ),
+        ]
+
+    def _calendar_find_delete_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Calendar: find event by name then delete it."""
+        event_title = _extract_calendar_event_title(text, 0) or "Event"
+        search_query = event_title
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="calendar",
+                action="list_events",
+                parameters={"q": search_query},
+                reason=f"Search for calendar event '{event_title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="calendar",
+                action="delete_event",
+                parameters={"event_id": "{{task-1.id}}"},
+                reason=f"Delete the found event '{event_title}'.",
+            ),
+        ]
+
+    def _calendar_crud_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Calendar: full CRUD - create, get, update, delete."""
+        from datetime import date, timedelta
+
+        temp_title = _extract_calendar_event_title(text, 0) or "Temp Event"
+        updated_title = _extract_calendar_event_title(text, 1) or f"{temp_title} Updated"
+
+        # Determine date
+        if "tomorrow" in lowered:
+            event_date = (date.today() + timedelta(days=1)).isoformat()
+        else:
+            event_date = date.today().isoformat()
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="calendar",
+                action="create_event",
+                parameters={"summary": temp_title, "start_date": event_date},
+                reason=f"Create temp calendar event '{temp_title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="calendar",
+                action="get_event",
+                parameters={"event_id": "{{task-1.id}}"},
+                reason="Fetch event details for verification.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="calendar",
+                action="update_event",
+                parameters={
+                    "event_id": "{{task-1.id}}",
+                    "summary": updated_title,
+                    "description": "Updated via GWorkspace Agent CRUD test",
+                },
+                reason=f"Update event to '{updated_title}'.",
+            ),
+            PlannedTask(
+                id="task-4",
+                service="calendar",
+                action="delete_event",
+                parameters={"event_id": "{{task-1.id}}"},
+                reason="Clean up by deleting the test event.",
+            ),
+        ]
+
 
 def _detect_services_in_order(text: str) -> list[str]:
     hits: list[tuple[int, str]] = []
@@ -1654,6 +1758,47 @@ def _first_int(text: str) -> int | None:
     if match:
         val = int(match.group(1))
         return val if val > 0 else None
+    return None
+
+
+def _is_calendar_create_update_request(text: str) -> bool:
+    """Detect 'create calendar event X then update it to Y' patterns."""
+    lowered = text.lower()
+    return (
+        "calendar" in lowered
+        and any(kw in lowered for kw in ("create", "schedule", "add", "new"))
+        and any(kw in lowered for kw in ("update", "edit", "modify", "change"))
+    )
+
+
+def _is_calendar_find_delete_request(text: str) -> bool:
+    """Detect 'find and delete calendar event X' patterns."""
+    lowered = text.lower()
+    return (
+        "calendar" in lowered
+        and any(kw in lowered for kw in ("find", "search", "delete", "remove", "cancel"))
+        and ("find" in lowered or "search" in lowered)
+        and ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+    )
+
+
+def _is_calendar_crud_request(text: str) -> bool:
+    """Detect full calendar CRUD: create, get, update, delete patterns."""
+    lowered = text.lower()
+    return (
+        "calendar" in lowered
+        and any(kw in lowered for kw in ("create", "schedule", "add"))
+        and ("get" in lowered or "detail" in lowered or "show" in lowered)
+        and any(kw in lowered for kw in ("update", "edit", "modify"))
+        and any(kw in lowered for kw in ("delete", "remove", "cancel"))
+    )
+
+
+def _extract_calendar_event_title(text: str, index: int = 0) -> str | None:
+    """Extract the Nth quoted string from text as a calendar event title."""
+    matches = RE_EXTRACT_QUOTED.findall(text)
+    if matches and index < len(matches):
+        return matches[index]
     return None
 
 
@@ -2264,7 +2409,7 @@ class CodeExecutionStrategy(PlanningStrategy):
     def matches(self, ctx: PlanningContext) -> bool:
         return "code" in ctx.services or "computation" in ctx.services
 
-    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
         if any(kw in ctx.lowered for kw in ("calculate", "compute", "prime", "sum", "script", "python")):
             generated_code = _generate_computation_code(ctx.lowered, ctx.text)
             tasks = [
@@ -2428,6 +2573,72 @@ class ChatSendMessageStrategy(PlanningStrategy):
         )
 
 
+class CalendarCrudStrategy(PlanningStrategy):
+    """Pattern CRUD: Calendar Create -> Get -> Update -> Delete."""
+
+    def priority(self) -> int:
+        return 55  # Higher than single-service fallback but lower than most cross-service patterns
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return len(ctx.services) == 1 and ctx.services[0] == "calendar" and _is_calendar_crud_request(ctx.text)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._calendar_crud_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class CalendarCreateUpdateStrategy(PlanningStrategy):
+    """Pattern CRUD-1: Calendar Create -> Update."""
+
+    def priority(self) -> int:
+        return 54
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return len(ctx.services) == 1 and ctx.services[0] == "calendar" and _is_calendar_create_update_request(ctx.text)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._calendar_create_update_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
+class CalendarFindDeleteStrategy(PlanningStrategy):
+    """Pattern CRUD-2: Calendar Find -> Delete."""
+
+    def priority(self) -> int:
+        return 53
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return len(ctx.services) == 1 and ctx.services[0] == "calendar" and _is_calendar_find_delete_request(ctx.text)
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._calendar_find_delete_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
 # Strategy registry - automatically sorted by priority (highest first) so the
 # declaration order of strategies above is independent of dispatch order. Within
 # the same priority, earlier-declared strategies still win because
@@ -2454,6 +2665,9 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = sorted(
         ContactsToEmailStrategy(),
         ChatToEmailStrategy(),
         ChatSendMessageStrategy(),
+        CalendarCrudStrategy(),
+        CalendarCreateUpdateStrategy(),
+        CalendarFindDeleteStrategy(),
     ],
     key=lambda s: s.priority(),
     reverse=True,

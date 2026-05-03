@@ -125,9 +125,13 @@ class ContextUpdaterMixin:
             if form_title:
                 context["last_form_title"] = form_title
 
-        if "htmlLink" in data and task and task.service == "calendar":
-            context["last_event_url"] = data["htmlLink"]
-            context["last_calendar_event_url"] = data["htmlLink"]
+        if task and task.service == "calendar":
+            if "id" in data:
+                context["last_event_id"] = data["id"]
+                context["last_calendar_event_id"] = data["id"]
+            if "htmlLink" in data:
+                context["last_event_url"] = data["htmlLink"]
+                context["last_calendar_event_url"] = data["htmlLink"]
 
         if "meetingUri" in data:
             context["last_meeting_url"] = data["meetingUri"]
