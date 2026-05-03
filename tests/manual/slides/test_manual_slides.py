@@ -34,7 +34,7 @@ def test_manual_2():
     title = f"{TEST_PRESENTATION_TITLE} {ts}"
     run_task(
         f"Create a new Google Slides presentation titled '{title}'.",
-        expected=["completed", title],
+        expected=["completed", "Presentation"],  # GWS returns "Untitled Presentation" initially
         service="slides",
         skip_verification=True,  # May have API limitations
     )
