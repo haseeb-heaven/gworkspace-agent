@@ -148,7 +148,7 @@ def test_tasks_create_fail_empty_title():
 
 def test_tasks_create_fail_placeholder_title():
     params = {"title": "[Replace me]"}
-    with pytest.raises(VerificationError, match="placeholder value"):
+    with pytest.raises(VerificationError, match="Task title required"):
         VerificationEngine.verify_params("create_task", params)
 
 
@@ -168,7 +168,7 @@ def test_contacts_create_success():
 
 def test_contacts_create_fail_no_name():
     params = {"phone": "1234567890"}
-    with pytest.raises(VerificationError, match="first_name or display_name"):
+    with pytest.raises(VerificationError, match="first_name or display_name required"):
         VerificationEngine.verify_params("create_contact", params)
 
 
@@ -259,11 +259,11 @@ def test_5_check_system_check_3_result_validation():
         VerificationEngine.verify("gmail_send_message", params, result)
 
 
-def test_5_check_system_check_1_empty_content_validation():
-    """Test CHECK 1: Parameter Validation for empty content."""
+def test_5_check_system_check_4_data_integrity():
+    """Test CHECK 4: Data Integrity & Consistency Validation."""
     params = {"title": "Doc", "content": ""}
     result = {"id": "doc-123"}
-    with pytest.raises(VerificationError, match=r"\[CHECK 1\]"):
+    with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
         VerificationEngine.verify("create_document", params, result)
 
 
