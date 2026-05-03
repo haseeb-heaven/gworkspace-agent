@@ -1526,7 +1526,7 @@ print('Processing task: {lowered}')"""
         # Extract tasklist title
         tasklist_match = re.search(r"in ['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
         tasklist_title = tasklist_match.group(1) if tasklist_match else "My Tasks"
-        
+
         return [
             PlannedTask(
                 id="task-1",
@@ -1541,6 +1541,30 @@ print('Processing task: {lowered}')"""
                 action="update_task",
                 parameters={"task_id": "{{task-1.id}}", "title": updated_title},
                 reason=f"Update the found task to '{updated_title}'.",
+            ),
+        ]
+
+    def _tasks_find_delete_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        """Tasks: find task by title in tasklist then delete it."""
+        task_title = _extract_calendar_event_title(text, 0) or "Task"
+        # Extract tasklist title
+        tasklist_match = re.search(r"in ['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+        tasklist_title = tasklist_match.group(1) if tasklist_match else "My Tasks"
+
+        return [
+            PlannedTask(
+                id="task-1",
+                service="tasks",
+                action="list_tasks",
+                parameters={"tasklist_title": tasklist_title},
+                reason=f"List tasks in '{tasklist_title}' to find '{task_title}'.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="tasks",
+                action="delete_task",
+                parameters={"task_id": "{{task-1.id}}"},
+                reason=f"Delete the found task '{task_title}'.",
             ),
         ]
 
@@ -2788,6 +2812,33 @@ class TasksFindAndUpdateStrategy(PlanningStrategy):
         )
 
 
+class TasksFindDeleteStrategy(PlanningStrategy):
+    """Pattern: Tasks Find -> Delete."""
+
+    def priority(self) -> int:
+        return 51
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            len(ctx.services) == 1
+            and ctx.services[0] == "tasks"
+            and any(kw in ctx.lowered for kw in ("find", "search", "delete", "remove"))
+            and ("delete" in ctx.lowered or "remove" in ctx.lowered)
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._tasks_find_delete_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.8,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
 class CalendarToEmailStrategy(PlanningStrategy):
     """Pattern: Calendar -> Email (Find event and email details)."""
 
@@ -2846,6 +2897,7 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = sorted(
         CalendarToEmailStrategy(),
         KeepFindDeleteStrategy(),
         TasksFindAndUpdateStrategy(),
+        TasksFindDeleteStrategy(),
     ],
     key=lambda s: s.priority(),
     reverse=True,
