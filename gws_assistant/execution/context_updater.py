@@ -134,6 +134,19 @@ class ContextUpdaterMixin:
             if "htmlLink" in data:
                 context["last_event_url"] = data["htmlLink"]
                 context["last_calendar_event_url"] = data["htmlLink"]
+            # Handle calendar.list_events results
+            if task.action == "list_events":
+                events = data.get("items") or data.get("events") or []
+                if events and isinstance(events, list):
+                    context["calendar_events"] = events
+                    # Also create a formatted table for email bodies
+                    table_lines = ["| Summary | Start | End |", "|---|---|---|"]
+                    for evt in events[:5]:  # Limit to first 5 events
+                        summary = evt.get("summary", "No Title")
+                        start = evt.get("start", {}).get("dateTime", evt.get("start", {}).get("date", "N/A"))
+                        end = evt.get("end", {}).get("dateTime", evt.get("end", {}).get("date", "N/A"))
+                        table_lines.append(f"| {summary} | {start} | {end} |")
+                    context["calendar_events_table"] = "\n".join(table_lines)
 
         # Tasks: track task ID and title for multi-step workflows
         if task and task.service == "tasks":

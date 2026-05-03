@@ -75,6 +75,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$search_summary_count":    "search_summary_count",
     "$sheet_summary_rows":      "sheet_summary_rows",
     "$sheet_summary_table":     "sheet_summary_table",
+    "$calendar_events":         "calendar_events",
+    "$calendar_events_table":   "calendar_events_table",
 }
 
 class ResolverMixin:

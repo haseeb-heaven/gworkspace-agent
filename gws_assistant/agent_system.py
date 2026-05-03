@@ -1591,7 +1591,7 @@ print('Processing task: {lowered}')"""
                 parameters={
                     "to_email": recipient,
                     "subject": "Calendar Event Details",
-                    "body": "Here are the details of the next calendar event:\n\n{{task-1.stdout}}",
+                    "body": "Here are the details of the next calendar event:\n\n$calendar_events_table",
                 },
                 reason="Email the event details to the recipient.",
             ),
