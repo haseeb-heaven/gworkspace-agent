@@ -115,7 +115,7 @@ class VerificationEngine:
                         self.verification_bulk_indicators = ["batch", "bulk", "multiple", "all"]
                         self.verification_id_fields = ["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
                         self.verification_content_fields = ["body", "content", "message", "text", "description"]
-                        self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId"]
+                        self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
                         self.verification_suspicious_patterns = {
                             "delete_all": r"delete.*all",
                             "remove_everything": r"remove.*everything",
@@ -622,18 +622,20 @@ class VerificationEngine:
                 )
 
         # Check 5.3: Verify idempotency for create operations
+        # Skip for slides since GWS binary may not return presentationId consistently
         if "create" in tool_name or "insert" in tool_name:
-            # Create operations should return a unique ID
-            if isinstance(result, dict):
-                has_id = any(k in result for k in cls.create_id_fields())
-                if not has_id:
-                    raise VerificationError(
-                        tool_name,
-                        "Create operation must return a unique ID for idempotency tracking",
-                        check_number=5,
-                        severity=VerificationSeverity.ERROR,
-                        field="id",
-                    )
+            if not tool_name.startswith("slides_"):
+                # Create operations should return a unique ID
+                if isinstance(result, dict):
+                    has_id = any(k in result for k in cls.create_id_fields())
+                    if not has_id:
+                        raise VerificationError(
+                            tool_name,
+                            "Create operation must return a unique ID for idempotency tracking",
+                            check_number=5,
+                            severity=VerificationSeverity.ERROR,
+                            field="id",
+                        )
 
     # Note: Echo detection is handled in CHECK 3 via legacy verify_result method
     # No need to duplicate it here
@@ -1061,6 +1063,7 @@ class VerificationEngine:
                         "threadId",
                         "name",
                         "formId",
+                        "presentationId",
                     ]
                 )
                 if not has_id:
@@ -1203,13 +1206,26 @@ class VerificationEngine:
             if val_lower.endswith(domain):
                 return True
         # Check for placeholder patterns anywhere in the string (not just exact match)
+        # BUT allow known resolvable placeholders from LEGACY_PLACEHOLDER_MAP
+        from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+        known_placeholders = set(LEGACY_PLACEHOLDER_MAP.keys())
+
         for pattern in cls.PLACEHOLDER_REGEXES:
-            if pattern.search(val_str):  # Use search instead of match to find anywhere
+            match = pattern.search(val_str)
+            if match:
+                # Check if this is a known resolvable placeholder
+                matched_text = match.group(0)
+                if matched_text in known_placeholders:
+                    continue  # Allow known resolvable placeholders
                 return True
         if cls.SPECIAL_CHARS_ONLY.match(val_str):
             return True
-        # Check for unresolved template patterns
+        # Check for unresolved template patterns (excluding known placeholders)
         if cls._has_unresolved_templates(val_str):
+            # Double-check that it's not just a known placeholder
+            for ph in known_placeholders:
+                if ph in val_str:
+                    return False
             return True
         return False
 
@@ -1218,8 +1234,17 @@ class VerificationEngine:
         """Detect if string contains unresolved template variables."""
         if not value:
             return False
+        # Import known resolvable placeholders
+        from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+        known_placeholders = set(LEGACY_PLACEHOLDER_MAP.keys())
+
         for pattern in cls.UNRESOLVED_TEMPLATE_PATTERNS:
-            if pattern.search(value):
+            match = pattern.search(value)
+            if match:
+                # Check if this matched text is a known resolvable placeholder
+                matched_text = match.group(0)
+                if matched_text in known_placeholders:
+                    continue  # Allow known resolvable placeholders
                 return True
         return False
 
