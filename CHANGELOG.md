@@ -1,3 +1,10 @@
+## [v0.9.1] - 2026-05-04
+### Added/Changed/Fixed
+- fix(tests): resolve unit/integration test failures after verification hardening
+- fix(verification): resolve manual test failures after hardening
+- chore(scripts): add enhanced release scripts to repository
+- chore(scripts): enhance release scripts to update all version files
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
