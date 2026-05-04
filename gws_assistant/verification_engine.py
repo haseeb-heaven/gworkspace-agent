@@ -1250,8 +1250,9 @@ class VerificationEngine:
     ) -> None:
         """Recursively block placeholders, empty generated content, and invalid sentinel values."""
         for path, value in cls._iter_payload_leaf_values(payload, location):
-            # Always block unresolved placeholders regardless of location (before ignored check)
-            if isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
+            # Always block unresolved placeholders in RESULT data (before ignored check)
+            # Params may contain unresolved placeholders that will be resolved by executor
+            if location == "result" and isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
                 raise VerificationError(
                     tool_name,
                     f"{location} contains unresolved placeholder data at {path}",
