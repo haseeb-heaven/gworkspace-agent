@@ -789,7 +789,7 @@ class TestGwsBinaryDirect:
     def test_calendar_events_delete(self, gws_binary, project_root):
         """Test calendar events delete."""
         result = subprocess.run(
-            [gws_binary, "calendar", "events", "delete", "--params", '{"calendarId": "primary", "eventId": "ZXZ0MjM3ZGJiZmY2ODI3OGYwNTA1NjhiZjUwIGhhc2VlYm1pci5obUBt"}'],
+            [gws_binary, "calendar", "events", "delete", "--params", '{"calendarId": "primary", "eventId": "evt237dbbff68278f050568bf50"}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
