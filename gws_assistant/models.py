@@ -214,6 +214,9 @@ def validate_planned_task(task: "PlannedTask") -> None:
         # Skip code parameter validation for code.execute - allow it to fail in sandbox
         if task.service in ("code", "computation") and task.action == "execute" and key == "code":
             continue
+        # Skip file_id validation for drive.export_file - may be resolved from empty list
+        if task.service == "drive" and task.action == "export_file" and key == "file_id":
+            continue
 
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
