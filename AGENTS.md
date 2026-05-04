@@ -289,19 +289,58 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
 
 ---
 
-## What an Agent Must Not Do
+### 🚫 Agent Safety & Integrity Rules (Python Projects)
 
-- Modify test assertions or lower coverage thresholds
-- Remove or weaken `safety_guard.py` risk policies
-- Remove the CI mode bypass in `config.py` (`if not ci_mode`)
-- Merge PRs manually — CI manages all merges
-- Resolve review threads manually — fix the code and let CI re-verify
-- Add hardcoded credentials, API keys, or secrets in source files
-- Change `GCP_PROJECT_ID`, `GCP_REGION`, or `GCP_SERVICE` in pipeline.yml
-- Hardcode `main` or `master` as a merge target — always use `base.ref`
-- Pass raw `dict` objects between agent layers — use Pydantic models
-- Delete or modify the .env file or expose them to commit.
----
+#### 1. Testing & Quality Assurance
+- Never modify or weaken test assertions to force passing results  
+- Do not reduce code coverage thresholds under any circumstances  
+- Avoid skipping, mocking, or bypassing critical test paths unless explicitly approved  
+- Ensure all changes maintain or improve existing test reliability  
+
+#### 2. Security & Secrets Management
+- Never hardcode credentials, API keys, tokens, or secrets in source code  
+- Do not commit `.env`, `secrets.json`, or any sensitive configuration files  
+- Never expose environment variables in logs, outputs, or error messages  
+- Use secure configuration management (e.g., environment variables, secret managers)  
+
+#### 3. Core Safety Mechanisms
+- Do not remove, weaken, or bypass rules in `safety_guard.py`  
+- Maintain all risk policies and validation checks intact  
+- Any change affecting safety logic must be explicitly reviewed and justified  
+
+#### 4. CI/CD Discipline
+- Never manually merge pull requests — CI pipeline owns all merges  
+- Do not resolve review comments manually without fixing underlying code issues  
+- Avoid introducing CI bypasses or conditional shortcuts that skip validation  
+- Preserve all pipeline safeguards and verification steps  
+
+#### 5. Configuration Integrity
+- Do not modify critical infrastructure variables:
+  - `GCP_PROJECT_ID`
+  - `GCP_REGION`
+  - `GCP_SERVICE`
+- Do not remove or alter CI mode conditions such as:
+  - `if not ci_mode`
+- Avoid hardcoding branch names like `main` or `master`; always use dynamic references (e.g., `base.ref`)  
+
+#### 6. Architecture & Data Contracts
+- Never pass raw `dict` objects across layers  
+- Always use typed schemas (Pydantic models) for:
+  - Validation  
+  - Serialization  
+  - Inter-layer communication  
+- Maintain strict typing and schema consistency across services  
+
+#### 7. Repository Hygiene
+- Do not delete or modify `.env` files within the repository  
+- Ensure `.gitignore` properly excludes sensitive files  
+- Prevent accidental commits of generated or local configuration artifacts  
+
+#### 8. Code Integrity Principles
+- Do not introduce hacks, shortcuts, or temporary fixes that bypass system design  
+- Preserve modular architecture and separation of concerns  
+- Maintain backward compatibility unless explicitly breaking changes are approved  
+- Ensure logging, error handling, and observability remain intact  
 
 ## Security Considerations
 
