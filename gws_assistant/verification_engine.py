@@ -1237,7 +1237,8 @@ class VerificationEngine:
             if content is not None and cls._contains_invalid_content(str(content)):
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
             if values is not None and (values == [] or values == [[]]):
-                raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="values")
+                severity = VerificationSeverity.WARNING if ("sheets" in tool_name and "append" in tool_name) else VerificationSeverity.ERROR
+                raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=severity, field="values")
             if values is not None:
                 cls._validate_no_invalid_payload_data(
                     tool_name,
