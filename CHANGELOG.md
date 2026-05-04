@@ -1,3 +1,7 @@
+## [v0.9.2] - 2026-05-04
+### Added/Changed/Fixed
+
+
 ## [v0.9.1] - 2026-05-04
 ### Added/Changed/Fixed
 - fix(tests): resolve unit/integration test failures after verification hardening
@@ -152,3 +156,4 @@ All notable changes to this project will be documented in this file.
 - Initial Google Workspace assistant functionality
 - Basic Drive, Gmail, Calendar, and Sheets integration
 - CLI and GUI interfaces
+
