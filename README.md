@@ -29,7 +29,7 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 ---
 
 ## Version
-Latest: **v0.9.2**  
+Latest: **v0.9.3**  
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ---
@@ -337,4 +337,5 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 <p align="center">
   Built with ❤️ by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a>
 </p>
+
 

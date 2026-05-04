@@ -1,3 +1,7 @@
+## [v0.9.3] - 2026-05-04
+### Added/Changed/Fixed
+
+
 ## [v0.9.2] - 2026-05-04
 ### Added/Changed/Fixed
 
@@ -156,4 +160,5 @@ All notable changes to this project will be documented in this file.
 - Initial Google Workspace assistant functionality
 - Basic Drive, Gmail, Calendar, and Sheets integration
 - CLI and GUI interfaces
+
 
