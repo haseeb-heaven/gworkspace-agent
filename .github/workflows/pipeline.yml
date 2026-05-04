@@ -170,7 +170,7 @@ jobs:
 
       - name: Save lint errors
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-errors
           path: /tmp/lint_errors.txt
@@ -224,7 +224,7 @@ jobs:
             -q 2>&1 | tee /tmp/unit_test_errors.txt
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -232,7 +232,7 @@ jobs:
 
       - name: Save unit test errors
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-test-errors
           path: /tmp/unit_test_errors.txt
@@ -280,7 +280,7 @@ jobs:
 
       - name: Save integration errors
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-errors
           path: /tmp/integration_errors.txt
@@ -343,7 +343,7 @@ jobs:
 
       - name: Save security errors
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-errors
           path: /tmp/security_errors.txt
