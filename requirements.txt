@@ -20,6 +20,6 @@ e2b-code-interpreter>=0.1.0
 mem0ai>=2.0.0
 litellm>=1.83.14
 # Telegram Polling Bot
-python-telegram-bot>=21.0
+python-telegram-bot>=22.7
 langchain-tavily>=0.2.0
 duckduckgo-search>=6.0.0
