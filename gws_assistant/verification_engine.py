@@ -1239,7 +1239,12 @@ class VerificationEngine:
             if values is not None and (values == [] or values == [[]]):
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="values")
             if values is not None:
-                cls._validate_no_invalid_payload_data(tool_name, values, location="values")
+                cls._validate_no_invalid_payload_data(
+                    tool_name,
+                    values,
+                    location="values",
+                    block_empty_strings=not ("sheets" in tool_name and "append" in tool_name),
+                )
 
     # =========================================================================
     # HELPER METHODS

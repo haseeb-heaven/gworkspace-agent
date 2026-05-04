@@ -1,9 +1,21 @@
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_file_path_patterns(value: Any) -> Any:
+    """Replace [File: ...] patterns with a placeholder to avoid leaking local paths."""
+    if isinstance(value, str):
+        return re.sub(r'\[File: [^\]]+\]', '[Document file]', value)
+    elif isinstance(value, list):
+        return [_sanitize_file_path_patterns(item) for item in value]
+    elif isinstance(value, dict):
+        return {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
+    return value
 
 
 class HelpersMixin:
@@ -190,6 +202,8 @@ class HelpersMixin:
 
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
+                # Sanitize [File: ...] patterns to avoid leaking local paths in sheets
+                parsed = _sanitize_file_path_patterns(parsed)
                 context["last_code_result"] = parsed
                 context["code_parsed_value"] = parsed
 

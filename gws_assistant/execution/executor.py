@@ -382,8 +382,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     # Use service_action format for verification engine
                     VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
                 except VerificationError as e:
-                    from gws_assistant.verification_engine import VerificationSeverity
-
                     if e.severity == VerificationSeverity.ERROR or e.severity == VerificationSeverity.CRITICAL:
                         from gws_assistant.exceptions import VerificationError as ExistingVerificationError
 
