@@ -1,34 +1,19 @@
-import subprocess
 
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env at module level
 import pytest
 
-
-def run_task(task_string):
-    import os
-
-    load_dotenv()  # Ensure .env is loaded inside helper
-    email = os.getenv("DEFAULT_RECIPIENT_EMAIL", os.getenv("DEFAULT_RECIPIENT_EMAIL"))
-    task_string = task_string.replace(os.getenv("DEFAULT_RECIPIENT_EMAIL"), email)
-    import os
-
-    print(f'Running manual task: python gws_cli.py --task "{task_string}"')
-    import os
-
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    result = subprocess.run(
-        ["python", "gws_cli.py", "--task", task_string], capture_output=True, text=True, encoding="utf-8", env=env
-    )
-    if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
-        pytest.skip("Auth not configured")
-    assert result.returncode == 0, f"Task failed: {result.stderr}"
+from tests.manual.shared import run_task
 
 
 @pytest.mark.live_integration
 def test_manual_1():
+    # Test code execution with LLM
+    # Test: Execute Python code using the code execution tool
     run_task(
-        "Write a python script to calculate the first 10 fibonacci numbers, execute it, and email the results to user@example.com"
+        "Calculate 15 * 24 using Python code",
+        expected=["360", "15 * 24"],
+        service="code",
+        skip_verification=True  # Code service is non-verifiable
     )

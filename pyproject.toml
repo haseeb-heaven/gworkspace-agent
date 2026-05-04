@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-workspace-assistant"
-version = "2.0.0"
+version = "1.0.0"
 description = "Professional CLI and GUI assistant for Google Workspace gws commands."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,7 @@ dependencies = [
 dev = [
     "pytest>=9.0.2",
     "pytest-mock>=3.14.0",
+    "pytest-asyncio>=0.24.0",
 ]
 
 [project.scripts]
@@ -49,9 +50,11 @@ where = ["."]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"
+
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "v0.9.4"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -76,6 +79,9 @@ max-line-length = 120
 [tool.pyright]
 include = ["gws_assistant"]
 exclude = ["**/__pycache__", "tests"]
-pythonVersion = "3.11"
+pythonversion = "v0.9.4"
 typeCheckingMode = "basic"
+
+
+
 

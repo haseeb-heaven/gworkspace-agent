@@ -1,6 +1,7 @@
 import base64
-import json
-from gws_assistant.tools.code_execution_inner import run_code, get_sandbox_globals, _trim_output
+
+from gws_assistant.tools.code_execution_inner import _trim_output, get_sandbox_globals, run_code
+
 
 def test_trim_output():
     assert _trim_output("abc", 5) == "abc"

@@ -17,11 +17,20 @@ class HelpersMixin:
         # This will be provided by ResolverMixin
         ...
 
-    def _think(self, *args, **kwargs) -> str:
+    def _generate_execution_thought(self, *args, **kwargs) -> str:
+        """Generate a thought/reasoning message during execution (placeholder for future use)."""
         return "Thought: Proceeding with planned task."
 
-    def _should_replan(self, *args, **kwargs) -> bool:
+    def _should_trigger_replanning(self, *args, **kwargs) -> bool:
+        """Determine if execution should trigger re-planning (placeholder for future use)."""
         return False
+
+    # Backward compatibility aliases for tests that mock the old method names
+    def _think(self, *args, **kwargs) -> str:
+        return self._generate_execution_thought(*args, **kwargs)
+
+    def _should_replan(self, *args, **kwargs) -> bool:
+        return self._should_trigger_replanning(*args, **kwargs)
 
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
@@ -50,6 +59,11 @@ class HelpersMixin:
             context["search_summary_rows"] = table_values
             context["search_summary_table"] = "\n\n".join(markdown_lines)
             context["search_summary_count"] = len(results)
+
+            # Update result_data with these calculated fields so they end up in task_results
+            result_data["rows"] = table_values
+            result_data["markdown"] = "\n\n".join(markdown_lines)
+            result_data["summary_table"] = "\n\n".join(markdown_lines)
 
             return ExecutionResult(
                 success=True, command=["web_search", query], stdout=json.dumps(result_data), output=result_data
@@ -183,6 +197,24 @@ class HelpersMixin:
                         # Also update the task's own entry in the map if it's a dict
                         if isinstance(results_map.get(task.id), dict):
                             results_map[task.id][k] = v
+                else:
+                    # If parsed_value is not a dict (e.g., a list or scalar), store it directly
+                    num = task.id.split("-")[-1] if "-" in task.id else task.id
+                    results_map[f"task-{num}.result"] = parsed
+                    results_map[f"{num}.result"] = parsed
+                    results_map[f"task-{num}.parsed_value"] = parsed
+                    results_map[f"{num}.parsed_value"] = parsed
+
+            # Always store stdout for email templates
+            if output_data.get("stdout") is not None:
+                stdout = output_data["stdout"]
+                context["code_stdout"] = stdout
+                context["last_code_stdout"] = stdout
+                num = task.id.split("-")[-1] if "-" in task.id else task.id
+                results_map[f"task-{num}.stdout"] = stdout
+                results_map[f"{num}.stdout"] = stdout
+                results_map[f"task-{num}.output"] = stdout
+                results_map[f"{num}.output"] = stdout
 
             return ExecutionResult(
                 success=result.get("success", False),

@@ -1,40 +1,105 @@
-import subprocess
+import os
 
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env at module level
 import pytest
 
+from tests.manual.shared import run_task
 
-def run_task(task_string):
-    import os
-
-    load_dotenv()  # Ensure .env is loaded inside helper
-    email = os.getenv("DEFAULT_RECIPIENT_EMAIL", os.getenv("DEFAULT_RECIPIENT_EMAIL"))
-    task_string = task_string.replace(os.getenv("DEFAULT_RECIPIENT_EMAIL"), email)
-    print(f'Running manual task: python gws_cli.py --task "{task_string}"')
-    import os
-
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    result = subprocess.run(
-        ["python", "gws_cli.py", "--task", task_string], capture_output=True, text=True, encoding="utf-8", env=env
-    )
-    if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
-        pytest.skip("Auth not configured")
-    assert result.returncode == 0, f"Task failed: {result.stderr}"
+TEST_DRIVE_SEARCH_QUERY = os.getenv("TEST_DRIVE_SEARCH_QUERY", "budget")
+TEST_FOLDER_NAME = os.getenv("TEST_FOLDER_NAME", "Agentic AI Test Folder")
+TEST_DOC_QUERY = os.getenv("TEST_DOC_QUERY", "CcaaS - AI Product")
+TEST_RENAMED_FOLDER_NAME = os.getenv("TEST_RENAMED_FOLDER_NAME", "Renamed AI Folder")
 
 
 @pytest.mark.live_integration
 def test_manual_1():
-    run_task("Search my drive for files containing 'budget' and list the top 5 results.")
+    # Read/Search verification
+    run_task(
+        f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and list the top 5 results.",
+        expected=["Planned", "completed"],
+        service="drive",
+        read_only=True,  # Read-only operation
+    )
 
 
 @pytest.mark.live_integration
 def test_manual_2():
-    run_task("Create a new folder named 'Agentic AI Test Folder'.")
+    # Create verification
+    run_task(
+        f"Create a new folder named '{TEST_FOLDER_NAME}'.",
+        expected=["completed", TEST_FOLDER_NAME],
+        service="drive",
+        expected_fields={"name": TEST_FOLDER_NAME},
+    )
 
 
 @pytest.mark.live_integration
 def test_manual_3():
-    run_task("Search for a document named 'CcaaS - AI Product', and if found, export it to PDF.")
+    # Export/Read verification
+    run_task(
+        f"Search for a document named '{TEST_DOC_QUERY}', and if found, export it to PDF.",
+        expected=["Planned", "completed"],
+        service="drive",
+        read_only=True,  # May not have document
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_4():
+    # Rename/Move verification
+    # First create the folder if it doesn't exist, then rename it
+    # This works with both LLM and heuristic mode
+    run_task(
+        f"Create a folder named '{TEST_FOLDER_NAME}' if it doesn't exist, then rename it to '{TEST_RENAMED_FOLDER_NAME}'.",
+        expected=["completed"],
+        service="drive",
+        read_only=True,  # May not have folder
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_5():
+    # File copy verification
+    run_task(
+        "Find a recent file in Drive and create a copy of it.",
+        expected=["completed"],
+        service="drive",
+        read_only=True,  # May not have files to copy
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_6():
+    # Batch operations verification
+    run_task(
+        "List all PDFs in Drive and export the first one if found.",
+        expected=["completed"],
+        service="drive",
+        read_only=True,  # May not have PDFs
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_7():
+    # Drive to email verification - tests template variable resolution
+    # This test verifies that $drive_metadata_table and $drive_file_links are properly resolved
+    run_task(
+        f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and email the results to me",
+        expected=["completed"],
+        service="gmail",  # The final action is sending email
+        read_only=True,  # Email may not be configured
+    )
+
+
+@pytest.mark.live_integration
+def test_manual_8():
+    # Drive metadata to email verification - tests email subject fix
+    # This test verifies that email subjects use user-friendly search terms instead of Drive API query syntax
+    run_task(
+        f"Search drive for '{TEST_DOC_QUERY}' and send me a summary table via email",
+        expected=["completed"],
+        service="gmail",  # The final action is sending email
+        read_only=True,  # Email may not be configured
+    )

@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any
 
+from .file_types import RE_FILE_PATH
 from .models import AppConfigModel, Intent
 from .service_catalog import SERVICES, normalize_service
 
@@ -27,6 +28,7 @@ RE_INTENT_TITLE_MATCH_QUOTED = re.compile(r"(?:titled|named|called)\s+['\"](.+?)
 RE_INTENT_TITLE_MATCH_UNQUOTED = re.compile(r"(?:titled|named|called)\s+([a-zA-Z0-9_-]+)")
 RE_INTENT_VALUES_MATCH = re.compile(r"(\[\[.+?\]\])")
 RE_INTENT_SUBJECT_MATCH = re.compile(r"subject ['\"](.+?)['\"]")
+# Matches file paths after upload/add/put keywords, or bare absolute/relative paths.
 
 try:
     from openai import OpenAI
@@ -247,6 +249,24 @@ class IntentParser:
             if "folder" in lowered:
                 return "create_folder"
 
+        if service == "calendar":
+            # Priority: find/search/list events before get/update/delete which need event_id
+            if any(kw in lowered for kw in ("find", "search", "list", "show", "upcoming", "next", "view")):
+                return "list_events"
+            if any(kw in lowered for kw in ("create", "schedule", "add", "new", "make")):
+                return "create_event"
+            if any(kw in lowered for kw in ("delete", "remove", "cancel", "trash")):
+                return "delete_event"
+            if any(kw in lowered for kw in ("update", "edit", "modify", "change", "reschedule")):
+                return "update_event"
+            # get_event requires event_id, only use if we have an ID in the text
+            if any(kw in lowered for kw in ("get", "details", "fetch")):
+                # Check if we have an event ID (calendar event IDs are typically 20+ chars)
+                if RE_INTENT_ID_MATCH.search(text):
+                    return "get_event"
+                # Without ID, default to list_events
+                return "list_events"
+
         # Fallback to scoring for other services
         best_action = None
         best_score = -999
@@ -356,5 +376,13 @@ class IntentParser:
                 params["body"] = lowered.split("body ")[1].strip()
             except IndexError:
                 pass
+
+        # 6. Extract file path for upload operations
+        path_match = RE_FILE_PATH.search(text)
+        if path_match:
+            file_path = next(g for g in path_match.groups() if g is not None)
+            if file_path:
+                params["file_path"] = file_path
+                self.logger.debug("DEBUG: Found file_path=%s", file_path)
 
         return params

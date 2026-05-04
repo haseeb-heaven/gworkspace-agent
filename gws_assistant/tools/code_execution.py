@@ -23,7 +23,7 @@ from RestrictedPython import compile_restricted, safe_builtins, safe_globals, ut
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
-_TIMEOUT_SECONDS = 5
+_DEFAULT_TIMEOUT_SECONDS = 5
 _BANNED_PATTERNS = [
     r"\bos\.remove\b",
     r"\bos\.system\b",
@@ -31,6 +31,8 @@ _BANNED_PATTERNS = [
     r"\bsocket\b",
     r"\bopen\(",
     r"__import__",
+    r"\brequests\b",
+    r"\burllib\b",
 ]
 
 
@@ -164,7 +166,23 @@ def get_safe_globals() -> dict[str, Any]:
             return target * expr
         if op == "/=":
             return target / expr
-        return expr
+        if op == "//=":
+            return target // expr
+        if op == "%=":
+            return target % expr
+        if op == "**=":
+            return target ** expr
+        if op == "&=":
+            return target & expr
+        if op == "|=":
+            return target | expr
+        if op == "^=":
+            return target ^ expr
+        if op == "<<=":
+            return target << expr
+        if op == ">>=":
+            return target >> expr
+        raise NotImplementedError(f"Unsupported in-place operator: {op}")
 
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
@@ -191,7 +209,7 @@ def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
     raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
 
 
-def _validate_submitted_code(code: str) -> str | None:
+def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS) -> str | None:
     for pattern in _BANNED_PATTERNS:
         if re.search(pattern, code):
             return f"SecurityError: disallowed pattern matched: {pattern}"
@@ -203,7 +221,7 @@ def _validate_submitted_code(code: str) -> str | None:
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             return "SecurityError: import __future__ is blocked."
         if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True:
-            return f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds."
+            return f"TimeoutError: Execution exceeded {timeout_seconds} seconds."
     return None
 
 
@@ -324,7 +342,25 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
-    validation_error = _validate_submitted_code(code)
+    timeout_seconds = (
+        int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
+        if config is not None
+        else _DEFAULT_TIMEOUT_SECONDS
+    )
+    validation_error = _validate_submitted_code(code, timeout_seconds=timeout_seconds)
+    if validation_error and "SyntaxError" in validation_error and ";" in code:
+        # AI Robustness: Many LLMs (especially on Groq/OpenRouter) tend to emit
+        # "one-liners" with semicolons that break Python's block syntax.
+        # We try to expand them into multi-line code and re-validate.
+        # This is a heuristic: split by semicolon followed by space.
+        fixed_code = code.replace("; ", "\n").replace(";", "\n")
+        second_validation = _validate_submitted_code(fixed_code, timeout_seconds=timeout_seconds)
+        if not second_validation:
+            from gws_assistant.logging_utils import get_logger
+            get_logger(__name__).info("AI Robustness: Auto-fixed semicolon syntax in one-liner code block.")
+            code = fixed_code
+            validation_error = None
+
     if validation_error:
         return StructuredToolResult(
             success=False,
@@ -338,13 +374,13 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
     result_holder: list[CodeExecutionResult] = []
     thread = threading.Thread(target=_run_in_thread_sandbox, args=(code, result_holder, extra_globals), daemon=True)
     thread.start()
-    thread.join(timeout=_TIMEOUT_SECONDS)
+    thread.join(timeout=timeout_seconds)
 
     if thread.is_alive():
         return StructuredToolResult(
             success=False,
             output={"code": code, "stdout": "", "stderr": "", "parsed_value": None},
-            error=f"TimeoutError: Execution exceeded {_TIMEOUT_SECONDS} seconds.",
+            error=f"TimeoutError: Execution exceeded {timeout_seconds} seconds.",
         )
 
     if not result_holder:

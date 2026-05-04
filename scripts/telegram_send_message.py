@@ -2,9 +2,17 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# Add project root to sys.path for imports when run as subprocess
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from gws_assistant.tools.telegram import redact_sensitive
 
 # Try to import dotenv, fallback gracefully
 try:
@@ -13,7 +21,11 @@ except ImportError:
     def dotenv_values(path): return {}
 
 
-def send_telegram_message(message: str):
+def _safe_stderr(message: object) -> None:
+    print(redact_sensitive(message), file=sys.stderr)
+
+
+def send_telegram_message(message: str, max_retries: int = 3):
     """
     Send a message to Telegram with basic validation.
     The message must be a string, not empty, and <= 4096 characters.
@@ -39,8 +51,8 @@ def send_telegram_message(message: str):
     env = dotenv_values(env_path)
 
     # Use value from .env or fallback to system environment variables
-    token = env.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = env.get("TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN") or env.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or env.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         print(
             "Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured in .env or environment.", file=sys.stderr
@@ -49,15 +61,23 @@ def send_telegram_message(message: str):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     data = json.dumps({"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req) as response:
-            result = json.loads(response.read().decode())
-            if result.get("ok"):
-                print("Telegram message sent successfully.")
-            else:
-                print(f"Failed to send: {result}", file=sys.stderr)
-    except urllib.error.URLError as e:
-        print(f"Failed to send Telegram message: {e}", file=sys.stderr)
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                result = json.loads(response.read().decode())
+                if result.get("ok"):
+                    print("Telegram message sent successfully.")
+                    return
+                _safe_stderr("Telegram API rejected the message.")
+                return
+        except urllib.error.URLError as e:
+            last_error = e
+            if attempt == max_retries - 1:
+                break
+            time.sleep(2**attempt)
+    if last_error is not None:
+        _safe_stderr("Failed to send Telegram message due to a transient network error.")
 
 
 if __name__ == "__main__":
@@ -75,5 +95,5 @@ if __name__ == "__main__":
     try:
         send_telegram_message(message)
     except (TypeError, ValueError) as e:
-        print(f"Validation error: {e}", file=sys.stderr)
+        _safe_stderr(f"Validation error: {e}")
         sys.exit(1)

@@ -8,6 +8,37 @@ from gws_assistant.models import ExecutionResult
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_for_log(value) -> str:
+    text = str(value).replace("\n", "\\n").replace("\r", "\\r")
+    text = text.replace("\t", "\\t")
+    if len(text) > 500:
+        text = text[:500] + "...[truncated]"
+    return text
+
+
+def _summarize_params(params: dict) -> dict:
+    sensitive_keys = {
+        "body", "content", "message", "text", "prompt", "query", "email", "to", "cc", "bcc",
+        "subject", "file_id", "document_id", "spreadsheet_id", "calendar_id", "thread_id",
+        "message_id", "access_token", "api_key", "token", "authorization",
+    }
+    summary: dict = {}
+    for key, value in params.items():
+        key_text = str(key)
+        key_lower = key_text.lower()
+        if key_lower in sensitive_keys:
+            summary[key_text] = "[REDACTED]"
+        elif isinstance(value, str):
+            summary[key_text] = f"<str len={len(value)}>"
+        elif isinstance(value, list):
+            summary[key_text] = f"<list len={len(value)}>"
+        elif isinstance(value, dict):
+            summary[key_text] = f"<dict keys={sorted(str(k) for k in value.keys())}>"
+        else:
+            summary[key_text] = _sanitize_for_log(value)
+    return summary
+
 # Action categories to treat as destructive
 DESTRUCTIVE_ACTIONS = {
     "drive": ["delete_file", "empty_trash", "move_to_trash"],
@@ -45,7 +76,7 @@ class SafetyGuard:
         log_path = SafetyGuard._get_audit_log_path()
         timestamp = datetime.now().isoformat()
         # Sanitize log fields - strip newlines from all string values to prevent log injection
-        safe_params = {k: str(v).replace("\n", "\\n").replace("\r", "\\r") for k, v in params.items()}
+        safe_params = {k: _sanitize_for_log(v) for k, v in _summarize_params(params).items()}
         log_entry = f"{timestamp} | {action} | {service} | {json.dumps(safe_params)} | {confirmed}\n"
         with open(log_path, "a") as f:
             f.write(log_entry)
@@ -60,7 +91,13 @@ class SafetyGuard:
         raw_text_lower = plan.raw_text.lower()
         if any(kw in raw_text_lower for kw in BULK_KEYWORDS):
             msg = "Plan contains bulk destruction keywords. Blocked for safety."
-            cls._log_audit("plan_block", "system", {"raw_text": plan.raw_text}, False)
+            matched_keywords = [kw for kw in BULK_KEYWORDS if kw in raw_text_lower]
+            cls._log_audit(
+                "plan_block",
+                "system",
+                {"reason": "bulk_keyword_detected", "matched_keywords": matched_keywords, "task_count": len(plan.tasks)},
+                False,
+            )
             if not force_dangerous:
                 raise SafetyBlockedError(msg)
 
@@ -84,15 +121,12 @@ class SafetyGuard:
                 if destructive_count > 10:
                     cls._log_audit("plan_block", "system", {"destructive_count": destructive_count, "reason": "exceeded force cap"}, False)
                     raise SafetyBlockedError(f"Too many destructive actions ({destructive_count}) even with --force-dangerous. Max allowed is 10.")
+                else:
+                    logger.warning(f"[FORCE-DANGEROUS] Allowing {destructive_count} destructive actions.")
+                    cls._log_audit("plan_force_allowed", "system", {"destructive_count": destructive_count}, True)
             else:
                 cls._log_audit("plan_block", "system", {"destructive_count": destructive_count}, False)
                 raise SafetyBlockedError(msg + " Use --force-dangerous flag to override. This is logged.")
-
-        if search_all_present and delete_present:
-            msg = "Plan combines search_all with delete. Blocked for safety."
-            cls._log_audit("plan_block", "system", {"reason": "search_all + delete"}, False)
-            if not force_dangerous:
-                raise SafetyBlockedError(msg)
 
         if search_all_present and delete_present:
             msg = "Plan combines search_all with delete. Blocked for safety."
@@ -121,30 +155,35 @@ class SafetyGuard:
             return "SAFE"
 
         # It is a destructive action
+        safe_param_summary = _summarize_params(task.parameters or {})
+        item_desc = f"{service}.{action} with param keys={sorted(safe_param_summary.keys())}"
+
         if is_dry_run:
-            msg = f"[DRY-RUN] Would execute: {service}.{action} with params: {task.parameters}"
+            msg = f"[DRY-RUN] Would execute: {item_desc}"
             logger.info(msg)
             print(msg)
             return ExecutionResult(
                 success=True, command=["mock"], output={"mock_success": True, "message": "Dry-run mode active"}
             )
 
-        item_desc = f"{service}.{action} with {task.parameters}"
-
         if no_confirm or force_dangerous:
-            cls._log_audit(action, service, task.parameters, True)
+            cls._log_audit(action, service, safe_param_summary, True)
             return "SAFE"
 
         if is_telegram:
             msg = f"Are you sure you want to {action} {item_desc}? (yes/no)"
-            raise SafetyConfirmationRequired(msg, action_name=f"{service}.{action}", details=str(task.parameters))
+            raise SafetyConfirmationRequired(
+                msg,
+                action_name=f"{service}.{action}",
+                details=json.dumps(safe_param_summary, sort_keys=True),
+            )
 
         # Standard CLI confirmation
         print(f"\n WARNING: You are about to perform a destructive action: {item_desc}")
         user_input = input("Are you sure you want to proceed? (y/n): ").strip().lower()
         if user_input in ("y", "yes"):
-            cls._log_audit(action, service, task.parameters, True)
+            cls._log_audit(action, service, safe_param_summary, True)
             return "SAFE"
         else:
-            cls._log_audit(action, service, task.parameters, False)
+            cls._log_audit(action, service, safe_param_summary, False)
             raise SafetyBlockedError("User aborted destructive action.")

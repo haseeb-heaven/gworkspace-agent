@@ -264,6 +264,17 @@ lint → unit-tests → integration-tests → security
 
 ---
 
+## Custom Skills
+
+The following custom agent skills are installed in the `skills/` directory and can be used to automate PR/MR workflows:
+
+- **`check-pr`**: Audits a Pull Request (GitHub), Merge Request (GitLab), or Changelist (Perforce) for unresolved comments, failing status checks, and incomplete descriptions.
+- **`greploop`**: An iterative review and fix loop that triggers Greptile reviews and addresses feedback until a 5/5 confidence score is achieved.
+
+To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
+
+---
+
 ## What an Agent Can Do
 
 - Fix failing tests by correcting source code in `gws_assistant/`
@@ -289,7 +300,7 @@ lint → unit-tests → integration-tests → security
 - Change `GCP_PROJECT_ID`, `GCP_REGION`, or `GCP_SERVICE` in pipeline.yml
 - Hardcode `main` or `master` as a merge target — always use `base.ref`
 - Pass raw `dict` objects between agent layers — use Pydantic models
-
+- Delete or modify the .env file or expose them to commit.
 ---
 
 ## Security Considerations

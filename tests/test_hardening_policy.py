@@ -25,6 +25,8 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("LLM_FALLBACK_MODEL3", raising=False)
     monkeypatch.setenv("MEM0_API_KEY", "")
     monkeypatch.setenv("MEM0_USER_ID", "test-user")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
 
 
 @pytest.mark.gmail
@@ -79,7 +81,7 @@ def test_triple_verifier_checks_calendar_event_with_expected_fields():
     runner = Runner()
     verifier = TripleVerifier(runner, sleep_seconds=0)
 
-    assert verifier.verify_resource("calendar", "evt-1", {"summary": "Planning Review"}) is True
+    assert verifier.verify_resource_by_id("calendar", "evt-1", {"summary": "Planning Review"}) is True
     assert len(runner.calls) == 3
     assert all(call[:3] == ["calendar", "events", "get"] for call in runner.calls)
 

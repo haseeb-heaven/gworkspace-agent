@@ -6,6 +6,10 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+class JsonExtractionError(ValueError):
+    """Raised when polluted or malformed text cannot be parsed into JSON."""
+
+
 def extract_json(text: str) -> Any:
     """
     Extracts and parses the first JSON object or array found in the text.
@@ -47,7 +51,7 @@ def extract_json(text: str) -> Any:
                 continue
 
     # If all fails, raise the original error
-    raise ValueError(f"Could not extract valid JSON from text: {text[:100]}...")
+    raise JsonExtractionError(f"Could not extract valid JSON from text: {text[:100]}...")
 
 
 def safe_json_loads(text: str, fallback_to_string: bool = False) -> Any:
@@ -56,7 +60,8 @@ def safe_json_loads(text: str, fallback_to_string: bool = False) -> Any:
     """
     try:
         return extract_json(text)
-    except Exception as e:
+    except (JsonExtractionError, json.JSONDecodeError, ValueError):
         if fallback_to_string:
+            logger.warning("Falling back to raw text after JSON decode failure.")
             return text
-        raise e
+        raise

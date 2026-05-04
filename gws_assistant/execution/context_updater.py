@@ -1,6 +1,9 @@
 import base64
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ContextUpdaterMixin:
@@ -28,11 +31,17 @@ class ContextUpdaterMixin:
         return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
 
     def _update_context_from_result(self, data: dict, context: dict, task: Any = None) -> None:
-        """Extract known artifact keys from a task result and store in context."""
+        """Extract known artifact keys from a task result and store in context.
+
+        NOTE: This method intentionally enriches ``data`` in-place with
+        normalised aliases (e.g. ``data["id"]``, ``data["name"]``) so that
+        downstream template resolution (``{{task-N.id}}``) can find them.
+        Callers must be aware that the dict they pass will be mutated.
+        """
         if not isinstance(data, dict):
             return
 
-        for id_field in ["documentId", "spreadsheetId", "message_id", "id"]:
+        for id_field in ["documentId", "spreadsheetId", "message_id", "id", "presentationId"]:
             if id_field in data:
                 val = data[id_field]
                 data["id"] = val
@@ -42,6 +51,8 @@ class ContextUpdaterMixin:
                     data["document_id"] = val
                 if id_field == "spreadsheetId":
                     data["spreadsheet_id"] = val
+                if id_field == "presentationId":
+                    data["presentation_id"] = val
                 break
 
         if "stdout" in data and "parsed_value" not in data:
@@ -91,6 +102,106 @@ class ContextUpdaterMixin:
             doc_title = data.get("title")
             if doc_title:
                 context["last_document_title"] = doc_title
+
+        if "presentationId" in data:
+            context["last_presentation_id"] = data["presentationId"]
+            if "presentationUrl" not in data:
+                data["presentationUrl"] = f"https://docs.google.com/presentation/d/{data['presentationId']}/edit"
+            context["last_presentation_url"] = data["presentationUrl"]
+
+            # Capture presentation title
+            pres_title = data.get("title")
+            if pres_title:
+                context["last_presentation_title"] = pres_title
+
+        if "formId" in data:
+            context["last_form_id"] = data["formId"]
+            if "responderUri" in data:
+                context["last_form_url"] = data["responderUri"]
+            elif "formUrl" in data:
+                context["last_form_url"] = data["formUrl"]
+            else:
+                url = f"https://docs.google.com/forms/d/{data['formId']}/edit"
+                data["formUrl"] = url
+                context["last_form_url"] = url
+
+            # Capture form title
+            form_title = data.get("info", {}).get("title")
+            if form_title:
+                context["last_form_title"] = form_title
+
+        if task and task.service == "calendar":
+            if "id" in data:
+                context["last_event_id"] = data["id"]
+                context["last_calendar_event_id"] = data["id"]
+            if "htmlLink" in data:
+                context["last_event_url"] = data["htmlLink"]
+                context["last_calendar_event_url"] = data["htmlLink"]
+            # Handle calendar.list_events results
+            if task.action == "list_events":
+                events = data.get("items") or data.get("events") or []
+                if events and isinstance(events, list):
+                    context["calendar_events"] = events
+                    # Also create a formatted table for email bodies
+                    table_lines = ["| Summary | Start | End |", "|---|---|---|"]
+                    for evt in events[:5]:  # Limit to first 5 events
+                        summary = evt.get("summary", "No Title")
+                        start = evt.get("start", {}).get("dateTime", evt.get("start", {}).get("date", "N/A"))
+                        end = evt.get("end", {}).get("dateTime", evt.get("end", {}).get("date", "N/A"))
+                        table_lines.append(f"| {summary} | {start} | {end} |")
+                    context["calendar_events_table"] = "\n".join(table_lines)
+
+        # Tasks: track task ID and title for multi-step workflows
+        if task and task.service == "tasks":
+            if "id" in data:
+                context["last_task_id"] = data["id"]
+                context["last_tasks_task_id"] = data["id"]
+            if "title" in data:
+                context["last_task_title"] = data["title"]
+                context["last_tasks_task_title"] = data["title"]
+            # Handle list_tasks results (list of tasks with id and title)
+            if task.action == "list_tasks":
+                tasks = data.get("items") or data.get("tasks") or []
+                if tasks and isinstance(tasks, list) and len(tasks) > 0:
+                    first_task = tasks[0]
+                    if isinstance(first_task, dict):
+                        task_id = first_task.get("id")
+                        task_title = first_task.get("title")
+                        if task_id:
+                            data["id"] = task_id
+                            context["last_task_id"] = task_id
+                            context["last_tasks_task_id"] = task_id
+                        if task_title:
+                            context["last_task_title"] = task_title
+                            context["last_tasks_task_title"] = task_title
+
+        # Keep notes: track resource name (id) and title for multi-step workflows
+        if task and task.service == "keep":
+            if "name" in data:
+                data["id"] = data["name"]
+                context["last_note_name"] = data["name"]
+                context["last_keep_note_name"] = data["name"]
+            if "title" in data:
+                context["last_note_title"] = data["title"]
+                context["last_keep_note_title"] = data["title"]
+            # Handle list_notes results (list of notes with name and title)
+            if task.action == "list_notes":
+                notes = data.get("items") or data.get("notes") or []
+                if notes and isinstance(notes, list) and len(notes) > 0:
+                    first_note = notes[0]
+                    if isinstance(first_note, dict):
+                        note_name = first_note.get("name")
+                        note_title = first_note.get("title")
+                        if note_name:
+                            data["id"] = note_name
+                            context["last_note_name"] = note_name
+                            context["last_keep_note_name"] = note_name
+                        if note_title:
+                            context["last_note_title"] = note_title
+                            context["last_keep_note_title"] = note_title
+
+        if "meetingUri" in data:
+            context["last_meeting_url"] = data["meetingUri"]
 
         # Gmail Body Extraction (Recursive base64 decode)
         is_gmail_get = task and task.service == "gmail" and task.action == "get_message"
@@ -159,6 +270,88 @@ class ContextUpdaterMixin:
                 details_list = context.setdefault("gmail_details_values", [])
                 details_list.append(row)
 
+        if "connections" in data or "people" in data:
+            conns = data.get("connections") or data.get("people")
+            if conns and isinstance(conns, list):
+                rows = []
+                def first_val(items, key):
+                    if isinstance(items, list) and items:
+                        return items[0].get(key, "")
+                    return ""
+
+                for person in conns:
+                    if not isinstance(person, dict):
+                        continue
+
+                    name = first_val(person.get("names"), "displayName")
+                    email = first_val(person.get("emailAddresses"), "value")
+                    phone = first_val(person.get("phoneNumbers"), "value")
+                    rows.append([name, email, phone])
+
+                context["contacts_summary_rows"] = rows
+                context["contacts_summary_values"] = [r.copy() for r in rows]
+
+                table_lines = ["| Name | Email | Phone |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+
+                table_str = "\n".join(table_lines)
+                context["contacts_summary_table"] = table_str
+                context["last_contacts_list"] = table_str
+                context["contacts_summary_count"] = len(rows)
+
+        if "activities" in data or ("items" in data and task and task.service == "admin"):
+            items = data.get("activities") or data.get("items")
+            if items and isinstance(items, list):
+                rows = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    event_type = item.get("id", {}).get("uniqueQualifier", "Event")
+                    _actor = item.get("actor", {}).get("email", "Unknown")
+                    actor = self._mask_pii(_actor) if _actor and _actor != "Unknown" else _actor
+                    time_val = item.get("id", {}).get("time", "Unknown Time")
+                    rows.append([event_type, actor, time_val])
+
+                context["admin_summary_rows"] = rows
+                table_lines = ["| Event | Actor | Time |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+
+                table_str = "\n".join(table_lines)
+                context["admin_summary_table"] = table_str
+                context["last_admin_activities"] = table_str
+                context["admin_summary_count"] = len(rows)
+
+        if "spaces" in data:
+            spaces = data["spaces"]
+            if spaces and isinstance(spaces, list):
+                rows = []
+                for s in spaces:
+                    if not isinstance(s, dict):
+                        continue
+                    rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
+
+                # Promote first space name so {{task-N.id}} resolves for chat
+                first_name = spaces[0].get("name", "") if spaces else ""
+                if first_name:
+                    context["last_chat_space_name"] = first_name
+                    data["id"] = first_name
+                    data["name"] = first_name
+
+                context["chat_summary_rows"] = rows
+                table_lines = ["| Space Name | Resource Name | Type |", "|---|---|---|"]
+                for r in rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+
+                table_str = "\n".join(table_lines)
+                context["chat_summary_table"] = table_str
+                context["last_chat_spaces"] = table_str
+                context["chat_summary_count"] = len(rows)
+
         if "messages" in data:
             msgs = data["messages"]
             if msgs and isinstance(msgs, list):
@@ -173,8 +366,18 @@ class ContextUpdaterMixin:
                         context[f"message_id_from_task_{num}"] = m_id
                         context[f"thread_id_from_task_{num}"] = t_id
 
-                # Enriched schema for messages summary
-                rows = []
+                # Enriched schema for messages summary.
+                # NOTE: ``subject`` and ``snippet`` are kept as **separate**
+                # values. Earlier revisions of this module silently replaced
+                # the subject column with the snippet when the payload was
+                # missing, which caused downstream "save snippet to sheet"
+                # tasks to leak Gmail snippets into spreadsheets that should
+                # have held web-search results or document content. The
+                # snippet now lives in its own ``gmail_snippets_rows`` /
+                # ``gmail_snippet_values`` keys so callers can choose which
+                # field to use without ambiguity.
+                rows: list[list[str]] = []
+                snippet_rows: list[list[str]] = []
                 for m in msgs:
                     # m is often a sparse object during list_messages, but might have headers if partial response
                     m_id = m.get("id", "")
@@ -185,16 +388,16 @@ class ContextUpdaterMixin:
                     sender = h_dict.get("from", "Unknown")
                     subject = h_dict.get("subject", "No Subject")
                     date_val = h_dict.get("date", "Unknown Date")
-
-                    # If we don't have payload, use ID/Thread fallback to ensure structure matches
-                    # Or try snippet if available
-                    if not m.get("payload") and "snippet" in m:
-                        subject = m.get("snippet", subject)
+                    snippet_val = str(m.get("snippet") or "").strip()
 
                     rows.append([sender, subject, date_val, m_id, t_id])
+                    snippet_rows.append([sender, snippet_val, date_val, m_id, t_id])
 
                 context["gmail_summary_rows"] = rows
                 context["gmail_summary_values"] = [r.copy() for r in rows]
+                context["gmail_snippets_rows"] = snippet_rows
+                context["gmail_snippet_rows"] = [r.copy() for r in snippet_rows]
+                context["gmail_snippet_values"] = [r.copy() for r in snippet_rows]
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
                 for r in rows:
@@ -203,6 +406,17 @@ class ContextUpdaterMixin:
                     table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |")
                 context["gmail_summary_table"] = "\n".join(table_lines)
                 context["gmail_summary_count"] = len(msgs)
+
+                snippet_table_lines = [
+                    "| Sender | Snippet | Date | ID | Thread ID |",
+                    "|---|---|---|---|---|",
+                ]
+                for r in snippet_rows:
+                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                    snippet_table_lines.append(
+                        f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} | {safe_r[3]} | {safe_r[4]} |"
+                    )
+                context["gmail_snippets_table"] = "\n".join(snippet_table_lines)
 
                 context["gmail_message_ids"] = [m.get("id") for m in msgs if m.get("id")]
 
@@ -217,32 +431,53 @@ class ContextUpdaterMixin:
                 if not context.get("gmail_details_values"):
                     context["gmail_details_values"] = []
 
+        # Handle drive file listings - check multiple possible response formats
+        files = None
         if "files" in data:
             files = data["files"]
-            if files and isinstance(files, list):
-                context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
+        elif "items" in data:
+            files = data["items"]
+        elif isinstance(data, list):
+            # GWS might return the list directly - validate it looks like drive files
+            if data and isinstance(data[0], dict) and any(k in data[0] for k in ("id", "name", "mimeType")):
+                files = data
 
-                rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
-                context["drive_metadata_rows"] = rows
-                context["drive_summary_rows"] = rows
-                context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
+        if isinstance(files, list):
+            if len(files) == 0:
+                # No files found - set empty context values
+                context["drive_metadata_table"] = "No files found matching the search criteria."
+                context["drive_file_links"] = "No files available."
+                context["drive_file_count"] = 0
+                return
+            context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
 
-                table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
-                for r in rows:
-                    safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
-                    table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
-                context["drive_metadata_table"] = "\n".join(table_lines)
-                context["drive_summary_table"] = "\n".join(table_lines)
+            rows = [[f.get("name", ""), f.get("mimeType", ""), f.get("webViewLink", "")] for f in files]
+            context["drive_metadata_rows"] = rows
+            context["drive_summary_rows"] = rows
+            context["drive_summary_values"] = [r.copy() if isinstance(r, list) else r for r in rows]
 
-                context["drive_file_count"] = len(files)
-                context["drive_summary_count"] = len(files)
+            table_lines = ["| Name | MimeType | Link |", "|---|---|---|"]
+            for r in rows:
+                safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
+                table_lines.append(f"| {safe_r[0]} | {safe_r[1]} | {safe_r[2]} |")
+            context["drive_metadata_table"] = "\n".join(table_lines)
+            context["drive_summary_table"] = "\n".join(table_lines)
+            logger.info(f"DEBUG: Set drive_metadata_table with {len(table_lines)} lines")
 
-                if len(files) > 0:
-                    non_folder = next((f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"), files[0])
-                    if "mimeType" in non_folder:
-                        context["last_file_mime"] = non_folder["mimeType"]
-                    if "webViewLink" in non_folder:
-                        context["last_file_url"] = non_folder["webViewLink"]
+            # Create a simple list of file links
+            file_links = [f.get("webViewLink", "") for f in files if f.get("webViewLink")]
+            context["drive_file_links"] = "\n".join(file_links)
+            logger.info(f"DEBUG: Set drive_file_links with {len(file_links)} links")
+
+            context["drive_file_count"] = len(files)
+            context["drive_summary_count"] = len(files)
+
+            if len(files) > 0:
+                non_folder = next((f for f in files if f.get("mimeType") != "application/vnd.google-apps.folder"), files[0])
+                if "mimeType" in non_folder:
+                    context["last_file_mime"] = non_folder["mimeType"]
+                if "webViewLink" in non_folder:
+                    context["last_file_url"] = non_folder["webViewLink"]
 
         if "id" in data and task and task.service == "drive" and task.action == "create_folder":
             context["last_folder_id"] = data["id"]
@@ -407,6 +642,14 @@ class ContextUpdaterMixin:
                     results_map[f"{num}.id"] = first_id
                     results_map[f"task-{num}.id"] = first_id
                     results_map[f"{seq_num}.id"] = first_id
+
+            if "spaces" in data and isinstance(data["spaces"], list) and len(data["spaces"]) > 0:
+                first_name = data["spaces"][0].get("name")
+                if first_name:
+                    results_map[f"{task_id}.name"] = first_name
+                    results_map[f"{num}.name"] = first_name
+                    results_map[f"task-{num}.name"] = first_name
+                    results_map[f"{seq_num}.name"] = first_name
 
         if "values" in data and isinstance(data["values"], list):
             results_map["values"] = data["values"]  # Direct alias for the most recent values

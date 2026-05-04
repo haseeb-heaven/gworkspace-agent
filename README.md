@@ -1,13 +1,12 @@
 # 🚀 Google Workspace Agent
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/release/python-3119/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![LangChain](https://img.shields.io/badge/LangChain-ReAct-blueviolet.svg)](https://python.langchain.com/)
 [![Safety: Sandbox](https://img.shields.io/badge/Safety-Sandboxed-green.svg)](#safety--security)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Tests](https://img.shields.io/badge/tests-pytest-brightgreen.svg)](https://pytest.org/)
-
+[![CI/CD](https://github.com/haseeb-heaven/gworkspace-agent/actions/workflows/pipeline.yml/badge.svg)](https://github.com/haseeb-heaven/gworkspace-agent/actions/workflows/pipeline.yml)</br>
 An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct + LangGraph DAG** architecture. It converts natural language into verified, multi-step workflows across Gmail, Drive, Sheets, Docs, Calendar, and 15+ other Google services — with built-in safety, memory, and sandboxed code execution.
 
 ---
@@ -29,8 +28,15 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 
 ---
 
+## Version
+Latest: **v1.0.0**  
+See [CHANGELOG.md](CHANGELOG.md) for full version history.
+
+---
+
 ## Key Features
 
+- **5-Step Verification Engine** - Strict, non-bypassable verification system with severity levels (CRITICAL, ERROR, WARNING) that validates parameters, permissions, results, data integrity, and idempotency
 - **Hybrid ReAct + LangGraph Engine** — LLM-driven planner generates a typed DAG of tasks; LangGraph executes nodes with full state persistence and smart retry logic
 - **Multi-Service Orchestration** — a single natural language request can chain Gmail, Drive, Sheets, Docs, Calendar, and Code execution in one plan
 - **Long-Term Memory via Mem0** — agent learns from past interactions and recalls user preferences across sessions
@@ -336,3 +342,6 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 <p align="center">
   Built with ❤️ by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a>
 </p>
+
+
+

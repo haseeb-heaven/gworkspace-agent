@@ -85,41 +85,44 @@ def _is_llm_refusal(code: str) -> bool:
     return any(phrase in lowered for phrase in _REFUSAL_PHRASES)
 
 
-def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
-    """Creates the compiled LangGraph workflow."""
+def _append_history(state: AgentState, msg: Any) -> list[Any]:
+    history = list(state.get("conversation_history", []))
+    history.append(msg)
+    return _trim_history(history)
 
-    formatter = HumanReadableFormatter()
 
-    def _append_history(state: AgentState, msg: Any) -> list[Any]:
-        history = list(state.get("conversation_history", []))
-        history.append(msg)
-        return _trim_history(history)
+def _normalize_workspace_result(result: Any) -> StructuredToolResult:
+    if hasattr(result, "to_structured_result"):
+        return result.to_structured_result()
+    return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
 
-    def _normalize_workspace_result(result: Any) -> StructuredToolResult:
-        if hasattr(result, "to_structured_result"):
-            return result.to_structured_result()
-        return StructuredToolResult(success=False, output={}, error="Unknown execution result type")
 
-    def _log_step(
-        tool_name: str,
-        normalized_input: Any,
-        normalized_output: StructuredToolResult | ReflectionDecision | dict[str, Any],
-    ) -> None:
-        if config.verbose:
-            logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
+class WorkflowNodes:
+    """Testable extraction of LangGraph workflow node logic."""
 
-    def plan_node(state: AgentState) -> dict[str, Any]:
+    def __init__(self, config: AppConfigModel, system: Any, executor: Any, logger: logging.Logger):
+        self.config = config
+        self.system = system
+        self.executor = executor
+        self.logger = logger
+        self.formatter = HumanReadableFormatter()
+
+    def plan_node(self, state: AgentState) -> dict[str, Any]:
         try:
-            plan = system.plan(state["user_text"])
+            plan = self.system.plan(state.get("user_text", ""))
             history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
-            _log_step("planner", {"user_text": state["user_text"]}, {"tasks": len(plan.tasks), "source": plan.source})
+            self._log_step("planner", {"user_text": state.get("user_text", "")}, {"tasks": len(plan.tasks), "source": plan.source})
             return {"plan": plan, "error": None, "conversation_history": history}
         except Exception as exc:
             history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
-            _log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
+            self._log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
             return {"error": str(exc), "conversation_history": history}
 
-    def validate_node(state: AgentState) -> dict[str, Any]:
+    def _log_step(self, tool_name: str, normalized_input: Any, normalized_output: Any) -> None:
+        if self.config.verbose:
+            self.logger.info("tool=%s input=%s output=%s", tool_name, normalized_input, normalized_output)
+
+    def validate_node(self, state: AgentState) -> dict[str, Any]:
         plan = state.get("plan")
         if not plan:
             return {"error": "No plan to validate."}
@@ -128,7 +131,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 return {"error": f"Task {task.id} has no action."}
         return {"error": None}
 
-    def execute_task_node(state: AgentState) -> dict[str, Any]:
+    def execute_task_node(self, state: AgentState) -> dict[str, Any]:
         plan = state.get("plan")
         idx = state.get("current_task_index", 0)
         context = dict(state.get("context", {}))
@@ -139,7 +142,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return {"error": "No tasks to execute."}
 
         task = plan.tasks[idx]
-        expanded = executor._expand_task(task, context)
+        expanded = self.executor._expand_task(task, context)
         if not expanded:
             return {
                 "error": f"Task {task.id} expanded to no executable tasks.",
@@ -151,13 +154,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         latest: StructuredToolResult | None = None
         task_error: str | None = None
         for exp_task in expanded:
-            resolved = executor._resolve_task(exp_task, context)
+            resolved = self.executor._resolve_task(exp_task, context)
 
             # Bug Fix: Ensure task is structurally valid AND all placeholders resolved
             try:
                 validate_planned_task(resolved)
             except Exception as val_exc:
-                logger.error(f"Validation failed after resolution for task {resolved.id}: {val_exc}")
+                self.logger.error(f"Validation failed after resolution for task {resolved.id}: {val_exc}")
                 return {
                     "error": str(val_exc),
                     "last_result": StructuredToolResult(success=False, output={}, error=str(val_exc)),
@@ -165,18 +168,15 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "context": context,
                 }
 
-            result = executor.execute_single_task(resolved, context)
+            result = self.executor.execute_single_task(resolved, context)
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
 
             # Store results in context for placeholder resolution
-            # executor._resolve_template expects dict with keys like 'files', 'id' etc.
-            # latest['output'] usually contains 'parsed_payload' which has the real data.
             results_map = context.setdefault("task_results", {})
             payload = latest["output"].get("parsed_payload") or latest["output"]
 
             # Fix: If payload contains 'messages' list, promote it so code.execute sees a list
-            # as expected by LLM for list_messages tasks.
             if isinstance(payload, dict) and "messages" in payload and isinstance(payload["messages"], list):
                 if len(payload["messages"]) > 0:
                     storage_payload = [
@@ -193,21 +193,18 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 storage_payload = payload
 
             # Update legacy context keys (last_spreadsheet_id, message_id, etc.)
-            executor._update_context_from_result(payload, context, resolved)
+            self.executor._update_context_from_result(payload, context, resolved)
 
-            # Always also store by sequential index (task-1, task-2, etc.) to
-            # support LLMs that refer to tasks by their order regardless of name.
+            # Always also store by sequential index (task-1, task-2, etc.)
             seq_id = f"task-{idx + 1}"
             results_map[seq_id] = storage_payload
             results_map[str(idx + 1)] = storage_payload
             results_map[f"t{idx + 1}"] = storage_payload
-            logger.debug(f"DEBUG: Saved result to results_map keys: {seq_id}, {idx + 1}, t{idx + 1}")
 
-            # Use task.id as provided in the plan (usually 'task-1', 'task-2' etc.)
+            # Use task.id as provided in the plan
             t_id = str(task.id)
             if t_id != seq_id:
                 results_map[t_id] = storage_payload
-                # Also store with numeric ID for {task-1...} vs {1...}
                 if t_id.startswith("task-"):
                     num = t_id.removeprefix("task-")
                     results_map[num] = storage_payload
@@ -217,16 +214,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     results_map[f"t{t_id}"] = storage_payload
 
             if resolved.service == "drive" and resolved.action == "export_file" and latest["success"]:
-                # Special handling: if we exported a file, its content (if text) is stored directly.
-                # This is used by later tasks like gmail.send_message via $drive_export_content.
                 if "drive_export_content" in latest["output"]:
                     content = latest["output"]["drive_export_content"]
                     context["drive_export_content"] = content
                     context["drive_export_file"] = content
-                    # Also put it in task_results so {task-N.content} works
                     results_map[t_id] = {"content": content}
-                    if t_id.startswith("task-"):
-                        results_map[t_id.removeprefix("task-")] = {"content": content}
+
             thought_trace.append(
                 {
                     "step": idx + 1,
@@ -236,12 +229,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "reason": resolved.reason,
                 }
             )
-            _log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
+            self._log_step(f"{resolved.service}.{resolved.action}", resolved.parameters, latest)
             if not result.success:
                 task_error = result.error or result.stderr or "Task execution failed"
                 break
 
-        # Fix #5 — fallback if loop had no iterations
         if latest is None:
             latest = StructuredToolResult(success=True, output={}, error=None)
 
@@ -255,19 +247,18 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "thought_trace": thought_trace,
         }
 
-    def reflect_node(state: AgentState) -> dict[str, Any]:
+    def reflect_node(self, state: AgentState) -> dict[str, Any]:
         error = state.get("error")
         attempts = state.get("current_attempt", 0)
         context = dict(state.get("context", {}))
         updates: dict[str, Any] = {}
 
-        decision, abort_plan = executor.reflect_on_error(error, attempts, config.max_retries)
-
-        if abort_plan:
+        decision, abort = self.executor.reflect_on_error(error, attempts, self.config.max_retries)
+        if abort:
             updates["abort_plan"] = True
 
         if decision.action == "replan":
-            if state.get("plan") and context.get("replan_count", 0) < config.max_replans:
+            if state.get("plan") and context.get("replan_count", 0) < self.config.max_replans:
                 context["replan_count"] = int(context.get("replan_count", 0)) + 1
                 updates["context"] = context
                 updates["current_attempt"] = 0
@@ -278,38 +269,25 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 decision = ReflectionDecision(action="continue", reason="Cannot recover from failure.")
                 updates["abort_plan"] = True
 
-        _log_step("reflection", {"error": error, "attempt": attempts}, decision)
+        self._log_step("reflection", {"error": error, "attempt": attempts}, decision)
         updates["reflection"] = decision
         updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))
         return updates
 
-    def update_context_node(state: AgentState) -> dict[str, Any]:
-        new_index = state.get("current_task_index", 0) + 1
-        if state.get("abort_plan"):
-            plan = state.get("plan")
-            if plan is not None:
-                new_index = len(plan.tasks)
-        return {
-            "current_task_index": new_index,
-            "error": state.get("error"),
-            "current_attempt": 0,
-            "conversation_history": _trim_history(state.get("conversation_history", [])),
-        }
-
-    def format_output_node(state: AgentState) -> dict[str, Any]:
+    def format_output_node(self, state: AgentState) -> dict[str, Any]:
+        """Format the final output using the formatter."""
         plan = state.get("plan")
         executions = state.get("executions", [])
         context = state.get("context", {})
 
         if plan and executions:
-            # Resolve placeholders in summary if any exist
             if plan.summary and ("{" in plan.summary or "$" in plan.summary):
                 try:
-                    plan.summary = executor._resolve_placeholders(plan.summary, context)
+                    plan.summary = self.executor._resolve_placeholders(plan.summary, context)
                 except Exception as e:
-                    logger.warning(f"Failed to resolve placeholders in summary: {e}")
+                    self.logger.warning(f"Failed to resolve placeholders in summary: {e}")
 
-            report = formatter.format_report(
+            report = self.formatter.format_report(
                 PlanExecutionReport(
                     plan=plan,
                     executions=executions,
@@ -319,33 +297,64 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         else:
             report = state.get("final_output") or state.get("error") or "No result produced."
 
-        # Guard: if report is still empty and there was an error in state, use it.
         if not report or report == "No result produced.":
             err = state.get("error")
             if err:
                 report = err
-        if any(not item.result.success for item in executions) and "failed" not in report.lower():
+        if any(not getattr(item.result, "success", False) for item in executions) and "failed" not in report.lower():
             report = f"Execution finished with failures.\n\n{report}"
-        # Save to episodic memory if successful
-        if executions and all(item.result.success for item in executions):
-            try:
-                from .memory import save_episode
-                save_episode(state["user_text"], [e.task.parameters for e in executions], report)
-            except Exception as e:
-                logger.warning(f"Failed to save episode to memory: {e}")
+        return {"final_output": report}
 
-        # Also add a semantic memory fact if successful
-        if executions and all(item.result.success for item in executions):
-            try:
-                memory_text = f"User task: {state['user_text']}. Status: Completed successfully. Summary: {report[:200]}..."
-                system.memory.add(memory_text, metadata={"type": "task_completion"})
-            except Exception as e:
-                logger.warning(f"Failed to add semantic memory: {e}")
+    def update_context_node(self, state: AgentState) -> dict[str, Any]:
+        idx = state.get("current_task_index", 0)
+        new_index = idx + 1
+        if state.get("abort_plan"):
+            plan = state.get("plan")
+            if plan is not None:
+                new_index = len(plan.tasks)
+        return {"current_task_index": new_index, "current_attempt": 0}
 
-        return {"final_output": report, "conversation_history": _trim_history(state.get("conversation_history", []))}
+    def persist_memory_node(self, state: AgentState) -> dict[str, Any]:
+        """Persist successful task executions to episodic and semantic memory."""
+        executions = state.get("executions", [])
+        if not executions or not all(getattr(e.result, "success", False) for e in executions):
+            return {}
+
+        try:
+            # Re-generate report for memory summary (or use a simple one)
+            plan = state.get("plan")
+            if not plan:
+                return {}
+
+            # Resolve placeholders in summary for memory
+            summary = plan.summary or ""
+            if "{" in summary or "$" in summary:
+                try:
+                    summary = self.executor._resolve_placeholders(summary, state.get("context", {}))
+                except Exception as e:
+                    self.logger.debug(f"Best-effort placeholder resolution failed in persist_memory_node: {e}")
+
+            # Save to episodic memory
+            from .memory import save_episode
+            save_episode(state.get("user_text", ""), [e.task.parameters for e in executions], summary)
+
+            # Save to semantic memory
+            memory_text = f"User task: {state.get('user_text', '')}. Status: Completed successfully. Outcome: {summary[:200]}"
+            self.system.memory.add(memory_text, metadata={"type": "task_completion"})
+
+        except Exception as e:
+            self.logger.warning(f"Failed to persist memory in persist_memory_node: {e}")
+
+        return {}
+
+
+def create_workflow(config: AppConfigModel, system, executor, logger: logging.Logger):
+    """Creates the compiled LangGraph workflow."""
+
+    nodes = WorkflowNodes(config, system, executor, logger)
 
     def web_search_node(state: AgentState) -> dict[str, Any]:
-        result = web_search_tool.invoke({"query": state["user_text"]})
+        result = web_search_tool.invoke({"query": state.get("user_text", "")})
         if result.get("error"):
             structured = StructuredToolResult(success=False, output=result, error=result["error"])
             return {"last_result": structured, "error": result["error"]}
@@ -357,7 +366,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             logger.warning("summarize_results failed in web_search_node (ignored): %s", _sum_exc)
         structured = StructuredToolResult(
             success=True,
-            output={"query": state["user_text"], "summary": summary, "results": result.get("results", [])},
+            output={"query": state.get("user_text", ""), "summary": summary, "results": result.get("results", [])},
             error=None,
         )
         context = dict(state.get("context", {}))
@@ -379,9 +388,21 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         context["search_summary_table"] = markdown_table
         context["search_summary_rows"] = rows
         context["search_summary_count"] = len(result.get("results", []))
-
-        # We can still store the LLM summary for use if needed
         context["search_llm_summary"] = summary
+
+        # Populate task_results for placeholder resolution in subsequent tasks
+        results_map = context.setdefault("task_results", {})
+        search_payload = {
+            "results": result.get("results", []),
+            "summary": summary,
+            "rows": rows,
+            "markdown": markdown_table,
+            "query": state.get("user_text", "")
+        }
+        results_map["web_search"] = search_payload
+        # If this search Satisfies the first task (often planned as search), populate task-1
+        if "task-1" not in results_map:
+            results_map["task-1"] = search_payload
 
         return {
             "final_output": f"Web Search Result:\n\n{summary}",
@@ -422,7 +443,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
         result = execute_generated_code(str(code), config=config)
-        _log_step("sandbox_execute", {"code": code}, result)
+        nodes._log_step("sandbox_execute", {"code": code}, result)
 
         results_map = context.setdefault("task_results", {})
         results_map["code"] = result.get("output", {})
@@ -442,10 +463,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "and may print intermediate details. NO markdown formatting, just raw code.\n\n"
             "CRITICAL: Do NOT use ANY 'import' statements. All standard libraries are unavailable. "
             "Use only built-in functions and basic logic.\n\n"
-            f"User request:\n{state['user_text']}"
+            f"User request:\n{state.get('user_text', '')}"
         )
         model = create_agent(config, logger)
-        lowered = state["user_text"].lower()
+        lowered = state.get("user_text", "").lower()
         is_computation = any(
             kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers")
         )
@@ -460,11 +481,11 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     ),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
-            extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
+            extracted = "".join(ch for ch in state.get("user_text", "") if ch.isdigit() or ch in ".+-*/() ")
             generated = f"result = {extracted or '0'}\nprint(result)"
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
-            _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback"})
+            nodes._log_step("generate_code", {"prompt": state.get("user_text", "")}, {"mode": "heuristic_fallback"})
             return {"context": context, "error": None}
 
         try:
@@ -477,15 +498,15 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                     "last_result": StructuredToolResult(success=False, output={"prompt": prompt}, error=str(exc)),
                     "current_attempt": state.get("current_attempt", 0) + 1,
                 }
-            numbers = re.findall(r"\b\d+\b", state["user_text"])
-            lowered = state["user_text"].lower()
+            numbers = re.findall(r"\b\d+\b", state.get("user_text", ""))
+            lowered = state.get("user_text", "").lower()
             if len(numbers) >= 2 and ("from" in lowered or "between" in lowered):
                 start, end = numbers[0], numbers[1]
                 rev = "True" if "reverse" in lowered or "descending" in lowered else "False"
                 generated = f"result = list(range({start}, {int(end) + 1}))\nif {rev}: result.reverse()\nprint(result)"
             else:
                 # Basic math extraction
-                extracted = "".join(ch for ch in state["user_text"] if ch.isdigit() or ch in ".+-*/() ")
+                extracted = "".join(ch for ch in state.get("user_text", "") if ch.isdigit() or ch in ".+-*/() ")
                 # Clean up multiple spaces or invalid sequences
                 cleaned = re.sub(r"\s+", " ", extracted).strip()
                 # If it still looks like multiple numbers, just pick the first or join with +
@@ -495,7 +516,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
             context = dict(state.get("context", {}))
             context["generated_code"] = generated
-            _log_step("generate_code", {"prompt": state["user_text"]}, {"mode": "heuristic_fallback_enhanced"})
+            nodes._log_step("generate_code", {"prompt": state.get("user_text", "")}, {"mode": "heuristic_fallback_enhanced"})
             return {"context": context, "error": None}
 
         content = getattr(llm_response, "content", str(llm_response))
@@ -518,14 +539,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         context = dict(state.get("context", {}))
         context["generated_code"] = generated_code
-        _log_step("generate_code", {"prompt": state["user_text"]}, {"generated_code": generated_code})
+        nodes._log_step("generate_code", {"prompt": state.get("user_text", "")}, {"generated_code": generated_code})
         return {"context": context, "error": None}
 
     def route_after_plan(state: AgentState) -> Literal["validate", "format_output", "web_search", "generate_code"]:
         if state.get("error"):
             return "format_output"
         plan = state.get("plan")
-        text = state["user_text"].lower()
+        text = state.get("user_text", "").lower()
 
         has_search_intent = any(kw in text for kw in _SEARCH_INTENT_KEYWORDS)
         has_gws_intent = any(kw in text for kw in _GWS_INTENT_KEYWORDS)
@@ -559,22 +580,28 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         return "format_output"
 
-    def route_after_web_search(state: AgentState) -> Literal["validate", "format_output"]:
+    def route_after_web_search(state: AgentState) -> Literal["validate", "persist_memory"]:
         """After web search, if the plan has workspace tasks to execute, go to validate."""
         plan = state.get("plan")
         if plan and plan.tasks and not state.get("error"):
             return "validate"
-        return "format_output"
+        return "persist_memory"
 
-    def route_after_task(state: AgentState) -> Literal["reflect_node"]:
+    def route_after_task(state: AgentState) -> Literal["reflect_node", "persist_memory"]:
+        # Check if last execution was a safety block - if so, stop the workflow
+        executions = state.get("executions", [])
+        if executions:
+            last_result = executions[-1].result
+            if not last_result.success and "User aborted" in str(last_result.error):
+                return "persist_memory"  # Stop workflow on user abort
         return "reflect_node"
 
     def route_after_reflection(
         state: AgentState,
-    ) -> Literal["update_context", "execute_task", "generate_plan", "format_output", "generate_code"]:
+    ) -> Literal["update_context", "execute_task", "generate_plan", "persist_memory", "generate_code"]:
         decision = state.get("reflection")
         if not decision:
-            return "format_output"
+            return "persist_memory"
         if decision.action == "continue":
             return "update_context"
         if decision.action == "retry":
@@ -583,22 +610,23 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "execute_task"
         if decision.action == "replan":
             return "generate_plan"
-        return "format_output"
+        return "persist_memory"
 
-    def route_after_context(state: AgentState) -> Literal["execute_task", "format_output"]:
+    def route_after_context(state: AgentState) -> Literal["execute_task", "persist_memory"]:
         plan = state.get("plan")
         idx = state.get("current_task_index", 0)
         if plan and idx < len(plan.tasks):
             return "execute_task"
-        return "format_output"
+        return "persist_memory"
 
     workflow = StateGraph(AgentState)
-    workflow.add_node("generate_plan", plan_node)
-    workflow.add_node("validate", validate_node)
-    workflow.add_node("execute_task", execute_task_node)
-    workflow.add_node("reflect_node", reflect_node)
-    workflow.add_node("update_context", update_context_node)
-    workflow.add_node("format_output", format_output_node)
+    workflow.add_node("generate_plan", nodes.plan_node)
+    workflow.add_node("validate", nodes.validate_node)
+    workflow.add_node("execute_task", nodes.execute_task_node)
+    workflow.add_node("reflect_node", nodes.reflect_node)
+    workflow.add_node("update_context", nodes.update_context_node)
+    workflow.add_node("format_output", nodes.format_output_node)
+    workflow.add_node("persist_memory", nodes.persist_memory_node)
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("generate_code", generate_code_node)
     workflow.add_node("code_execution", code_execution_node)
@@ -614,11 +642,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             "update_context": "update_context",
             "execute_task": "execute_task",
             "generate_plan": "generate_plan",
-            "format_output": "format_output",
+            "persist_memory": "persist_memory",
             "generate_code": "generate_code",
         },
     )
     workflow.add_conditional_edges("update_context", route_after_context)
+    workflow.add_edge("persist_memory", "format_output")
     workflow.add_conditional_edges("web_search", route_after_web_search)
     workflow.add_edge("generate_code", "code_execution")
     workflow.add_edge("code_execution", "reflect_node")

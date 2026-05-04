@@ -1,33 +1,31 @@
-import subprocess
+import os
 
 from dotenv import load_dotenv
 
-load_dotenv() # Load .env at module level
+load_dotenv()  # Load .env at module level
 import pytest
 
+from tests.manual.shared import run_task
 
-def run_task(task_string):
-    import os
-    load_dotenv() # Ensure .env is loaded inside helper
-    email = os.getenv('DEFAULT_RECIPIENT_EMAIL', os.getenv("DEFAULT_RECIPIENT_EMAIL"))
-    task_string = task_string.replace(os.getenv("DEFAULT_RECIPIENT_EMAIL"), email)
-    import os
-
-    print(f"Running manual task: python gws_cli.py --task \"{task_string}\"")
-    import os
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    result = subprocess.run(["python", "gws_cli.py", "--task", task_string], capture_output=True, text=True, encoding="utf-8", env=env)
-    if "missing field `client_id`" in result.stderr or "Authentication failed" in result.stderr:
-        pytest.skip("Auth not configured")
-    assert result.returncode == 0, f"Task failed: {result.stderr}"
+TEST_DOC_NAME = os.getenv("TEST_DOC_NAME", "Investigation Report")
 
 
 @pytest.mark.live_integration
 def test_manual_1():
-    run_task("Create a Google Doc called 'Investigation Report'.")
+    # Create verification
+    run_task(
+        f"Create a Google Doc called '{TEST_DOC_NAME}'.",
+        expected=["completed", TEST_DOC_NAME],
+        service="docs",
+        expected_fields={"title": TEST_DOC_NAME},
+    )
+
 
 @pytest.mark.live_integration
 def test_manual_2():
-    run_task("Read the 'Investigation Report' Google Doc and send an email to user@example.com with the contents.")
-
+    # Read and email verification
+    run_task(
+        f"Read the '{TEST_DOC_NAME}' Google Doc and send an email with the contents.",
+        expected=["Planned", "completed"],
+        service="docs",
+    )

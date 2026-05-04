@@ -8,7 +8,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "drive": ServiceSpec(
         key="drive",
         label="Google Drive",
-        aliases=("drive", "files", "google drive", "document", "documents", "file"),
+        aliases=("drive", "files", "google drive", "document", "documents", "file", "folder", "folders"),
         description="Manage files and folders in Google Drive. Returns file metadata including id, name, mimeType, webViewLink.",
         actions={
             "list_files": ActionSpec(
@@ -31,11 +31,12 @@ SERVICES: dict[str, ServiceSpec] = {
             "upload_file": ActionSpec(
                 key="upload_file",
                 label="Upload file",
-                description="Upload a local file to Google Drive. Returns: {id, name, mimeType}.",
+                description="Upload a local file to Google Drive. Supports documents (doc, docx, pdf, txt, csv, md, html), spreadsheets (xls, xlsx, ods), presentations (ppt, pptx, odp), images (png, jpg, gif, svg, webp), audio (mp3, wav, ogg, flac, m4a), video (mp4, mkv, avi, mov, wmv, webm, mpeg), archives (zip, tar, gz, 7z), and code files (py, js, json, yaml). Returns: {id, name, mimeType}.",
                 keywords=("upload", "add", "put", "drive"),
                 parameters=(
                     ParameterSpec("file_path", "Local path to the file to upload", "README.md"),
                     ParameterSpec("name", "Optional: name for the file on Drive", "Uploaded File", required=False),
+                    ParameterSpec("folder_id", "Optional: ID of the folder to upload the file into", "", required=False),
                 ),
             ),
             "get_file": ActionSpec(
@@ -64,7 +65,7 @@ SERVICES: dict[str, ServiceSpec] = {
             "export_file": ActionSpec(
                 key="export_file",
                 label="Export file",
-                description="Read or download the content of a file. Use this for both Google Workspace documents (Doc/Sheet/Slide) and regular files (txt, csv, pdf) to retrieve their text or binary content.",
+                description="Read or download the content of a file. Supports Google Workspace docs (export to docx, pdf, txt, odt, html, csv, xlsx, ods, pptx, odp) and regular files (images, audio, video, pdf, zip, office files) via direct download. Returns the saved file path and content metadata.",
                 keywords=("export", "download", "read", "content", "text", "binary", "attachment"),
                 parameters=(
                     ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
@@ -81,6 +82,13 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Delete file",
                 description="Permanently delete a Drive file by id. Irreversible — use with caution.",
                 keywords=("delete", "remove", "trash"),
+                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),),
+            ),
+            "move_to_trash": ActionSpec(
+                key="move_to_trash",
+                label="Move file to trash",
+                description="Move a Drive file to trash. The file can be recovered from trash within 30 days.",
+                keywords=("trash", "move to trash", "bin", "soft delete"),
                 parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),),
             ),
             "update_file_metadata": ActionSpec(
@@ -181,7 +189,7 @@ SERVICES: dict[str, ServiceSpec] = {
     "gmail": ServiceSpec(
         key="gmail",
         label="Gmail",
-        aliases=("gmail", "mail", "email", "emails", "message", "messages", "inbox"),
+        aliases=("gmail", "mail", "email", "emails", "inbox", "messages", "message"),
         description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
         actions={
             "list_messages": ActionSpec(
@@ -231,10 +239,10 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("send", "compose", "mail", "email", "share"),
                 negative_keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
-                    ParameterSpec("to_email", "Recipient email address", "person@example.com"),
+                    ParameterSpec("to_email", "Recipient email address", "recipient@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
-                    ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
+                    ParameterSpec("attachments", "Optional local attachment paths", "path/to/file.pdf", required=False),
                 ),
             ),
         },
@@ -263,6 +271,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("summary", "Event summary", "Weekly Sync"),
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
+                    ParameterSpec("end_date", "Optional: End date (YYYY-MM-DD)", "2026-04-15", required=False),
+                    ParameterSpec("start_time", "Optional: Start time (e.g. 10am, 14:30)", "10:00 AM", required=False),
+                    ParameterSpec("end_time", "Optional: End time (e.g. 11am, 15:30)", "11:00 AM", required=False),
+                    ParameterSpec("start_datetime", "Optional: Full start ISO datetime", "2026-04-15T10:00:00", required=False),
+                    ParameterSpec("end_datetime", "Optional: Full end ISO datetime", "2026-04-15T11:00:00", required=False),
+                    ParameterSpec("time_zone", "Optional: Timezone (default: UTC)", "UTC", required=False),
+                    ParameterSpec("description", "Optional: Event description", "Discuss project status", required=False),
+                    ParameterSpec("event_id", "Optional: Specific ID to use for the event", "evt_123", required=False),
                 ),
             ),
             "get_event": ActionSpec(
@@ -382,6 +398,32 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("list", "show", "find", "search", "contacts", "people"),
                 parameters=(ParameterSpec("page_size", "How many contacts should I show?", "10", required=False),),
             ),
+            "list_directory_people": ActionSpec(
+                key="list_directory_people",
+                label="List directory members",
+                description="Provides a list of domain profiles and domain contacts in the authenticated user's domain directory. Returns: [{name, emailAddresses[], phoneNumbers[]}].",
+                keywords=("list", "show", "find", "directory", "users", "members", "workspace"),
+                parameters=(
+                    ParameterSpec("page_size", "How many people should I show?", "10", required=False),
+                    ParameterSpec(
+                        "read_mask",
+                        "Fields to return (e.g. names,emailAddresses,phoneNumbers)",
+                        "names,emailAddresses,phoneNumbers",
+                        required=False,
+                    ),
+                    ParameterSpec("sources", "Sources (DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE)", "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE", required=False),
+                ),
+            ),
+            "get_person": ActionSpec(
+                key="get_person",
+                label="Get person",
+                description="Get a specific person's profile by resourceName. Returns: {resourceName, names[], emailAddresses[], phoneNumbers[]}.",
+                keywords=("get", "show", "read", "person", "contact"),
+                parameters=(
+                    ParameterSpec("resourceName", "Person resource name (e.g. people/c123)", "people/c123"),
+                    ParameterSpec("personFields", "Fields to return", "names,emailAddresses,phoneNumbers", required=False),
+                ),
+            ),
         },
     ),
     "chat": ServiceSpec(
@@ -415,6 +457,15 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
                     ParameterSpec("page_size", "How many messages should I show?", "10", required=False),
+                ),
+            ),
+            "get_message": ActionSpec(
+                key="get_message",
+                label="Get message",
+                description="Fetch a single Chat message by its resource name. Returns: {name, text, sender, createTime}.",
+                keywords=("get", "read", "message", "fetch"),
+                parameters=(
+                    ParameterSpec("name", "Full message resource name (e.g. spaces/AAAA1234/messages/xyz)", "spaces/AAAA1234/messages/xyz"),
                 ),
             ),
         },
@@ -522,14 +573,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 key="log_activity",
                 label="Log activity",
                 description="Synthetic internal tool to record an audit log entry for the agent's actions. Returns: {success, logged_at}.",
-                keywords=("log", "audit", "track", "metadata", "store"),
+                keywords=("record", "audit", "track", "metadata", "store"),
                 parameters=(ParameterSpec("data", "Metadata or activity to log", "User performed X"),),
             ),
             "list_activities": ActionSpec(
                 key="list_activities",
                 label="List activities",
                 description="Retrieve audit logs for a specific application (e.g. 'drive', 'admin'). Returns: {items: [...]}.",
-                keywords=("list", "find", "search", "logs", "audit", "events"),
+                keywords=("list", "activities", "reports", "find", "search", "logs", "audit", "events"),
                 parameters=(
                     ParameterSpec("application_name", "Application to audit (admin, drive, etc.)", "drive"),
                     ParameterSpec("max_results", "How many logs to show?", "10", required=False),
@@ -672,13 +723,23 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("get", "open", "read", "form"),
                 parameters=(ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),),
             ),
+            "batch_update": ActionSpec(
+                key="batch_update",
+                label="Update form",
+                description="Update a Google Form (add questions, update info). 'requests' must be a list of update requests.",
+                keywords=("update", "edit", "modify", "add question", "batch"),
+                parameters=(
+                    ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),
+                    ParameterSpec("requests", "List of update requests", "[{'createItem': {...}}]", required=True),
+                ),
+            ),
         },
     ),
     "code": ServiceSpec(
         key="code",
         label="Code Execution",
         aliases=("code", "python", "computation", "compute", "script"),
-        description="Execute Python code in a restricted sandbox for logic, math, data processing, and sorting. Output is captured as stdout and return values.",
+        description="Execute Python code in a restricted sandbox for logic, math, data processing, and sorting. Output is captured as stdout and return values. NEVER import external libraries like 'requests', 'os', or 'subprocess' — the environment is strictly offline.",
         actions={
             "execute": ActionSpec(
                 key="execute",
@@ -686,7 +747,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Run a block of Python code. Captured results are available as $code_output.",
                 keywords=("run", "execute", "python", "code", "sort", "calculate", "math", "compute"),
                 parameters=(
-                    ParameterSpec("code", "Python code to execute", "sorted([3, 1, 2])"),
+                    ParameterSpec("code", "Python code to execute. MUST use multi-line indentation for loops/if-blocks. DO NOT use semicolons.", "data = {{task-1}}\nresult = [x for x in data if x > 10]"),
                     ParameterSpec(
                         "file_path",
                         "Optional: Local path to write the output to (e.g. 'data.txt')",

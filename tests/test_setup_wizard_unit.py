@@ -1,13 +1,10 @@
 """Tests for setup_wizard module — covers discover_gws_binary and helper functions."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from gws_assistant.setup_wizard import discover_gws_binary, _quote, _render_env
+from gws_assistant.setup_wizard import _quote, _render_env, discover_gws_binary
 
 
 class TestDiscoverGwsBinary:
@@ -85,3 +82,21 @@ class TestRenderEnv:
         assert "OPENROUTER_API_KEY" in rendered
         assert "GWS_BINARY_PATH" in rendered
         assert "'openrouter'" in rendered
+
+
+class TestAskHelpers:
+    @patch("gws_assistant.setup_wizard.Prompt.ask", return_value="user input")
+    def test_ask_text(self, mock_ask):
+        from gws_assistant.setup_wizard import _ask_text
+        assert _ask_text("prompt", default="def") == "user input"
+
+    @patch("gws_assistant.setup_wizard.Prompt.ask", side_effect=["", "valid"])
+    def test_ask_text_required(self, mock_ask):
+        from gws_assistant.setup_wizard import _ask_text
+        assert _ask_text("prompt", default="def", required=True) == "valid"
+        assert mock_ask.call_count == 2
+
+    @patch("gws_assistant.setup_wizard.Prompt.ask", return_value="secret")
+    def test_ask_secret(self, mock_ask):
+        from gws_assistant.setup_wizard import _ask_secret
+        assert _ask_secret("prompt", existing="old") == "secret"

@@ -1,10 +1,30 @@
 """Tests for telegram_app module — covers auth_check, split_and_send, and handler stubs."""
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from gws_assistant.telegram_app import auth_check, split_and_send
+import pytest
+
+from gws_assistant.telegram_app import auth_check, handle_text, split_and_send
+
+
+@pytest.fixture(autouse=True)
+def mock_telegram_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "987654321")
+    monkeypatch.setenv("CI", "true")
+
+    # Prevent AppConfig from loading real .env and overriding these mocks
+    from gws_assistant.config import AppConfig
+    AppConfig.clear_cache()
+
+    with patch("gws_assistant.config.load_dotenv"), \
+         patch("gws_assistant.tools.telegram.load_dotenv"), \
+         patch("dotenv.load_dotenv"):
+        yield
+
+    AppConfig.clear_cache()
 
 
 @pytest.mark.asyncio
@@ -67,3 +87,45 @@ async def test_split_and_send_long_message():
     long_text = "A" * 5000
     await split_and_send(update, long_text)
     assert update.effective_message.reply_text.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_gws_task_success():
+    """run_gws_task handles successful command execution."""
+    update = MagicMock()
+    update.effective_message.reply_text = AsyncMock()
+    context = MagicMock()
+    mock_config = MagicMock()
+    mock_config.gws_timeout_seconds = 300
+    context.bot_data = {"config": mock_config}
+
+    with patch("asyncio.create_subprocess_exec") as mock_exec:
+        mock_process = AsyncMock()
+        mock_process.communicate.return_value = (b"output", b"")
+        mock_process.returncode = 0
+        mock_exec.return_value = mock_process
+
+        from gws_assistant.telegram_app import run_gws_task
+        await run_gws_task(update, context, "test task")
+
+        assert update.effective_message.reply_text.called
+        mock_exec.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_text_requires_yes_no_for_pending_confirmation():
+    future = asyncio.get_running_loop().create_future()
+    update = MagicMock()
+    update.effective_chat.id = 12345
+    update.effective_message.text = "what is the status?"
+    update.effective_message.reply_text = AsyncMock()
+    context = MagicMock()
+    mock_config = MagicMock()
+    mock_config.telegram_chat_id = "12345"
+    context.bot_data = {"config": mock_config}
+    context.application.bot_data = {"pending_confirmations": {12345: future}}
+
+    await handle_text(update, context)
+
+    assert not future.done()
+    update.effective_message.reply_text.assert_called_once()

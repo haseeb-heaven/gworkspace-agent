@@ -77,9 +77,27 @@ _EMAIL_BODY_PLACEHOLDERS = (
     "$sheet_summary_table",
     "$gmail_summary_table",
     "$search_summary_table",
+    "$web_search_summary",
+    "$last_export_file_content",
+    "$drive_summary_table",
 )
 
-_BACKOFF_SCHEDULE: list[float] = [2.0, 4.0, 8.0, 16.0, 30.0]
+# Services whose data is *consumed* by an email body. ``gmail`` is intentionally
+# excluded here because every email-sending plan contains a gmail.send_message
+# task — picking gmail as the body source would loop the email back on itself
+# and is the root cause of the "Gmail snippets in place of search/Doc content"
+# regression. The ordered tuple defines preference when multiple data
+# sources are present in the plan.
+_EMAIL_BODY_SOURCE_PRIORITY: tuple[tuple[str, str], ...] = (
+    ("code", "$code_output"),
+    ("computation", "$code_output"),
+    ("sheets", "$sheet_summary_table"),
+    ("docs", "$last_export_file_content"),
+    ("drive", "$last_export_file_content"),
+    ("search", "$search_summary_table"),
+)
+
+_BACKOFF_SCHEDULE: list[float] = [3.0, 6.0, 12.0, 24.0, 48.0]
 
 
 def _backoff_delay(attempt: int) -> float:
@@ -140,10 +158,11 @@ def _derive_next_task_id(tasks_data: list[dict]) -> str:
 
 def _derive_email_subject(request_text: str) -> str:
     cleaned = re.sub(
-        r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give\s+me)\s+(an?\s+)?",
+        r"(?i)^(please\s+)?(send|email|mail|forward|share|get|fetch|find|show|give)(\s+me)?\b",
         "",
         request_text.strip(),
     )
+    cleaned = re.sub(r"(?i)^(the|an?)\s+", "", cleaned.strip())
     cleaned = re.sub(r"\s+to\s+[\w.+-]+@[\w-]+\.[\w.]+.*$", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.strip(" .,;:")
     if not cleaned:
@@ -155,15 +174,31 @@ def _derive_email_subject(request_text: str) -> str:
 
 
 def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
-    services_used = {t.get("service", "") for t in tasks_data if isinstance(t, dict)}
-    if "code" in services_used or "computation" in services_used:
-        return "$code_output"
-    if "sheets" in services_used:
-        return "$sheet_summary_table"
+    """Pick the placeholder that should populate an outgoing email body.
+
+    Historically this function favoured ``gmail`` over ``search`` / ``docs``,
+    which meant that a plan such as ``[search.web_search,
+    gmail.send_message]`` resolved the body to ``$gmail_summary_table`` —
+    causing the agent to surface unrelated Gmail snippets instead of the
+    search results the user asked for. The fix is to consult only the
+    *source* services (``search``, ``docs``, ``drive`` …) when selecting the
+    placeholder, falling back to ``$gmail_summary_table`` only when gmail is
+    the sole service in the plan (e.g. forwarding a previously-fetched
+    message).
+    """
+    services_used = {
+        str(t.get("service", "")).strip().lower()
+        for t in tasks_data
+        if isinstance(t, dict)
+    }
+    services_used.discard("")
+
+    for service, placeholder in _EMAIL_BODY_SOURCE_PRIORITY:
+        if service in services_used:
+            return placeholder
+
     if "gmail" in services_used:
         return "$gmail_summary_table"
-    if "search" in services_used:
-        return "$search_summary_table"
     return "Here are the results of your Google Workspace request."
 
 
@@ -224,6 +259,31 @@ def is_valid_plan(plan_data: Any) -> bool:
     return True
 
 
+def _web_search_intent_keywords() -> tuple[str, ...]:
+    """Return the canonical web-search intent phrases.
+
+    Single source of truth lives in :mod:`gws_assistant.agent_system` as
+    ``_WEB_SEARCH_INTENT_PHRASES`` — it is also consumed by the heuristic
+    planner. Lazy-imported here to avoid the circular import between
+    :mod:`agent_system` (which imports :func:`plan_with_langchain` at module
+    level) and this module.
+    """
+    from .agent_system import _WEB_SEARCH_INTENT_PHRASES
+
+    return _WEB_SEARCH_INTENT_PHRASES
+
+
+_CODE_EXECUTOR_INTENT_KEYWORDS: tuple[str, ...] = (
+    "code executor",
+    "code execution",
+    "use code",
+    "run a script",
+    "run python",
+    "compute ",
+    "calculate ",
+)
+
+
 def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     """Check if the LLM plan covers all major steps implied by the user request.
 
@@ -241,6 +301,19 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
     actions_in_plan = {str(t.get("action", "")).lower() for t in tasks if isinstance(t, dict)}
     lowered = request_text.lower()
 
+    # If user explicitly asks for a *web* search but the plan has no search
+    # task → incomplete. This catches plans that hallucinate
+    # gmail.list_messages or drive.list_files for "Search the web for X".
+    # Use word-boundary matching to match _has_explicit_web_search_intent behavior.
+    if (
+        any(re.search(r"\b" + re.escape(kw) + r"\b", lowered) for kw in _web_search_intent_keywords())
+        and "web_search" not in actions_in_plan
+    ):
+        logging.info(
+            "Plan incomplete: user asked for a web search but plan has no search.web_search task."
+        )
+        return False
+
     # If user mentions sheets/spreadsheet but plan has no sheets task → incomplete
     if any(kw in lowered for kw in ("sheet", "spreadsheet")) and "sheets" not in services_in_plan:
         logging.info("Plan incomplete: user mentions sheets but plan has no sheets task.")
@@ -248,7 +321,7 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
 
     # If user wants to send email but plan has no send_message → incomplete
     if (
-        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to"))
+        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to", "send an email", "compose mail", "compose email"))
         and "send_message" not in actions_in_plan
     ):
         logging.info("Plan incomplete: user wants to send email but plan has no send_message.")
@@ -260,6 +333,17 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
         and "docs" not in services_in_plan
     ):
         logging.info("Plan incomplete: user mentions docs but plan has no docs task.")
+        return False
+
+    # If user explicitly asks the agent to use a code executor / sort /
+    # compute, the plan should include a code (or computation) step.
+    if (
+        any(kw in lowered for kw in _CODE_EXECUTOR_INTENT_KEYWORDS)
+        and not (services_in_plan & {"code", "computation"})
+    ):
+        logging.info(
+            "Plan incomplete: user asked for code execution but plan has no code/computation task."
+        )
         return False
 
     return True
@@ -346,18 +430,24 @@ def create_agent(
         return None
 
 
-def _build_catalog_prompt() -> str:
+def _build_catalog_prompt(request_text: str = "") -> str:
     """Build a rich, LLM-readable catalog section from service_catalog descriptions.
 
-    Format per action:
-      - service_key.action_key — short description
-        params: param1 (required), param2 (optional)
-
-    This replaces the old bare 'service_key: action1, action2' listing which
-    gave the LLM no guidance on what each action does or what parameters it needs.
+    If request_text is provided, we filter the catalog to only include services
+    detected in the request (plus core services like 'code' and 'search'). This
+    keeps the prompt size manageable for models with low TPM/token limits (like Groq).
     """
     lines: list[str] = []
-    for s_key, s_spec in SERVICES.items():
+    from .agent_system import _detect_services_in_order
+
+    detected = set(_detect_services_in_order(request_text.lower())) if request_text else set(SERVICES.keys())
+    # Always include core utility services
+    detected.update({"code", "computation", "search", "gmail"})
+
+    for s_key in sorted(SERVICES.keys()):
+        if s_key not in detected:
+            continue
+        s_spec = SERVICES[s_key]
         svc_desc = f" — {s_spec.description}" if s_spec.description else ""
         lines.append(f"[{s_key}]{svc_desc}")
         for a_key, a_spec in s_spec.actions.items():
@@ -392,7 +482,7 @@ def _invoke_with_backoff(
             return None
 
         try:
-            if model_name.startswith("groq/") or model_name.startswith("openrouter/"):
+            if model_name.startswith("groq/") or model_name.startswith("openrouter/") or model_name.startswith("google/") or model_name.startswith("gemini/"):
                 # Groq's tool-calling implementation via LangChain's with_structured_output
                 # is currently unstable (tool_choice errors). We bypass it and call LiteLLM
                 # directly with a JSON instruction.
@@ -423,6 +513,7 @@ def _invoke_with_backoff(
 
                 try:
                     plan_data = json.loads(json_str)
+                    logger.debug("LLM response parsed: raw_content=%s..., plan_data keys=%s", raw_content[:100] if raw_content else "", list(plan_data.keys()) if isinstance(plan_data, dict) else "")
                     # Handle models that return the schema's outer wrapper (name/parameters)
                     if "parameters" in plan_data and isinstance(plan_data["parameters"], dict):
                         plan_data = plan_data["parameters"]
@@ -516,7 +607,7 @@ def plan_with_langchain(
     3. Each candidate plan is validated by is_valid_plan() before acceptance.
     4. If every model is exhausted, return None so the heuristic planner takes over.
     """
-    catalog_summary = _build_catalog_prompt()
+    catalog_summary = _build_catalog_prompt(text)
 
     # Bug D fix: quadruple-escape all braces to '{{{{' / '}}}}'
     catalog_summary_escaped = catalog_summary.replace("{", "{{{{").replace("}", "}}}}")
@@ -537,7 +628,7 @@ def plan_with_langchain(
         "6. DRIVE QUERIES: use 'q' parameter for drive.list_files. "
         "7. EMAIL ACTIONS: use gmail.send_message for sending. "
         "8. EXPORTS: use drive.export_file to read content. "
-        "9. WEB SEARCH: only use if explicitly requested or external info needed. "
+        "9. WEB SEARCH: When the user says 'search for', 'find out', 'search the web', 'search online', 'search the internet', 'web search', 'browse the web', 'google for', 'look it up online', 'look up online', 'find online', 'find on the web', 'on the web', 'from the web', 'on the internet', 'from the internet', 'scrape', 'cheapest', 'best price', 'available in the market', or otherwise asks for information that lives OUTSIDE the user's Google Workspace, the FIRST task MUST be search.web_search. NEVER substitute gmail.list_messages, drive.list_files, or any Workspace lookup for a web search. If the user is explicitly looking inside Drive/Gmail/Sheets, then DO NOT use search.web_search. "
         "10. DATA STRUCTURES: drive.list_files returns {{{{files: [...]}}}}, gmail.list_messages returns {{{{messages: [...]}}}}. "
         "11. LEGACY: you may use $drive_file_ids or $gmail_message_ids for the most recent search results. "
         "12. GMAIL: use $gmail_message_body_text for decoded text. "
@@ -555,6 +646,9 @@ def plan_with_langchain(
         "23. SUMMARIZATION: Include a 'summary' field that lists the full sequence of actions to be taken (e.g., '1. List messages, 2. Fetch details, 3. Create Sheet, 4. Append Data, 5. Send Email')."
         "24. SUMMARIZATION: When writing to a Doc or Sheet from search results, synthesize and summarize the information. Do NOT include raw search snippets like 'Jan 1, 2024 ...' in the final output."
         "25. SMART RESOLUTION: You can use the shorthand {{{{ :key }}}} (e.g. {{{{ :spreadsheetId }}}}) to reference the most recent occurrence of a result key from ANY previous task. This is more robust than using task-N indices. "
+        "26. PYTHON SYNTAX VALIDITY: In code.execute, you MUST use standard multi-line indentation for all blocks (if, for, while, try). NEVER combine multiple statements on a single line using semicolons if they include control structures. BAD: 'for x in list: if x > 0: print(x)'. GOOD: 'for x in list:\n    if x > 0:\n        print(x)'. Your code will be executed in a restricted environment where single-line semicolon hacks for loops will fail."
+        "27. DATA HANDLING: NEVER embed large data structures (like search results or file lists) directly as literals in your Python code. ALWAYS reference them using placeholders like {{{{task-N}}}} or {{{{ :key }}}} at the start of your script. This prevents syntax errors and ensures the code remains manageable."
+        "28. SANDBOX CONSTRAINTS: In code.execute, NEVER import external libraries like 'requests', 'os', 'subprocess', or 'urllib'. The environment is strictly offline. Only 'json', 'math', 'datetime', 're', and 'collections' are pre-approved. If you need external data, you MUST use the search.web_search tool as a previous task step."
         "\n\nIMPORTANT: You MUST respond with a valid JSON object matching the requested schema."
     )
 

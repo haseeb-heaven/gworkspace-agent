@@ -22,6 +22,33 @@ def _to_bool(value: str | None, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _to_set(value: str | None, default: set[str]) -> set[str]:
+    """Parse comma-separated string into set."""
+    if value is None:
+        return default
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def _to_list(value: str | None, default: list[str]) -> list[str]:
+    """Parse comma-separated string into list."""
+    if value is None:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _to_dict(value: str | None, default: dict[str, str]) -> dict[str, str]:
+    """Parse comma-separated key:value pairs into dict."""
+    if value is None:
+        return default
+    result = {}
+    for item in value.split(","):
+        item = item.strip()
+        if ":" in item:
+            key, val = item.split(":", 1)
+            result[key.strip()] = val.strip()
+    return result
+
+
 class AppConfig:
     """Reads and normalizes environment configuration."""
 
@@ -38,7 +65,7 @@ class AppConfig:
                 return cls._cached_config
 
             env_file_path = Path(".env").expanduser().resolve()
-            load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=True)
+            load_dotenv(dotenv_path=env_file_path if env_file_path.exists() else None, override=False)
 
             ci_mode = _to_bool(os.getenv("CI"), default=False)
 
@@ -54,6 +81,8 @@ class AppConfig:
             default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
             if not default_recipient_email:
                 raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
+
+            drive_folder_name = (os.getenv("DRIVE_FOLDER_NAME") or "New Folder").strip() or "New Folder"
 
             provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
             openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
@@ -164,6 +193,9 @@ class AppConfig:
 
             code_execution_enabled = _to_bool(os.getenv("CODE_EXECUTION_ENABLED"), default=True)
             code_execution_backend = (os.getenv("CODE_EXECUTION_BACKEND") or "local").strip().lower()
+            if code_execution_backend == "restricted_subprocess":
+                code_execution_backend = "local"
+            code_execution_timeout_seconds = int((os.getenv("CODE_EXECUTION_TIMEOUT_SECONDS") or "5").strip())
             e2b_api_key = (os.getenv("E2B_API_KEY") or "").strip() or None
 
             gws_timeout_seconds = int((os.getenv("GWS_TIMEOUT_SECONDS") or "0").strip())
@@ -176,11 +208,75 @@ class AppConfig:
             mem0_local_storage_path = (os.getenv("MEM0_LOCAL_STORAGE_PATH") or ".gemini/memories.jsonl").strip()
             telegram_bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip() or None
             telegram_chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip() or None
+            telegram_confirmation_timeout_seconds = float(
+                (os.getenv("TELEGRAM_CONFIRMATION_TIMEOUT_SECONDS") or "60").strip()
+            )
             # Removed redundant re-fetch of groq_api_key, ollama_api_base, memory_type
             # as they are now resolved above.
 
             sandbox_enabled = _to_bool(os.getenv("SANDBOX_ENABLED"), default=True)
             read_only_mode = _to_bool(os.getenv("READ_ONLY_MODE"), default=False)
+            no_confirm = _to_bool(os.getenv("NO_CONFIRM"), default=False)
+            force_dangerous = _to_bool(os.getenv("FORCE_DANGEROUS"), default=False)
+
+            # Verification Engine Configuration
+            verification_exact_placeholders = _to_set(
+                os.getenv("VERIFICATION_EXACT_PLACEHOLDERS"),
+                default={
+                    "none", "null", "n/a", "na", "undefined",
+                    "todo", "fixme", "placeholder", "example", "sample", "dummy",
+                    "your_value", "insert_here", "replace_me", "changeme", "default",
+                    "fake", "mock", "temporary", "tbd", "missing"
+                }
+            )
+            verification_numeric_placeholders = _to_set(
+                os.getenv("VERIFICATION_NUMERIC_PLACEHOLDERS"),
+                default={"0000", "1234", "9999", "00000000"}
+            )
+            verification_exact_emails = _to_set(
+                os.getenv("VERIFICATION_EXACT_EMAILS"),
+                default={"noreply@domain.com", "noreply@example.com"}
+            )
+            verification_email_placeholder_domains = _to_list(
+                os.getenv("VERIFICATION_EMAIL_PLACEHOLDER_DOMAINS"),
+                default=["@test.com"]
+            )
+            verification_destructive_operations = _to_set(
+                os.getenv("VERIFICATION_DESTRUCTIVE_OPERATIONS"),
+                default={
+                    "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
+                    "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
+                    "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
+                    "docs_delete_document",
+                    "calendar_delete_event", "calendar_delete_calendar",
+                    "contacts_delete_contact",
+                }
+            )
+            verification_bulk_indicators = _to_list(
+                os.getenv("VERIFICATION_BULK_INDICATORS"),
+                default=["batch", "bulk", "multiple", "all"]
+            )
+            verification_id_fields = _to_list(
+                os.getenv("VERIFICATION_ID_FIELDS"),
+                default=["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
+            )
+            verification_content_fields = _to_list(
+                os.getenv("VERIFICATION_CONTENT_FIELDS"),
+                default=["body", "content", "message", "text", "description"]
+            )
+            verification_create_id_fields = _to_list(
+                os.getenv("VERIFICATION_CREATE_ID_FIELDS"),
+                default=["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
+            )
+            verification_suspicious_patterns = _to_dict(
+                os.getenv("VERIFICATION_SUSPICIOUS_PATTERNS"),
+                default={
+                    "delete_all": r"delete.*all",
+                    "remove_everything": r"remove.*everything",
+                    "wipe_all": r"wipe.*all",
+                    "clear_all": r"clear.*all",
+                }
+            )
 
             cls._cached_config = AppConfigModel(
                 provider=provider,
@@ -202,20 +298,25 @@ class AppConfig:
                 use_heuristic_fallback=use_heuristic_fallback,
                 code_execution_enabled=code_execution_enabled,
                 code_execution_backend=code_execution_backend,
+                code_execution_timeout_seconds=code_execution_timeout_seconds,
                 e2b_api_key=e2b_api_key,
                 gws_timeout_seconds=gws_timeout_seconds,
                 gws_max_retries=gws_max_retries,
                 llm_api_keys=llm_api_keys,
                 max_context_snippet_len=max_snippet_len,
                 default_recipient_email=default_recipient_email,
+                drive_folder_name=drive_folder_name,
                 mem0_api_key=mem0_api_key,
                 mem0_user_id=mem0_user_id,
                 mem0_host=mem0_host,
                 mem0_local_storage_path=mem0_local_storage_path,
                 telegram_bot_token=telegram_bot_token,
                 telegram_chat_id=telegram_chat_id,
+                telegram_confirmation_timeout_seconds=telegram_confirmation_timeout_seconds,
                 sandbox_enabled=sandbox_enabled,
                 read_only_mode=read_only_mode,
+                no_confirm=no_confirm,
+                force_dangerous=force_dangerous,
                 llm_fallback_models=llm_fallback_models,
                 groq_api_key=groq_api_key,
                 openai_api_key=openai_api_key,
@@ -224,13 +325,24 @@ class AppConfig:
                 mistral_api_key=mistral_api_key,
                 ollama_api_base=ollama_api_base,
                 memory_type=memory_type,
+                verification_exact_placeholders=verification_exact_placeholders,
+                verification_numeric_placeholders=verification_numeric_placeholders,
+                verification_exact_emails=verification_exact_emails,
+                verification_email_placeholder_domains=verification_email_placeholder_domains,
+                verification_destructive_operations=verification_destructive_operations,
+                verification_bulk_indicators=verification_bulk_indicators,
+                verification_id_fields=verification_id_fields,
+                verification_content_fields=verification_content_fields,
+                verification_create_id_fields=verification_create_id_fields,
+                verification_suspicious_patterns=verification_suspicious_patterns,
             )
             return cls._cached_config
 
     @classmethod
     def clear_cache(cls):
         """Clears the cached configuration singleton (useful for tests)."""
-        cls._cached_config = None
+        with cls._config_lock:
+            cls._cached_config = None
 
 
 def _resolve_gws_binary_path(value: str) -> Path:

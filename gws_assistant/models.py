@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -29,12 +29,14 @@ class AppConfigModel:
     use_heuristic_fallback: bool = True
     code_execution_enabled: bool = True
     code_execution_backend: str = "local"
+    code_execution_timeout_seconds: int = 5
     e2b_api_key: str | None = None
     gws_timeout_seconds: int = 180
     gws_max_retries: int = 3
     llm_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
+    drive_folder_name: str = "New Folder"
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
     mem0_host: str | None = None
@@ -43,6 +45,7 @@ class AppConfigModel:
     mem0_local_storage_path: str = ".gemini/memories.jsonl"
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    telegram_confirmation_timeout_seconds: float = 60.0
     sandbox_enabled: bool = True
     read_only_mode: bool = True
     llm_fallback_models: list[str] = field(default_factory=list)
@@ -61,28 +64,52 @@ class AppConfigModel:
     # fields between method calls — the slot write is silently dropped, causing
     # rotate_api_key() to always read index 0 and always jump to index 1.
     current_key_idx: int = 0
+    rotation_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    # Verification Engine Configuration
+    verification_exact_placeholders: set[str] = field(default_factory=lambda: {
+        "none", "null", "n/a", "na", "undefined",
+        "todo", "fixme", "placeholder", "example", "sample", "dummy",
+        "your_value", "insert_here", "replace_me", "changeme", "default",
+        "fake", "mock", "temporary", "tbd", "missing"
+    })
+    verification_numeric_placeholders: set[str] = field(default_factory=lambda: {"0000", "1234", "9999", "00000000"})
+    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@domain.com", "noreply@example.com"})
+    verification_email_placeholder_domains: list[str] = field(default_factory=lambda: ["@test.com"])
+    verification_destructive_operations: set[str] = field(default_factory=lambda: {
+        "drive_delete_file", "drive_empty_trash", "drive_move_to_trash", "drive_batch_delete",
+        "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
+        "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
+        "docs_delete_document",
+        "calendar_delete_event", "calendar_delete_calendar",
+        "contacts_delete_contact",
+    })
+    verification_bulk_indicators: list[str] = field(default_factory=lambda: ["batch", "bulk", "multiple"])
+    verification_id_fields: list[str] = field(default_factory=lambda: [
+        "file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"
+    ])
+    verification_content_fields: list[str] = field(default_factory=lambda: ["body", "content", "message", "text", "description"])
+    verification_create_id_fields: list[str] = field(default_factory=lambda: [
+        "id", "documentId", "spreadsheetId", "fileId", "messageId",
+        "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"
+    ])
+    verification_suspicious_patterns: dict[str, str] = field(default_factory=lambda: {
+        "delete_all": r"delete.*all",
+        "remove_everything": r"remove.*everything",
+        "wipe_all": r"wipe.*all",
+        "clear_all": r"clear.*all",
+    })
 
     def rotate_api_key(self) -> str | None:
         keys = self.llm_api_keys
         if not keys:
             return self.api_key
 
-        self.current_key_idx = (self.current_key_idx + 1) % len(keys)
-        new_key = keys[self.current_key_idx]
-        self.api_key = new_key
-        # Sync with environment so LiteLLM/OpenAI clients pick it up
-        for env_var in [
-            "LLM_API_KEY",
-            "OPENROUTER_API_KEY",
-            "OPENAI_API_KEY",
-            "GROQ_API_KEY",
-            "GOOGLE_API_KEY",
-            "GEMINI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "MISTRAL_API_KEY",
-        ]:
-            os.environ[env_var] = new_key
-        return new_key
+        with self.rotation_lock:
+            self.current_key_idx = (self.current_key_idx + 1) % len(keys)
+            new_key = keys[self.current_key_idx]
+            self.api_key = new_key
+            return new_key
 
     def api_model_name(self) -> str:
         """Strips the LiteLLM provider prefix from the model name."""
@@ -112,6 +139,29 @@ class PlannedTask:
     reason: str = ""
     # NOTE: Same slots=True rule applies — no leading underscore.
     sequence_index: int = 0
+
+    def is_destructive(self, destructive_ops: set[str] | None = None) -> bool:
+        """Check if this task is a destructive operation.
+
+        Args:
+            destructive_ops: Optional set of full tool names (service_action)
+                           that are considered destructive. If provided,
+                           this takes precedence over the default list.
+        """
+        full_name = f"{self.service}_{self.action}"
+        if destructive_ops is not None:
+            return full_name in destructive_ops
+
+        # Default fallback list of known destructive actions
+        destructive = {
+            "drive": ["delete_file", "empty_trash", "move_to_trash", "batch_delete"],
+            "gmail": ["delete_message", "trash_message", "batch_delete", "empty_trash"],
+            "sheets": ["delete_spreadsheet", "clear_all_data", "delete_sheet_tab"],
+            "docs": ["delete_document"],
+            "calendar": ["delete_event", "delete_calendar"],
+            "contacts": ["delete_contact"],
+        }
+        return self.service in destructive and self.action in destructive.get(self.service, [])
 
 
 # ---------------------------------------------------------------------------
@@ -145,14 +195,32 @@ def validate_planned_task(task: "PlannedTask") -> None:
         )
     # Detect obviously unresolved placeholder values that should have been
     # caught by _resolve_task but slipped through.
-    _STUB_PATTERNS = ("{{task", "$gmail_message_ids", "PLACEHOLDER_", "___UNRESOLVED_PLACEHOLDER___")
+    # Skip validation for certain parameters that may contain intentional placeholders
+    # or where we want to let the execution fail with a real error instead of a validation error.
+    _STUB_PATTERNS = (
+        "{{task",
+        "$gmail_message_ids",
+        "PLACEHOLDER_",
+        "___UNRESOLVED_PLACEHOLDER___",
+        "{{spreadsheet_id}}",
+        "{{document_id}}",
+        "{{file_id}}",
+        "{{message_id}}",
+    )
     for key, val in task.parameters.items():
+        # Skip body parameter validation for Gmail send_message
+        if task.service == "gmail" and task.action == "send_message" and key == "body":
+            continue
+        # Skip code parameter validation for code.execute - allow it to fail in sandbox
+        if task.service in ("code", "computation") and task.action == "execute" and key == "code":
+            continue
+
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
                 if pat in val:
                     raise ValidationError(
                         f"PlannedTask id={task.id!r} {task.service}.{task.action}: "
-                        f"parameter {key!r} contains unresolved stub {val!r}."
+                        f"parameter '{key}' contains unresolved stub \"{val}\"."
                     )
 
 

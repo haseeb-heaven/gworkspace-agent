@@ -5,14 +5,14 @@ from gws_assistant.verification_engine import VerificationEngine, VerificationEr
 
 # CATEGORY 1: PLACEHOLDER DETECTION & GENERAL
 def test_placeholder_detection():
-    assert VerificationEngine._is_placeholder("{{some_value}}") is True
-    assert VerificationEngine._is_placeholder("[TBD]") is True
-    assert VerificationEngine._is_placeholder("<replace_me>") is True
-    assert VerificationEngine._is_placeholder("todo") is True
-    assert VerificationEngine._is_placeholder("noreply@example.com") is True
-    assert VerificationEngine._is_placeholder("0000") is True
-    assert VerificationEngine._is_placeholder("...") is True
-    assert VerificationEngine._is_placeholder("valid_string") is False
+    assert VerificationEngine._is_placeholder("{{some_value}}") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("[TBD]") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("<replace_me>") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("todo") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("noreply@example.com") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("0000") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("...") is True  # nosec B101: Test assertion
+    assert VerificationEngine._is_placeholder("valid_string") is False  # nosec B101: Test assertion
 
 
 def test_general_verification_fail_none():
@@ -54,7 +54,7 @@ def test_gmail_send_fail_placeholder_to():
 def test_gmail_send_fail_no_label():
     params = {"to": "valid@example.org", "subject": "Hello", "body": "This is a body"}
     result = {"id": "123"}
-    with pytest.raises(VerificationError, match="Send result missing labelIds or threadId"):
+    with pytest.raises(VerificationError, match="Send result missing id, labelIds, or threadId"):
         VerificationEngine.verify_result("send_message", params, result)
 
 
@@ -207,3 +207,115 @@ def test_empty_sheet_write():
     params = {"spreadsheet_id": "sheets-123", "range": "A1", "values": []}
     with pytest.raises(VerificationError, match="Operation created/wrote an empty document or sheet"):
         VerificationEngine.verify_document_not_empty("write_sheet", params, {})
+
+
+# ============================================================================
+# NEW 5-CHECK SYSTEM TESTS
+# ============================================================================
+
+def test_5_check_system_all_pass():
+    """Test that all 5 checks pass for a valid operation."""
+    params = {"to": "valid@example.org", "subject": "Hello", "body": "This is a body"}
+    result = {"id": "123", "labelIds": ["SENT"]}
+    VerificationEngine.verify("gmail_send_message", params, result)
+
+
+def test_5_check_system_check_1_parameter_validation():
+    """Test CHECK 1: Parameter Validation fails with invalid params."""
+    params = {"to": "<placeholder>", "subject": "Hello", "body": "This is a body"}
+    result = {"id": "123", "labelIds": ["SENT"]}
+    with pytest.raises(VerificationError, match=r"\[CHECK 1\]"):
+        VerificationEngine.verify("gmail_send_message", params, result)
+
+
+def test_5_check_system_check_2_permission_scope_critical():
+    """Test CHECK 2: Permission & Scope Validation blocks bulk destruction."""
+    params = {"query": "delete everything", "_granted_scopes": ["https://www.googleapis.com/auth/drive.readonly"]}
+    result = {"success": True}
+    # Matches both bulk destruction and missing scopes
+    with pytest.raises(VerificationError, match=r"\[CHECK 2\].*CRITICAL"):
+        VerificationEngine.verify("drive_delete_file", params, result)
+
+def test_5_check_system_check_2_missing_scopes():
+    """Test CHECK 2: Specifically test missing scopes validation."""
+    params = {"to": "valid@example.org", "subject": "Hello", "body": "This is a body", "_granted_scopes": ["https://www.googleapis.com/auth/gmail.readonly"]}
+    result = {"success": True}
+    # gmail requires .modify
+    with pytest.raises(VerificationError, match=r"\[CHECK 2\].*Missing required scopes"):
+        VerificationEngine.verify("gmail_send_message", params, result)
+
+
+def test_5_check_system_check_3_result_validation():
+    """Test CHECK 3: Result Validation fails with invalid result."""
+    params = {"to": "valid@example.org", "subject": "Hello", "body": "This is a body"}
+    result = None
+    with pytest.raises(VerificationError, match=r"\[CHECK 3\]"):
+        VerificationEngine.verify("gmail_send_message", params, result)
+
+
+def test_5_check_system_check_4_data_integrity():
+    """Test CHECK 4: Data Integrity & Consistency Validation."""
+    params = {"title": "Doc", "content": ""}
+    result = {"id": "doc-123"}
+    with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
+        VerificationEngine.verify("create_document", params, result)
+    # Also verify the service-prefixed variant ("docs_create_document") trips
+    # CHECK 4 — naming convention must not bypass data-integrity validation.
+    with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
+        VerificationEngine.verify("docs_create_document", params, result)
+
+
+def test_5_check_system_check_5_idempotency_safety_critical():
+    """Test CHECK 5: Idempotency & Safety Validation blocks destructive ops without confirmation."""
+    params = {"file_id": "file-123"}
+    result = {}  # Delete operations typically return empty or minimal result
+    with pytest.raises(VerificationError, match=r"\[CHECK 5\].*CRITICAL.*_safety_confirmed"):
+        VerificationEngine.verify("drive_delete_file", params, result)
+
+
+def test_5_check_system_destructive_with_safety_confirmed():
+    """Test that destructive operations pass with _safety_confirmed=true."""
+    params = {"file_id": "file-123", "_safety_confirmed": True}
+    # Pass a result that passes CHECK 3 (result validation)
+    result = {"success": True, "id": "file-123"}
+    VerificationEngine.verify("drive_delete_file", params, result)
+
+
+def test_5_check_system_bulk_operation_requires_confirmation():
+    """Test that bulk operations require _bulk_confirmed=true."""
+    params = {"query": "*"}
+    result = {"files": []}
+    with pytest.raises(VerificationError, match=r"\[CHECK 5\].*CRITICAL.*_bulk_confirmed"):
+        VerificationEngine.verify("drive_batch_delete", params, result)
+
+
+def test_5_check_system_bulk_with_confirmation():
+    """Test that bulk operations pass with _bulk_confirmed=true."""
+    params = {"query": "*", "_bulk_confirmed": True}
+    result = {"files": []}
+    VerificationEngine.verify("drive_batch_delete", params, result)
+
+
+def test_verification_severity_enum():
+    """Test VerificationSeverity enum values."""
+    from gws_assistant.verification_engine import VerificationSeverity
+    assert VerificationSeverity.CRITICAL.value == "CRITICAL"  # nosec B101: Test assertion
+    assert VerificationSeverity.ERROR.value == "ERROR"  # nosec B101: Test assertion
+    assert VerificationSeverity.WARNING.value == "WARNING"  # nosec B101: Test assertion
+
+
+def test_verification_error_with_check_number():
+    """Test VerificationError includes check_number and severity."""
+    from gws_assistant.verification_engine import VerificationSeverity
+    error = VerificationError(
+        tool="test_tool",
+        reason="Test reason",
+        check_number=1,
+        severity=VerificationSeverity.ERROR,
+        field="test_field"
+    )
+    assert error.check_number == 1  # nosec B101: Test assertion
+    assert error.severity == VerificationSeverity.ERROR  # nosec B101: Test assertion
+    assert error.field == "test_field"  # nosec B101: Test assertion
+    assert "[CHECK 1]" in str(error)  # nosec B101: Test assertion
+    assert "[ERROR]" in str(error)  # nosec B101: Test assertion

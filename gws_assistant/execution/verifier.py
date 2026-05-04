@@ -45,6 +45,12 @@ class TripleVerifier:
         "keep": ("get_note", "name"),
         "tasks": ("get_task", "task_id"),
         "gmail": ("get_message", "message_id"),
+        "slides": ("get_presentation", "presentation_id"),
+        "forms": ("get_form", "form_id"),
+        "chat": ("get_message", "name"),
+        "contacts": ("get_person", "resourceName"),
+        "admin": ("list_activities", "application_name"),
+        "meet": ("get_conference", "name"),
     }
 
     def __init__(
@@ -62,7 +68,7 @@ class TripleVerifier:
         self.attempts = attempts
         self.sleep_seconds = sleep_seconds
 
-    def verify_resource(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
+    def verify_resource_by_id(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
         if service not in self._RESOURCE_MAP:
             self.logger.warning("No verification mapping for service: %s", service)
             return False
@@ -84,16 +90,64 @@ class TripleVerifier:
                 return False
 
             payload = self._payload(result)
+
+            # Verify payload is not empty or null
+            if not payload:
+                self.logger.warning("Triple-check failed for %s %s: Empty payload", service, resource_id)
+                return False
+
+            # Verify payload is not just error messages
+            if isinstance(payload, str):
+                if "error" in payload.lower() or "not found" in payload.lower():
+                    self.logger.warning("Triple-check failed for %s %s: Error in payload: %s", service, resource_id, payload[:100])
+                    return False
+
             try:
                 self._validate_expected_fields(payload, expected_fields or {})
+                # Tier 3: Verify only the explicitly required fields
+                for key in expected_fields or {}:
+                    validate_artifact_content(
+                        payload.get(key) if isinstance(payload, dict) else payload,
+                        f"{service}_verification.{key}",
+                    )
+
+                # Additional content validation based on service type
+                if service == "sheets" and isinstance(payload, dict):
+                    # Verify spreadsheet has sheets
+                    sheets = payload.get("sheets", [])
+                    if not sheets:
+                        self.logger.warning("Triple-check failed for %s %s: No sheets found", service, resource_id)
+                        return False
+
+                elif service == "docs" and isinstance(payload, dict):
+                    # Verify document has content
+                    body = payload.get("body", {})
+                    if not body or not body.get("content"):
+                        self.logger.warning("Triple-check failed for %s %s: No document content", service, resource_id)
+                        return False
+
+                elif service == "gmail" and isinstance(payload, dict):
+                    # Verify email has essential fields
+                    if not payload.get("id") or not payload.get("threadId"):
+                        self.logger.warning("Triple-check failed for %s %s: Missing email ID or threadId", service, resource_id)
+                        return False
+
+                elif service == "drive" and isinstance(payload, dict):
+                    # Verify file has essential fields
+                    if not payload.get("id") or not payload.get("name"):
+                        self.logger.warning("Triple-check failed for %s %s: Missing file ID or name", service, resource_id)
+                        return False
+
             except ValueError as exc:
-                self.logger.warning("Triple-check field validation failed for %s %s: %s", service, resource_id, exc)
+                self.logger.warning("Triple-check validation failed for %s %s: %s", service, resource_id, exc)
                 return False
 
         self.logger.info("Triple-check passed for %s %s.", service, resource_id)
         return True
 
     def _build_command(self, service: str, resource_id: str) -> list[str]:
+        if service not in self._RESOURCE_MAP:
+            raise ValueError(f"Unsupported service for verification: {service}")
         action, id_param = self._RESOURCE_MAP[service]
         if self.planner:
             return self.planner.build_command(service, action, {id_param: resource_id})
@@ -118,6 +172,21 @@ class TripleVerifier:
             return ["keep", "notes", "get", "--params", json.dumps({"name": resource_id})]
         if service == "tasks":
             return ["tasks", "tasks", "get", "--params", json.dumps({"tasklist": "@default", "task": resource_id})]
+        if service == "slides":
+            return ["slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})]
+        if service == "forms":
+            return ["forms", "forms", "get", "--params", json.dumps({"formId": resource_id})]
+        if service == "chat":
+            return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": resource_id})]
+        if service == "contacts":
+            return ["people", "people", "get", "--params", json.dumps({"resourceName": resource_id, "personFields": "names,emailAddresses"})]
+        if service == "admin":
+            return [
+                "admin-reports", "activities", "list", "--params",
+                json.dumps({"userKey": "all", "applicationName": resource_id, "maxResults": 5}),
+            ]
+        if service == "meet":
+            return ["meet", "spaces", "get", "--params", json.dumps({"name": resource_id})]
         raise ValueError(f"Unsupported service for verification: {service}")
 
     @staticmethod
@@ -149,7 +218,7 @@ class VerifierMixin:
 
     def verify_resource(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
         verifier = TripleVerifier(self.runner, self.planner, self.logger)
-        return verifier.verify_resource(service, resource_id, expected_fields)
+        return verifier.verify_resource_by_id(service, resource_id, expected_fields)
 
     def _verify_artifact_content(self, value: Any, source_name: str = "artifact") -> None:
         validate_artifact_content(value, source_name)

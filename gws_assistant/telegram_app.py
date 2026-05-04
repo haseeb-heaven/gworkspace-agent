@@ -20,8 +20,20 @@ logger = logging.getLogger(__name__)
 # The specific commands requested by the user
 ALLOWED_COMMANDS = ["mail", "docs", "sheet", "calendar", "notes"]
 
-# Dictionary to hold pending confirmations: chat_id -> asyncio.Future
-pending_confirmations = {}
+# Backwards-compatible module-level name; real state now lives per Application in bot_data.
+pending_confirmations: dict[int, asyncio.Future] = {}
+
+
+def _pending_confirmations(context: ContextTypes.DEFAULT_TYPE) -> dict[int, asyncio.Future]:
+    return context.application.bot_data.setdefault("pending_confirmations", {})
+
+
+def _confirmation_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
+    lock = context.application.bot_data.get("pending_confirmation_lock")
+    if lock is None:
+        lock = asyncio.Lock()
+        context.application.bot_data["pending_confirmation_lock"] = lock
+    return lock
 
 
 async def auth_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -82,9 +94,12 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
         await update.effective_message.reply_text("Received task. Processing...")
 
     config = context.bot_data.get("config")
-    timeout = 300
+    timeout = 180
     if config and hasattr(config, "gws_timeout_seconds") and config.gws_timeout_seconds > 0:
         timeout = config.gws_timeout_seconds
+    confirm_timeout = 60.0
+    if config and hasattr(config, "telegram_confirmation_timeout_seconds"):
+        confirm_timeout = float(config.telegram_confirmation_timeout_seconds)
 
     try:
         # Execute gws_cli.py --task asynchronously
@@ -129,17 +144,33 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             try:
                 data = json.loads(stdout)
                 if data.get("status") == "confirmation_required":
-                    if update.effective_chat and update.effective_message:
-                        chat_id = update.effective_chat.id
-                        prompt_msg = f"️Confirmation Required \n\nAction: {data.get('action')}\nDetails: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
-                        await update.effective_message.reply_text(prompt_msg)
+                    if not update.effective_chat or not update.effective_message:
+                        raise RuntimeError("Confirmation required but no chat/message context was available.")
+                    chat_id = update.effective_chat.id
 
                     loop = asyncio.get_running_loop()
                     future = loop.create_future()
-                    pending_confirmations[chat_id] = future
+                    async with _confirmation_lock(context):
+                        confirmations = _pending_confirmations(context)
+                        existing = confirmations.get(chat_id)
+                        if existing is not None and not existing.done():
+                            await update.effective_message.reply_text(
+                                "Another confirmation is already pending for this chat. "
+                                "Please answer yes/no to that prompt first."
+                            )
+                            return
+                        confirmations[chat_id] = future
+
+                    prompt_msg = (
+                        f"️Confirmation Required \n\nAction: {data.get('action')}\n"
+                        f"Details: {data.get('details')}\n\nDo you want to proceed? (yes/no)"
+                    )
+                    await update.effective_message.reply_text(prompt_msg)
 
                     try:
-                        reply = await asyncio.wait_for(future, timeout=60.0)
+                        reply = await asyncio.wait_for(future, timeout=confirm_timeout)
+                        async with _confirmation_lock(context):
+                            _pending_confirmations(context).pop(chat_id, None)
                         if reply.strip().lower() == "yes":
                             if update.effective_message:
                                 await update.effective_message.reply_text("Proceeding...")
@@ -172,10 +203,10 @@ async def run_gws_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                             if update.effective_message:
                                 await update.effective_message.reply_text("Action cancelled.")
                     except asyncio.TimeoutError:
+                        async with _confirmation_lock(context):
+                            _pending_confirmations(context).pop(chat_id, None)
                         if update.effective_message:
                             await update.effective_message.reply_text("Timeout reached. Action cancelled.")
-                    finally:
-                        pending_confirmations.pop(chat_id, None)
                     return
             except Exception as parse_e:
                 logger.error(f"Failed to parse exit code 2 stdout: {parse_e}")
@@ -233,11 +264,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_text = task_text.strip()
     chat_id = update.effective_chat.id
 
-    if chat_id in pending_confirmations:
-        future = pending_confirmations[chat_id]
-        if not future.done():
-            future.set_result(task_text)
-        return
+    async with _confirmation_lock(context):
+        confirmations = _pending_confirmations(context)
+        if chat_id in confirmations:
+            future = confirmations[chat_id]
+            if not future.done():
+                if task_text.lower() not in {"yes", "no"}:
+                    await update.effective_message.reply_text("Please reply with 'yes' or 'no' for the pending confirmation.")
+                    return
+                future.set_result(task_text)
+            return
     if not task_text:
         return
 

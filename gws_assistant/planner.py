@@ -19,6 +19,7 @@ from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import UnsupportedServiceError, ValidationError
+from .file_types import default_export_mime, guess_mime_type, supported_export_formats
 from .gmail_query_builder import sanitize_gmail_query
 from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
@@ -31,6 +32,7 @@ _DRIVE_FILE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{25,60}$")
 
 # MIME type used when exporting Google Docs to PDF for attachment.
 _GDOC_EXPORT_MIME = "application/pdf"
+_ATTACHMENT_ALLOWED_ROOTS = ("downloads", "scratch")
 
 # ---------------------------------------------------------------------------
 # Date / time helpers
@@ -100,7 +102,13 @@ def _resolve_date_expression(raw: str) -> str:
 
     # Fallback — return as-is; the LLM may have already supplied an ISO date
     # embedded inside a longer string like "2026-04-14T10:00:00".
-    return raw.strip().split("T")[0][:10]
+    # We strip the time portion only if the prefix is a valid ISO date.
+    stripped = raw.strip()
+    if "T" in stripped:
+        prefix = stripped.split("T")[0]
+        if _ISO_DATE_RE.match(prefix):
+            return prefix
+    return stripped
 
 
 def _parse_time_to_hhmm(raw: str) -> tuple[int, int] | None:
@@ -161,6 +169,7 @@ class CommandPlanner:
         service_key = self.ensure_service(service)
         action_key = self.ensure_action(service_key, action)
         params = parameters or {}
+        logging.getLogger(__name__).debug("build_command: service=%s action=%s", service_key, action_key)
 
         if service_key == "drive":
             return self._build_drive_command(action_key, params)
@@ -253,18 +262,45 @@ class CommandPlanner:
 
         if action == "upload_file":
             file_path = self._required_text(params, "file_path")
+            if not os.path.exists(file_path):
+                raise ValidationError(f"File not found: {file_path}")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
-            return [
+            folder_id = str(params.get("folder_id") or "").strip()
+
+            # Reject unresolved placeholder folder ids - if the planner is asked to
+            # upload to a folder produced by a previous task and that task failed to
+            # resolve, fail loudly rather than silently uploading to Drive root.
+            if folder_id and (
+                folder_id.startswith("{{")
+                or folder_id.startswith("<")
+                or folder_id.lower() in {"none", "null"}
+            ):
+                raise ValidationError(
+                    f"Unresolved placeholder folder_id '{folder_id}' - upstream task did not produce a folder id"
+                )
+
+            payload: dict[str, Any] = {"name": name}
+            if folder_id:
+                payload["parents"] = [folder_id]
+
+            cmd = [
                 "drive",
                 "files",
                 "create",
                 "--upload",
                 file_path,
+            ]
+            mime = guess_mime_type(file_path)
+            if mime:
+                cmd.extend(["--upload-content-type", mime])
+
+            cmd.extend([
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps({"name": name}, ensure_ascii=True),
-            ]
+                json.dumps(payload, ensure_ascii=True),
+            ])
+            return cmd
 
         if action == "get_file":
             file_id = self._required_text(params, "file_id")
@@ -301,24 +337,16 @@ class CommandPlanner:
             requested_mime = str(params.get("mime_type") or "").strip()
             source_mime = str(params.get("source_mime") or "").strip()
 
-            # PRIMARY: use source_mime if available to determine best export format
-            # Only certain types support the 'export' endpoint.
-            # Folders, Shortcuts, Scripts, and regular files MUST use 'get' with 'alt=media'.
-            exportable_mimes = {
-                "application/vnd.google-apps.document",
-                "application/vnd.google-apps.spreadsheet",
-                "application/vnd.google-apps.presentation",
-                "application/vnd.google-apps.drawing",
-            }
-            is_workspace_doc = source_mime in exportable_mimes
+            # Folders CANNOT be exported or downloaded as media.
             if source_mime == "application/vnd.google-apps.folder":
-                # Folders CANNOT be exported or downloaded as media.
-                # Returning a ValidationError here helps the agent realize it picked a folder instead of a document.
                 raise ValidationError(
-                    f"File '{file_id}' is a folder and cannot be read as document content. Please search specifically for documents or list folder contents."
+                    f"File '{file_id}' is a folder and cannot be read as document content. "
+                    "Please search specifically for documents or list folder contents."
                 )
 
-            if source_mime and not is_workspace_doc:
+            # Non-exportable files (PDFs, images, audio, video, Office, and non-exportable
+            # Workspace types such as shortcuts or scripts) use alt=media download.
+            if source_mime and supported_export_formats(source_mime) is None:
                 return [
                     "drive",
                     "files",
@@ -329,21 +357,8 @@ class CommandPlanner:
                     f"scratch/exports/download_{file_id}",
                 ]
 
-            if source_mime == "application/vnd.google-apps.document":
-                mime_type = requested_mime or "text/plain"
-            elif source_mime == "application/vnd.google-apps.spreadsheet":
-                if not requested_mime or requested_mime == "text/plain":
-                    mime_type = "text/csv"
-                else:
-                    mime_type = requested_mime
-            elif source_mime == "application/vnd.google-apps.presentation":
-                mime_type = requested_mime or "application/pdf"
-            else:
-                # If no source_mime, respect requested_mime or default to PDF
-                mime_type = requested_mime or "application/pdf"
-
-            # If the user explicitly asks for media/download or it's already a PDF and they want it
-            if mime_type == "media" or (source_mime == "application/pdf" and mime_type == "application/pdf"):
+            # Google Workspace native files use the export endpoint with negotiated MIME type.
+            if requested_mime == "media":
                 return [
                     "drive",
                     "files",
@@ -353,6 +368,8 @@ class CommandPlanner:
                     "-o",
                     f"scratch/exports/download_{file_id}",
                 ]
+
+            mime_type = default_export_mime(source_mime, requested_mime)
 
             return [
                 "drive",
@@ -417,6 +434,10 @@ class CommandPlanner:
             if _payload:
                 cmd.extend(["--json", json.dumps(_payload, ensure_ascii=True)])
             return cmd
+
+        if action == "move_to_trash":
+            file_id = self._required_text(params, "file_id")
+            return ["drive", "files", "update", "--params", json.dumps({"fileId": file_id}), "--json", json.dumps({"trashed": True})]
 
         raise ValidationError(f"Unsupported drive action: {action}")
 
@@ -539,8 +560,6 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "delete", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "send_message":
-            import re
-            
             to_email = self._required_text(params, "to_email").strip().rstrip(".")
             subject = self._required_text(params, "subject")
             body = self._required_text(params, "body")
@@ -555,32 +574,13 @@ class CommandPlanner:
             elif isinstance(attachments, list):
                 attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
-            # Resolve any raw Drive file IDs in attachment_paths to local files.
-            resolved_attachment_paths: list[str] = []
-            for path in attachment_paths:
-                if _DRIVE_FILE_ID_RE.match(path):
-                    local_path = self._export_drive_file_to_temp(path)
-                    if local_path:
-                        resolved_attachment_paths.append(local_path)
-                    else:
-                        drive_link = f"https://drive.google.com/file/d/{path}/view"
-                        body = (
-                            body.rstrip()
-                            + "\n\nNote: The requested document could not be attached directly. "
-                            + f"You can access it here: {drive_link}"
-                        )
-                else:
-                    resolved_attachment_paths.append(path)
-
-            if resolved_attachment_paths:
-                raw_email = self._build_raw_email_with_attachments(
-                    to_email=to_email,
-                    subject=subject,
-                    body=body,
-                    attachment_paths=resolved_attachment_paths,
+            if attachment_paths:
+                raise ValidationError(
+                    "Gmail attachments are materialized at execution time only. "
+                    "Pass Drive file IDs or safe scratch/downloads paths to the executor."
                 )
-            else:
-                raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
+
+            raw_email = self._build_raw_email(to_email=to_email, subject=subject, body=body)
 
             return [
                 "gmail",
@@ -602,12 +602,16 @@ class CommandPlanner:
     def _build_calendar_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_events":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
+            list_params: dict[str, Any] = {"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}
+            query = str(params.get("q") or "").strip()
+            if query:
+                list_params["q"] = query
             return [
                 "calendar",
                 "events",
                 "list",
                 "--params",
-                json.dumps({"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}),
+                json.dumps(list_params),
             ]
 
         if action == "create_event":
@@ -615,6 +619,7 @@ class CommandPlanner:
             start_date_raw = self._required_text(params, "start_date")
             start_date = _resolve_date_expression(start_date_raw)
             time_zone = str(params.get("time_zone") or params.get("timezone") or "UTC").strip()
+            event_id = str(params.get("event_id") or "").strip()
             start_datetime_raw = str(params.get("start_datetime") or "").strip()
             start_time_raw = str(params.get("start_time") or "").strip()
 
@@ -667,6 +672,8 @@ class CommandPlanner:
                 "start": event_start,
                 "end": event_end,
             }
+            if event_id:
+                event_body["id"] = event_id
 
             if description:
                 event_body["description"] = description
@@ -729,6 +736,16 @@ class CommandPlanner:
                 patch_body["summary"] = str(params.get("summary")).strip()
             if params.get("description"):
                 patch_body["description"] = str(params.get("description")).strip()
+            if params.get("location"):
+                patch_body["location"] = str(params.get("location")).strip()
+            if params.get("start"):
+                patch_body["start"] = params["start"]
+            if params.get("end"):
+                patch_body["end"] = params["end"]
+            if params.get("attendees"):
+                patch_body["attendees"] = params["attendees"]
+            if params.get("reminders"):
+                patch_body["reminders"] = params["reminders"]
 
             return [
                 "calendar",
@@ -823,6 +840,33 @@ class CommandPlanner:
                     }
                 ),
             ]
+        if action == "list_directory_people":
+            page_size = self._safe_positive_int(params.get("page_size"), default=10)
+            read_mask = params.get("read_mask") or "names,emailAddresses,phoneNumbers"
+            sources = params.get("sources") or "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"
+            return [
+                "people",
+                "people",
+                "listDirectoryPeople",
+                "--params",
+                json.dumps(
+                    {
+                        "readMask": read_mask,
+                        "sources": sources,
+                        "pageSize": page_size,
+                    }
+                ),
+            ]
+        if action == "get_person":
+            resource_name = self._required_text(params, "resourceName")
+            person_fields = params.get("personFields") or "names,emailAddresses,phoneNumbers"
+            return [
+                "people",
+                "people",
+                "get",
+                "--params",
+                json.dumps({"resourceName": resource_name, "personFields": person_fields}),
+            ]
         raise ValidationError(f"Unsupported contacts action: {action}")
 
     def _build_chat_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -853,6 +897,9 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"parent": space, "pageSize": page_size}),
             ]
+        if action == "get_message":
+            name = self._required_text(params, "name")
+            return ["chat", "spaces", "messages", "get", "--params", json.dumps({"name": name})]
         raise ValidationError(f"Unsupported chat action: {action}")
 
     def _build_meet_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -909,6 +956,27 @@ class CommandPlanner:
         if action == "get_form":
             form_id = self._required_text(params, "form_id")
             return ["forms", "forms", "get", "--params", json.dumps({"formId": form_id})]
+        if action == "batch_update":
+            form_id = self._required_text(params, "form_id")
+            requests = params.get("requests")
+            if not isinstance(requests, list):
+                if isinstance(requests, str):
+                    try:
+                        requests = json.loads(requests)
+                    except json.JSONDecodeError:
+                        raise ValidationError("Parameter 'requests' must be a JSON list of requests.")
+                else:
+                    raise ValidationError("Parameter 'requests' must be a list of requests.")
+
+            return [
+                "forms",
+                "forms",
+                "batchUpdate",
+                "--params",
+                json.dumps({"formId": form_id}),
+                "--json",
+                json.dumps({"requests": requests}, ensure_ascii=True),
+            ]
         raise ValidationError(f"Unsupported forms action: {action}")
 
     def _build_tasks_command(self, action: str, params: dict[str, Any]) -> list[str]:
@@ -999,7 +1067,7 @@ class CommandPlanner:
 
     def _build_telegram_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "send_message":
-            message = self._required_text(params, "message")
+            message = self._required_text(params, "message").strip()[:4000]
             python_exe = os.environ.get("PYTHON_EXE") or sys.executable or "python"
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             script_path = os.environ.get(
@@ -1042,7 +1110,7 @@ class CommandPlanner:
         try:
             parsed = int(str(value).strip())
             return parsed if parsed > 0 else default
-        except Exception:
+        except (ValueError, TypeError):
             return default
 
     @staticmethod
@@ -1056,16 +1124,13 @@ class CommandPlanner:
         msg["To"], msg["Subject"], msg["MIME-Version"] = to_email, subject, "1.0"
         msg.attach(email_lib.mime.text.MIMEText(body, "plain", "utf-8"))
         for path in attachment_paths:
-            # Strip [File: ] decoration if present
-            if isinstance(path, str) and path.startswith("[File: ") and path.endswith("]"):
-                path = path[7:-1].strip()
-
-            if not path or not os.path.isfile(str(path)):
+            normalized_path = CommandPlanner._normalize_attachment_path(path)
+            if not normalized_path:
                 continue
 
-            filename = os.path.basename(str(path))
+            filename = os.path.basename(normalized_path)
             try:
-                with open(str(path), "rb") as fh:
+                with open(normalized_path, "rb") as fh:
                     data = fh.read()
                 part = email_lib.mime.application.MIMEApplication(data, Name=filename)
                 part["Content-Disposition"] = f'attachment; filename="{filename}"'
@@ -1075,13 +1140,61 @@ class CommandPlanner:
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
     @staticmethod
+    def _normalize_attachment_path(path: str) -> str | None:
+        """Return a normalized safe attachment path, or None if the path is invalid."""
+        if isinstance(path, str) and path.startswith("[File: ") and path.endswith("]"):
+            path = path[7:-1].strip()
+
+        if not path:
+            return None
+
+        from pathlib import Path
+        resolved = Path(path).expanduser().resolve()
+
+        # On Windows, resolve() can add \\?\ prefix. Strip it for comparison.
+        res_str = str(resolved)
+        if res_str.startswith("\\\\?\\"):
+            res_str = res_str[4:]
+        resolved_path = Path(res_str)
+
+        if not resolved_path.is_file():
+            return None
+
+        allowed_roots = []
+        for root in _ATTACHMENT_ALLOWED_ROOTS:
+            r_path = Path(root).resolve()
+            r_str = str(r_path)
+            if r_str.startswith("\\\\?\\"):
+                r_str = r_str[4:]
+            allowed_roots.append(Path(r_str))
+
+        if any(resolved_path == root or root in resolved_path.parents for root in allowed_roots):
+            return str(resolved_path)
+
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        t_str = str(temp_root)
+        if t_str.startswith("\\\\?\\"):
+            t_str = t_str[4:]
+        temp_root = Path(t_str)
+
+        for parent in resolved_path.parents:
+            if parent.parent == temp_root and parent.name.startswith("gws_attach_"):
+                return str(resolved_path)
+        return None
+
+    @staticmethod
     def _export_drive_file_to_temp(file_id: str) -> str | None:
         try:
+            if not _DRIVE_FILE_ID_RE.match(file_id):
+                logging.error("Refusing to export invalid Drive file ID: %s", file_id)
+                return None
+
             tmp_dir = tempfile.mkdtemp(prefix="gws_attach_")
             gws_exe = os.environ.get("GWS_BINARY_PATH") or os.environ.get("GWS_EXE") or "gws"
-            
+
             # 1. Try to download directly first (works for binary files, images, PDFs already in Drive)
-            direct_file_path = os.path.join(tmp_dir, f"{file_id}")
+            safe_name = re.sub(r"[^A-Za-z0-9_-]", "", file_id)
+            direct_file_path = os.path.join(tmp_dir, safe_name)
             result = subprocess.run(
                 [
                     gws_exe,

@@ -37,7 +37,7 @@ class TestFullCRUD:
 
         try:
             # 2. Verify (Read)
-            assert verifier.verify_resource("docs", doc_id, {"title": title})
+            assert verifier.verify_resource_by_id("docs", doc_id, {"title": title})
 
             # 3. Update (if applicable via CLI, e.g. batchUpdate)
             # For now just verify we can re-read it.
@@ -59,7 +59,7 @@ class TestFullCRUD:
             # 2. Verify
             # Note: properties title might be nested, verifier currently does flat check
             # We can extend verifier or just check ID existence
-            assert verifier.verify_resource("sheets", sheet_id, {})
+            assert verifier.verify_resource_by_id("sheets", sheet_id, {})
 
         finally:
             # 3. Delete
@@ -82,7 +82,7 @@ class TestFullCRUD:
 
         try:
             # 2. Verify
-            assert verifier.verify_resource("drive", folder_id, {"name": name})
+            assert verifier.verify_resource_by_id("drive", folder_id, {"name": name})
 
         finally:
             # 3. Delete

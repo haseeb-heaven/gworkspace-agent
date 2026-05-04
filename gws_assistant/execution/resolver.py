@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -11,6 +12,12 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_spreadsheet_url":    "last_spreadsheet_url",
     "$last_document_id":        "last_document_id",
     "$last_document_url":       "last_document_url",
+    "$last_presentation_id":    "last_presentation_id",
+    "$last_presentation_url":   "last_presentation_url",
+    "$last_form_id":            "last_form_id",
+    "$last_form_url":           "last_form_url",
+    "$last_meeting_url":        "last_meeting_url",
+    "$last_event_url":          "last_event_url",
     "$gmail_message_body": "gmail_message_body_text",
     "$gmail_message_id": "gmail_message_id",
     "$gmail_message_ids":       "gmail_message_ids",
@@ -26,6 +33,15 @@ LEGACY_PLACEHOLDER_MAP = {
     "$last_export_file_content": "last_export_file_content",
     "$last_export_content":      "last_export_file_content",
     "$last_file_content":        "last_export_file_content",
+    "$last_contacts_list":       "last_contacts_list",
+    "$contacts_summary_table":   "contacts_summary_table",
+    "$contacts_summary_count":   "contacts_summary_count",
+    "$last_admin_activities":    "last_admin_activities",
+    "$admin_summary_table":      "admin_summary_table",
+    "$admin_summary_count":      "admin_summary_count",
+    "$last_chat_spaces":         "last_chat_spaces",
+    "$chat_summary_table":       "chat_summary_table",
+    "$chat_summary_count":       "chat_summary_count",
 
     # Standardized output contracts mapping (legacy -> new)
     "$drive_summary_values":    "drive_summary_rows",
@@ -37,11 +53,14 @@ LEGACY_PLACEHOLDER_MAP = {
     "$web_search_rows":         "search_summary_rows",
     "$web_search_summary":      "search_summary_table",
     "$sheet_email_body":        "sheet_summary_table",
+    "$search_rows":             "search_summary_rows",
+    "$search_results":          "search_summary_rows",
 
     # Include the new standardized ones too to resolve if called explicitly
     "$drive_metadata_rows":     "drive_metadata_rows",
     "$drive_file_count":        "drive_file_count",
     "$drive_metadata_table":    "drive_metadata_table",
+    "$drive_file_links":        "drive_file_links",
     "$code_output":             "code_output",
     "$code_exit_code":          "code_exit_code",
     "$code_error":              "code_error",
@@ -56,6 +75,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$search_summary_count":    "search_summary_count",
     "$sheet_summary_rows":      "sheet_summary_rows",
     "$sheet_summary_table":     "sheet_summary_table",
+    "$calendar_events":         "calendar_events",
+    "$calendar_events_table":   "calendar_events_table",
 }
 
 class ResolverMixin:
@@ -186,26 +207,45 @@ class ResolverMixin:
         # try to pull the most recent matching ID from the global context.
         if task.service == "sheets":
             s_id = str(task.parameters.get("spreadsheet_id") or "")
-            if (not s_id or s_id.startswith("{{")) and context.get("last_spreadsheet_id"):
+            if (not s_id or s_id.startswith("{{") or s_id == _UNRESOLVED_MARKER) and context.get("last_spreadsheet_id"):
                 task.parameters["spreadsheet_id"] = context["last_spreadsheet_id"]
 
         if task.service == "docs":
             d_id = str(task.parameters.get("document_id") or "")
-            if (not d_id or d_id.startswith("{{")) and context.get("last_document_id"):
+            if (not d_id or d_id.startswith("{{") or d_id == _UNRESOLVED_MARKER) and context.get("last_document_id"):
                 task.parameters["document_id"] = context["last_document_id"]
 
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
-            if not f_id or f_id.startswith("{{"):
+            if not f_id or f_id.startswith("{{") or f_id == _UNRESOLVED_MARKER:
                 if context.get("last_file_id"):
                     task.parameters["file_id"] = context["last_file_id"]
                 elif context.get("last_document_id"):
                     task.parameters["file_id"] = context["last_document_id"]
+                elif context.get("last_presentation_id"):
+                    task.parameters["file_id"] = context["last_presentation_id"]
+                elif context.get("last_form_id"):
+                    task.parameters["file_id"] = context["last_form_id"]
+
+        if task.service == "slides":
+            p_id = str(task.parameters.get("presentation_id") or "")
+            if (not p_id or p_id.startswith("{{") or p_id == _UNRESOLVED_MARKER) and context.get("last_presentation_id"):
+                task.parameters["presentation_id"] = context["last_presentation_id"]
+
+        if task.service == "forms":
+            f_id = str(task.parameters.get("form_id") or "")
+            if (not f_id or f_id.startswith("{{") or f_id == _UNRESOLVED_MARKER) and context.get("last_form_id"):
+                task.parameters["form_id"] = context["last_form_id"]
 
         if task.service == "sheets" and task.action == "create_spreadsheet":
             if not task.parameters.get("title"):
-                task.parameters["title"] = "GWS Agent Spreadsheet"
-                self.logger.info("Added default spreadsheet title: GWS Agent Spreadsheet")
+                # The default spreadsheet title is configurable via the
+                # ``DEFAULT_SPREADSHEET_TITLE`` env var so test environments
+                # (and per-deployment naming conventions) don't have to patch
+                # source code.
+                default_title = os.getenv("DEFAULT_SPREADSHEET_TITLE") or "GWS Agent Spreadsheet"
+                task.parameters["title"] = default_title
+                self.logger.info(f"Added default spreadsheet title: {default_title}")
 
         # 4. Strict email recipient enforcement (Security Policy)
         if task.service == "gmail" and task.action == "send_message":
@@ -233,6 +273,28 @@ class ResolverMixin:
             # Depth exceeded — return as-is to prevent stack overflow.
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
+
+        # Additional safety: check for circular references in context
+        if isinstance(val, dict) or isinstance(val, list):
+            # Use id() to detect if we've seen this object before
+            if not hasattr(self, '_resolve_cache'):
+                self._resolve_cache: dict[int, Any] = {}
+            obj_id = id(val)
+            if obj_id in self._resolve_cache:
+                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
+                return self._resolve_cache[obj_id]
+            # Create an empty clone and store it in the cache before recursion
+            clone = {} if isinstance(val, dict) else []
+            self._resolve_cache[obj_id] = clone
+            try:
+                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
+                return result
+            finally:
+                del self._resolve_cache[obj_id]
+        else:
+            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
+
+    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None) -> Any:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
@@ -376,7 +438,7 @@ class ResolverMixin:
                         res = context[ctx_key]
                         if res is None:
                             val = val.replace(placeholder, _UNRESOLVED_MARKER)
-                        elif use_repr_for_complex and isinstance(res, (dict, list)):
+                        elif use_repr_for_complex and isinstance(res, (dict, list, str)):
                             val = val.replace(placeholder, repr(res))
                         else:
                             val = val.replace(placeholder, str(res))
@@ -459,8 +521,18 @@ class ResolverMixin:
                     self.logger.debug(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
                     return resolved_item
 
+            if clone is not None:
+                # Use the memoized clone for circular reference handling
+                for i, item in enumerate(val):
+                    clone.append(self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1))
+                return clone
             return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1) for item in val]
         elif isinstance(val, dict):
+            if clone is not None:
+                # Use the memoized clone for circular reference handling
+                for k, v in val.items():
+                    clone[k] = self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1)
+                return clone
             return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1) for k, v in val.items()}
         return val
 
@@ -522,11 +594,14 @@ class ResolverMixin:
         return curr
 
     def _get_artifact_links_body(self, body: str, context: dict) -> str:
-        """Inject doc/sheet URLs from context into email body."""
+        """Inject artifact URLs (Doc/Sheet/Slide/Form/Meet) from context into email body."""
         doc_url = context.get("last_document_url", "")
         sheet_url = context.get("last_spreadsheet_url", "")
+        slide_url = context.get("last_presentation_url", "")
+        form_url = context.get("last_form_url", "")
+        meet_url = context.get("last_meeting_url", "")
 
-        if not doc_url and not sheet_url:
+        if not any([doc_url, sheet_url, slide_url, form_url, meet_url]):
             return body
 
         links = []
@@ -534,6 +609,12 @@ class ResolverMixin:
             links.append(f"Google Doc: {doc_url}")
         if sheet_url:
             links.append(f"Google Sheet: {sheet_url}")
+        if slide_url:
+            links.append(f"Google Slides: {slide_url}")
+        if form_url:
+            links.append(f"Google Form: {form_url}")
+        if meet_url:
+            links.append(f"Google Meet: {meet_url}")
 
         final_body = f"{body}\n\n" + "\n".join(links)
         self.logger.info(

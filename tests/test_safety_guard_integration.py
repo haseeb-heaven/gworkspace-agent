@@ -85,3 +85,37 @@ def test_executor_dry_run(mock_config, mock_logger):
     result = executor.execute_single_task(task, {})
     assert result.success is True
     assert "Dry-run mode active" in result.output["message"]
+
+
+def test_plan_safety_audit_does_not_log_raw_text(tmp_path):
+    plan = RequestPlan(
+        raw_text="Delete all files and email alice@example.com secret-token",
+        tasks=[PlannedTask(id="1", service="drive", action="delete_file", parameters={"file_id": "123"})],
+    )
+    log_path = tmp_path / "audit.log"
+
+    with patch("gws_assistant.safety_guard.SafetyGuard._get_audit_log_path", return_value=log_path):
+        with pytest.raises(SafetyBlockedError):
+            from gws_assistant.safety_guard import SafetyGuard
+            SafetyGuard.check_plan(plan)
+
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "alice@example.com" not in log_text
+    assert "secret-token" not in log_text
+
+
+def test_confirmation_required_details_are_sanitized(mock_config, mock_logger):
+    mock_config.is_telegram = True
+    executor = PlanExecutor(planner=MagicMock(), runner=MagicMock(), config=mock_config, logger=mock_logger)
+    task = PlannedTask(
+        id="1",
+        service="drive",
+        action="delete_file",
+        parameters={"file_id": "123", "body": "secret body", "email": "alice@example.com"},
+    )
+
+    with pytest.raises(SafetyConfirmationRequired) as excinfo:
+        executor.execute_single_task(task, {})
+
+    assert "secret body" not in excinfo.value.details
+    assert "alice@example.com" not in excinfo.value.details
