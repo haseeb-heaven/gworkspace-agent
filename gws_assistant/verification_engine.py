@@ -1262,10 +1262,13 @@ class VerificationEngine:
             if cls._is_ignored_validation_path(path):
                 continue
             if isinstance(value, str):
+                # For params, don't block generic placeholders - they will be resolved by executor
+                # For results, block generic placeholders only if it's a user content path
+                block_generic = location == "result" and cls._is_user_content_path(path)
                 if cls._contains_invalid_content(
                     value,
                     block_empty=block_empty_strings,
-                    block_generic_placeholders=location != "result" or cls._is_user_content_path(path),
+                    block_generic_placeholders=block_generic,
                 ):
                     raise VerificationError(
                         tool_name,
@@ -1386,7 +1389,9 @@ class VerificationEngine:
             return True
         if not block_empty and not val_str:
             return False
-        if "___UNRESOLVED_PLACEHOLDER___" in val_str:
+        # Only block unresolved placeholders if block_generic_placeholders is True
+        # This allows params to have placeholders that will be resolved by executor
+        if block_generic_placeholders and "___UNRESOLVED_PLACEHOLDER___" in val_str:
             return True
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
 
