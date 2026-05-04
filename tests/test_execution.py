@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from gws_assistant.execution import PlanExecutor
+from gws_assistant.execution.helpers import _coerce_structured_value, _normalize_injected_vars
 from gws_assistant.gws_runner import GWSRunner
 from gws_assistant.models import ExecutionResult, PlannedTask, RequestPlan
 from gws_assistant.planner import CommandPlanner
@@ -387,6 +388,25 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
     assert "https://docs.google.com/document/d/doc-1/edit" in decoded
     assert "https://example.test/sheet" in decoded
 
+
+def test_coerce_structured_value_parses_json_arrays():
+    raw_json = '{"items":[{"id":"evt-1"},{"id":"evt-2"}]}'
+    parsed = _coerce_structured_value(raw_json)
+    assert isinstance(parsed, dict)
+    assert parsed["items"][0]["id"] == "evt-1"
+
+
+def test_coerce_structured_value_handles_calendar_logs():
+    raw_text = "Found 0 calendar events."
+    assert _coerce_structured_value(raw_text) == []
+
+
+def test_normalize_injected_vars_returns_sanitized_elements():
+    raw_values = [None, "[{\"id\": \"evt-1\"}]", "Found 0 calendar events."]
+    normalized = _normalize_injected_vars(raw_values)
+    assert normalized[0] == []
+    assert isinstance(normalized[1], list)
+    assert normalized[2] == []
 
 def test_gmail_details_accumulation():
     runner = FakeRunner()

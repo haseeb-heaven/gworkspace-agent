@@ -117,7 +117,7 @@ def run_task(
     load_dotenv()
     email = os.getenv("DEFAULT_RECIPIENT_EMAIL")
     if email:
-        task_string = task_string.replace("person@example.com", email)
+        task_string = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", email, task_string)
 
     test_file = os.getenv("TEST_FILE_NAME", "README.md")
     task_string = task_string.replace("TEST_FILE_NAME", test_file)

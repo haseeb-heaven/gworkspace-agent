@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import re
@@ -16,6 +17,42 @@ def _sanitize_file_path_patterns(value: Any) -> Any:
     elif isinstance(value, dict):
         return {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
     return value
+
+
+def _coerce_structured_value(raw: Any) -> Any:
+    """Return list/dict if raw string represents structured data, otherwise keep value."""
+    if raw is None:
+        return []
+    if isinstance(raw, (list, dict)):
+        return raw
+    if isinstance(raw, str):
+        trimmed = raw.strip()
+        if not trimmed:
+            return []
+
+        try:
+            parsed = json.loads(trimmed)
+        except json.JSONDecodeError:
+            parsed = None
+
+        if parsed is None:
+            try:
+                parsed = ast.literal_eval(trimmed)
+            except (SyntaxError, ValueError):
+                parsed = None
+
+        if isinstance(parsed, (list, dict)):
+            return parsed
+
+        # Heuristic for "Found 0 calendar events" style logs
+        if "calendar events" in trimmed.lower() and "found" in trimmed.lower():
+            return []
+
+    return raw
+
+
+def _normalize_injected_vars(values: list[Any]) -> list[Any]:
+    return [_coerce_structured_value(item) for item in values]
 
 
 class HelpersMixin:
@@ -154,6 +191,8 @@ class HelpersMixin:
             if not isinstance(injected_vars, list):
                 logger.warning("injected_vars was a %s, forcing to list", type(injected_vars))
                 injected_vars = []
+
+            injected_vars = _normalize_injected_vars(injected_vars)
 
             extra_globals = {
                 "task_results": results_with_numeric,

@@ -398,6 +398,7 @@ class VerificationEngine:
             "calendar": ["https://www.googleapis.com/auth/calendar"],
             "sheets": ["https://www.googleapis.com/auth/spreadsheets"],
             "docs": ["https://www.googleapis.com/auth/documents"],
+            "contacts": ["https://www.googleapis.com/auth/contacts"],
         }
 
         if service in required_scopes_by_service:
@@ -932,7 +933,9 @@ class VerificationEngine:
 
             event_id = params.get("event_id")
             if event_id is not None:
-                if cls._is_placeholder(str(event_id)):
+                # Allow $ placeholders for bulk operations (e.g., $calendar_events)
+                event_id_str = str(event_id)
+                if cls._is_placeholder(event_id_str) and not event_id_str.startswith("$"):
                     raise VerificationError(tool_name, "Invalid event_id", severity=VerificationSeverity.ERROR, field="event_id")
 
         # CATEGORY 6 - GOOGLE TASKS
@@ -1329,6 +1332,9 @@ class VerificationEngine:
             ".headers[",
             ".labelIds[",
         )
+        # Allow $calendar_events placeholder for bulk deletion pattern
+        if path == "params.event_id":
+            return True
         if path == "params.code":
             return True
         if path.startswith("result.") and path.endswith(".name"):

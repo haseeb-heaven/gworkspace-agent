@@ -1469,24 +1469,84 @@ print('Processing task: {lowered}')"""
         ]
 
     def _calendar_find_delete_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        """Calendar: find event by name then delete it."""
-        event_title = _extract_calendar_event_title(text, 0) or "Event"
-        search_query = event_title
+        """Calendar: find event(s) by name or date range then delete them."""
+        import re
+        from datetime import datetime, timedelta
+
+        # Try to extract date range (e.g., "4th and 5th May 2026", "May 4-5 2026")
+        date_pattern = r'(\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:and|to|-)\s+\d{1,2}(?:st|nd|rd|th)?)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})'
+        date_match = re.search(date_pattern, text, re.IGNORECASE)
+
+        list_params: dict[str, Any] = {}
+        search_query = ""
+        reason = ""
+
+        if date_match:
+            # Extract dates and build timeMin/timeMax query
+            date_str = date_match.group(1)
+            # Parse the date(s) - this is a simplified heuristic
+            # For "4th and 5th May 2026", we need to find the start and end
+            months = {
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+            }
+
+            # Try to extract month and year
+            month_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})', date_str, re.IGNORECASE)
+            if month_match:
+                month_name = month_match.group(1).lower()
+                year = int(month_match.group(2))
+                month = months.get(month_name[:3], 1)
+
+                # Extract day(s)
+                day_matches = re.findall(r'(\d{1,2})(?:st|nd|rd|th)?', date_str)
+                if day_matches:
+                    days = [int(d) for d in day_matches]
+                    start_day = min(days)
+                    end_day = max(days)
+
+                    # Build timeMin and timeMax in ISO format
+                    time_min = datetime(year, month, start_day).isoformat() + 'Z'
+                    time_max = (datetime(year, month, end_day) + timedelta(days=1)).isoformat() + 'Z'
+
+                    list_params = {"timeMin": time_min, "timeMax": time_max, "maxResults": 100}
+                    reason = f"List events between {start_day}-{end_day} {month_name} {year}"
+                else:
+                    # Fallback to full month
+                    time_min = datetime(year, month, 1).isoformat() + 'Z'
+                    if month == 12:
+                        time_max = datetime(year + 1, 1, 1).isoformat() + 'Z'
+                    else:
+                        time_max = datetime(year, month + 1, 1).isoformat() + 'Z'
+                    list_params = {"timeMin": time_min, "timeMax": time_max, "maxResults": 100}
+                    reason = f"List events for {month_name} {year}"
+            else:
+                # Fallback: try to use the date string as-is in the query
+                search_query = date_str
+                reason = f"Search for events matching '{date_str}'"
+        else:
+            # Fallback to title-based search
+            event_title = _extract_calendar_event_title(text, 0) or "Event"
+            search_query = event_title
+            reason = f"Search for calendar event '{event_title}'"
+
+        if search_query:
+            list_params["q"] = search_query
 
         return [
             PlannedTask(
                 id="task-1",
                 service="calendar",
                 action="list_events",
-                parameters={"q": search_query},
-                reason=f"Search for calendar event '{event_title}'.",
+                parameters=list_params,
+                reason=reason,
             ),
             PlannedTask(
                 id="task-2",
                 service="calendar",
                 action="delete_event",
-                parameters={"event_id": "{{task-1.id}}"},
-                reason=f"Delete the found event '{event_title}'.",
+                parameters={"event_id": "$calendar_events"},  # Use placeholder for bulk expansion
+                reason="Delete all found events.",
             ),
         ]
 
@@ -1938,13 +1998,26 @@ def _is_calendar_create_update_request(text: str) -> bool:
 
 
 def _is_calendar_find_delete_request(text: str) -> bool:
-    """Detect 'find and delete calendar event X' patterns."""
+    """Detect 'find and delete calendar event X' patterns or delete by date range patterns."""
     lowered = text.lower()
+
+    # Check for date pattern (e.g., "4th and 5th May 2026", "May 4-5 2026")
+    has_date_pattern = bool(re.search(r'\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:and|to|-)\s+\d{1,2}(?:st|nd|rd|th)?)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}', text))
+
+    # Match if: (find/search AND delete) OR (delete AND date pattern)
     return (
         "calendar" in lowered
-        and any(kw in lowered for kw in ("find", "search", "delete", "remove", "cancel"))
-        and ("find" in lowered or "search" in lowered)
-        and ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+        and (
+            (
+                any(kw in lowered for kw in ("find", "search", "delete", "remove", "cancel"))
+                and ("find" in lowered or "search" in lowered)
+                and ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+            )
+            or (
+                ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+                and has_date_pattern
+            )
+        )
     )
 
 
@@ -2790,7 +2863,7 @@ class CalendarFindDeleteStrategy(PlanningStrategy):
         return 53
 
     def matches(self, ctx: PlanningContext) -> bool:
-        return len(ctx.services) == 1 and ctx.services[0] == "calendar" and _is_calendar_find_delete_request(ctx.text)
+        return "calendar" in ctx.services and _is_calendar_find_delete_request(ctx.text)
 
     def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
         tasks = agent._calendar_find_delete_tasks(ctx.text, ctx.lowered)

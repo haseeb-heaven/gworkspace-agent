@@ -147,6 +147,38 @@ class ResolverMixin:
                     expanded.append(new_task)
                 return expanded if expanded else [task]
 
+        if task.service == "calendar" and task.action == "delete_event":
+            event_ids = resolved_params.get("event_id")
+            # If no event_id provided, but we have $calendar_events in context, use it!
+            if (
+                not event_ids or event_ids == "$placeholder" or event_ids == _UNRESOLVED_MARKER or event_ids == "$calendar_events"
+            ) and "calendar_events" in context:
+                events = context["calendar_events"]
+                if isinstance(events, list) and events:
+                    self.logger.info(
+                        f"Auto-injected {len(events)} calendar events from context for deletion expansion."
+                    )
+                    event_ids = events
+
+            concrete_event_ids: list[str] = []
+            if isinstance(event_ids, list):
+                for entry in event_ids:
+                    if isinstance(entry, str) and entry and entry != _UNRESOLVED_MARKER:
+                        concrete_event_ids.append(entry)
+                    elif isinstance(entry, dict) and "id" in entry and isinstance(entry["id"], str):
+                        concrete_event_ids.append(entry["id"])
+            elif isinstance(event_ids, str) and event_ids and event_ids != _UNRESOLVED_MARKER:
+                concrete_event_ids.append(event_ids)
+
+            if concrete_event_ids:
+                expanded = []
+                for i, e_id in enumerate(concrete_event_ids):
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i + 1}"
+                    new_task.parameters["event_id"] = e_id
+                    expanded.append(new_task)
+                return expanded
+
         return [task]
 
     def _resolve_task(self, task: Any, context: dict) -> Any:
@@ -367,6 +399,10 @@ class ResolverMixin:
                     res = context[path]
                     if res is not None:
                         return res
+                # Allow nested lookups like contacts_summary_rows[0][0] against the global context
+                context_path_value = self._get_value_by_path(context, path)
+                if context_path_value is not None:
+                    return context_path_value
 
                 resolved = None
                 if path.startswith(":"):
@@ -462,7 +498,10 @@ class ResolverMixin:
                                 res = val_item
                                 break
                     else:
-                        res = self._get_value_by_path(results_map, p)
+                        # Try nested lookups in the global context before falling back to task results
+                        res = self._get_value_by_path(context, p)
+                        if res is None:
+                            res = self._get_value_by_path(results_map, p)
 
                 if p in context and context[p] is None:
                     return ""

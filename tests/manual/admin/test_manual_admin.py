@@ -8,10 +8,12 @@ from tests.manual.shared import run_task
 
 
 @pytest.mark.live_integration
+
 def test_manual_1():
     # Read and email verification
     run_task(
         "List the last 5 login activities from the admin reports and email the list.",
         expected=["Result", "Sent", "Activity"],
         service="admin",
+        skip_5step_verification=False,
     )
