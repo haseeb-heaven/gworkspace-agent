@@ -28,4 +28,3 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 # Pre-commit hooks for blocking secret files
 pre-commit>=3.6.0
-detect-secrets>=1.5.0
