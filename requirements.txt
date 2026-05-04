@@ -23,3 +23,6 @@ litellm>=1.83.14
 python-telegram-bot>=21.0
 langchain-tavily>=0.2.0
 duckduckgo-search>=6.0.0
+# Google OAuth for multi-user authentication
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
