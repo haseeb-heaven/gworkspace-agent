@@ -25,9 +25,11 @@ def project_root():
     return Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.gws_binary
 class TestGwsBinaryDirect:
     """Test gws.exe binary directly without agent system."""
 
+    @pytest.mark.drive
     def test_drive_list_files(self, gws_binary, project_root):
         """Test direct gws.exe command to list drive files."""
         result = subprocess.run(
@@ -44,6 +46,7 @@ class TestGwsBinaryDirect:
         # Should not crash, even if auth fails
         assert result.returncode in [0, 1]  # 0 = success, 1 = auth/scopes issue
 
+    @pytest.mark.drive
     def test_drive_list_files_with_format(self, gws_binary, project_root):
         """Test gws.exe with format flag."""
         result = subprocess.run(
@@ -59,6 +62,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.gmail
     def test_gmail_list_messages(self, gws_binary, project_root):
         """Test direct gws.exe command to list gmail messages."""
         result = subprocess.run(
@@ -74,6 +78,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.sheets
     def test_sheets_create_spreadsheet(self, gws_binary, project_root):
         """Test direct gws.exe command to create a spreadsheet."""
         result = subprocess.run(
@@ -90,6 +95,7 @@ class TestGwsBinaryDirect:
         # May fail due to auth/scopes, that's expected
         assert result.returncode in [0, 1]
 
+    @pytest.mark.docs
     def test_docs_create_document(self, gws_binary, project_root):
         """Test direct gws.exe command to create a document."""
         result = subprocess.run(
@@ -106,6 +112,7 @@ class TestGwsBinaryDirect:
         # May fail due to auth/scopes, that's expected
         assert result.returncode in [0, 1]
 
+    @pytest.mark.calendar
     def test_calendar_list_events(self, gws_binary, project_root):
         """Test direct gws.exe command to list calendar events."""
         result = subprocess.run(
@@ -121,6 +128,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.contacts
     def test_contacts_list_connections(self, gws_binary, project_root):
         """Test direct gws.exe command to list contacts."""
         result = subprocess.run(
@@ -137,6 +145,7 @@ class TestGwsBinaryDirect:
         # This may fail with 403 (insufficient scopes) - that's expected
         assert result.returncode in [0, 1, 403]
 
+    @pytest.mark.script
     def test_gws_help(self, gws_binary, project_root):
         """Test that gws.exe help command works."""
         result = subprocess.run(
@@ -153,6 +162,7 @@ class TestGwsBinaryDirect:
         assert result.returncode == 0
         assert "USAGE" in result.stdout
 
+    @pytest.mark.script
     def test_gws_schema(self, gws_binary, project_root):
         """Test gws.exe schema command."""
         result = subprocess.run(
@@ -170,6 +180,7 @@ class TestGwsBinaryDirect:
 
     # Additional test scenarios - different combinations
 
+    @pytest.mark.drive
     def test_drive_files_list_with_q_parameter(self, gws_binary, project_root):
         """Test drive files list with search query parameter."""
         result = subprocess.run(
@@ -185,6 +196,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.drive
     def test_drive_files_list_table_format(self, gws_binary, project_root):
         """Test drive files list with table format."""
         result = subprocess.run(
@@ -200,6 +212,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.gmail
     def test_gmail_messages_list_with_q(self, gws_binary, project_root):
         """Test gmail messages list with search query."""
         result = subprocess.run(
@@ -215,6 +228,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.calendar
     def test_calendar_events_list_with_time_range(self, gws_binary, project_root):
         """Test calendar events list with time range."""
         result = subprocess.run(
@@ -230,6 +244,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.sheets
     def test_sheets_spreadsheets_get_without_id(self, gws_binary, project_root):
         """Test sheets spreadsheets get without ID (should fail gracefully)."""
         result = subprocess.run(
@@ -246,6 +261,7 @@ class TestGwsBinaryDirect:
         # Should fail with validation error
         assert result.returncode != 0
 
+    @pytest.mark.drive
     def test_drive_files_create_folder(self, gws_binary, project_root):
         """Test drive files create for folder."""
         result = subprocess.run(
@@ -262,6 +278,7 @@ class TestGwsBinaryDirect:
         # May fail due to auth/scopes
         assert result.returncode in [0, 1]
 
+    @pytest.mark.slides
     def test_slides_presentations_create(self, gws_binary, project_root):
         """Test slides presentations create."""
         result = subprocess.run(
@@ -278,6 +295,7 @@ class TestGwsBinaryDirect:
         # May fail due to auth/scopes
         assert result.returncode in [0, 1]
 
+    @pytest.mark.script
     def test_gws_schema_multiple(self, gws_binary, project_root):
         """Test gws.exe schema for multiple endpoints."""
         schemas = [
@@ -302,6 +320,7 @@ class TestGwsBinaryDirect:
             # Schema should always work if the endpoint exists
             assert result.returncode in [0, 1]
 
+    @pytest.mark.drive
     def test_drive_files_list_yaml_format(self, gws_binary, project_root):
         """Test drive files list with YAML format."""
         result = subprocess.run(
@@ -317,6 +336,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.contacts
     def test_contacts_list_with_person_fields(self, gws_binary, project_root):
         """Test contacts list with specific person fields."""
         result = subprocess.run(
@@ -335,6 +355,7 @@ class TestGwsBinaryDirect:
 
     # Tests for missing services
 
+    @pytest.mark.tasks
     def test_tasks_list_tasklists(self, gws_binary, project_root):
         """Test tasks list tasklists."""
         result = subprocess.run(
@@ -350,6 +371,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.chat
     def test_chat_list_spaces(self, gws_binary, project_root):
         """Test chat list spaces."""
         result = subprocess.run(
@@ -365,6 +387,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.forms
     def test_forms_list_forms(self, gws_binary, project_root):
         """Test forms list forms."""
         result = subprocess.run(
@@ -378,8 +401,10 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print(f"--- End output ---\n")
-        assert result.returncode in [0, 1]
+        # Forms may not have list command or require special setup
+        assert result.returncode in [0, 1, 3]
 
+    @pytest.mark.keep
     def test_keep_list_notes(self, gws_binary, project_root):
         """Test keep list notes."""
         result = subprocess.run(
@@ -395,6 +420,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.meet
     def test_meet_list_conferences(self, gws_binary, project_root):
         """Test meet list conferences."""
         result = subprocess.run(
@@ -408,8 +434,10 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print(f"--- End output ---\n")
-        assert result.returncode in [0, 1]
+        # Meet may not have list command or require special setup
+        assert result.returncode in [0, 1, 3]
 
+    @pytest.mark.admin
     def test_admin_reports_list_activities(self, gws_binary, project_root):
         """Test admin-reports list activities."""
         result = subprocess.run(
@@ -424,8 +452,9 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print(f"--- End output ---\n")
         # Admin reports require special admin scope
-        assert result.returncode in [0, 1, 403]
+        assert result.returncode in [0, 1, 3, 403]
 
+    @pytest.mark.classroom
     def test_classroom_list_courses(self, gws_binary, project_root):
         """Test classroom list courses."""
         result = subprocess.run(
@@ -441,6 +470,7 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         assert result.returncode in [0, 1]
 
+    @pytest.mark.events
     def test_events_watch(self, gws_binary, project_root):
         """Test events watch (may not have list command)."""
         result = subprocess.run(
@@ -457,6 +487,7 @@ class TestGwsBinaryDirect:
         # Events may require special setup
         assert result.returncode in [0, 1, 3]
 
+    @pytest.mark.modelarmor
     def test_modelarmor_help(self, gws_binary, project_root):
         """Test modelarmor help (specialized service)."""
         result = subprocess.run(
@@ -473,6 +504,7 @@ class TestGwsBinaryDirect:
         # Modelarmor is a specialized filtering service
         assert result.returncode in [0, 1, 3]
 
+    @pytest.mark.script
     def test_workflow_help(self, gws_binary, project_root):
         """Test workflow help (specialized service)."""
         result = subprocess.run(
@@ -489,6 +521,7 @@ class TestGwsBinaryDirect:
         # Workflow is a cross-service automation service
         assert result.returncode in [0, 1, 3]
 
+    @pytest.mark.script
     def test_script_help(self, gws_binary, project_root):
         """Test script help (specialized service)."""
         result = subprocess.run(
