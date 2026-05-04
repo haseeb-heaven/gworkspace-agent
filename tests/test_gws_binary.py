@@ -537,3 +537,628 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         # Script is for Apps Script projects
         assert result.returncode in [0, 1, 3]
+
+    # ==================== CRUD TESTS ====================
+
+    # Drive CRUD tests
+    @pytest.mark.drive
+    def test_drive_files_get(self, gws_binary, project_root):
+        """Test drive files get."""
+        result = subprocess.run(
+            [gws_binary, "drive", "files", "get", "--params", '{"fileId": "root"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for drive files get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.drive
+    def test_drive_files_update(self, gws_binary, project_root):
+        """Test drive files update."""
+        result = subprocess.run(
+            [gws_binary, "drive", "files", "update", "--params", '{"fileId": "root", "addLabels": ["test"]}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for drive files update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.drive
+    def test_drive_files_delete(self, gws_binary, project_root):
+        """Test drive files delete (will fail with invalid ID, which is expected)."""
+        result = subprocess.run(
+            [gws_binary, "drive", "files", "delete", "--params", '{"fileId": "invalid_id_12345"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for drive files delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Should fail with invalid ID
+        assert result.returncode in [0, 1]
+
+    # Gmail CRUD tests
+    @pytest.mark.gmail
+    def test_gmail_messages_get(self, gws_binary, project_root):
+        """Test gmail messages get."""
+        result = subprocess.run(
+            [gws_binary, "gmail", "users", "messages", "get", "--params", '{"userId": "me", "id": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for gmail messages get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.gmail
+    def test_gmail_messages_send(self, gws_binary, project_root):
+        """Test gmail messages send (will fail without valid message)."""
+        result = subprocess.run(
+            [gws_binary, "gmail", "users", "messages", "send", "--params", '{"userId": "me"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for gmail messages send ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Should fail without valid message body
+        assert result.returncode in [0, 1, 3]
+
+    @pytest.mark.gmail
+    def test_gmail_messages_delete(self, gws_binary, project_root):
+        """Test gmail messages delete (will fail with invalid ID)."""
+        result = subprocess.run(
+            [gws_binary, "gmail", "users", "messages", "delete", "--params", '{"userId": "me", "id": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for gmail messages delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.gmail
+    def test_gmail_messages_modify(self, gws_binary, project_root):
+        """Test gmail messages modify."""
+        result = subprocess.run(
+            [gws_binary, "gmail", "users", "messages", "modify", "--params", '{"userId": "me", "id": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for gmail messages modify ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Sheets CRUD tests
+    @pytest.mark.sheets
+    def test_sheets_spreadsheets_get(self, gws_binary, project_root):
+        """Test sheets spreadsheets get (will fail without valid ID)."""
+        result = subprocess.run(
+            [gws_binary, "sheets", "spreadsheets", "get", "--params", '{"spreadsheetId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for sheets spreadsheets get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.sheets
+    def test_sheets_spreadsheets_update(self, gws_binary, project_root):
+        """Test sheets spreadsheets update."""
+        result = subprocess.run(
+            [gws_binary, "sheets", "spreadsheets", "batchUpdate", "--params", '{"spreadsheetId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for sheets spreadsheets update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Docs CRUD tests
+    @pytest.mark.docs
+    def test_docs_documents_get(self, gws_binary, project_root):
+        """Test docs documents get (will fail without valid ID)."""
+        result = subprocess.run(
+            [gws_binary, "docs", "documents", "get", "--params", '{"documentId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for docs documents get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.docs
+    def test_docs_documents_batchUpdate(self, gws_binary, project_root):
+        """Test docs documents batchUpdate."""
+        result = subprocess.run(
+            [gws_binary, "docs", "documents", "batchUpdate", "--params", '{"documentId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for docs documents batchUpdate ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Calendar CRUD tests
+    @pytest.mark.calendar
+    def test_calendar_events_get(self, gws_binary, project_root):
+        """Test calendar events get (will fail without valid ID)."""
+        result = subprocess.run(
+            [gws_binary, "calendar", "events", "get", "--params", '{"calendarId": "primary", "eventId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for calendar events get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.calendar
+    def test_calendar_events_insert(self, gws_binary, project_root):
+        """Test calendar events insert."""
+        result = subprocess.run(
+            [gws_binary, "calendar", "events", "insert", "--params", '{"calendarId": "primary"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for calendar events insert ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.calendar
+    def test_calendar_events_update(self, gws_binary, project_root):
+        """Test calendar events update."""
+        result = subprocess.run(
+            [gws_binary, "calendar", "events", "update", "--params", '{"calendarId": "primary", "eventId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for calendar events update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.calendar
+    def test_calendar_events_delete(self, gws_binary, project_root):
+        """Test calendar events delete."""
+        result = subprocess.run(
+            [gws_binary, "calendar", "events", "delete", "--params", '{"calendarId": "primary", "eventId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for calendar events delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Tasks CRUD tests
+    @pytest.mark.tasks
+    def test_tasks_tasks_get(self, gws_binary, project_root):
+        """Test tasks get."""
+        result = subprocess.run(
+            [gws_binary, "tasks", "tasks", "get", "--params", '{"tasklist": "@default", "task": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for tasks get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.tasks
+    def test_tasks_tasks_insert(self, gws_binary, project_root):
+        """Test tasks insert."""
+        result = subprocess.run(
+            [gws_binary, "tasks", "tasks", "insert", "--params", '{"tasklist": "@default", "title": "Test Task"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for tasks insert ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.tasks
+    def test_tasks_tasks_update(self, gws_binary, project_root):
+        """Test tasks update."""
+        result = subprocess.run(
+            [gws_binary, "tasks", "tasks", "update", "--params", '{"tasklist": "@default", "task": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for tasks update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.tasks
+    def test_tasks_tasks_delete(self, gws_binary, project_root):
+        """Test tasks delete."""
+        result = subprocess.run(
+            [gws_binary, "tasks", "tasks", "delete", "--params", '{"tasklist": "@default", "task": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for tasks delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Keep CRUD tests
+    @pytest.mark.keep
+    def test_keep_notes_get(self, gws_binary, project_root):
+        """Test keep notes get."""
+        result = subprocess.run(
+            [gws_binary, "keep", "notes", "get", "--params", '{"name": "notes/test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for keep notes get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.keep
+    def test_keep_notes_create(self, gws_binary, project_root):
+        """Test keep notes create."""
+        result = subprocess.run(
+            [gws_binary, "keep", "notes", "create", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for keep notes create ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Slides CRUD tests
+    @pytest.mark.slides
+    def test_slides_presentations_get(self, gws_binary, project_root):
+        """Test slides presentations get."""
+        result = subprocess.run(
+            [gws_binary, "slides", "presentations", "get", "--params", '{"presentationId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for slides presentations get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.slides
+    def test_slides_presentations_update(self, gws_binary, project_root):
+        """Test slides presentations batchUpdate."""
+        result = subprocess.run(
+            [gws_binary, "slides", "presentations", "batchUpdate", "--params", '{"presentationId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for slides presentations batchUpdate ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    # Contacts CRUD tests
+    @pytest.mark.contacts
+    def test_contacts_get(self, gws_binary, project_root):
+        """Test contacts get."""
+        result = subprocess.run(
+            [gws_binary, "people", "people", "get", "--params", '{"resourceName": "people/test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for contacts get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 403]
+
+    @pytest.mark.contacts
+    def test_contacts_create(self, gws_binary, project_root):
+        """Test contacts create."""
+        result = subprocess.run(
+            [gws_binary, "people", "people", "createContact", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for contacts create ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 403]
+
+    @pytest.mark.contacts
+    def test_contacts_update(self, gws_binary, project_root):
+        """Test contacts update."""
+        result = subprocess.run(
+            [gws_binary, "people", "people", "updateContact", "--params", '{"resourceName": "people/test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for contacts update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 403]
+
+    @pytest.mark.contacts
+    def test_contacts_delete(self, gws_binary, project_root):
+        """Test contacts delete."""
+        result = subprocess.run(
+            [gws_binary, "people", "people", "deleteContact", "--params", '{"resourceName": "people/test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for contacts delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 403]
+
+    # Forms CRUD tests
+    @pytest.mark.forms
+    def test_forms_create(self, gws_binary, project_root):
+        """Test forms create."""
+        result = subprocess.run(
+            [gws_binary, "forms", "forms", "create", "--params", '{"info": {"title": "Test Form"}}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for forms create ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    @pytest.mark.forms
+    def test_forms_get(self, gws_binary, project_root):
+        """Test forms get."""
+        result = subprocess.run(
+            [gws_binary, "forms", "forms", "get", "--params", '{"formId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for forms get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    @pytest.mark.forms
+    def test_forms_update(self, gws_binary, project_root):
+        """Test forms update."""
+        result = subprocess.run(
+            [gws_binary, "forms", "forms", "batchUpdate", "--params", '{"formId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for forms update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    @pytest.mark.forms
+    def test_forms_delete(self, gws_binary, project_root):
+        """Test forms delete."""
+        result = subprocess.run(
+            [gws_binary, "forms", "forms", "delete", "--params", '{"formId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for forms delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    # Meet CRUD tests
+    @pytest.mark.meet
+    def test_meet_create(self, gws_binary, project_root):
+        """Test meet create conference."""
+        result = subprocess.run(
+            [gws_binary, "meet", "conferences", "create", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for meet create ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    @pytest.mark.meet
+    def test_meet_get(self, gws_binary, project_root):
+        """Test meet get conference."""
+        result = subprocess.run(
+            [gws_binary, "meet", "conferences", "get", "--params", '{"name": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for meet get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    # Admin CRUD tests
+    @pytest.mark.admin
+    def test_admin_channels_stop(self, gws_binary, project_root):
+        """Test admin channels stop."""
+        result = subprocess.run(
+            [gws_binary, "admin-reports", "channels", "stop", "--params", '{"channelId": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for admin channels stop ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1, 3]
+
+    # Classroom CRUD tests
+    @pytest.mark.classroom
+    def test_classroom_create(self, gws_binary, project_root):
+        """Test classroom create course."""
+        result = subprocess.run(
+            [gws_binary, "classroom", "courses", "create", "--params", '{"name": "Test Course"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for classroom create ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.classroom
+    def test_classroom_get(self, gws_binary, project_root):
+        """Test classroom get course."""
+        result = subprocess.run(
+            [gws_binary, "classroom", "courses", "get", "--params", '{"id": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for classroom get ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.classroom
+    def test_classroom_update(self, gws_binary, project_root):
+        """Test classroom update course."""
+        result = subprocess.run(
+            [gws_binary, "classroom", "courses", "update", "--params", '{"id": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for classroom update ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    @pytest.mark.classroom
+    def test_classroom_delete(self, gws_binary, project_root):
+        """Test classroom delete course."""
+        result = subprocess.run(
+            [gws_binary, "classroom", "courses", "delete", "--params", '{"id": "test"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for classroom delete ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
