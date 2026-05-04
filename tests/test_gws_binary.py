@@ -12,6 +12,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Test resource names from environment
+TEST_FILE_NAME = os.getenv("TEST_FILE_NAME", "README.md")
+TEST_DOC_NAME = os.getenv("TEST_DOC_NAME", "Investigation Report")
+TEST_SHEET_NAME = os.getenv("TEST_SHEET_NAME", "Systematic Testing Data")
+TEST_FOLDER_NAME = os.getenv("TEST_FOLDER_NAME", "Agentic AI Test Folder")
+TEST_RENAMED_FOLDER_NAME = os.getenv("TEST_RENAMED_FOLDER_NAME", "Renamed AI Folder")
+TEST_DOC_QUERY = os.getenv("TEST_DOC_QUERY", "CcaaS - AI Product")
+TEST_DOC_KEYWORD = os.getenv("TEST_DOC_KEYWORD", "Document")
+TEST_DRIVE_SEARCH_QUERY = os.getenv("TEST_DRIVE_SEARCH_QUERY", "budget")
+TEST_GMAIL_SEARCH_QUERY = os.getenv("TEST_GMAIL_SEARCH_QUERY", "invoice")
+TEST_GMAIL_URGENT_QUERY = os.getenv("TEST_GMAIL_URGENT_QUERY", "urgent")
+TEST_GMAIL_LABEL_NAME = os.getenv("TEST_GMAIL_LABEL_NAME", "GWorkspaceAgent-Test")
+TEST_GMAIL_LABEL_SENDER = os.getenv("TEST_GMAIL_LABEL_SENDER", "haseebmir.hm@gmail.com")
+
 
 @pytest.fixture
 def gws_binary():
@@ -82,7 +96,7 @@ class TestGwsBinaryDirect:
     def test_sheets_create_spreadsheet(self, gws_binary, project_root):
         """Test direct gws.exe command to create a spreadsheet."""
         result = subprocess.run(
-            [gws_binary, "sheets", "spreadsheets", "create", "--params", '{"title": "Test Spreadsheet"}'],
+            [gws_binary, "sheets", "spreadsheets", "create", "--params", f'{{"title": "{TEST_SHEET_NAME}"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -99,7 +113,7 @@ class TestGwsBinaryDirect:
     def test_docs_create_document(self, gws_binary, project_root):
         """Test direct gws.exe command to create a document."""
         result = subprocess.run(
-            [gws_binary, "docs", "documents", "create", "--params", '{"title": "Test Document"}'],
+            [gws_binary, "docs", "documents", "create", "--params", f'{{"title": "{TEST_DOC_NAME}"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -184,7 +198,7 @@ class TestGwsBinaryDirect:
     def test_drive_files_list_with_q_parameter(self, gws_binary, project_root):
         """Test drive files list with search query parameter."""
         result = subprocess.run(
-            [gws_binary, "drive", "files", "list", "--params", '{"q": "mimeType=\'application/pdf\'", "pageSize": "3"}'],
+            [gws_binary, "drive", "files", "list", "--params", f'{{"q": "{TEST_DRIVE_SEARCH_QUERY}", "pageSize": "3"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -216,7 +230,7 @@ class TestGwsBinaryDirect:
     def test_gmail_messages_list_with_q(self, gws_binary, project_root):
         """Test gmail messages list with search query."""
         result = subprocess.run(
-            [gws_binary, "gmail", "users", "messages", "list", "--params", '{"userId": "me", "q": "subject:test", "maxResults": "1"}'],
+            [gws_binary, "gmail", "users", "messages", "list", "--params", f'{{"userId": "me", "q": "{TEST_GMAIL_SEARCH_QUERY}", "maxResults": "1"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -265,7 +279,7 @@ class TestGwsBinaryDirect:
     def test_drive_files_create_folder(self, gws_binary, project_root):
         """Test drive files create for folder."""
         result = subprocess.run(
-            [gws_binary, "drive", "files", "create", "--params", '{"name": "Test Folder", "mimeType": "application/vnd.google-apps.folder"}'],
+            [gws_binary, "drive", "files", "create", "--params", f'{{"name": "{TEST_FOLDER_NAME}", "mimeType": "application/vnd.google-apps.folder"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -677,7 +691,7 @@ class TestGwsBinaryDirect:
     def test_sheets_spreadsheets_update(self, gws_binary, project_root):
         """Test sheets spreadsheets update."""
         result = subprocess.run(
-            [gws_binary, "sheets", "spreadsheets", "batchUpdate", "--params", '{"spreadsheetId": "test"}'],
+            [gws_binary, "sheets", "spreadsheets", "batchUpdate", "--params", f'{{"spreadsheetId": "{TEST_SHEET_NAME}"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -710,7 +724,7 @@ class TestGwsBinaryDirect:
     def test_docs_documents_batchUpdate(self, gws_binary, project_root):
         """Test docs documents batchUpdate."""
         result = subprocess.run(
-            [gws_binary, "docs", "documents", "batchUpdate", "--params", '{"documentId": "test"}'],
+            [gws_binary, "docs", "documents", "batchUpdate", "--params", f'{{"documentId": "{TEST_DOC_NAME}"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -775,7 +789,7 @@ class TestGwsBinaryDirect:
     def test_calendar_events_delete(self, gws_binary, project_root):
         """Test calendar events delete."""
         result = subprocess.run(
-            [gws_binary, "calendar", "events", "delete", "--params", '{"calendarId": "primary", "eventId": "test"}'],
+            [gws_binary, "calendar", "events", "delete", "--params", '{"calendarId": "primary", "eventId": "ZXZ0MjM3ZGJiZmY2ODI3OGYwNTA1NjhiZjUwIGhhc2VlYm1pci5obUBt"}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -808,7 +822,7 @@ class TestGwsBinaryDirect:
     def test_tasks_tasks_insert(self, gws_binary, project_root):
         """Test tasks insert."""
         result = subprocess.run(
-            [gws_binary, "tasks", "tasks", "insert", "--params", '{"tasklist": "@default", "title": "Test Task"}'],
+            [gws_binary, "tasks", "tasks", "insert", "--params", f'{{"tasklist": "@default", "title": "{TEST_DOC_NAME} Task"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -988,7 +1002,7 @@ class TestGwsBinaryDirect:
     def test_forms_create(self, gws_binary, project_root):
         """Test forms create."""
         result = subprocess.run(
-            [gws_binary, "forms", "forms", "create", "--params", '{"info": {"title": "Test Form"}}'],
+            [gws_binary, "forms", "forms", "create", "--params", f'{{"info": {{"title": "{TEST_DOC_NAME}"}}}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
@@ -1103,7 +1117,7 @@ class TestGwsBinaryDirect:
     def test_classroom_create(self, gws_binary, project_root):
         """Test classroom create course."""
         result = subprocess.run(
-            [gws_binary, "classroom", "courses", "create", "--params", '{"name": "Test Course"}'],
+            [gws_binary, "classroom", "courses", "create", "--params", f'{{"name": "{TEST_DOC_NAME}"}}'],
             capture_output=True,
             text=True,
             cwd=str(project_root),
