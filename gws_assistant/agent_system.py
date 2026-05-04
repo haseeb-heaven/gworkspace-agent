@@ -99,7 +99,16 @@ result = result"""
 
     # Default: simple calculator for expressions
     # Try to extract a simple arithmetic expression (e.g. "15 * 24")
-    expr_match = re.search(r"(\d+)\s*([+\-*/])\s*(\d+)", lowered)
+    # Add length limit to prevent DoS via regex backtracking
+    if len(lowered) > 50:
+        return f"""# Computation request: {text}
+	# Note: Input too long for heuristic computation.
+	# For complex computations, please use the LLM-powered planning mode.
+	result = None
+	print(result)
+result = result"""
+    # Use \s+ instead of \s* to prevent catastrophic backtracking
+    expr_match = re.search(r"(\d+)\s+([+\-*/])\s+(\d+)", lowered)
     if expr_match:
         a, op, b = int(expr_match.group(1)), expr_match.group(2), int(expr_match.group(3))
         ops = {"+": "+", "-": "-", "*": "*", "/": "/"}
