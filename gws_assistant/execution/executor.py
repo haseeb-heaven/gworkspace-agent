@@ -470,8 +470,14 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         body = body.replace("\r\n", "\n")
         body = body.replace("\r", "\n")
         body = body.replace("[File: ", "[See attached document: ")
-
         attachments = task.parameters.get("attachments")
+        max_gmail_body_chars = 4000
+        if len(body) > max_gmail_body_chars and not attachments:
+            body = (
+                body[:max_gmail_body_chars].rstrip()
+                + "\n\n[Output truncated to keep Gmail send payload within CLI limits.]"
+            )
+
         attachment_paths: list[str] = []
         if isinstance(attachments, str) and attachments.strip():
             attachment_paths = [attachments.strip()]

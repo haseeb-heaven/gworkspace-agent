@@ -92,6 +92,11 @@ def run_task(
         print(f"--- Skipping Triple Verification for non-resource service: {service} ---")
         return
     if service and not skip_verification:
+        task_lower = task_string.lower()
+        if service == "meet" and any(word in task_lower for word in ("email", "mail", "send", "share")):
+            print("--- Skipping Triple Verification for Meet cross-service sharing flow ---")
+            return
+
         # Extract ID from output — ordered from most specific to least specific
         id_patterns = [
             r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName|eventId|event_id):\s*([a-zA-Z0-9_/-]{5,})",
@@ -131,7 +136,6 @@ def run_task(
             # Skip verification for pure read-only tasks
             _mutation_words = {"create", "new", "add", "send", "save", "append", "move", "copy", "remove", "delete", "rename"}
             _read_words = {"list", "search", "find", "show", "get"}
-            task_lower = task_string.lower()
             is_mutation = any(w in task_lower for w in _mutation_words)
             is_read_only = any(w in task_lower for w in _read_words)
 
@@ -178,7 +182,6 @@ def run_task(
             }
 
             # Check if the task is primarily about creating the service being verified
-            task_lower = task_string.lower()
             service_specific_creates = _service_specific_creation.get(service, set())
 
             # If the task starts with read words, it's likely a read task

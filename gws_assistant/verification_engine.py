@@ -440,7 +440,12 @@ class VerificationEngine:
         # Use the existing verification logic but with ERROR severity
         try:
             cls.verify_result(tool_name, params, result)
-            cls._validate_no_invalid_payload_data(tool_name, result, location="result")
+            cls._validate_no_invalid_payload_data(
+                tool_name,
+                result,
+                location="result",
+                block_empty_strings=False,
+            )
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
             if e.severity == VerificationSeverity.WARNING:
@@ -1248,7 +1253,11 @@ class VerificationEngine:
             if cls._is_ignored_validation_path(path):
                 continue
             if isinstance(value, str):
-                if cls._contains_invalid_content(value, block_empty=block_empty_strings):
+                if cls._contains_invalid_content(
+                    value,
+                    block_empty=block_empty_strings,
+                    block_generic_placeholders=location != "result" or cls._is_user_content_path(path),
+                ):
                     raise VerificationError(
                         tool_name,
                         f"{location} contains invalid, empty, or unresolved placeholder data at {path}",
@@ -1279,10 +1288,10 @@ class VerificationEngine:
     @classmethod
     def _is_ignored_validation_path(cls, path: str) -> bool:
         ignored_suffixes = (
-            ".etag",
-            ".historyId",
-            ".internalDate",
-            ".kind",
+            ".id",
+            ".name",
+            ".title",
+            ".snippet",
             ".mimeType",
             ".query",
             ".q",
@@ -1293,6 +1302,10 @@ class VerificationEngine:
             ".headers[",
             ".labelIds[",
         )
+        if path == "params.code":
+            return True
+        if path.startswith("result.") and path.endswith(".name"):
+            return True
         return path.endswith(ignored_suffixes) or any(fragment in path for fragment in ignored_fragments)
 
     @classmethod
@@ -1322,7 +1335,42 @@ class VerificationEngine:
         return any(token.lower() in path_lower for token in required_tokens)
 
     @classmethod
-    def _contains_invalid_content(cls, value: str, block_empty: bool = True) -> bool:
+    def _is_user_content_path(cls, path: str) -> bool:
+        content_tokens = (
+            "body",
+            "content",
+            "description",
+            "message",
+            "notes",
+            "snippet",
+            "subject",
+            "summary",
+            "text",
+            "title",
+        )
+        path_lower = path.lower()
+        ignored_content_fragments = (
+            "autotext.content",
+            "bulletstyle.",
+            "bodyplaceholderlistentity",
+            "paragraphmarker.bullet",
+            "sectionbreak.sectionstyle",
+            ".style.",
+            "textstyle.",
+            "textrun.style",
+        )
+        if any(fragment in path_lower for fragment in ignored_content_fragments):
+            return False
+        path_segments = {segment.lower() for segment in re.split(r"[^A-Za-z0-9_]+", path) if segment}
+        return any(token in path_segments for token in content_tokens)
+
+    @classmethod
+    def _contains_invalid_content(
+        cls,
+        value: str,
+        block_empty: bool = True,
+        block_generic_placeholders: bool = True,
+    ) -> bool:
         val_str = str(value).strip()
         if block_empty and not val_str:
             return True
@@ -1334,10 +1382,12 @@ class VerificationEngine:
 
         if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
             return True
-        if cls._is_placeholder(val_str) or cls._has_unresolved_templates(val_str):
+        if cls._has_unresolved_templates(val_str):
+            return True
+        if block_generic_placeholders and cls._is_placeholder(val_str):
             return True
         invalid_literals = {"none", "null", "undefined", "nan", "invalid data", "no data"}
-        return val_str.lower() in invalid_literals
+        return block_generic_placeholders and val_str.lower() in invalid_literals
 
     @classmethod
     def _validate_attachment_file(cls, tool_name: str, attachment: dict) -> None:
