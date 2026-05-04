@@ -261,9 +261,9 @@ class TestVerifyAttachmentSent:
                 {"payload": {}},
             )
 
-    def test_empty_attachment_file_fails(self, tmp_path):
-        empty_file = tmp_path / "empty.txt"
-        empty_file.write_text("")
+    def test_empty_attachment_file_fails(self, tmpdir):
+        empty_file = tmpdir.join("empty.txt")
+        empty_file.write("")
         with pytest.raises(VerificationError, match="Attachment file is empty"):
             VerificationEngine.verify_params("gmail_send_message", {
                 "to": "real@example.org",
