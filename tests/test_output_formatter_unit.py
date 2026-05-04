@@ -113,7 +113,7 @@ def test_format_docs(formatter):
     res = ExecutionResult(success=True, stdout=json.dumps(payload), stderr="", command=["gws"])
     out = formatter.format_execution_result(res)
     assert "Document: Doc 1" in out
-    assert "Document ID: d123" in out
+    assert "ID: d123" in out
 
 
 def test_format_calendar_events(formatter):

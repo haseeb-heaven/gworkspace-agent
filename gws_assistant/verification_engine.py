@@ -1292,6 +1292,7 @@ class VerificationEngine:
             ".name",
             ".title",
             ".snippet",
+            ".content",
             ".mimeType",
             ".query",
             ".q",
