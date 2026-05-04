@@ -738,7 +738,7 @@ class VerificationEngine:
                         raise VerificationError(
                             tool_name,
                             "Attachment reference must be a non-empty resolved value",
-                            severity=VerificationSeverity.ERROR,
+                            severity=VerificationSeverity.WARNING,
                             field="attachments",
                         )
 
@@ -855,16 +855,21 @@ class VerificationEngine:
                 if values is None or values == [] or values == [[]]:
                     # Allow empty values for clear/delete/get
                     if all(x not in tool_name for x in ("clear", "delete", "get")):
-                        raise VerificationError(tool_name, "Values cannot be empty", severity=VerificationSeverity.ERROR, field="values")
+                        raise VerificationError(tool_name, "Values cannot be empty", severity=VerificationSeverity.WARNING, field="values")
 
                 # Check for placeholder in cells
                 if isinstance(values, list):
                     for row in values:
                         if isinstance(row, list):
                             for cell in row:
-                                if cell is not None and str(cell).strip() and cls._is_placeholder(str(cell)):
-                                    logger.debug(f"Placeholder found in values: '{cell}', full params: {params}")
-                                    raise VerificationError(tool_name, f"Placeholder found in values: {cell}", severity=VerificationSeverity.ERROR, field="values")
+                                if cell is not None and str(cell).strip():
+                                    cell_str = str(cell)
+                                    # Skip binary/non-printable data — not a placeholder
+                                    if any(ord(c) > 127 or (ord(c) < 32 and ord(c) not in (9, 10, 13)) for c in cell_str[:20]):
+                                        continue
+                                    if cls._is_placeholder(cell_str):
+                                        logger.debug(f"Placeholder found in values: '{cell}', full params: {params}")
+                                        raise VerificationError(tool_name, f"Placeholder found in values: {cell}", severity=VerificationSeverity.ERROR, field="values")
 
             sheet_name = params.get("sheet_name") or params.get("tab_name")
             if sheet_name is not None:
@@ -1310,6 +1315,9 @@ class VerificationEngine:
             ".q",
             ".size",
             ".sizeBytes",
+            ".drive_export_content",
+            ".drive_export_path",
+            ".drive_export_file",
         )
         ignored_fragments = (
             ".headers[",

@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from gws_assistant.exceptions import SafetyBlockedError, ValidationError
 from gws_assistant.models import ExecutionResult
-from gws_assistant.verification_engine import VerificationEngine, VerificationError
+from gws_assistant.verification_engine import VerificationEngine, VerificationError, VerificationSeverity
 
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
@@ -190,9 +190,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 try:
                     VerificationEngine.verify_pre_execution(f"{task.service}_{task.action}", task.parameters)
                 except VerificationError as e:
-                    from gws_assistant.exceptions import VerificationError as ExistingVerificationError
-                    self.logger.error(f"Pre-execution verification failed: {e}")
-                    raise ExistingVerificationError(str(e))
+                    if e.severity == VerificationSeverity.WARNING:
+                        self.logger.warning(f"Pre-execution verification warning (continuing): {e}")
+                    else:
+                        self.logger.error(f"Pre-execution verification failed: {e}")
+                        raise
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 

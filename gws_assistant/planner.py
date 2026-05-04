@@ -239,8 +239,14 @@ class CommandPlanner:
             }
             if raw_query:
                 # If the query looks like a document search, prioritize Google Docs mimeType.
+                # But skip if the query has a file extension (e.g. .pdf, .docx) since that's a specific file.
                 lowered = raw_query.lower()
-                if any(kw in lowered for kw in ("document", "doc", "12th", "class")) and "mimetype" not in lowered:
+                has_extension = bool(re.search(r"\.[a-z]{2,5}\b", lowered))
+                if (
+                    not has_extension
+                    and any(kw in lowered for kw in ("document", "doc", "12th", "class"))
+                    and "mimetype" not in lowered
+                ):
                     request_params["q"] = (
                         f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
                     )

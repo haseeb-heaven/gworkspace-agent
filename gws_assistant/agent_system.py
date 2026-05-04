@@ -492,6 +492,9 @@ $last_export_file_content"""
         query = _drive_query_from_text(text)
         recipient = _extract_email(text, default=self.config.default_recipient_email)
 
+        # Check if user provided an explicit file ID — skip list step (use original case)
+        explicit_id = _extract_id(text)
+
         # Extract the document name from the query for the sheet title
         sheet_title = "Results"
         if "'" in query:
@@ -500,11 +503,11 @@ $last_export_file_content"""
 
         # Code to convert document text to table format
         code_script = """# Read the exported document content
-content = $last_export_file_content
+content = $drive_export_content
 
-if not content or len(content.strip()) == 0:
-    print('No content found in document.')
-    result = []
+if not content or len(content.strip()) == 0 or str(content).startswith('[File:'):
+    print('No readable text content found in document (may be a binary/PDF file).')
+    result = [['Note', 'Value'], ['Status', 'Document could not be read as text. Use a Google Docs native file.']]
 else:
     # Split content into lines
     lines = content.strip().split('\\n')
@@ -532,50 +535,78 @@ else:
 
 print(result)"""
 
-        tasks = [
+        if explicit_id:
+            # User provided an explicit file ID — skip list, export directly
+            tasks = [
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="export_file",
+                    parameters={
+                        "file_id": explicit_id,
+                        "mime_type": "text/plain",
+                    },
+                    reason="Export the document content as text using the provided file ID.",
+                ),
+            ]
+            export_id_ref = "{{task-1.id}}"
+            code_task_id = "task-2"
+            sheet_task_id = "task-3"
+            append_task_id = "task-4"
+            gmail_task_id = "task-5"
+        else:
+            tasks = [
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="list_files",
+                    parameters={"q": query, "page_size": 50},
+                    reason="Search for the requested document.",
+                ),
+                PlannedTask(
+                    id="task-2",
+                    service="drive",
+                    action="export_file",
+                    parameters={
+                        "file_id": "{{task-1.files[0].id}}",
+                        "mime_type": "text/plain",
+                    },
+                    reason="Export the document content as text.",
+                ),
+            ]
+            export_id_ref = "{{task-2.id}}"
+            code_task_id = "task-3"
+            sheet_task_id = "task-4"
+            append_task_id = "task-5"
+            gmail_task_id = "task-6"
+
+        tasks += [
             PlannedTask(
-                id="task-1",
-                service="drive",
-                action="list_files",
-                parameters={"q": query, "page_size": 50},
-                reason="Search for the requested document.",
-            ),
-            PlannedTask(
-                id="task-2",
-                service="drive",
-                action="export_file",
-                parameters={
-                    "file_id": "{{task-1.files[0].id}}",
-                    "mime_type": "text/plain",
-                },
-                reason="Export the document content as text.",
-            ),
-            PlannedTask(
-                id="task-3",
+                id=code_task_id,
                 service="code",
                 action="execute",
                 parameters={"code": code_script},
                 reason="Convert document content to table format.",
             ),
             PlannedTask(
-                id="task-4",
+                id=sheet_task_id,
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": sheet_title},
                 reason="Create a spreadsheet to store the results.",
             ),
             PlannedTask(
-                id="task-5",
+                id=append_task_id,
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "{{task-4.spreadsheetId}}",
+                    "spreadsheet_id": f"{{{{{sheet_task_id}.spreadsheetId}}}}",
                     "values": "$last_code_result",
                 },
                 reason="Append the converted table data to the sheet.",
             ),
             PlannedTask(
-                id="task-6",
+                id=gmail_task_id,
                 service="gmail",
                 action="send_message",
                 parameters={
@@ -1730,12 +1761,19 @@ def _gmail_query_from_text(text: str) -> str:
 def _drive_query_from_text(text: str) -> str:
     quoted = RE_DRIVE_QUERY_QUOTED.search(text)
     if quoted:
-        return f"fullText contains '{quoted.group(1).strip()}'"
+        term = quoted.group(1).strip()
+        # Use name contains for file-like terms (with extension or short names)
+        # Use fullText for longer descriptive search terms
+        if "." in term or len(term.split()) <= 2:
+            return f"name contains '{term}'"
+        return f"name contains '{term}' or fullText contains '{term}'"
     match = RE_DRIVE_QUERY_MATCH.search(text)
     if match:
         query = match.group(1).strip()
         query = RE_DRIVE_QUERY_SPLIT.split(query)[0].strip()
-        return f"fullText contains '{query}'"
+        if "." in query or len(query.split()) <= 2:
+            return f"name contains '{query}'"
+        return f"name contains '{query}' or fullText contains '{query}'"
     return ""
 
 

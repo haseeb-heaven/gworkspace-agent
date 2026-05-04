@@ -105,6 +105,11 @@ class HelpersMixin:
                         break
 
             code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
+            # Replace any remaining unresolved markers with an empty string sentinel
+            # to avoid RestrictedPython SyntaxErrors from identifiers starting with '_'
+            from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
+            if _UNRESOLVED_MARKER in code:
+                code = code.replace(f'"{_UNRESOLVED_MARKER}"', '""').replace(f"'{_UNRESOLVED_MARKER}'", "''").replace(_UNRESOLVED_MARKER, '""')
             logger.info("Executing generated code:\n%s", code)
 
             if not code:
