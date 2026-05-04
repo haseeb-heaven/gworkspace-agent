@@ -332,3 +332,175 @@ class TestGwsBinaryDirect:
         print(f"--- End output ---\n")
         # May fail with 403 (insufficient scopes)
         assert result.returncode in [0, 1, 403]
+
+    # Tests for missing services
+
+    def test_tasks_list_tasklists(self, gws_binary, project_root):
+        """Test tasks list tasklists."""
+        result = subprocess.run(
+            [gws_binary, "tasks", "tasklists", "list", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for tasks tasklists list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    def test_chat_list_spaces(self, gws_binary, project_root):
+        """Test chat list spaces."""
+        result = subprocess.run(
+            [gws_binary, "chat", "spaces", "list", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for chat spaces list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    def test_forms_list_forms(self, gws_binary, project_root):
+        """Test forms list forms."""
+        result = subprocess.run(
+            [gws_binary, "forms", "forms", "list", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for forms forms list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    def test_keep_list_notes(self, gws_binary, project_root):
+        """Test keep list notes."""
+        result = subprocess.run(
+            [gws_binary, "keep", "notes", "list", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for keep notes list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    def test_meet_list_conferences(self, gws_binary, project_root):
+        """Test meet list conferences."""
+        result = subprocess.run(
+            [gws_binary, "meet", "conferences", "list", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for meet conferences list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    def test_admin_reports_list_activities(self, gws_binary, project_root):
+        """Test admin-reports list activities."""
+        result = subprocess.run(
+            [gws_binary, "admin-reports", "activities", "list", "--params", '{"userKey": "all", "maxResults": "1"}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for admin-reports activities list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Admin reports require special admin scope
+        assert result.returncode in [0, 1, 403]
+
+    def test_classroom_list_courses(self, gws_binary, project_root):
+        """Test classroom list courses."""
+        result = subprocess.run(
+            [gws_binary, "classroom", "courses", "list", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for classroom courses list ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        assert result.returncode in [0, 1]
+
+    def test_events_watch(self, gws_binary, project_root):
+        """Test events watch (may not have list command)."""
+        result = subprocess.run(
+            [gws_binary, "events", "watch", "--params", '{}'],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for events watch ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Events may require special setup
+        assert result.returncode in [0, 1, 3]
+
+    def test_modelarmor_help(self, gws_binary, project_root):
+        """Test modelarmor help (specialized service)."""
+        result = subprocess.run(
+            [gws_binary, "modelarmor", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for modelarmor help ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Modelarmor is a specialized filtering service
+        assert result.returncode in [0, 1, 3]
+
+    def test_workflow_help(self, gws_binary, project_root):
+        """Test workflow help (specialized service)."""
+        result = subprocess.run(
+            [gws_binary, "workflow", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for workflow help ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Workflow is a cross-service automation service
+        assert result.returncode in [0, 1, 3]
+
+    def test_script_help(self, gws_binary, project_root):
+        """Test script help (specialized service)."""
+        result = subprocess.run(
+            [gws_binary, "script", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_root),
+        )
+        print(f"\n--- gws.exe output for script help ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        print(f"Return code: {result.returncode}")
+        print(f"--- End output ---\n")
+        # Script is for Apps Script projects
+        assert result.returncode in [0, 1, 3]
