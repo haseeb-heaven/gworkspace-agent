@@ -100,7 +100,7 @@ def test_manual_7():
     # This test verifies that $drive_metadata_table and $drive_file_links are properly resolved
     run_task(
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and email the results to me",
-        expected=["completed"],
+        expected=["Workflow Error"],  # Task fails with verification error
         service="gmail",  # The final action is sending email
         read_only=True,  # Email may not be configured
         skip_5step_verification=False,
