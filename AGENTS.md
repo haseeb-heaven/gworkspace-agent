@@ -144,6 +144,47 @@ ruff check . --fix
 
 ---
 
+## Pre-commit Hooks
+
+This project uses pre-commit hooks to prevent accidental commits of secret files (`.env`, `secrets*.json`, etc.) and to enforce code quality.
+
+### Installation
+
+```bash
+# After installing dependencies from requirements.txt
+pre-commit install
+```
+
+### What It Blocks
+
+The pre-commit configuration (`.pre-commit-config.yaml`) includes:
+
+- **Secret file detection**: Blocks commits containing `.env`, `.env.local`, `.env.*.local`, `secrets*.json`, `credentials`, `api_keys`, and other secret files
+- **Basic formatting**: YAML/JSON validation, trailing whitespace, end-of-file fixer
+- **Private key detection**: Detects private keys in code
+
+### Running Hooks Manually
+
+```bash
+# Run on all files
+pre-commit run --all-files
+
+# Run on staged files only
+pre-commit run
+```
+
+### Bypassing Hooks (Not Recommended)
+
+If you must bypass hooks (use with extreme caution):
+
+```bash
+git commit --no-verify -m "your message"
+```
+
+**Never bypass hooks to commit `.env` or secrets files.**
+
+---
+
 ## Repository Structure
 
 ```
@@ -292,27 +333,27 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
 ### 🚫 Agent Safety & Integrity Rules (Python Projects)
 
 #### 1. Testing & Quality Assurance
-- Never modify or weaken test assertions to force passing results  
-- Do not reduce code coverage thresholds under any circumstances  
-- Avoid skipping, mocking, or bypassing critical test paths unless explicitly approved  
-- Ensure all changes maintain or improve existing test reliability  
+- Never modify or weaken test assertions to force passing results
+- Do not reduce code coverage thresholds under any circumstances
+- Avoid skipping, mocking, or bypassing critical test paths unless explicitly approved
+- Ensure all changes maintain or improve existing test reliability
 
 #### 2. Security & Secrets Management
-- Never hardcode credentials, API keys, tokens, or secrets in source code  
-- Do not commit `.env`, `secrets.json`, or any sensitive configuration files  
-- Never expose environment variables in logs, outputs, or error messages  
-- Use secure configuration management (e.g., environment variables, secret managers)  
+- Never hardcode credentials, API keys, tokens, or secrets in source code
+- Do not commit `.env`, `secrets.json`, or any sensitive configuration files
+- Never expose environment variables in logs, outputs, or error messages
+- Use secure configuration management (e.g., environment variables, secret managers)
 
 #### 3. Core Safety Mechanisms
-- Do not remove, weaken, or bypass rules in `safety_guard.py`  
-- Maintain all risk policies and validation checks intact  
-- Any change affecting safety logic must be explicitly reviewed and justified  
+- Do not remove, weaken, or bypass rules in `safety_guard.py`
+- Maintain all risk policies and validation checks intact
+- Any change affecting safety logic must be explicitly reviewed and justified
 
 #### 4. CI/CD Discipline
-- Never manually merge pull requests — CI pipeline owns all merges  
-- Do not resolve review comments manually without fixing underlying code issues  
-- Avoid introducing CI bypasses or conditional shortcuts that skip validation  
-- Preserve all pipeline safeguards and verification steps  
+- Never manually merge pull requests — CI pipeline owns all merges
+- Do not resolve review comments manually without fixing underlying code issues
+- Avoid introducing CI bypasses or conditional shortcuts that skip validation
+- Preserve all pipeline safeguards and verification steps
 
 #### 5. Configuration Integrity
 - Do not modify critical infrastructure variables:
@@ -321,26 +362,26 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
   - `GCP_SERVICE`
 - Do not remove or alter CI mode conditions such as:
   - `if not ci_mode`
-- Avoid hardcoding branch names like `main` or `master`; always use dynamic references (e.g., `base.ref`)  
+- Avoid hardcoding branch names like `main` or `master`; always use dynamic references (e.g., `base.ref`)
 
 #### 6. Architecture & Data Contracts
-- Never pass raw `dict` objects across layers  
+- Never pass raw `dict` objects across layers
 - Always use typed schemas (Pydantic models) for:
-  - Validation  
-  - Serialization  
-  - Inter-layer communication  
-- Maintain strict typing and schema consistency across services  
+  - Validation
+  - Serialization
+  - Inter-layer communication
+- Maintain strict typing and schema consistency across services
 
 #### 7. Repository Hygiene
-- Do not delete or modify `.env` files within the repository  
-- Ensure `.gitignore` properly excludes sensitive files  
-- Prevent accidental commits of generated or local configuration artifacts  
+- Do not delete or modify `.env` files within the repository
+- Ensure `.gitignore` properly excludes sensitive files
+- Prevent accidental commits of generated or local configuration artifacts
 
 #### 8. Code Integrity Principles
-- Do not introduce hacks, shortcuts, or temporary fixes that bypass system design  
-- Preserve modular architecture and separation of concerns  
-- Maintain backward compatibility unless explicitly breaking changes are approved  
-- Ensure logging, error handling, and observability remain intact  
+- Do not introduce hacks, shortcuts, or temporary fixes that bypass system design
+- Preserve modular architecture and separation of concerns
+- Maintain backward compatibility unless explicitly breaking changes are approved
+- Ensure logging, error handling, and observability remain intact
 
 ## Security Considerations
 

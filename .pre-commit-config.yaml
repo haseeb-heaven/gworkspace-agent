@@ -1,0 +1,40 @@
+# .pre-commit-config.yaml
+# Pre-commit hooks to prevent committing secrets and sensitive files
+# Install: pip install pre-commit && pre-commit install
+# Run on all files: pre-commit run --all-files
+# Skip temporarily: git commit --no-verify
+
+repos:
+  # Block commits that contain .env files or other secret files
+  - repo: local
+    hooks:
+      - id: no-env-files
+        name: Block .env and secret files
+        entry: |
+          bash -c '
+          if git diff --cached --name-only | grep -E "(^|\\/)(\\.env(\\.local|\\.\\w+)?$|secrets?\\.(json|yaml|yml)$|config\\.(local|secrets|private)\\.(json|yaml|yml)$|credentials|api_keys|\\.secret$)"; then
+            echo "❌ ERROR: Attempting to commit .env or secrets file!"
+            echo "These files should NEVER be committed to git."
+            echo "Blocked files:"
+            git diff --cached --name-only | grep -E "(^|\\/)(\\.env(\\.local|\\.\\w+)?$|secrets?\\.(json|yaml|yml)$|config\\.(local|secrets|private)\\.(json|yaml|yml)$|credentials|api_keys|\\.secret$)"
+            echo ""
+            echo "✅ Fix:"
+            echo "  1. git rm --cached <file>"
+            echo "  2. Add to .gitignore"
+            echo "  3. Use .env.example template"
+            exit 1
+          fi
+          '
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Basic hooks only (no heavy dependencies)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key

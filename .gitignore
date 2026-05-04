@@ -27,9 +27,16 @@ env/
 # Logs and Environment
 logs/
 *.log
+# Environment files
 .env
 .env.local
 .env.backup*
+.env.*.local
+.env.development*
+.env.test*
+.env.production*
+secrets*.json
+!.env.example
 
 # IDEs
 .idea/
