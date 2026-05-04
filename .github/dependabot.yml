@@ -1,11 +1,24 @@
-# To get started with Dependabot version updates, you'll need tohttps://github.com/haseeb-heaven/gworkspace-agent/tree/master specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
+# .github/dependabot.yml
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+
+  # Python dependencies (requirements.txt + pyproject.toml)
+  - package-ecosystem: "pip"
+    directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Docker base image updates (Dockerfile, Dockerfile.sandbox)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # GitHub Actions workflow dependency updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
