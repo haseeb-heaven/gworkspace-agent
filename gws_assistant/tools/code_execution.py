@@ -419,7 +419,15 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
 
     # Replace with open(...) as f: blocks with code that uses injected data
     # Extract the entire with-block (header + body) and rewrite it to preserve original indentation
-    def replace_with_block(code_text):
+    def replace_with_block(code_text: str) -> str:
+        """Replace with-open blocks with injected_vars assignment and de-indent body.
+
+        Args:
+            code_text: Python source code containing with-open blocks
+
+        Returns:
+            Rewritten code with with-blocks replaced by injected_vars assignments
+        """
         lines = code_text.split('\n')
         result_lines = []
         i = 0
@@ -440,13 +448,14 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
                 # Extract and de-indent the with-block body
                 i += 1
                 if i < len(lines):
-                    # Determine the body indentation (should be indent + 4 spaces or a tab)
+                    # Determine the body indentation from the first body line
                     body_line = lines[i]
                     body_match = re.match(r'^(\s+)', body_line)
                     if body_match:
+                        # Detect actual indentation of the body
                         body_indent = body_match.group(1)
-                        # Expected indentation for with-body
-                        expected_indent = indent + '    '
+                        # Expected indentation is the with-block indent plus the detected body indent
+                        expected_indent = indent + body_match.group(1)
                         # Collect all lines that belong to the with-block body
                         while i < len(lines):
                             body_line = lines[i]
@@ -467,6 +476,9 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
                             else:
                                 # Line is not indented enough - end of with-block
                                 break
+                        continue
+                    else:
+                        # No body (empty with-block) - skip to next line and continue
                         continue
             result_lines.append(line)
             i += 1
