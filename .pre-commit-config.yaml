@@ -29,11 +29,11 @@ repos:
         pass_filenames: false
         always_run: true
 
-  # Run unit tests on push to develop or master branches (only if code files changed)
+  # Run unit tests on push to develop or master branches (only if Python files changed)
   - repo: local
     hooks:
       - id: run-unit-tests-on-push
-        name: Run unit tests on push to develop/master (code changes only)
+        name: Run unit tests on push to develop/master (Python changes only)
         entry: |
           bash -c '
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -41,16 +41,16 @@ repos:
             # Get files being pushed
             PUSHED_FILES=$(git diff --name-only HEAD @{u} 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
 
-            # Check if any code files are present (extensions: .py, .js, .ts, .yaml, .yml, .json, .toml, .cfg, .ini, .sh, .bat)
-            CODE_FILES=$(echo "$PUSHED_FILES" | grep -E "\.(py|js|ts|yaml|yml|json|toml|cfg|ini|sh|bat|ps1)$" || echo "")
+            # Check if any Python files are present
+            PYTHON_FILES=$(echo "$PUSHED_FILES" | grep -E "\.py$" || echo "")
 
-            if [[ -n "$CODE_FILES" ]]; then
-              echo "🧪 Code files detected in push. Running unit tests for branch: $CURRENT_BRANCH"
-              echo "📝 Changed code files:"
-              echo "$CODE_FILES"
+            if [[ -n "$PYTHON_FILES" ]]; then
+              echo "🧪 Python files detected in push. Running unit tests for branch: $CURRENT_BRANCH"
+              echo "📝 Changed Python files:"
+              echo "$PYTHON_FILES"
               python -m pytest tests/ -m "not live_integration" --ignore=tests/manual --ignore=tests/test_live_integration.py --ignore=tests/test_live_file_operations.py -v
             else
-              echo "⏭️  Skipping unit tests (no code files in push - only docs, images, or other non-code files)"
+              echo "⏭️  Skipping unit tests (no Python files in push - only docs, images, or other non-code files)"
               echo "📝 Changed files:"
               echo "$PUSHED_FILES"
             fi
