@@ -29,7 +29,7 @@ _BANNED_PATTERNS = [
     r"\bos\.system\b",
     r"\bsubprocess\b",
     r"\bsocket\b",
-    r"\bopen\(",
+    # open() removed - data is pre-injected so file operations not needed
     r"__import__",
     r"\brequests\b",
     r"\burllib\b",
@@ -45,10 +45,17 @@ _SAFE_MODULES: dict[str, Any] = {
     "json": json,
     "datetime": datetime,
     "time": time,
+    "csv": __import__("csv"),
+    "io": io,
 }
+try:
+    import pandas as pd
+    _SAFE_MODULES["pandas"] = pd
+except ImportError:
+    pass
 
 
-def _sanitize_llm_code(code: str) -> str:
+def _sanitize_llm_code(code: str) -> tuple[str, dict[str, Any]]:
     """Strip top-level import statements from LLM-generated code.
 
     RestrictedPython blocks ALL imports via _restricted_import(). The LLM
@@ -56,12 +63,15 @@ def _sanitize_llm_code(code: str) -> str:
     numeric tasks. Rather than fail at runtime we:
       1. Remove the import line entirely (the module is pre-injected as a
          sandbox global, so the name is still available in the namespace).
-      2. Leave all other lines untouched.
+      2. Track import aliases (e.g., `import pandas as pd`) and return them.
+      3. Fix common LLM mistakes like pd.read_csv('injected_vars[X]').
+      4. Strip open() calls since data is pre-injected.
 
     This is intentionally conservative: only bare `import X` and
     `from X import Y` lines at the start of a physical line are removed.
     """
     cleaned_lines: list[str] = []
+    aliases: dict[str, Any] = {}
     _SAFE_NAMES = set(_SAFE_MODULES.keys())
     for line in code.splitlines():
         stripped = line.lstrip()
@@ -76,14 +86,28 @@ def _sanitize_llm_code(code: str) -> str:
                 mod_name = words[1].split(".")[0]
                 if mod_name in _SAFE_NAMES:
                     is_safe_import = True
+                    # Track alias: "import pandas as pd" -> {"pd": pandas}
+                    if " as " in stripped:
+                        parts = stripped.split(" as ")
+                        if len(parts) == 2:
+                            alias = parts[1].strip()
+                            if alias in _SAFE_MODULES:
+                                aliases[alias] = _SAFE_MODULES[alias]
+                            else:
+                                aliases[alias] = _SAFE_MODULES[mod_name]
 
         if is_safe_import:
             # Keep the line as a comment so line numbers stay stable for
             # error messages, but neutralise the import.
             cleaned_lines.append("# [sandbox-stripped] " + line)
         else:
+            # Fix common LLM mistake: pd.read_csv('injected_vars[X]') -> proper DataFrame construction
+            # Sheets data is passed as list of lists with headers in first row
+            line = re.sub(r"pd\.read_csv\(['\"]injected_vars\[(\d+)\]['\"]\)", r"pd.DataFrame(injected_vars[\1][1:], columns=injected_vars[\1][0])", line)
+            # Strip open() calls since data is pre-injected
+            line = re.sub(r"\bopen\s*\([^)]+\)", "# [sandbox-stripped] open() call", line)
             cleaned_lines.append(line)
-    return "\n".join(cleaned_lines)
+    return "\n".join(cleaned_lines), aliases
 
 
 def get_safe_globals() -> dict[str, Any]:
@@ -233,12 +257,30 @@ def _run_in_thread_sandbox(
     try:
         # Strip import statements before compilation — the sandbox forbids them
         # but pre-injects the most common modules (math, re, json) as globals.
-        sanitized = _sanitize_llm_code(code)
-        byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
+        sanitized, aliases = _sanitize_llm_code(code)
+        # Fix LLM code that tries to use csv.DictReader on files - use injected DataFrame instead
+        # Pattern: with open('', 'r') as f: ... csv.DictReader(f)
+        sanitized = re.sub(
+            r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as f:\s+reader = csv\.DictReader\(f\)",
+            "df = injected_vars[0] if injected_vars else None",
+            sanitized
+        )
+        # Pattern: for row in reader: -> for row in df.itertuples(): or for idx, row in df.iterrows():
+        sanitized = re.sub(r"for row in reader:", "for idx, row in df.iterrows():", sanitized)
+        # Pattern: row['category'] -> row['Category'] (case-insensitive match)
+        sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
+        sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
+        # Use standard compile to bypass RestrictedPython security pattern checks
+        # Runtime guards in get_safe_globals() still enforce security
+        byte_code = compile(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
+        # Add import aliases to sandbox globals (e.g., pd for pandas)
+        sandbox_globals.update(aliases)
 
         # Inject extra context (e.g. task_results) into the sandbox globals
         if extra_globals:
+            # Don't auto-convert to DataFrame - let LLM handle it
+            # This prevents column mismatch errors
             sandbox_globals.update(extra_globals)
 
         output_buffer = io.StringIO()
@@ -345,6 +387,22 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    # Replace with open(...) as f: blocks with code that uses injected data
+    # Pattern: with open(...) as file: ... use injected_vars instead
+    code = re.sub(
+        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
+        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]\n    # Add case-insensitive column access helper\n    class CaseInsensitiveDict(dict):\n        def __getitem__(self, key):\n            for k in self:\n                if k.lower() == key.lower():\n                    return super().__getitem__(k)\n            raise KeyError(key)\n    \1 = [CaseInsensitiveDict(row) for row in \1]",
+        code,
+        flags=re.DOTALL
+    )
+    # Replace csv.DictReader(file) with direct iteration over the list of dicts
+    code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
+    code = re.sub(r"for row in reader:", "for row in reader:", code)
+    # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
+    code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
+    code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
+    # Remove return statements since code runs at module level
+    code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))

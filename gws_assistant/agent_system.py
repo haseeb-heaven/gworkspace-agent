@@ -296,6 +296,28 @@ class WorkspaceAgentSystem:
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
 
+        # Special case: if both drive (for download) and code are detected, fetch spreadsheet data
+        has_drive = any(s == "drive" for s in services)
+        has_code = any(s in ("code", "script", "python") for s in services)
+        has_sheets = any(s == "sheets" for s in services)
+        if has_drive and has_code and has_sheets:
+            # Replace drive.get_file with sheets.get_values to fetch actual data
+            new_tasks = []
+            for task in tasks:
+                if task.service == "drive" and task.action == "get_file":
+                    # Add sheets.get_values to fetch data from the spreadsheet
+                    new_tasks.append(
+                        PlannedTask(
+                            id=f"task-{len(new_tasks) + 1}",
+                            service="sheets",
+                            action="get_values",
+                            parameters={"spreadsheet_id": "{{task-1.id}}", "range": "Sheet1"},
+                            reason="Fetch spreadsheet data for processing",
+                        )
+                    )
+                new_tasks.append(task)
+            tasks = new_tasks
+
         return RequestPlan(
             raw_text=text,
             tasks=tasks,
@@ -1340,7 +1362,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         elif service == "docs" and action == "create_document":
             parameters["title"] = _extract_quoted(lowered) or "New Document"
         elif service == "sheets" and action == "create_spreadsheet":
-            parameters["title"] = _extract_quoted(lowered) or "New Spreadsheet"
+            parameters["title"] = _extract_sheet_title(lowered) or "New Spreadsheet"
         elif service == "tasks" and action == "create_task":
             parameters["title"] = _extract_quoted(lowered) or "New Task"
         elif service in ("code", "computation"):

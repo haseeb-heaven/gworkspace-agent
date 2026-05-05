@@ -545,7 +545,7 @@ class CommandPlanner:
             request_params: dict[str, Any] = {
                 "userId": "me",
                 "maxResults": max_results,
-                "fields": "messages(id,threadId),nextPageToken,resultSizeEstimate",
+                "fields": "messages(id,threadId,snippet),nextPageToken,resultSizeEstimate",
             }
             if raw_query:
                 # Fix #8 — sanitize Gmail query just like we sanitize Drive queries.
@@ -553,8 +553,8 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "list", "--params", json.dumps(request_params, ensure_ascii=True)]
 
         if action == "get_message":
-            # Allow message_id to be missing or a placeholder during planning
-            message_id = params.get("message_id") or "{{message_id}}"
+            # Allow message_id or id parameter for flexibility
+            message_id = params.get("message_id") or params.get("id") or "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "trash_message":
@@ -793,6 +793,9 @@ class CommandPlanner:
                 location = {"endOfSegmentLocation": {"segmentId": ""}}
 
             requests_payload = [{"insertText": {**location, "text": text}}]
+            json_body = json.dumps({"requests": requests_payload}, ensure_ascii=True)
+            if not json_body or json_body.strip() == "":
+                raise ValidationError("batch_update JSON body is empty - check text parameter")
             return [
                 "docs",
                 "documents",
@@ -800,7 +803,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"documentId": document_id}),
                 "--json",
-                json.dumps({"requests": requests_payload}, ensure_ascii=True),
+                json_body,
             ]
 
         raise ValidationError(f"Unsupported docs action: {action}")

@@ -325,6 +325,8 @@ class AgentState(TypedDict, total=False):
     current_attempt: int
     thought_trace: list[dict]
     abort_plan: bool
+    intent_verification: dict[str, Any] | None
+    verification_attempts: int
 
 
 class StructuredToolResult(TypedDict):

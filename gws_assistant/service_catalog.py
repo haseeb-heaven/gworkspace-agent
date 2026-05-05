@@ -190,29 +190,29 @@ SERVICES: dict[str, ServiceSpec] = {
         key="gmail",
         label="Gmail",
         aliases=("gmail", "mail", "email", "emails", "inbox", "messages", "message"),
-        description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
+        description="Read and send Gmail messages. For bulk operations (summarize, count, report), use list_messages with snippet data. For reading a specific message, use get_message.",
         actions={
             "list_messages": ActionSpec(
                 key="list_messages",
                 label="List messages",
-                description="Search the Gmail inbox and return a list of message stubs. Returns: [{id, threadId}]. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com'). Must call get_message next to read content.",
-                keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
+                description="Search the Gmail inbox and return message stubs with snippet preview. Returns: [{id, threadId, snippet, subject}]. For bulk summaries, the snippet data is sufficient - do NOT fetch each message individually. Only use get_message for reading a specific single message in detail. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com').",
+                keywords=("list", "show", "find", "search", "messages", "emails", "inbox", "summarize", "count", "report"),
                 negative_keywords=("send", "compose", "mail to", "write email", "email to"),
                 parameters=(
-                    ParameterSpec("max_results", "How many emails should I show?", "10", required=False),
+                    ParameterSpec("max_results", "How many emails should I show? (Use 5-10 for summaries, avoid 100+)", "10", required=False),
                     ParameterSpec("q", "What Gmail search query should I use?", "ticket", required=False),
                 ),
             ),
             "get_message": ActionSpec(
                 key="get_message",
                 label="Get message details",
-                description="Fetch the full content of a Gmail message. Returns a dictionary: {id, subject, from, to, date, snippet, body}. NOTE: If this task was expanded (e.g. following list_messages), the placeholder resolves to a flat LIST of these dictionaries. Use 'for msg in messages:' to iterate, NOT 'messages['messages']'.",
+                description="Fetch the full content of ONE specific Gmail message by ID. Returns: {id, subject, from, to, date, snippet, body}. For bulk operations, use list_messages snippet data instead of calling this repeatedly.",
                 keywords=("get", "open", "message", "email"),
-                negative_keywords=("send", "list", "search"),
+                negative_keywords=("send", "list", "search", "summarize", "all", "bulk"),
                 parameters=(
                     ParameterSpec(
                         "message_id",
-                        "Enter message ID (or omit — auto-resolved from list_messages)",
+                        "Enter message ID",
                         "18c5a4fbe123",
                         required=False,
                     ),

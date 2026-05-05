@@ -194,6 +194,78 @@ class HelpersMixin:
 
             injected_vars = _normalize_injected_vars(injected_vars)
 
+            # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
+            fetched_vars = []
+            for var in injected_vars:
+                logger.info("DEBUG: Processing injected_vars item: type=%s, value=%s", type(var), str(var)[:100])
+                if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
+                    # Try to fetch spreadsheet data by name from drive
+                    logger.info("Auto-fetching spreadsheet data for: %s", var)
+                    try:
+                        # Try to find spreadsheet in drive results
+                        drive_results = task_results.get("drive", {})
+                        files = drive_results.get("files", [])
+                        logger.info("DEBUG: drive_results keys: %s, files count: %d", list(task_results.keys()), len(files))
+                        if not files:
+                            # Check task-1 (usually drive.list_files)
+                            for k, v in task_results.items():
+                                logger.info("DEBUG: Checking task_results key %s, type=%s", k, type(v))
+                                if "drive" in k.lower() or isinstance(v, dict) and "files" in v:
+                                    files = v.get("files", []) if isinstance(v, dict) else []
+                                    logger.info("DEBUG: Found files in %s, count: %d", k, len(files))
+                                    break
+                        for file_info in files:
+                            if isinstance(file_info, dict):
+                                file_name = file_info.get("name", "")
+                                logger.info("DEBUG: Checking file: %s", file_name)
+                                if var.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
+                                    file_id = file_info.get("id")
+                                    if file_id:
+                                        logger.info("Found spreadsheet ID %s for %s", file_id, var)
+                                        # Fetch the actual data - use the actual sheet name from file_info
+                                        sheet_name = file_info.get("name", "Sheet1")
+                                        get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": sheet_name})]
+                                        get_res = self.runner.run(get_args)
+                                        logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
+                                        if get_res.success and get_res.stdout:
+                                            parsed = self._coerce_structured_value(get_res.stdout)
+                                            logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
+                                            if isinstance(parsed, dict) and "values" in parsed:
+                                                values = parsed["values"]
+                                                # Normalize column names to match LLM expectations
+                                                if values and len(values) > 0:
+                                                    headers = values[0]
+                                                    # Column name mapping: normalize common variations
+                                                    header_map = {}
+                                                    for i, h in enumerate(headers):
+                                                        h_lower = str(h).lower().strip()
+                                                        if "category" in h_lower:
+                                                            header_map[i] = "Category"
+                                                        elif "revenue" in h_lower and "total" in h_lower:
+                                                            header_map[i] = "Total Revenue"
+                                                        elif "revenue" in h_lower:
+                                                            header_map[i] = "Revenue"
+                                                        else:
+                                                            header_map[i] = h
+                                                    # Apply mapping to first row
+                                                    values[0] = [header_map[i] for i in range(len(headers))]
+                                                fetched_vars.append(values)
+                                                logger.info("Successfully fetched %d rows from spreadsheet", len(values))
+                                                break
+                        else:
+                            # No data found, keep original string
+                            logger.warning("No matching spreadsheet found for: %s", var)
+                            fetched_vars.append(var)
+                    except Exception as e:
+                        logger.warning("Failed to auto-fetch spreadsheet data: %s", e)
+                        fetched_vars.append(var)
+                else:
+                    fetched_vars.append(var)
+            injected_vars = fetched_vars
+
+            # Don't auto-convert to DataFrame - let LLM handle it
+            # This prevents column mismatch errors
+
             extra_globals = {
                 "task_results": results_with_numeric,
                 "injected_vars": injected_vars,
@@ -239,12 +311,39 @@ class HelpersMixin:
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
+            def _tableify(value: Any) -> str | None:
+                rows: list[list[str]] = []
+                if isinstance(value, list) and value and isinstance(value[0], dict):
+                    headers = list(value[0].keys())
+                    rows.append(headers)
+                    for item in value:
+                        row = [str(item.get(h, "")) for h in headers]
+                        rows.append(row)
+                elif isinstance(value, list) and value and isinstance(value[0], list):
+                    rows = [[str(cell) for cell in row] for row in value]
+                else:
+                    return None
+
+                if not rows:
+                    return None
+
+                header = rows[0]
+                table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
+                for row in rows[1:]:
+                    # pad row
+                    padded = row + [""] * (len(header) - len(row))
+                    table_lines.append("| " + " | ".join(padded) + " |")
+                return "\n".join(table_lines)
+
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
                 # Sanitize [File: ...] patterns to avoid leaking local paths in sheets
                 parsed = _sanitize_file_path_patterns(parsed)
                 context["last_code_result"] = parsed
                 context["code_parsed_value"] = parsed
+                table_text = _tableify(parsed)
+                if table_text:
+                    context["last_code_result_table"] = table_text
 
                 # Promote parsed_value keys to results_map for easy placeholder access
                 if isinstance(parsed, dict):

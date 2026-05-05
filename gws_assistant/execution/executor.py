@@ -310,20 +310,47 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 if isinstance(data, ExecutionResult):
                     return data
 
+                # Special Case: gmail.list_messages — auto-enrich messages with snippet/headers
+                if task.service == "gmail" and task.action == "list_messages":
+                    msgs = data.get("messages", [])
+                    # Skip enrichment if messages already carry snippets or payload headers
+                    needs_enrich = isinstance(msgs, list) and msgs and not any(
+                        (isinstance(m, dict) and (m.get("snippet") or m.get("payload", {}).get("headers")))
+                        for m in msgs[:3]
+                    )
+                    if needs_enrich:
+                        max_enrich = min(len(msgs), 20)  # Cap to avoid excessive API calls
+                        enriched = []
+                        for m in msgs[:max_enrich]:
+                            mid = m.get("id")
+                            if not mid:
+                                enriched.append(m)
+                                continue
+                            try:
+                                get_params = {"userId": "me", "id": mid, "format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]}
+                                get_args = ["gmail", "users", "messages", "get", "--params", json.dumps(get_params)]
+                                get_res = self.runner.run(get_args)
+                                if get_res.success and get_res.stdout:
+                                    full_msg = self._parse_json_result(get_res, "gmail", "get_message", require_mapping=True, context_message="auto-enrich")
+                                    if isinstance(full_msg, dict):
+                                        # Preserve original id to ensure code execution can reference it
+                                        full_msg["id"] = mid
+                                        enriched.append(full_msg)
+                                        continue
+                            except Exception as e:
+                                self.logger.debug("Auto-enrich failed for %s: %s", mid, e)
+                            enriched.append(m)
+                        # Keep any remaining un-enriched messages
+                        enriched.extend(msgs[max_enrich:])
+                        data["messages"] = enriched
+                        self.logger.info("Auto-enriched %d/%d messages with metadata", max_enrich, len(msgs))
+
                 # Special Case: docs.create_document with initial content
-                if task.service == "docs" and task.action == "create_document":
-                    content = task.parameters.get("content")
-                    if content and "documentId" in data:
-                        update_args = self.planner.build_command(
-                            "docs", "batch_update", {"document_id": data["documentId"], "text": content}
-                        )
-                        update_res = self.runner.run(update_args)
-                        if not update_res.success:
-                            self.logger.warning(
-                                f"Failed to add initial content to doc {data['documentId']}: {update_res.error}"
-                            )
-                        else:
-                            self.logger.info(f"Successfully added initial content to doc {data['documentId']}")
+                # DISABLED: Auto-insert is causing batch_update JSON body errors.
+                # Let separate batch_update task handle content insertion.
+                # if task.service == "docs" and task.action == "create_document":
+                #     content = task.parameters.get("content")
+                #     ... (auto-insert logic commented out)
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
                     saved_file = data.get("saved_file")

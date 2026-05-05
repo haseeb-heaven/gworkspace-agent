@@ -516,7 +516,83 @@ class ResolverMixin:
                         if "injected_vars" not in context:
                             context["injected_vars"] = []
                         idx = len(context["injected_vars"])
-                        context["injected_vars"].append(res)
+                        # Unwrap common API response wrappers so generated code can iterate directly
+                        inject_val = res
+                        if isinstance(res, dict):
+                            for key in ("messages", "items", "files", "events", "tasks", "notes", "spaces", "connections", "people", "activities"):
+                                if key in res and isinstance(res[key], list):
+                                    inject_val = res[key]
+                                    break
+
+                        # Auto-fetch spreadsheet data if inject_val is a string reference
+                        if isinstance(inject_val, str) and (".csv" in inject_val.lower() or "sheet" in inject_val.lower()):
+                            # Try to fetch actual spreadsheet data
+                            try:
+                                # Find spreadsheet in drive results
+                                drive_results = results_map.get("drive", {})
+                                files = drive_results.get("files", [])
+                                if not files:
+                                    # Check all task results for files
+                                    for k, v in results_map.items():
+                                        if isinstance(v, dict) and "files" in v:
+                                            files = v.get("files", [])
+                                            break
+                                for file_info in files:
+                                    if isinstance(file_info, dict):
+                                        file_name = file_info.get("name", "")
+                                        if inject_val.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
+                                            file_id = file_info.get("id")
+                                            if file_id:
+                                                # Fetch the actual data using the runner - use empty range to get first sheet
+                                                # First try to get spreadsheet metadata to find sheet name
+                                                meta_args = ["sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": file_id, "fields": "sheets.properties.title"})]
+                                                meta_res = self.runner.run(meta_args)
+                                                sheet_name = "Sheet1"  # default
+                                                if meta_res.success and meta_res.stdout:
+                                                    try:
+                                                        meta_parsed = json.loads(meta_res.stdout)
+                                                        if isinstance(meta_parsed, dict) and "sheets" in meta_parsed and meta_parsed["sheets"]:
+                                                            sheet_name = meta_parsed["sheets"][0].get("properties", {}).get("title", "Sheet1")
+                                                    except json.JSONDecodeError:
+                                                        pass
+                                                get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": f"{sheet_name}"})]
+                                                get_res = self.runner.run(get_args)
+                                                if get_res.success and get_res.stdout:
+                                                    try:
+                                                        parsed = json.loads(get_res.stdout)
+                                                        if isinstance(parsed, dict) and "values" in parsed:
+                                                            inject_val = parsed["values"]
+                                                            break
+                                                    except json.JSONDecodeError:
+                                                        pass
+                            except Exception:
+                                pass  # Keep original string if fetch fails
+                        if isinstance(inject_val, list):
+                            for entry in inject_val:
+                                if isinstance(entry, dict):
+                                    # Extract headers from payload if present (auto-enriched messages)
+                                    payload = entry.get("payload", {})
+                                    if isinstance(payload, dict):
+                                        for hdr in payload.get("headers", []):
+                                            if isinstance(hdr, dict):
+                                                hname = str(hdr.get("name", "")).lower()
+                                                hval = hdr.get("value", "")
+                                                if hname == "from" and "from" not in entry:
+                                                    entry["from"] = hval
+                                                elif hname == "subject" and "subject" not in entry:
+                                                    entry["subject"] = hval
+                                                elif hname == "date" and "date" not in entry:
+                                                    entry["date"] = hval
+                                    snippet = entry.get("snippet")
+                                    if not snippet:
+                                        subj = entry.get("subject") or "No Subject"
+                                        sender = entry.get("from") or entry.get("sender") or "Unknown"
+                                        date_val = entry.get("date") or ""
+                                        entry["snippet"] = f"{subj} (from {sender})"
+                                    # Normalize for LLM code generation: create from_ object with address
+                                    if "from" in entry and "from_" not in entry:
+                                        entry["from_"] = {"address": entry["from"]}
+                        context["injected_vars"].append(inject_val)
                         return f"injected_vars[{idx}]"
                     elif isinstance(res, (dict, list)):
                         return json.dumps(res)

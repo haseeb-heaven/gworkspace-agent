@@ -67,7 +67,6 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/groq/llama-3.1-8b-instant:free",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
-    "groq/llama-3.1-70b-versatile",
     "groq/llama-3.1-8b-instant",
     # ── Cerebras (fast inference, tool-calling confirmed) ───────────
     "cerebras/llama3.1-70b",

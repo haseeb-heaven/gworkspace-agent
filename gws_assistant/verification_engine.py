@@ -808,8 +808,10 @@ class VerificationEngine:
             if content is not None and "create" in tool_name and str(content).strip():
                 # Only validate non-empty content for placeholder leakage; do
                 # not raise on emptiness (left to CHECK 4).
+                # Disable placeholder blocking for content — resolved content
+                # (e.g. email summaries) may legitimately contain $, %, etc.
                 cls._validate_content_not_empty(
-                    tool_name, params, field="content", min_length=1, block_placeholders=True
+                    tool_name, params, field="content", min_length=1, block_placeholders=False
                 )
 
             for id_field in ["file_id", "document_id", "spreadsheet_id"]:
@@ -1319,6 +1321,7 @@ class VerificationEngine:
             ".title",
             ".snippet",
             ".content",
+            ".text",
             ".mimeType",
             ".query",
             ".q",
@@ -1563,7 +1566,9 @@ class VerificationEngine:
             )
 
         # Check for placeholders if enabled
-        if block_placeholders:
+        # Skip placeholder detection for long content strings (>100 chars) that are
+        # clearly resolved real data (e.g. email summaries containing $, %, etc.)
+        if block_placeholders and len(val_str) <= 100:
             if cls._is_placeholder(val_str):
                 raise VerificationError(
                     tool_name,

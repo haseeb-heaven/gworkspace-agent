@@ -779,6 +779,8 @@ class ContextUpdaterMixin:
                     date_val = h_dict.get("date", "Unknown Date")
 
                     snippet_val = str(m.get("snippet") or "").strip()
+                    if not snippet_val:
+                        snippet_val = f"From: {sender} | Subject: {subject} | Date: {date_val}"
 
 
 

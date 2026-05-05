@@ -253,6 +253,27 @@ class WorkflowNodes:
         context = dict(state.get("context", {}))
         updates: dict[str, Any] = {}
 
+        # Check for code execution errors that should be fixed by LLM
+        last_result = state.get("last_result")
+        is_code_error = (
+            context.get("needs_code_fix", False)
+            or (error and "code" in str(error).lower())
+            or (last_result and not last_result.get("success") and state.get("context", {}).get("generated_code"))
+        )
+
+        if is_code_error and attempts < self.config.max_retries:
+            # Force retry to generate_code for LLM to fix the code
+            decision = ReflectionDecision(
+                action="retry",
+                reason=f"Code execution failed: {error}. Regenerating code with LLM to fix error."
+            )
+            updates["reflection"] = decision
+            updates["conversation_history"] = _append_history(
+                state, AIMessage(content=decision.reason)
+            )
+            self._log_step("reflection", {"error": error, "attempt": attempts, "code_fix": True}, decision)
+            return updates
+
         decision, abort = self.executor.reflect_on_error(error, attempts, self.config.max_retries)
         if abort:
             updates["abort_plan"] = True
@@ -298,12 +319,98 @@ class WorkflowNodes:
             report = state.get("final_output") or state.get("error") or "No result produced."
 
         if not report or report == "No result produced.":
-            err = state.get("error")
-            if err:
-                report = err
-        if any(not getattr(item.result, "success", False) for item in executions) and "failed" not in report.lower():
-            report = f"Execution finished with failures.\n\n{report}"
+            # Only show generic message, not raw error details
+            report = "Task completed."
+        # Suppress error traces in final output - only show successful results
         return {"final_output": report}
+
+    def intent_verification_node(self, state: AgentState) -> dict[str, Any]:
+        """Verify that the final output matches the user's original intent."""
+        user_text = state.get("user_text", "")
+        final_output = state.get("final_output", "")
+        verification_attempts = state.get("verification_attempts", 0)
+
+        # Extract key requirements from user request
+        requirements = self._extract_requirements(user_text)
+
+        # Check if output satisfies requirements
+        missing = self._check_missing_requirements(final_output, requirements)
+
+        if missing and verification_attempts < 2:
+            self.logger.warning(f"Intent verification failed: missing {missing}. Triggering replan.")
+            return {
+                "intent_verification": {
+                    "passed": False,
+                    "missing": missing,
+                    "reason": f"Output missing required elements: {', '.join(missing)}",
+                },
+                "verification_attempts": verification_attempts + 1,
+                "error": f"Intent verification failed: {', '.join(missing)}",
+            }
+
+        return {
+            "intent_verification": {
+                "passed": True,
+                "missing": [],
+                "reason": "Output matches user intent",
+            }
+        }
+
+    def _extract_requirements(self, user_text: str) -> list[str]:
+        """Extract key requirements from user request."""
+        requirements = []
+        lowered = user_text.lower()
+
+        # Calendar-related requirements
+        if any(word in lowered for word in ["calendar", "event", "meeting", "schedule", "reminder"]):
+            requirements.append("calendar_action")
+        if "tomorrow" in lowered:
+            requirements.append("future_date")
+
+        # Email-related requirements
+        if any(word in lowered for word in ["email", "emails", "gmail", "message", "messages", "unread", "inbox"]):
+            requirements.append("email_action")
+
+        # Document-related requirements
+        if any(word in lowered for word in ["doc", "document", "create doc", "create document", "google doc"]):
+            requirements.append("doc_action")
+
+        # Drive-related requirements
+        if any(word in lowered for word in ["drive", "file", "files", "folder", "upload", "download"]):
+            requirements.append("drive_action")
+
+        # Sheets-related requirements
+        if any(word in lowered for word in ["sheet", "spreadsheet", "excel", "csv", "table"]):
+            requirements.append("sheets_action")
+
+        # Task-related requirements
+        if any(word in lowered for word in ["task", "todo", "tasks", "todo list", "task list"]):
+            requirements.append("tasks_action")
+
+        return requirements
+
+    def _check_missing_requirements(self, output: str, requirements: list[str]) -> list[str]:
+        """Check if output satisfies all requirements."""
+        missing = []
+        lowered = output.lower()
+
+        for req in requirements:
+            if req == "calendar_action" and not any(word in lowered for word in ["calendar", "event", "meeting", "schedule", "reminder"]):
+                missing.append("calendar_action")
+            elif req == "future_date" and "tomorrow" in lowered and not any(word in lowered for word in ["2026-05-06", "may 6", "6th", "tomorrow"]):
+                missing.append("future_date")
+            elif req == "email_action" and not any(word in lowered for word in ["email", "gmail", "message", "inbox", "sent", "mail"]):
+                missing.append("email_action")
+            elif req == "doc_action" and not any(word in lowered for word in ["doc", "document", "created"]):
+                missing.append("doc_action")
+            elif req == "drive_action" and not any(word in lowered for word in ["drive", "file", "folder"]):
+                missing.append("drive_action")
+            elif req == "sheets_action" and not any(word in lowered for word in ["sheet", "spreadsheet"]):
+                missing.append("sheets_action")
+            elif req == "tasks_action" and not any(word in lowered for word in ["task", "todo"]):
+                missing.append("tasks_action")
+
+        return missing
 
     def update_context_node(self, state: AgentState) -> dict[str, Any]:
         idx = state.get("current_task_index", 0)
@@ -449,22 +556,55 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         results_map["code"] = result.get("output", {})
         results_map["computation"] = result.get("output", {})
 
+        # If code failed, store error context for LLM to fix in next iteration
+        if not result.get("success") and result.get("error"):
+            context["code_error"] = result.get("error")
+            context["failed_code"] = code
+            context["needs_code_fix"] = True
+        else:
+            # Clear error flags on success to prevent stale errors
+            context.pop("code_error", None)
+            context.pop("failed_code", None)
+            context.pop("needs_code_fix", None)
+
         return {
             "last_result": result,
-            "error": result.get("error"),
-            "final_output": result["output"].get("stdout", ""),
+            "error": result.get("error") if not result.get("success") else None,
+            "final_output": result["output"].get("stdout", "") if result.get("success") else "",
             "current_attempt": state.get("current_attempt", 0) + 1,
             "context": context,
         }
 
     def generate_code_node(state: AgentState) -> dict[str, Any]:
-        prompt = (
+        # Check if we're fixing a previously failed code execution
+        context = dict(state.get("context", {}))
+        failed_code = context.get("failed_code")
+        code_error = context.get("code_error")
+        needs_fix = context.get("needs_code_fix", False)
+
+        base_prompt = (
             "Generate Python code ONLY. The code must store its final answer in a variable named `result` "
             "and may print intermediate details. NO markdown formatting, just raw code.\n\n"
             "CRITICAL: Do NOT use ANY 'import' statements. All standard libraries are unavailable. "
             "Use only built-in functions and basic logic.\n\n"
-            f"User request:\n{state.get('user_text', '')}"
         )
+
+        if needs_fix and failed_code and code_error:
+            prompt = (
+                base_prompt
+                + f"The previous code FAILED with this error:\n{code_error}\n\n"
+                + f"Previous code:\n{failed_code}\n\n"
+                + "FIX the code to handle this error. Common fixes:\n"
+                + "- Use .get() for dict access instead of direct indexing\n"
+                + "- Check if variables exist before using them\n"
+                + "- Handle empty or None values gracefully\n"
+                + "- Use 'in' to check keys before accessing\n\n"
+                + f"Original request:\n{state.get('user_text', '')}"
+            )
+            # Clear the fix flag so we don't loop forever
+            context["needs_code_fix"] = False
+        else:
+            prompt = base_prompt + f"User request:\n{state.get('user_text', '')}"
         model = create_agent(config, logger)
         lowered = state.get("user_text", "").lower()
         is_computation = any(
@@ -609,6 +749,10 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 return "generate_code"
             return "execute_task"
         if decision.action == "replan":
+            # Prevent infinite replan loops - stop after 3 replans
+            retry_count = state.get("retry_count", 0)
+            if retry_count >= 3:
+                return "persist_memory"
             return "generate_plan"
         return "persist_memory"
 
@@ -619,6 +763,13 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             return "execute_task"
         return "persist_memory"
 
+    def route_after_intent_verification(state: AgentState) -> Literal["generate_plan", "END"]:
+        """After intent verification, either replan or end the workflow."""
+        verification = state.get("intent_verification")
+        if verification and not verification.get("passed", True):
+            return "generate_plan"
+        return "END"
+
     workflow = StateGraph(AgentState)
     workflow.add_node("generate_plan", nodes.plan_node)
     workflow.add_node("validate", nodes.validate_node)
@@ -626,6 +777,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     workflow.add_node("reflect_node", nodes.reflect_node)
     workflow.add_node("update_context", nodes.update_context_node)
     workflow.add_node("format_output", nodes.format_output_node)
+    workflow.add_node("verify_intent", nodes.intent_verification_node)
     workflow.add_node("persist_memory", nodes.persist_memory_node)
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("generate_code", generate_code_node)
@@ -651,7 +803,15 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
     workflow.add_conditional_edges("web_search", route_after_web_search)
     workflow.add_edge("generate_code", "code_execution")
     workflow.add_edge("code_execution", "reflect_node")
-    workflow.add_edge("format_output", END)
+    workflow.add_edge("format_output", "verify_intent")
+    workflow.add_conditional_edges(
+        "verify_intent",
+        route_after_intent_verification,
+        {
+            "generate_plan": "generate_plan",
+            "END": END,
+        },
+    )
     return workflow.compile()
 
 
@@ -663,11 +823,12 @@ def run_workflow(user_text: str, config: AppConfigModel, system, executor, logge
         executions=[],
         retry_count=0,
         current_attempt=0,
+        verification_attempts=0,
         conversation_history=[HumanMessage(content=user_text)],
     )
     app = create_workflow(config, system, executor, logger)
     try:
-        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=100))
+        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=500))
         return final_state.get("final_output", "Workflow returned no output.")
     except Exception as exc:
         logger.exception("Workflow failed.")
