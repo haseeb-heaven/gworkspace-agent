@@ -24,6 +24,7 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 - [Configuration](#configuration)
 - [Safety & Security](#safety--security)
 - [Testing](#testing)
+- [Statistics](#statistics)
 - [Contributing](#contributing)
 
 ---
@@ -310,6 +311,12 @@ python -m pytest -m "not skip_integration" -v
 | `tests/test_placeholder_contracts.py` | Canonical and legacy placeholder resolution |
 | `tests/test_drive_metadata.py` | Drive file summarizer helper |
 | `tests/test_resolver.py` | Full resolver logic including LEGACY_MAP |
+
+---
+
+## Statistics
+
+Detailed repository statistics including commit history, contributors, and project metrics are available in [STATS.md](STATS.md).
 
 ---
 
