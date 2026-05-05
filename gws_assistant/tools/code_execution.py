@@ -33,6 +33,11 @@ _BANNED_PATTERNS = [
     r"__import__",
     r"\brequests\b",
     r"\burllib\b",
+    r"__class__",
+    r"__subclasses__",
+    r"__base__",
+    r"__mro__",
+    r"__builtins__",
 ]
 
 
@@ -155,6 +160,7 @@ def get_safe_globals() -> dict[str, Any]:
             builtins.print(*args, **kwargs)
 
     collector = SimpleCollector()
+    safe_g["__builtins__"]["print"] = collector._call_print
 
     def _print_factory(_getattr_=None):
         collector._getattr_ = _getattr_
@@ -270,7 +276,6 @@ def _run_in_thread_sandbox(
         # Pattern: row['category'] -> row['Category'] (case-insensitive match)
         sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
         sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
-        # Use compile_restricted for security.
         try:
             byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         except SyntaxError as e:

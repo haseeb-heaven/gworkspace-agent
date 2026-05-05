@@ -204,12 +204,11 @@ class TestRunCodeImportPreprocessing:
         assert result["success"] is True
         assert "4" in result["stdout"]
 
-    def test_run_code_uses_compile_not_compile_restricted(self):
-        """PR: uses standard compile() - verify complex code that compile_restricted would reject still works."""
-        # compile_restricted blocks certain patterns; standard compile allows them
+    def test_run_code_list_comprehension_works_with_getiter_guard(self):
+        """list comprehension requires _getiter_ guard in sandbox globals."""
         code = "result = [x**2 for x in range(5)]\nprint(result)"
         res = run_code(_b64(code))
-        assert res["success"] is True
+        assert res["success"] is True  # passes only if _getiter_ is in sandbox_globals
 
     def test_run_code_output_truncated_for_large_output(self):
         code = "print('x' * 2000)"

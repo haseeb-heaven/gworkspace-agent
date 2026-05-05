@@ -58,6 +58,7 @@ class TestDriveCodeSheetsSpecialCase:
         # sheets.get_values should be present when drive+code+sheets all detected
         # This is only triggered by the fallback heuristic when all three are detected
         assert plan.no_service_detected is False
+        assert "sheets" in services, "Expected sheets.get_values to be injected for drive+code+sheets"
 
     @pytest.mark.drive
     def test_drive_without_code_no_special_case(self, tmp_path):

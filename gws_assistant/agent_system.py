@@ -304,7 +304,7 @@ class WorkspaceAgentSystem:
             # Replace drive.get_file with sheets.get_values to fetch actual data
             new_tasks = []
             for task in tasks:
-                if task.service == "drive" and task.action == "get_file":
+                if task.service == "drive" and task.action in ("get_file", "export_file"):
                     # Add sheets.get_values to fetch data from the spreadsheet
                     new_tasks.append(
                         PlannedTask(
@@ -2668,6 +2668,8 @@ class CodeExecutionStrategy(PlanningStrategy):
         return 30
 
     def matches(self, ctx: PlanningContext) -> bool:
+        if "drive" in ctx.services and "sheets" in ctx.services:
+            return False
         return "code" in ctx.services or "computation" in ctx.services
 
     def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan | None:

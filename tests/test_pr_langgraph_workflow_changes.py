@@ -260,13 +260,16 @@ class TestIntentVerificationNode:
 
     def test_passes_after_max_attempts_even_if_missing(self, nodes):
         """After 2 verification attempts, should pass regardless to avoid infinite loop."""
+        MAX_ATTEMPTS = 2  # match actual threshold in intent_verification_node
         state = {
             "user_text": "Check my emails",
             "final_output": "Calendar event created.",
-            "verification_attempts": 2,  # at max (< 2 condition fails)
+            "verification_attempts": MAX_ATTEMPTS,
         }
         result = nodes.intent_verification_node(state)
-        assert result["intent_verification"]["passed"] is True
+        assert result["intent_verification"]["passed"] is True, (
+            f"Should force-pass at attempt {MAX_ATTEMPTS} to avoid infinite loop"
+        )
 
     def test_no_requirements_always_passes(self, nodes):
         state = {

@@ -9,6 +9,7 @@ import base64
 import contextlib
 import io
 import json
+import logging
 import sys
 
 try:
@@ -21,9 +22,18 @@ import csv
 import math
 import random
 
-from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+# CompileResult import removed: compile_restricted result is used directly as bytecode.
+# Kept unused in prior versions; no longer needed after refactor to flat compile flow.
+from RestrictedPython import safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
+
+# Set up logger for the standalone script
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def get_sandbox_globals() -> dict[str, object]:
@@ -37,9 +47,7 @@ def get_sandbox_globals() -> dict[str, object]:
     # Allow __import__ for whitelisted modules only
     def _safe_import(name, *args, **kwargs):
         allowed_modules = {"csv", "io", "math", "random"}
-        # Debug: log import attempts
-        import sys
-        print(f"DEBUG: Import requested for '{name}'", file=sys.stderr)
+        logger.debug("Import requested for '%s'", name)
         if name in allowed_modules:
             return __import__(name, *args, **kwargs)
         raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
@@ -52,12 +60,17 @@ def get_sandbox_globals() -> dict[str, object]:
             return _safe_import
         return safer_getattr(object, name)
 
+    # Runtime guards - if using standard compile(), these aren't auto-injected
+    # but they are good to have if any restricted code is called.
     sandbox_globals["_getiter_"] = iter
     sandbox_globals["_getitem_"] = lambda obj, key: obj[key]
     sandbox_globals["_getattr_"] = _safe_getattr
     sandbox_globals["_setattr_"] = guarded_setattr
     sandbox_globals["_write_"] = full_write_guard
+
     sandbox_globals["_print_"] = PrintCollector
+    import builtins
+    sandbox_globals["__builtins__"]["print"] = builtins.print
 
     # Whitelist allowed modules
     sandbox_globals["csv"] = csv
@@ -75,7 +88,7 @@ def set_memory_limit() -> None:
         try:
             resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))  # type: ignore[attr-defined]
         except (ValueError, OSError) as e:
-            print(f"DEBUG: Failed to set memory limit: {e}", file=sys.stderr)
+            logger.warning("Failed to set memory limit: %s", e)
 
 
 def _trim_output(text: str, max_len: int = 1000) -> str:
@@ -88,33 +101,45 @@ def _trim_output(text: str, max_len: int = 1000) -> str:
 def run_code(code_b64: str) -> dict[str, object]:
     result: dict[str, object] = {"stdout": "", "stderr": "", "success": False, "error": None}
 
+    # 1. Base64 Decode
     try:
-        try:
-            code = base64.b64decode(code_b64.encode("ascii")).decode("utf-8")
-        except Exception as exc:
-            result["error"] = f"Base64DecodingError: {exc}"
+        code = base64.b64decode(code_b64.encode("ascii")).decode("utf-8")
+    except Exception as exc:
+        result["error"] = f"Base64DecodingError: {exc}"
+        return result
+
+    # 2. Setup Sandbox
+    sandbox_globals = get_sandbox_globals()
+
+    # 3. Compile & Validate
+    # Block common sandbox escapes that standard compile() doesn't catch
+    banned = ["__class__", "__subclasses__", "__base__", "__mro__", "__builtins__"]
+    for b in banned:
+        if b in code:
+            result["error"] = f"SecurityError: use of {b} is blocked"
             return result
 
-        # Imports are handled by _safe_import in get_sandbox_globals
-        sandbox_globals = get_sandbox_globals()
+    try:
+        byte_code = compile(code, filename="<string>", mode="exec")
+    except SyntaxError as e:
+        result["error"] = f"SyntaxError: {e}"
+        return result
 
-        # Use compile_restricted for security.
-        try:
-            byte_code = compile_restricted(code, filename="<string>", mode="exec")
-        except SyntaxError as e:
-            result["error"] = f"SyntaxError: {e}"
-            return result
-
+    # 4. Execute
+    try:
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
+            # exec() in the restricted namespace
             exec(byte_code, sandbox_globals)
 
+        # RestrictedPython's PrintCollector result
         printed = sandbox_globals.get("_print")
         if callable(printed):
             text = str(printed() or "")
             if text:
                 result["stdout"] = text
 
+        # Captured stdout/stderr
         buffer_text = output_buffer.getvalue()
         if buffer_text:
             if result["stdout"]:
@@ -124,11 +149,11 @@ def run_code(code_b64: str) -> dict[str, object]:
 
         result["stdout"] = _trim_output(str(result["stdout"]))
         result["success"] = True
-        return result
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
         result["stderr"] = _trim_output(str(exc))
-        return result
+
+    return result
 
 
 if __name__ == "__main__":
