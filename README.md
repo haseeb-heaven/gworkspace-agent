@@ -30,7 +30,7 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 ---
 
 ## Version
-Latest: **v1.0.1**
+Latest: **v1.0.1** - BETA
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ---
