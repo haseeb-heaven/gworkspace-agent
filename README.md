@@ -235,12 +235,108 @@ To get the agent running on your local machine, please follow the comprehensive 
 3. **Run the Agent:**
    ```bash
    # Using Python (all platforms)
-   python gws_cli.py --task "List my drive files"
+   gws_cli --task "List my drive files"
 
    # Or use the executable scripts
    # Linux/macOS: ./gws_cli --task "List my drive files"
    # Windows: .\gws_cli.bat --task "List my drive files"
    ```
+
+### Examples
+
+Here are high-impact, realistic examples that showcase the full power of your agent — multi-service chaining, NLP complexity, and things no dumb CLI can do:
+
+***
+
+## 📧 Gmail Workflows
+
+```bash
+gws_cli --task "Find all emails from my boss this week, mark them as read, and reply to any that have a question mark in the subject"
+```
+
+```bash
+gws_cli --task "Search for all invoices received in April, download their attachments to Drive folder 'Invoices/April', and create a Sheets log with sender, date, and amount"
+```
+
+```bash
+gws_cli --task "Find emails with subject containing 'approval needed', summarize each one, and forward the summaries to manager@company.com"
+```
+
+***
+
+## 📅 Calendar Workflows
+
+```bash
+gws_cli --task "List all my meetings tomorrow, create a Google Doc agenda for each one with the title and attendees, and send the doc link to all attendees via email"
+```
+
+```bash
+gws_cli --task "Find all meetings I have next week that are longer than 1 hour and add a 15-minute prep reminder before each one"
+```
+
+***
+
+## 📂 Drive + Docs Workflows
+
+```bash
+gws_cli --task "Find all Google Docs modified in the last 7 days, create a summary of each, and compile everything into a single 'Weekly Report' Doc"
+```
+
+```bash
+gws_cli --task "Search Drive for files shared with me that I haven't opened in 30 days and list them in a Sheets file called 'Stale Shares'"
+```
+
+***
+
+## 📊 Sheets Workflows
+
+```bash
+gws_cli --task "Open the spreadsheet 'Sales Q1', calculate total revenue per region, and email a summary report to the sales team"
+```
+
+```bash
+gws_cli --task "Read the 'Team Tasks' sheet, find all rows where status is 'overdue', and send a reminder email to the person in the assignee column"
+```
+
+***
+
+## 🔗 Complex Multi-Service Chains
+
+```bash
+gws_cli --task "Read my unread emails, extract all action items mentioned, add them as Google Tasks, create a Calendar block tomorrow morning called 'Action Items Review', and send me a summary on Telegram"
+```
+
+```bash
+gws_cli --task "Get all attendees from my 'Quarterly Review' calendar event, create a shared Google Doc called 'Q2 Review Notes', and send each attendee an email with the doc link"
+```
+
+```bash
+gws_cli --task "Search my emails for any job applications I sent last month, list them in a Sheets tracker with company name, role, and date, then set a weekly Calendar reminder to follow up"
+```
+
+***
+
+## 🐍 Code Execution (E2B Sandbox)
+
+```bash
+gws_cli --task "Download the 'Revenue.csv' file from my Drive, run a Python script to calculate month-over-month growth, and write the results back to a new sheet called 'Growth Analysis'"
+```
+
+```bash
+gws_cli --task "Read the JSON config file from Drive folder 'Configs', validate it with Python, and email me the validation errors if any are found"
+```
+
+***
+
+## 🛡️ Safety Mode Examples
+
+```bash
+# Read-only audit — no writes, safe to run anytime
+gws_cli --task "List all files in my Drive shared publicly and show their owners"
+
+# Explicit write permission required
+gws_cli --read-write --task "Delete all emails in Trash older than 30 days and empty the spam folder"
+```
 
 ---
 
@@ -248,7 +344,7 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 | Interface | Command | Description |
 |---|---|---|
-| **💻 CLI** | `python gws_cli.py` or `./gws_cli` (Unix) or `.\gws_cli.bat` (Windows) | Rich terminal UI with streaming output, tables, and interactive prompts |
+| **💻 CLI** | `gws_cli` or `./gws_cli` (Unix) or `.\gws_cli.bat` (Windows) | Rich terminal UI with streaming output, tables, and interactive prompts |
 | **🖥️ Desktop GUI** | `python gws_gui.py` | Native app with visual task logs and manual controls |
 | **🌐 Web UI** | `python gws_gui_web.py` | Gradio chat interface accessible from any browser |
 | **🤖 Telegram Bot** | `python gws_telegram.py` | Secure mobile access via whitelisted Telegram Bot API |
