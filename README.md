@@ -234,7 +234,12 @@ To get the agent running on your local machine, please follow the comprehensive 
 2. **Configure Credentials:** Follow the [Google Cloud Setup](SETUP.md#%EF%B8%8F-step-3-google-cloud--credentials-setup) instructions.
 3. **Run the Agent:**
    ```bash
+   # Using Python (all platforms)
    python gws_cli.py --task "List my drive files"
+
+   # Or use the executable scripts
+   # Linux/macOS: ./gws_cli --task "List my drive files"
+   # Windows: .\gws_cli.bat --task "List my drive files"
    ```
 
 ---
@@ -243,7 +248,7 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 | Interface | Command | Description |
 |---|---|---|
-| **💻 CLI** | `python gws_cli.py` | Rich terminal UI with streaming output, tables, and interactive prompts |
+| **💻 CLI** | `python gws_cli.py` or `./gws_cli` (Unix) or `.\gws_cli.bat` (Windows) | Rich terminal UI with streaming output, tables, and interactive prompts |
 | **🖥️ Desktop GUI** | `python gws_gui.py` | Native app with visual task logs and manual controls |
 | **🌐 Web UI** | `python gws_gui_web.py` | Gradio chat interface accessible from any browser |
 | **🤖 Telegram Bot** | `python gws_telegram.py` | Secure mobile access via whitelisted Telegram Bot API |
