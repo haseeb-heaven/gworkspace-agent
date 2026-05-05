@@ -8,16 +8,28 @@ logger = logging.getLogger(__name__)
 
 
 def _tableify(value: Any) -> Optional[str]:
-    """Convert a list of dicts or list of lists to a markdown table string."""
+    """Convert a list of dicts or list of lists to a markdown table string.
+
+    Escapes pipe characters and newlines within cells to maintain table structure.
+
+    Args:
+        value: The data to convert (must be a non-empty list of dicts or lists).
+
+    Returns:
+        A markdown table string, or None if the input is invalid or empty.
+    """
+    def _esc(v: Any) -> str:
+        return str(v).replace("|", "\\|").replace("\n", " ").strip()
+
     rows = []
     if isinstance(value, list) and value and isinstance(value[0], dict):
         headers = list(value[0].keys())
-        rows.append(headers)
+        rows.append([_esc(h) for h in headers])
         for item in value:
-            row = [str(item.get(h, "")) for h in headers]
+            row = [_esc(item.get(h, "")) for h in headers]
             rows.append(row)
     elif isinstance(value, list) and value and isinstance(value[0], list):
-        rows = [[str(cell) for cell in row] for row in value]
+        rows = [[_esc(cell) for cell in row] for row in value]
     else:
         return None
 
@@ -44,7 +56,7 @@ def _unwrap(res: Any) -> Any:
             "notes", "spaces", "connections", "people", "activities"
         )
         for key in wrapper_keys:
-            if key in res and isinstance(res[key], list):
+            if key in res and isinstance(res[key], list) and res[key]:
                 inject_val = res[key]
                 break
     return inject_val

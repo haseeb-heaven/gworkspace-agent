@@ -528,7 +528,7 @@ class ResolverMixin:
                         if "injected_vars" not in context:
                             context["injected_vars"] = []
                         idx = len(context["injected_vars"])
-                        from .context_updater import _unwrap
+                        from .context_updater import _normalize_entry, _unwrap
                         inject_val = _unwrap(res)
 
                         # Auto-fetch spreadsheet data if inject_val is a string reference

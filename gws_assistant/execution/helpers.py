@@ -91,22 +91,30 @@ class HelpersMixin:
             if query is None:
                 query = "Google Workspace"
 
-            query = self._resolve_placeholders(query, context)
-            if query is None:
-                query = "Google Workspace (Resolution failed)"
+            # Resolve placeholders in query
+            resolved_query = self._resolve_placeholders(query, context)
 
-            result_data = web_search_tool.invoke({"query": query})
+            # Skip search if query is unresolved or empty
+            if not resolved_query or str(resolved_query) == "___UNRESOLVED_PLACEHOLDER___":
+                self.logger.warning("Web search query resolution failed or yielded empty string. Skipping search.")
+                return ExecutionResult(
+                    success=False,
+                    command=["web_search"],
+                    error="Search query was empty or unresolved placeholder."
+                )
+
+            result_data = web_search_tool.invoke({"query": str(resolved_query)})
             results = result_data.get("results") or result_data.get("rows") or []
 
             markdown_lines = []
             table_values = []
             for r in results:
                 if isinstance(r, dict):
-                    title   = r.get("title", "")
+                    title = r.get("title", "")
                     # The web search tool returns 'snippet' and 'url'
                     # But if we receive 'content' and 'link' fallback to those.
                     content = r.get("snippet", r.get("content", ""))
-                    link    = r.get("url", r.get("link", ""))
+                    link = r.get("url", r.get("link", ""))
                     markdown_lines.append(f"## {title}\n{content}\n{link}")
                     table_values.append([title, link, content])
                 elif isinstance(r, list):
@@ -122,7 +130,7 @@ class HelpersMixin:
             result_data["summary_table"] = "\n\n".join(markdown_lines)
 
             return ExecutionResult(
-                success=True, command=["web_search", query], stdout=json.dumps(result_data), output=result_data
+                success=True, command=["web_search", str(resolved_query)], stdout=json.dumps(result_data), output=result_data
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
@@ -390,16 +398,24 @@ class HelpersMixin:
             if message is None:
                 message = "Task completed (null message)."
 
-            message = self._resolve_placeholders(message, context)
-            if message is None:
-                message = "[Resolution failed]"
+            # Resolve placeholders in message
+            resolved_msg = self._resolve_placeholders(message, context)
 
-            sent = send_telegram(str(message), context=context)
+            # Skip send if message is unresolved or empty
+            if resolved_msg is None or str(resolved_msg).strip() == "" or str(resolved_msg) == "___UNRESOLVED_PLACEHOLDER___":
+                self.logger.warning("Telegram message resolution failed or yielded empty string. Skipping send.")
+                return ExecutionResult(
+                    success=False,
+                    command=["telegram"],
+                    error="Message content was empty or unresolved placeholder."
+                )
+
+            sent = send_telegram(str(resolved_msg), context=context)
 
             return ExecutionResult(
                 success=sent,
                 command=["telegram", "send_message"],
-                stdout=redact_sensitive(message),
+                stdout=redact_sensitive(str(resolved_msg)),
                 stderr="" if sent else "Telegram send failed.",
                 return_code=0 if sent else 1,
                 output={"success": sent},

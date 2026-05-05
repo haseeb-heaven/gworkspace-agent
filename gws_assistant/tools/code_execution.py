@@ -182,7 +182,12 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["setattr"] = safe_setattr
 
     safe_g["_getiter_"] = iter
-    def safe_getitem(obj, key):
+    def safe_getitem(obj: Any, key: Any) -> Any:
+        """Restricted __getitem__ implementation for list/dict access.
+
+        Includes case-insensitive dictionary lookup as an AI robustness feature
+        when standard key access fails.
+        """
         try:
             return obj[key]
         except (KeyError, TypeError):
@@ -200,32 +205,49 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
 
-    def _inplacevar(op, target, expr):
+    def _inplacevar(op: str, target: Any, expr: Any) -> Any:
+        """Augmented assignment implementation for RestrictedPython.
+
+        Handles in-place operators like +=, -=, etc. ensuring mutable
+        types perform real augmented operations.
+        """
         if op == "+=":
-            return target + expr
+            target += expr
+            return target
         if op == "-=":
-            return target - expr
+            target -= expr
+            return target
         if op == "*=":
-            return target * expr
+            target *= expr
+            return target
         if op == "/=":
-            return target / expr
+            target /= expr
+            return target
         if op == "//=":
-            return target // expr
+            target //= expr
+            return target
         if op == "%=":
-            return target % expr
+            target %= expr
+            return target
         if op == "**=":
-            return target ** expr
+            target **= expr
+            return target
         if op == "&=":
-            return target & expr
+            target &= expr
+            return target
         if op == "|=":
-            return target | expr
+            target |= expr
+            return target
         if op == "^=":
-            return target ^ expr
+            target ^= expr
+            return target
         if op == "<<=":
-            return target << expr
+            target <<= expr
+            return target
         if op == ">>=":
-            return target >> expr
-        raise NotImplementedError(f"Unsupported in-place operator: {op}")
+            target >>= expr
+            return target
+        raise NotImplementedError(f"In-place operator '{op}' not supported in sandbox")
 
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
@@ -252,10 +274,17 @@ def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
     raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
 
 
+# Pre-compiled regex for security checks and LLM-code rewrites
+_RE_BANNED = re.compile("|".join(_BANNED_PATTERNS))
+_RE_WITH_OPEN_CSV = re.compile(
+    r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as ([a-zA-Z_]\w*):\s+([a-zA-Z_]\w*) = csv\.DictReader\(\1\)",
+    re.MULTILINE
+)
+
+
 def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS) -> str | None:
-    for pattern in _BANNED_PATTERNS:
-        if re.search(pattern, code):
-            return f"SecurityError: disallowed pattern matched: {pattern}"
+    if _RE_BANNED.search(code):
+        return "SecurityError: disallowed pattern matched in submitted code."
     try:
         ast.parse(code)
     except Exception as exc:
@@ -278,17 +307,27 @@ def _run_in_thread_sandbox(
         # but pre-injects the most common modules (math, re, json) as globals.
         sanitized, aliases = _sanitize_llm_code(code)
         # Fix LLM code that tries to use csv.DictReader on files - use injected DataFrame instead
-        # Pattern: with open('', 'r') as f: ... csv.DictReader(f)
-        sanitized = re.sub(
-            r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as f:\s+reader = csv\.DictReader\(f\)",
-            "df = injected_vars[0] if injected_vars else None",
-            sanitized
-        )
-        # Pattern: for row in reader: -> for row in df.itertuples(): or for idx, row in df.iterrows():
-        sanitized = re.sub(r"for row in reader:", "for idx, row in df.iterrows():", sanitized)
-        # Pattern: row['category'] -> row['Category'] (case-insensitive match)
-        sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
-        sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
+        # Replaces 'with open(...) as f: reader = csv.DictReader(f)' with 'df = ...'
+        # Captures the reader variable name to rewrite the iteration later.
+        match = _RE_WITH_OPEN_CSV.search(sanitized)
+        reader_var = "reader"
+        if match:
+            reader_var = match.group(2)
+            sanitized = _RE_WITH_OPEN_CSV.sub(
+                "df = injected_vars[0] if injected_vars else None",
+                sanitized
+            )
+
+        # Pattern: for row in reader: -> for idx, row in df.iterrows():
+        # Uses captured reader variable name if available.
+        iter_pattern = re.compile(rf"for ([a-zA-Z_]\w*) in {reader_var}:")
+        sanitized = iter_pattern.sub(r"for idx, \1 in df.iterrows():", sanitized)
+
+        # Standardize column access: LLM often uses lowercase keys
+        # Pattern: row['category'] -> row['Category']
+        sanitized = sanitized.replace("row['category']", "row['Category']")
+        sanitized = sanitized.replace("row['revenue']", "row['Total Revenue']")
+
         try:
             byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         except SyntaxError as e:
@@ -485,12 +524,10 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
         return '\n'.join(result_lines)
 
     code = replace_with_block(code)
-    # Replace csv.DictReader(file) with direct iteration over the list of dicts
-    code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
-    code = re.sub(r"for row in reader:", "for row in reader:", code)
-    # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
-    code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
-    code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
+    # Standardize column access: LLM often uses lowercase or specific keys
+    # Pattern: ['Revenue'] or ['revenue'] -> ['Total Revenue']
+    code = re.sub(r"\[['\"](?:Revenue|revenue)['\"]\]", "['Total Revenue']", code)
+    code = re.sub(r"\[['\"](?:Category|category)['\"]\]", "['Category']", code)
 
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
