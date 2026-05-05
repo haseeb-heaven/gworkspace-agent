@@ -528,13 +528,8 @@ class ResolverMixin:
                         if "injected_vars" not in context:
                             context["injected_vars"] = []
                         idx = len(context["injected_vars"])
-                        # Unwrap common API response wrappers so generated code can iterate directly
-                        inject_val = res
-                        if isinstance(res, dict):
-                            for key in ("messages", "items", "files", "events", "tasks", "notes", "spaces", "connections", "people", "activities"):
-                                if key in res and isinstance(res[key], list):
-                                    inject_val = res[key]
-                                    break
+                        from .context_updater import _unwrap
+                        inject_val = _unwrap(res)
 
                         # Auto-fetch spreadsheet data if inject_val is a string reference
                         if isinstance(inject_val, str) and (".csv" in inject_val.lower() or "sheet" in inject_val.lower()):
@@ -583,30 +578,7 @@ class ResolverMixin:
                             normalized_list = []
                             for entry in inject_val:
                                 if isinstance(entry, dict):
-                                    entry_copy = dict(entry)
-                                    # Extract headers from payload if present (auto-enriched messages)
-                                    payload = entry_copy.get("payload", {})
-                                    if isinstance(payload, dict):
-                                        for hdr in payload.get("headers", []):
-                                            if isinstance(hdr, dict):
-                                                hname = str(hdr.get("name", "")).lower()
-                                                hval = hdr.get("value", "")
-                                                if hname == "from" and "from" not in entry_copy:
-                                                    entry_copy["from"] = hval
-                                                elif hname == "subject" and "subject" not in entry_copy:
-                                                    entry_copy["subject"] = hval
-                                                elif hname == "date" and "date" not in entry_copy:
-                                                    entry_copy["date"] = hval
-                                    snippet = entry_copy.get("snippet")
-                                    if not snippet:
-                                        subj = entry_copy.get("subject") or "No Subject"
-                                        sender = entry_copy.get("from") or entry_copy.get("sender") or "Unknown"
-                                        date_val = entry_copy.get("date") or "Unknown Date"
-                                        entry_copy["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
-                                    # Normalize for LLM code generation: create from_ object with address
-                                    if "from" in entry_copy and "from_" not in entry_copy:
-                                        entry_copy["from_"] = {"address": entry_copy["from"]}
-                                    normalized_list.append(entry_copy)
+                                    normalized_list.append(_normalize_entry(entry))
                                 else:
                                     normalized_list.append(entry)
                             inject_val = normalized_list

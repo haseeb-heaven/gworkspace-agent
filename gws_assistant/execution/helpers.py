@@ -325,29 +325,7 @@ class HelpersMixin:
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
-            def _tableify(value: Any) -> str | None:
-                rows: list[list[str]] = []
-                if isinstance(value, list) and value and isinstance(value[0], dict):
-                    headers = list(value[0].keys())
-                    rows.append(headers)
-                    for item in value:
-                        row = [str(item.get(h, "")) for h in headers]
-                        rows.append(row)
-                elif isinstance(value, list) and value and isinstance(value[0], list):
-                    rows = [[str(cell) for cell in row] for row in value]
-                else:
-                    return None
-
-                if not rows:
-                    return None
-
-                header = rows[0]
-                table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
-                for row in rows[1:]:
-                    # pad row
-                    padded = row + [""] * (len(header) - len(row))
-                    table_lines.append("| " + " | ".join(padded) + " |")
-                return "\n".join(table_lines)
+            from .context_updater import _tableify
 
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
