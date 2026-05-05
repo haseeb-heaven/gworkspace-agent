@@ -67,6 +67,25 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_getattr_"] = _safe_getattr
     sandbox_globals["_setattr_"] = guarded_setattr
     sandbox_globals["_write_"] = full_write_guard
+    sandbox_globals["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
+    sandbox_globals["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
+
+    def _inplacevar(op, target, expr):
+        if op == "+=": return target + expr
+        if op == "-=": return target - expr
+        if op == "*=": return target * expr
+        if op == "/=": return target / expr
+        if op == "//=": return target // expr
+        if op == "%=": return target % expr
+        if op == "**=": return target ** expr
+        if op == "&=": return target & expr
+        if op == "|=": return target | expr
+        if op == "^=": return target ^ expr
+        if op == "<<=": return target << expr
+        if op == ">>=": return target >> expr
+        raise NotImplementedError(f"Unsupported in-place operator: {op}")
+
+    sandbox_globals["_inplacevar_"] = _inplacevar
 
     sandbox_globals["_print_"] = PrintCollector
 

@@ -201,6 +201,7 @@ class TestResolverEmailEntryNormalization:
 
     def _normalize_entry(self, entry):
         """Replicate the email entry normalization logic from resolver.py."""
+        entry = dict(entry)  # shallow copy before mutation
         if isinstance(entry, dict):
             payload = entry.get("payload", {})
             if isinstance(payload, dict):
