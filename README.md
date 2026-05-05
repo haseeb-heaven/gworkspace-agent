@@ -244,23 +244,29 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 ### Examples
 
-The agent can orchestrate complex multi-service workflows with a single natural language request:
+The agent can handle both simple and complex workflows:
 
 ```bash
-# Email summarization with documentation
-python gws_cli.py --task "Find all unread emails from last week, summarize them, create a Google Doc with the summary, and add a calendar reminder to review it tomorrow"
+# Simple: List Drive files
+python gws_cli.py --task "List my 10 most recent Drive files"
 
-# Drive analytics to Sheets
-python gws_cli.py --task "List all PDF files in my Drive, extract their names and sizes, and save the data to a new Google Sheets spreadsheet"
+# Simple: List unread emails
+python gws_cli.py --task "List my 5 most recent unread emails"
 
-# Calendar coordination
-python gws_cli.py --task "List my meetings for this week, create a summary document, and email it to my team"
+# Simple: Create a Google Doc
+python gws_cli.py --task "Create a new Google Doc titled 'Meeting Notes'"
 
-# Task management
-python gws_cli.py --task "Search for emails with the subject 'invoice', extract the total amounts, and create a task list to follow up"
+# Simple: Create a spreadsheet
+python gws_cli.py --task "Create a new Google Sheets spreadsheet named 'Budget 2026'"
 
-# Multi-step research
-python gws_cli.py --task "Search the web for the latest AI frameworks, create a comparison document, and share it in Google Chat"
+# Simple: List calendar events
+python gws_cli.py --task "List my calendar events for this week"
+
+# Advanced: Multi-step workflow (email → doc → calendar)
+python gws_cli.py --task "List my unread emails, create a Google Doc with a summary, and add a calendar event to review it tomorrow"
+
+# Advanced: Drive to Sheets
+python gws_cli.py --task "List all PDF files in my Drive and save their names to a Google Sheets spreadsheet"
 ```
 
 ---

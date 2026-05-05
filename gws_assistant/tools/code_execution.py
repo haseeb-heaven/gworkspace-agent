@@ -248,8 +248,12 @@ def _run_in_thread_sandbox(
         # Capture both _print_ (RestrictedPython internal) and direct stdout
         if "_print_buffer_instance" in sandbox_globals:
             collector = sandbox_globals["_print_buffer_instance"]
-            if callable(collector):
-                exec_result.stdout = str(collector())
+            if collector is not None and callable(collector):
+                try:
+                    exec_result.stdout = str(collector())
+                except Exception:
+                    # If collector fails, fall back to stdout buffer
+                    pass
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:
