@@ -75,7 +75,6 @@ LEGACY_PLACEHOLDER_MAP = {
     "$search_summary_count":    "search_summary_count",
     "$sheet_summary_rows":      "sheet_summary_rows",
     "$sheet_summary_table":     "sheet_summary_table",
-    "$calendar_events":         "calendar_events",
     "$calendar_events_table":   "calendar_events_table",
 }
 
@@ -178,6 +177,19 @@ class ResolverMixin:
                     new_task.parameters["event_id"] = e_id
                     expanded.append(new_task)
                 return expanded
+
+        if task.service == "tasks" and task.action == "create_task":
+            titles = resolved_params.get("title")
+            if isinstance(titles, list) and titles:
+                expanded = []
+                for i, title in enumerate(titles):
+                    if not title or not isinstance(title, str) or title == _UNRESOLVED_MARKER:
+                        continue
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i + 1}"
+                    new_task.parameters["title"] = title
+                    expanded.append(new_task)
+                return expanded if expanded else [task]
 
         return [task]
 
@@ -516,13 +528,8 @@ class ResolverMixin:
                         if "injected_vars" not in context:
                             context["injected_vars"] = []
                         idx = len(context["injected_vars"])
-                        # Unwrap common API response wrappers so generated code can iterate directly
-                        inject_val = res
-                        if isinstance(res, dict):
-                            for key in ("messages", "items", "files", "events", "tasks", "notes", "spaces", "connections", "people", "activities"):
-                                if key in res and isinstance(res[key], list):
-                                    inject_val = res[key]
-                                    break
+                        from .context_updater import _unwrap
+                        inject_val = _unwrap(res)
 
                         # Auto-fetch spreadsheet data if inject_val is a string reference
                         if isinstance(inject_val, str) and (".csv" in inject_val.lower() or "sheet" in inject_val.lower()):
@@ -568,30 +575,13 @@ class ResolverMixin:
                             except Exception as e:
                                 self.logger.debug(f"RESOLVER: Failed to fetch spreadsheet data: {e}")
                         if isinstance(inject_val, list):
+                            normalized_list = []
                             for entry in inject_val:
                                 if isinstance(entry, dict):
-                                    # Extract headers from payload if present (auto-enriched messages)
-                                    payload = entry.get("payload", {})
-                                    if isinstance(payload, dict):
-                                        for hdr in payload.get("headers", []):
-                                            if isinstance(hdr, dict):
-                                                hname = str(hdr.get("name", "")).lower()
-                                                hval = hdr.get("value", "")
-                                                if hname == "from" and "from" not in entry:
-                                                    entry["from"] = hval
-                                                elif hname == "subject" and "subject" not in entry:
-                                                    entry["subject"] = hval
-                                                elif hname == "date" and "date" not in entry:
-                                                    entry["date"] = hval
-                                    snippet = entry.get("snippet")
-                                    if not snippet:
-                                        subj = entry.get("subject") or "No Subject"
-                                        sender = entry.get("from") or entry.get("sender") or "Unknown"
-                                        date_val = entry.get("date") or ""
-                                        entry["snippet"] = f"{subj} (from {sender})"
-                                    # Normalize for LLM code generation: create from_ object with address
-                                    if "from" in entry and "from_" not in entry:
-                                        entry["from_"] = {"address": entry["from"]}
+                                    normalized_list.append(_normalize_entry(entry))
+                                else:
+                                    normalized_list.append(entry)
+                            inject_val = normalized_list
                         context["injected_vars"].append(inject_val)
                         return f"injected_vars[{idx}]"
                     elif isinstance(res, (dict, list)):
@@ -653,6 +643,10 @@ class ResolverMixin:
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
+        if data is None:
+            self.logger.warning(f"Cannot resolve path '{path}': results data is None")
+            return None
+
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first

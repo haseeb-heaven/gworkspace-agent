@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
-
-
 import logging
-
 from unittest.mock import MagicMock
-
-
 
 import pytest
 
-
-
 from gws_assistant.execution.resolver import ResolverMixin
-
 from gws_assistant.models import PlannedTask
-
-
-
 
 
 @pytest.fixture

@@ -7,6 +7,7 @@ To add a new model: append its LiteLLM model string to TOOL_CAPABLE_MODELS.
 
 TOOL_CAPABLE_MODELS: list[str] = [
     # ── OpenAI (agentic tool-calling confirmed) ────────────────────
+    "gpt-4.1-mini",
     "openai/gpt-4.1",
     "openai/gpt-4o",
     "openai/gpt-5-mini",
@@ -23,6 +24,8 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "xai/grok-4-1-fast-non-reasoning",
     "xai/grok-4",
     "xai/grok-4-20",
+    # ── OpenRouter (tool-calling) ──────────────────────────────────
+    "openrouter/free",
     # ── Google Gemini (tool support) ────────────────────────────────
     "google/gemini-2.0-flash",
     "google/gemini-2.0-pro-exp-02-05",
@@ -87,12 +90,6 @@ def validate_tool_model(model: str, env_var: str = "LLM_MODEL") -> None:
     Called at startup to catch misconfiguration before any API call is made.
     """
     model_norm = model.strip()
-    # Explicitly allow mock models used in tests
-    if model_norm in (
-        "gpt-4.1-mini",
-        "openrouter/free",
-    ):
-        return
 
     if model_norm not in TOOL_CAPABLE_MODELS:
         allowed = "\n  ".join(TOOL_CAPABLE_MODELS)

@@ -3,12 +3,13 @@ Manual tests for scratch/tasks TXT files.
 Tests each task by running it via gws_cli and verifying it executes successfully
 with 5-step verification engine checks and gws.exe binary verification.
 """
-import pytest
+import json
 import subprocess
 import sys
-import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List
+
+import pytest
 
 ROOT = Path(__file__).parent.parent.parent
 TASKS_DIR = ROOT / "scratch" / "tasks"

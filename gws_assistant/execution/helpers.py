@@ -88,6 +88,13 @@ class HelpersMixin:
             from gws_assistant.tools.web_search import web_search_tool
 
             query = task.parameters.get("query", "")
+            if query is None:
+                query = "Google Workspace"
+
+            query = self._resolve_placeholders(query, context)
+            if query is None:
+                query = "Google Workspace (Resolution failed)"
+
             result_data = web_search_tool.invoke({"query": query})
             results = result_data.get("results") or result_data.get("rows") or []
 
@@ -145,15 +152,22 @@ class HelpersMixin:
             from gws_assistant.tools.code_execution import execute_generated_code
 
             # Use code-safe resolution (use repr for dicts/lists)
-            raw_code = task.parameters.get("code")
-            if not raw_code:
+            raw_code = task.parameters.get("code") if task.parameters else None
+            if not raw_code and task.parameters:
                 # Try variations
                 for k in ["script", "python", "content", "text", "body", "python_code"]:
                     if k in task.parameters:
                         raw_code = task.parameters[k]
                         break
 
+            if not raw_code:
+                logger.error("No code found in task parameters: %s", task.parameters)
+                return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
+
             code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
+            if code is None:
+                logger.error("Placeholder resolution returned None for code")
+                return ExecutionResult(success=False, command=["code_execute"], error="Code resolution failed")
             # Replace any remaining unresolved markers with an empty string sentinel
             # to avoid RestrictedPython SyntaxErrors from identifiers starting with '_'
             from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
@@ -228,7 +242,7 @@ class HelpersMixin:
                                         get_res = self.runner.run(get_args)
                                         logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
                                         if get_res.success and get_res.stdout:
-                                            parsed = self._coerce_structured_value(get_res.stdout)
+                                            parsed = _coerce_structured_value(get_res.stdout)
                                             logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
                                             if isinstance(parsed, dict) and "values" in parsed:
                                                 values = parsed["values"]
@@ -311,29 +325,7 @@ class HelpersMixin:
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
-            def _tableify(value: Any) -> str | None:
-                rows: list[list[str]] = []
-                if isinstance(value, list) and value and isinstance(value[0], dict):
-                    headers = list(value[0].keys())
-                    rows.append(headers)
-                    for item in value:
-                        row = [str(item.get(h, "")) for h in headers]
-                        rows.append(row)
-                elif isinstance(value, list) and value and isinstance(value[0], list):
-                    rows = [[str(cell) for cell in row] for row in value]
-                else:
-                    return None
-
-                if not rows:
-                    return None
-
-                header = rows[0]
-                table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
-                for row in rows[1:]:
-                    # pad row
-                    padded = row + [""] * (len(header) - len(row))
-                    table_lines.append("| " + " | ".join(padded) + " |")
-                return "\n".join(table_lines)
+            from .context_updater import _tableify
 
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
@@ -391,8 +383,17 @@ class HelpersMixin:
             from gws_assistant.models import ExecutionResult
             from gws_assistant.tools.telegram import redact_sensitive, send_telegram
 
-            message = task.parameters.get("message", "")
+            if not task.parameters:
+                return ExecutionResult(success=False, command=["telegram"], error="No parameters provided for Telegram task")
+
+            message = task.parameters.get("message", "Task completed.")
+            if message is None:
+                message = "Task completed (null message)."
+
             message = self._resolve_placeholders(message, context)
+            if message is None:
+                message = "[Resolution failed]"
+
             sent = send_telegram(str(message), context=context)
 
             return ExecutionResult(
@@ -405,5 +406,5 @@ class HelpersMixin:
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
-
+            self.logger.error(f"Telegram execution failed: {exc}")
             return ExecutionResult(success=False, command=["telegram"], error=str(exc))

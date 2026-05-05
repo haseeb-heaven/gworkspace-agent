@@ -304,7 +304,7 @@ class WorkspaceAgentSystem:
             # Replace drive.get_file with sheets.get_values to fetch actual data
             new_tasks = []
             for task in tasks:
-                if task.service == "drive" and task.action == "get_file":
+                if task.service == "drive" and task.action in ("get_file", "export_file"):
                     # Add sheets.get_values to fetch data from the spreadsheet
                     new_tasks.append(
                         PlannedTask(
@@ -571,7 +571,6 @@ print(result)"""
                     reason="Export the document content as text using the provided file ID.",
                 ),
             ]
-            export_id_ref = "{{task-1.id}}"
             code_task_id = "task-2"
             sheet_task_id = "task-3"
             append_task_id = "task-4"
@@ -596,7 +595,6 @@ print(result)"""
                     reason="Export the document content as text.",
                 ),
             ]
-            export_id_ref = "{{task-2.id}}"
             code_task_id = "task-3"
             sheet_task_id = "task-4"
             append_task_id = "task-5"
@@ -1054,6 +1052,82 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
                 reason=f"Upload {file_path} to the folder.",
             ),
         ]
+
+    def _gmail_to_productivity_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
+        query = _gmail_query_from_text(text)
+        extract_code = """
+emails = $gmail_details_values
+items = []
+for msg in emails:
+    content = msg.get('body', msg.get('snippet', ''))
+    lines = content.split('\\n')
+    for line in lines:
+        l = line.strip()
+        if len(l) > 10 and any(kw in l.lower() for kw in ['todo:', 'action:', 'task:', 'should', 'need to']):
+            items.append(l)
+print(f'Found {len(items)} action items.')
+result = items
+"""
+        tasks = [
+            PlannedTask(
+                id="task-1",
+                service="gmail",
+                action="list_messages",
+                parameters={"q": query, "max_results": 5},
+                reason="Search for relevant emails.",
+            ),
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="get_message",
+                parameters={"message_id": "$gmail_message_ids"},
+                reason="Retrieve full content of messages for extraction.",
+            ),
+            PlannedTask(
+                id="task-3",
+                service="code",
+                action="execute",
+                parameters={"code": extract_code},
+                reason="Extract action items from email content.",
+            ),
+            PlannedTask(
+                id="task-4",
+                service="tasks",
+                action="create_task",
+                parameters={"title": "{{task-3.result}}"},
+                reason="Create Google Tasks for each extracted item.",
+            )
+        ]
+
+        if "calendar" in lowered or "block" in lowered:
+            tasks.append(
+                PlannedTask(
+                    id="task-5",
+                    service="calendar",
+                    action="create_event",
+                    parameters={
+                        "summary": "Action Items Review",
+                        "start_date": "tomorrow",
+                        "description": "Review action items: {{task-3.result}}",
+                    },
+                    reason="Schedule a review block on the calendar.",
+                )
+            )
+
+        if "telegram" in lowered or "summary" in lowered:
+            tasks.append(
+                PlannedTask(
+                    id="task-6",
+                    service="telegram",
+                    action="send_message",
+                    parameters={
+                        "message": "Processed emails and found these action items: {{task-3.result}}. They've been added to Tasks.",
+                    },
+                    reason="Send a summary on Telegram.",
+                )
+            )
+
+        return tasks
 
     def _sheets_creation_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
         title = _extract_quoted(text) or "New Spreadsheet"
@@ -1825,19 +1899,29 @@ def _detect_action(service: str, text: str) -> str | None:
 
 
 def _gmail_query_from_text(text: str) -> str:
+    lowered = text.lower()
+    query_parts = []
+    if "unread" in lowered:
+        query_parts.append("is:unread")
+
     quoted = RE_GMAIL_QUERY_QUOTED.search(text)
     if quoted:
         q = quoted.group(1).strip()
         # If the user says "subject:...", keep it. Otherwise, just use the keywords.
         if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
-            return q
-        return q
+            query_parts.append(q)
+        else:
+            query_parts.append(q)
+        return " ".join(query_parts).strip()
+
     match = RE_GMAIL_QUERY_MATCH.search(text)
     if match:
         query = match.group(1).strip()
         query = RE_GMAIL_QUERY_SPLIT.split(query)[0].strip()
-        return query
-    return ""
+        query_parts.append(query)
+        return " ".join(query_parts).strip()
+
+    return " ".join(query_parts).strip()
 
 
 def _drive_query_from_text(text: str) -> str:
@@ -2514,6 +2598,33 @@ class GmailToSheetsStrategy(PlanningStrategy):
         )
 
 
+class GmailToProductivityStrategy(PlanningStrategy):
+    """Pattern: Gmail -> Extract -> Tasks + Calendar + Telegram."""
+
+    def priority(self) -> int:
+        return 62  # Higher than GmailToSheetsStrategy (60)
+
+    def matches(self, ctx: PlanningContext) -> bool:
+        return (
+            "gmail" in ctx.services
+            and "tasks" in ctx.services
+            and ("calendar" in ctx.services or "telegram" in ctx.services)
+            and any(kw in ctx.lowered for kw in ("extract", "action item", "summary", "read"))
+        )
+
+    def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
+        tasks = agent._gmail_to_productivity_tasks(ctx.text, ctx.lowered)
+        chain = " -> ".join(f"{t.service}.{t.action}" for t in tasks)
+        return RequestPlan(
+            raw_text=ctx.text,
+            tasks=tasks,
+            summary=f"Planned {len(tasks)} tasks: {chain}",
+            confidence=0.85,
+            no_service_detected=False,
+            source="heuristic",
+        )
+
+
 class SheetCreationStrategy(PlanningStrategy):
     """Pattern D: Sheet Creation & Data."""
 
@@ -2668,6 +2779,8 @@ class CodeExecutionStrategy(PlanningStrategy):
         return 30
 
     def matches(self, ctx: PlanningContext) -> bool:
+        if "drive" in ctx.services and "sheets" in ctx.services:
+            return False
         return "code" in ctx.services or "computation" in ctx.services
 
     def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan | None:
@@ -3021,6 +3134,7 @@ _PLANNING_STRATEGIES: list[PlanningStrategy] = sorted(
         DriveToEmailStrategy(),
         DriveFolderMoveStrategy(),
         DriveDeleteByNameStrategy(),
+        GmailToProductivityStrategy(),
         GmailToSheetsStrategy(),
         SheetCreationStrategy(),
         GmailListAndGetStrategy(),

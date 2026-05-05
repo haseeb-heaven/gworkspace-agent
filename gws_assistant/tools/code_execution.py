@@ -33,6 +33,11 @@ _BANNED_PATTERNS = [
     r"__import__",
     r"\brequests\b",
     r"\burllib\b",
+    r"__class__",
+    r"__subclasses__",
+    r"__base__",
+    r"__mro__",
+    r"__builtins__",
 ]
 
 
@@ -155,6 +160,7 @@ def get_safe_globals() -> dict[str, Any]:
             builtins.print(*args, **kwargs)
 
     collector = SimpleCollector()
+    safe_g["__builtins__"]["print"] = collector._call_print
 
     def _print_factory(_getattr_=None):
         collector._getattr_ = _getattr_
@@ -176,7 +182,20 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["setattr"] = safe_setattr
 
     safe_g["_getiter_"] = iter
-    safe_g["_getitem_"] = lambda obj, key: obj[key]
+    def safe_getitem(obj, key):
+        try:
+            return obj[key]
+        except (KeyError, TypeError):
+            if isinstance(obj, dict):
+                # AI Robustness: Case-insensitive dictionary lookup
+                # Useful when LLM generates row['category'] for {'Category': ...}
+                key_lower = str(key).lower()
+                for k in obj:
+                    if str(k).lower() == key_lower:
+                        return obj[k]
+            raise
+
+    safe_g["_getitem_"] = safe_getitem
     safe_g["_write_"] = lambda obj: obj
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
@@ -270,9 +289,13 @@ def _run_in_thread_sandbox(
         # Pattern: row['category'] -> row['Category'] (case-insensitive match)
         sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
         sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
-        # Use standard compile to bypass RestrictedPython security pattern checks
-        # Runtime guards in get_safe_globals() still enforce security
-        byte_code = compile(sanitized, filename="<string>", mode="exec")
+        try:
+            byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
+        except SyntaxError as e:
+            exec_result.success = False
+            exec_result.error = f"SyntaxError: {e}"
+            result_holder.append(exec_result)
+            return
         sandbox_globals = get_safe_globals()
         # Add import aliases to sandbox globals (e.g., pd for pandas)
         sandbox_globals.update(aliases)
@@ -388,23 +411,87 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    # Remove return statements since code runs at module level
+    # This must happen before we inject our own helper code that might contain return statements
+    # Only strip top-level (no indentation) returns to preserve nested function/class returns
+    code = re.sub(r"(?m)^return\b.*$", "", code)
+    code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
+
     # Replace with open(...) as f: blocks with code that uses injected data
-    # Pattern: with open(...) as file: ... use injected_vars instead
-    code = re.sub(
-        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
-        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]\n    # Add case-insensitive column access helper\n    class CaseInsensitiveDict(dict):\n        def __getitem__(self, key):\n            for k in self:\n                if k.lower() == key.lower():\n                    return super().__getitem__(k)\n            raise KeyError(key)\n    \1 = [CaseInsensitiveDict(row) for row in \1]",
-        code,
-        flags=re.DOTALL
-    )
+    # Extract the entire with-block (header + body) and rewrite it to preserve original indentation
+    def replace_with_block(code_text: str) -> str:
+        """Replace with-open blocks with injected_vars assignment and de-indent body.
+
+        Args:
+            code_text: Python source code containing with-open blocks
+
+        Returns:
+            Rewritten code with with-blocks replaced by injected_vars assignments
+        """
+        lines = code_text.split('\n')
+        result_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Match with-open header
+            match = re.match(r'^(\s*)with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:\s*$', line)
+            if match:
+                indent = match.group(1)
+                var_name = match.group(2)
+                # Generate replacement code at the same indentation level
+                result_lines.append(f"{indent}{var_name} = injected_vars[0] if injected_vars else []")
+                result_lines.append(f"{indent}if isinstance({var_name}, list) and {var_name} and isinstance({var_name}[0], list):")
+                result_lines.append(f"{indent}    # Convert list of lists to list of dicts")
+                result_lines.append(f"{indent}    headers = {var_name}[0]")
+                result_lines.append(f"{indent}    {var_name} = [dict(zip(headers, row)) for row in {var_name}[1:]]")
+
+                # Extract and de-indent the with-block body
+                i += 1
+                if i < len(lines):
+                    # Determine the body indentation from the first body line
+                    body_line = lines[i]
+                    body_match = re.match(r'^(\s+)', body_line)
+                    if body_match:
+                        # Detect actual indentation of the body
+                        body_indent = body_match.group(1)
+                        # Expected indentation is the with-block indent plus the detected body indent
+                        expected_indent = indent + body_match.group(1)
+                        # Collect all lines that belong to the with-block body
+                        while i < len(lines):
+                            body_line = lines[i]
+                            if body_line.strip() == '':
+                                # Empty line - include it
+                                result_lines.append(body_line)
+                                i += 1
+                            elif body_line.startswith(body_indent):
+                                # Line is part of the with-body - de-indent it to original level
+                                if body_line.startswith(expected_indent):
+                                    # Remove the extra indentation added by with-block
+                                    de_indented = indent + body_line[len(expected_indent):]
+                                else:
+                                    # Keep as-is if indentation doesn't match expected
+                                    de_indented = body_line
+                                result_lines.append(de_indented)
+                                i += 1
+                            else:
+                                # Line is not indented enough - end of with-block
+                                break
+                        continue
+                    else:
+                        # No body (empty with-block) - skip to next line and continue
+                        continue
+            result_lines.append(line)
+            i += 1
+        return '\n'.join(result_lines)
+
+    code = replace_with_block(code)
     # Replace csv.DictReader(file) with direct iteration over the list of dicts
     code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
     code = re.sub(r"for row in reader:", "for row in reader:", code)
     # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
     code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
     code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
-    # Remove return statements since code runs at module level
-    code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
-    code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
+
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
         if config is not None
