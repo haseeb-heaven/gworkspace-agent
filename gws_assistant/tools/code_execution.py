@@ -295,7 +295,8 @@ def _run_in_thread_sandbox(
                     exec_result.stdout = str(collector())
                 except Exception:
                     # If collector fails, fall back to stdout buffer
-                    pass
+                    from gws_assistant.logging_utils import get_logger
+                    get_logger(__name__).debug("Collector failed, falling back to stdout buffer")
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:

@@ -565,8 +565,8 @@ class ResolverMixin:
                                                             break
                                                     except json.JSONDecodeError:
                                                         pass
-                            except Exception:
-                                pass  # Keep original string if fetch fails
+                            except Exception as e:
+                                self.logger.debug(f"RESOLVER: Failed to fetch spreadsheet data: {e}")
                         if isinstance(inject_val, list):
                             for entry in inject_val:
                                 if isinstance(entry, dict):
