@@ -394,7 +394,7 @@ class ResolverMixin:
                 return None
 
             if path:
-                logger.debug(f"DEBUG: Found path='{path}'")
+                logger.debug("DEBUG: Found placeholder path (redacted), length=%d", len(path))
                 if path in context:
                     res = context[path]
                     if res is not None:
