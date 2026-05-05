@@ -1313,8 +1313,8 @@ class VerificationEngine:
         else:
             yield path, payload
 
-    @classmethod
-    def _is_ignored_validation_path(cls, path: str) -> bool:
+    @staticmethod
+    def _is_ignored_validation_path(path: str) -> bool:
         ignored_suffixes = (
             ".id",
             ".name",

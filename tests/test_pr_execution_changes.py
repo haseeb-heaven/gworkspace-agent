@@ -13,6 +13,8 @@ Covers:
 """
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional, Tuple
+
 # ---------------------------------------------------------------------------
 # helpers._tableify — extracted and tested directly via execute_code helper
 # ---------------------------------------------------------------------------
@@ -20,7 +22,7 @@ from __future__ import annotations
 class TestTableify:
     """Test the _tableify function logic by running equivalent code in the sandbox."""
 
-    def _tableify(self, value):
+    def _tableify(self, value: Any) -> Optional[str]:
         """Replicate the _tableify logic for unit testing."""
         rows = []
         if isinstance(value, list) and value and isinstance(value[0], dict):
@@ -38,7 +40,10 @@ class TestTableify:
             return None
 
         header = rows[0]
-        table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
+        table_lines = [
+            "| " + " | ".join(header) + " |",
+            "|" + "|".join(["---"] * len(header)) + "|",
+        ]
         for row in rows[1:]:
             padded = row + [""] * (len(header) - len(row))
             table_lines.append("| " + " | ".join(padded) + " |")
@@ -109,7 +114,7 @@ class TestTableify:
 class TestResolverInjectValUnwrapping:
     """Test the logic for unwrapping common API response keys."""
 
-    def _unwrap(self, res):
+    def _unwrap(self, res: Any) -> Any:
         """Replicate the inject_val unwrapping logic from resolver.py."""
         inject_val = res
         if isinstance(res, dict):
@@ -199,7 +204,7 @@ class TestResolverInjectValUnwrapping:
 class TestResolverEmailEntryNormalization:
     """Test the logic for extracting headers and normalizing email entries."""
 
-    def _normalize_entry(self, entry):
+    def _normalize_entry(self, entry: Any) -> Any:
         """Replicate the email entry normalization logic from resolver.py."""
         if not isinstance(entry, dict):
             return entry
@@ -258,15 +263,14 @@ class TestResolverEmailEntryNormalization:
         assert result["from"] == "bob@example.com"  # not overwritten
 
     def test_snippet_fallback_when_empty(self):
-        """When snippet is empty, it falls back to 'Subject (from Sender)'."""
+        """When snippet is empty, it falls back to 'From: sender | Subject: subject | Date: date'."""
         entry = {
             "from": "alice@example.com",
             "subject": "Invoice received",
             "snippet": "",
         }
         result = self._normalize_entry(entry)
-        assert "Invoice received" in result["snippet"]
-        assert "alice@example.com" in result["snippet"]
+        assert result["snippet"] == "From: alice@example.com | Subject: Invoice received | Date: Unknown Date"
 
     def test_snippet_fallback_with_no_subject(self):
         entry = {"from": "alice@example.com", "snippet": ""}
@@ -298,7 +302,7 @@ class TestResolverEmailEntryNormalization:
 class TestContextUpdaterSnippetFallback:
     """Test the snippet_val fallback logic added in context_updater.py."""
 
-    def _compute_snippet(self, m, h_dict):
+    def _compute_snippet(self, m: Dict[str, Any], h_dict: Dict[str, Any]) -> str:
         """Replicate the snippet_val fallback logic from context_updater.py."""
         sender = h_dict.get("from", "Unknown")
         subject = h_dict.get("subject", "No Subject")
