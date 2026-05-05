@@ -38,7 +38,10 @@ class TestTableify:
             return None
 
         header = rows[0]
-        table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
+        table_lines = [
+            "| " + " | ".join(header) + " |",
+            "|" + "|".join(["---"] * len(header)) + "|",
+        ]
         for row in rows[1:]:
             padded = row + [""] * (len(header) - len(row))
             table_lines.append("| " + " | ".join(padded) + " |")

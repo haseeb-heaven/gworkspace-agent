@@ -413,17 +413,66 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
     # Remove return statements since code runs at module level
     # This must happen before we inject our own helper code that might contain return statements
-    code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
+    # Only strip top-level (no indentation) returns to preserve nested function/class returns
+    code = re.sub(r"(?m)^return\b.*$", "", code)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
 
     # Replace with open(...) as f: blocks with code that uses injected data
-    # Pattern: with open(...) as file: ... use injected_vars instead
-    code = re.sub(
-        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
-        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]",
-        code,
-        flags=re.DOTALL
-    )
+    # Extract the entire with-block (header + body) and rewrite it to preserve original indentation
+    def replace_with_block(code_text):
+        lines = code_text.split('\n')
+        result_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Match with-open header
+            match = re.match(r'^(\s*)with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:\s*$', line)
+            if match:
+                indent = match.group(1)
+                var_name = match.group(2)
+                # Generate replacement code at the same indentation level
+                result_lines.append(f"{indent}{var_name} = injected_vars[0] if injected_vars else []")
+                result_lines.append(f"{indent}if isinstance({var_name}, list) and {var_name} and isinstance({var_name}[0], list):")
+                result_lines.append(f"{indent}    # Convert list of lists to list of dicts")
+                result_lines.append(f"{indent}    headers = {var_name}[0]")
+                result_lines.append(f"{indent}    {var_name} = [dict(zip(headers, row)) for row in {var_name}[1:]]")
+
+                # Extract and de-indent the with-block body
+                i += 1
+                if i < len(lines):
+                    # Determine the body indentation (should be indent + 4 spaces or a tab)
+                    body_line = lines[i]
+                    body_match = re.match(r'^(\s+)', body_line)
+                    if body_match:
+                        body_indent = body_match.group(1)
+                        # Expected indentation for with-body
+                        expected_indent = indent + '    '
+                        # Collect all lines that belong to the with-block body
+                        while i < len(lines):
+                            body_line = lines[i]
+                            if body_line.strip() == '':
+                                # Empty line - include it
+                                result_lines.append(body_line)
+                                i += 1
+                            elif body_line.startswith(body_indent):
+                                # Line is part of the with-body - de-indent it to original level
+                                if body_line.startswith(expected_indent):
+                                    # Remove the extra indentation added by with-block
+                                    de_indented = indent + body_line[len(expected_indent):]
+                                else:
+                                    # Keep as-is if indentation doesn't match expected
+                                    de_indented = body_line
+                                result_lines.append(de_indented)
+                                i += 1
+                            else:
+                                # Line is not indented enough - end of with-block
+                                break
+                        continue
+            result_lines.append(line)
+            i += 1
+        return '\n'.join(result_lines)
+
+    code = replace_with_block(code)
     # Replace csv.DictReader(file) with direct iteration over the list of dicts
     code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
     code = re.sub(r"for row in reader:", "for row in reader:", code)

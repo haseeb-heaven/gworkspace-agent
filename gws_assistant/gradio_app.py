@@ -444,8 +444,12 @@ def create_interface() -> gr.Blocks:
             outputs=[request, output, plan_preview]
         )
 
-        # Note: Gradio doesn't support reliable session cleanup on page unload
-        # Temporary credential files will be cleaned up by OS temp directory cleanup
+        # Register cleanup handler for session/app shutdown
+        demo.unload(
+            fn=on_session_end,
+            inputs=[credentials_file_state],
+            outputs=[credentials_file_state]
+        )
 
     return demo
 
