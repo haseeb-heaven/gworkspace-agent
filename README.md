@@ -29,7 +29,7 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 ---
 
 ## Version
-Latest: **v1.0.0**  
+Latest: **v1.0.0**
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ---
@@ -251,7 +251,7 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 ## Configuration
 
-All system configuration (API keys, security modes, and service endpoints) is managed via the `.env` file. 
+All system configuration (API keys, security modes, and service endpoints) is managed via the `.env` file.
 
 > [!IMPORTANT]
 > Detailed configuration steps and a full environment variable reference can be found in the **[Configuration Section of SETUP.md](SETUP.md#%EF%B8%8F-step-5-agent-configuration)**.
@@ -334,6 +334,18 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=haseeb-heaven%2Fgworkspace-agent&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 > **Note:** This project was **architected and designed** by **Haseeb Mir**.
 > AI tools (GitHub Copilot, Jules) were used to assist with **implementation**,
 > **boilerplate generation**, and **refactoring** — all **features**, **architecture**
@@ -342,6 +354,3 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 <p align="center">
   Built with ❤️ by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a>
 </p>
-
-
-
