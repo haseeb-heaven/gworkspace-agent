@@ -75,8 +75,8 @@ def set_memory_limit() -> None:
         limit_bytes = 256 * 1024 * 1024
         try:
             resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))  # type: ignore[attr-defined]
-        except (ValueError, OSError):
-            pass
+        except (ValueError, OSError) as e:
+            print(f"DEBUG: Failed to set memory limit: {e}", file=sys.stderr)
 
 
 def _trim_output(text: str, max_len: int = 1000) -> str:
@@ -95,21 +95,22 @@ def run_code(code_b64: str) -> dict[str, object]:
         result["error"] = f"Base64DecodingError: {exc}"
         return result
 
-    # Pre-process: remove import statements for whitelisted modules (they're already available)
-    import re
-    for module in ("csv", "io", "math", "random"):
-        # Remove "import csv" and variations
-        code = re.sub(rf"import\s+{module}(\s+|$)", "", code)
-        # Remove "from csv import ..." and variations
-        code = re.sub(rf"from\s+{module}\s+import\s+[^\n]*", "", code)
+    # Imports are handled by _safe_import in get_sandbox_globals
 
     sandbox_globals = get_sandbox_globals()
 
     try:
-        # Use standard compile instead of compile_restricted to allow imports
-        # Runtime guards will enforce security
-        byte_code = compile(code, filename="<string>", mode="exec")
+        # Use compile_restricted for security. Import statements were stripped above.
+        byte_code = compile_restricted(code, filename="<string>", mode="exec")
+        if isinstance(byte_code, CompileResult):
+             if byte_code.errors:
+                 result["error"] = "\n".join(byte_code.errors)
+                 return result
+             byte_code = byte_code.code
+
         output_buffer = io.StringIO()
+        # Add print to builtins for standard compile/exec or if RestrictedPython doesn't provide it
+        sandbox_globals["__builtins__"]["print"] = print
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)
 
