@@ -567,30 +567,36 @@ class ResolverMixin:
                             except Exception as e:
                                 self.logger.debug(f"RESOLVER: Failed to fetch spreadsheet data: {e}")
                         if isinstance(inject_val, list):
+                            normalized_list = []
                             for entry in inject_val:
                                 if isinstance(entry, dict):
+                                    entry_copy = dict(entry)
                                     # Extract headers from payload if present (auto-enriched messages)
-                                    payload = entry.get("payload", {})
+                                    payload = entry_copy.get("payload", {})
                                     if isinstance(payload, dict):
                                         for hdr in payload.get("headers", []):
                                             if isinstance(hdr, dict):
                                                 hname = str(hdr.get("name", "")).lower()
                                                 hval = hdr.get("value", "")
-                                                if hname == "from" and "from" not in entry:
-                                                    entry["from"] = hval
-                                                elif hname == "subject" and "subject" not in entry:
-                                                    entry["subject"] = hval
-                                                elif hname == "date" and "date" not in entry:
-                                                    entry["date"] = hval
-                                    snippet = entry.get("snippet")
+                                                if hname == "from" and "from" not in entry_copy:
+                                                    entry_copy["from"] = hval
+                                                elif hname == "subject" and "subject" not in entry_copy:
+                                                    entry_copy["subject"] = hval
+                                                elif hname == "date" and "date" not in entry_copy:
+                                                    entry_copy["date"] = hval
+                                    snippet = entry_copy.get("snippet")
                                     if not snippet:
-                                        subj = entry.get("subject") or "No Subject"
-                                        sender = entry.get("from") or entry.get("sender") or "Unknown"
-                                        date_val = entry.get("date") or "Unknown Date"
-                                        entry["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
+                                        subj = entry_copy.get("subject") or "No Subject"
+                                        sender = entry_copy.get("from") or entry_copy.get("sender") or "Unknown"
+                                        date_val = entry_copy.get("date") or "Unknown Date"
+                                        entry_copy["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
                                     # Normalize for LLM code generation: create from_ object with address
-                                    if "from" in entry and "from_" not in entry:
-                                        entry["from_"] = {"address": entry["from"]}
+                                    if "from" in entry_copy and "from_" not in entry_copy:
+                                        entry_copy["from_"] = {"address": entry_copy["from"]}
+                                    normalized_list.append(entry_copy)
+                                else:
+                                    normalized_list.append(entry)
+                            inject_val = normalized_list
                         context["injected_vars"].append(inject_val)
                         return f"injected_vars[{idx}]"
                     elif isinstance(res, (dict, list)):

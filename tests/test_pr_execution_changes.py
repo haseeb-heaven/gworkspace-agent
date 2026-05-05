@@ -201,30 +201,31 @@ class TestResolverEmailEntryNormalization:
 
     def _normalize_entry(self, entry):
         """Replicate the email entry normalization logic from resolver.py."""
-        entry = dict(entry)  # shallow copy before mutation
-        if isinstance(entry, dict):
-            payload = entry.get("payload", {})
-            if isinstance(payload, dict):
-                for hdr in payload.get("headers", []):
-                    if isinstance(hdr, dict):
-                        hname = str(hdr.get("name", "")).lower()
-                        hval = hdr.get("value", "")
-                        if hname == "from" and "from" not in entry:
-                            entry["from"] = hval
-                        elif hname == "subject" and "subject" not in entry:
-                            entry["subject"] = hval
-                        elif hname == "date" and "date" not in entry:
-                            entry["date"] = hval
-            snippet = entry.get("snippet")
-            if not snippet:
-                subj = entry.get("subject") or "No Subject"
-                sender = entry.get("from") or entry.get("sender") or "Unknown"
-                date_val = entry.get("date") or "Unknown Date"
-                entry["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
-            # Normalize for LLM: from_ with address
-            if "from" in entry and "from_" not in entry:
-                entry["from_"] = {"address": entry["from"]}
-        return entry
+        if not isinstance(entry, dict):
+            return entry
+        entry_copy = dict(entry)  # shallow copy before mutation
+        payload = entry_copy.get("payload", {})
+        if isinstance(payload, dict):
+            for hdr in payload.get("headers", []):
+                if isinstance(hdr, dict):
+                    hname = str(hdr.get("name", "")).lower()
+                    hval = hdr.get("value", "")
+                    if hname == "from" and "from" not in entry_copy:
+                        entry_copy["from"] = hval
+                    elif hname == "subject" and "subject" not in entry_copy:
+                        entry_copy["subject"] = hval
+                    elif hname == "date" and "date" not in entry_copy:
+                        entry_copy["date"] = hval
+        snippet = entry_copy.get("snippet")
+        if not snippet:
+            subj = entry_copy.get("subject") or "No Subject"
+            sender = entry_copy.get("from") or entry_copy.get("sender") or "Unknown"
+            date_val = entry_copy.get("date") or "Unknown Date"
+            entry_copy["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
+        # Normalize for LLM: from_ with address
+        if "from" in entry_copy and "from_" not in entry_copy:
+            entry_copy["from_"] = {"address": entry_copy["from"]}
+        return entry_copy
 
     def test_payload_headers_extracted(self):
         entry = {

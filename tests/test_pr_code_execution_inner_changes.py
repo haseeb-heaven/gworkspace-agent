@@ -162,21 +162,23 @@ def _b64(code: str) -> str:
     return base64.b64encode(code.encode("utf-8")).decode("ascii")
 
 
-class TestRunCodeImportPreprocessing:
-    def test_run_code_with_import_csv_stripped(self):
-        """PR: 'import csv' is stripped before execution since csv is pre-injected."""
+class TestRunCodeRestrictedExecution:
+    def test_run_code_with_import_csv_allowed(self):
+        """PR: 'import csv' is allowed via the _safe_import guard and compile_restricted."""
         code = "import csv\nresult = 'csv ok'"
         result = run_code(_b64(code))
-        # Should succeed (import stripped, csv still available)
+        # Should succeed (csv allowed)
         assert result["success"] is True
 
-    def test_run_code_with_import_math_stripped(self):
+    def test_run_code_with_import_math_allowed(self):
+        """PR: 'import math' is allowed via the _safe_import guard."""
         code = "import math\nx = math.sqrt(4)\nprint(x)"
         result = run_code(_b64(code))
         assert result["success"] is True
         assert "2.0" in result["stdout"]
 
-    def test_run_code_with_from_math_import_stripped(self):
+    def test_run_code_with_from_math_import_allowed(self):
+        """PR: 'from math import sqrt' is allowed via the _safe_import guard."""
         code = "from math import sqrt\nresult = sqrt(9)"
         result = run_code(_b64(code))
         assert result["success"] is True
