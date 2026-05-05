@@ -72,18 +72,18 @@ If you have the [Google Cloud SDK (gcloud)](https://cloud.google.com/sdk/docs/in
 
 | API | GWS Commands | Enable |
 |-----|--------------|--------|
-| [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com) | list_messages, get_message, send_message, trash_message, delete_message | Enable |
-| [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) | list_files, create_folder, upload_file, get_file, create_file, export_file, delete_file, move_to_trash, update_file_metadata, move_file, copy_file | Enable |
-| [Google Sheets API](https://console.cloud.google.com/apis/library/sheets.googleapis.com) | create_spreadsheet, get_spreadsheet, get_values, append_values, delete_spreadsheet, clear_values | Enable |
-| [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com) | create_document, get_document, batch_update | Enable |
-| [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com) | list_events, create_event, get_event, delete_event, update_event | Enable |
-| [Google Tasks API](https://console.cloud.google.com/apis/library/tasks.googleapis.com) | list_tasklists, list_tasks, create_task, delete_task, update_task | Enable |
-| [Google Slides API](https://console.cloud.google.com/apis/library/slides.googleapis.com) | create_presentation, get_presentation | Enable |
-| [Google Contacts API](https://console.cloud.google.com/apis/library/people.googleapis.com) | list_contacts, list_directory_people, get_person | Enable |
-| [Google Chat API](https://console.cloud.google.com/apis/library/chat.googleapis.com) | list_spaces, send_message, list_messages, get_message | Enable |
-| [Google Meet API](https://console.cloud.google.com/apis-library/meet.googleapis.com) | list_conferences, get_conference, create_meeting | Enable |
-| [Google Keep API](https://console.cloud.google.com/apis/library/keep.googleapis.com) | list_notes, create_note, get_note, delete_note | Enable |
-| [Google Admin SDK Reports API](https://console.cloud.google.com/apis/library/admin.googleapis.com) | list_activities, log_activity | Enable |
+| Gmail API | list_messages, get_message, send_message, trash_message, delete_message | [Enable](https://console.cloud.google.com/apis/library/gmail.googleapis.com) |
+| Google Drive API | list_files, create_folder, upload_file, get_file, create_file, export_file, delete_file, move_to_trash, update_file_metadata, move_file, copy_file | [Enable](https://console.cloud.google.com/apis/library/drive.googleapis.com) |
+| Google Sheets API | create_spreadsheet, get_spreadsheet, get_values, append_values, delete_spreadsheet, clear_values | [Enable](https://console.cloud.google.com/apis/library/sheets.googleapis.com) |
+| Google Docs API | create_document, get_document, batch_update | [Enable](https://console.cloud.google.com/apis/library/docs.googleapis.com) |
+| Google Calendar API | list_events, create_event, get_event, delete_event, update_event | [Enable](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com) |
+| Google Tasks API | list_tasklists, list_tasks, create_task, delete_task, update_task | [Enable](https://console.cloud.google.com/apis/library/tasks.googleapis.com) |
+| Google Slides API | create_presentation, get_presentation | [Enable](https://console.cloud.google.com/apis/library/slides.googleapis.com) |
+| Google Contacts API | list_contacts, list_directory_people, get_person | [Enable](https://console.cloud.google.com/apis/library/people.googleapis.com) |
+| Google Chat API | list_spaces, send_message, list_messages, get_message | [Enable](https://console.cloud.google.com/apis/library/chat.googleapis.com) |
+| Google Meet API | list_conferences, get_conference, create_meeting | [Enable](https://console.cloud.google.com/apis-library/meet.googleapis.com) |
+| Google Keep API | list_notes, create_note, get_note, delete_note | [Enable](https://console.cloud.google.com/apis/library/keep.googleapis.com) |
+| Google Admin SDK Reports API | list_activities, log_activity | [Enable](https://console.cloud.google.com/apis/library/admin.googleapis.com) |
 3. **Configure OAuth Consent Screen:**
    - Go to **APIs & Services > OAuth consent screen**.
    - Select **External**.
