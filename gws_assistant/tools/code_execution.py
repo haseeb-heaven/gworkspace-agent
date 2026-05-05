@@ -134,7 +134,6 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["zip"] = zip
     safe_g["__builtins__"]["map"] = map
     safe_g["__builtins__"]["filter"] = filter
-    safe_g["__builtins__"]["print"] = print
 
     # Simple object that has a write method to satisfy RestrictedPython print()
     class SimpleCollector:
@@ -272,15 +271,13 @@ def _run_in_thread_sandbox(
         sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
         sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
         # Use compile_restricted for security.
-        from RestrictedPython import CompileResult
-        byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
-        if isinstance(byte_code, CompileResult):
-            if byte_code.errors:
-                exec_result.success = False
-                exec_result.error = "\n".join(byte_code.errors)
-                result_holder.append(exec_result)
-                return
-            byte_code = byte_code.code
+        try:
+            byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
+        except SyntaxError as e:
+            exec_result.success = False
+            exec_result.error = f"SyntaxError: {e}"
+            result_holder.append(exec_result)
+            return
         sandbox_globals = get_safe_globals()
         # Add import aliases to sandbox globals (e.g., pd for pandas)
         sandbox_globals.update(aliases)

@@ -24,7 +24,6 @@ import random
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
-from RestrictedPython import CompileResult
 
 
 def get_sandbox_globals() -> dict[str, object]:
@@ -90,27 +89,23 @@ def run_code(code_b64: str) -> dict[str, object]:
     result: dict[str, object] = {"stdout": "", "stderr": "", "success": False, "error": None}
 
     try:
-        code = base64.b64decode(code_b64.encode("ascii")).decode("utf-8")
-    except Exception as exc:
-        result["error"] = f"Base64DecodingError: {exc}"
-        return result
+        try:
+            code = base64.b64decode(code_b64.encode("ascii")).decode("utf-8")
+        except Exception as exc:
+            result["error"] = f"Base64DecodingError: {exc}"
+            return result
 
-    # Imports are handled by _safe_import in get_sandbox_globals
+        # Imports are handled by _safe_import in get_sandbox_globals
+        sandbox_globals = get_sandbox_globals()
 
-    sandbox_globals = get_sandbox_globals()
-
-    try:
-        # Use compile_restricted for security. Import statements were stripped above.
-        byte_code = compile_restricted(code, filename="<string>", mode="exec")
-        if isinstance(byte_code, CompileResult):
-             if byte_code.errors:
-                 result["error"] = "\n".join(byte_code.errors)
-                 return result
-             byte_code = byte_code.code
+        # Use compile_restricted for security.
+        try:
+            byte_code = compile_restricted(code, filename="<string>", mode="exec")
+        except SyntaxError as e:
+            result["error"] = f"SyntaxError: {e}"
+            return result
 
         output_buffer = io.StringIO()
-        # Add print to builtins for standard compile/exec or if RestrictedPython doesn't provide it
-        sandbox_globals["__builtins__"]["print"] = print
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             exec(byte_code, sandbox_globals)
 
