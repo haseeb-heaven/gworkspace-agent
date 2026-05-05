@@ -11,7 +11,6 @@ import pytest
 
 from gws_assistant.verification_engine import VerificationEngine, VerificationError
 
-
 # ---------------------------------------------------------------------------
 # _validate_content_not_empty — block_placeholders=False does NOT block $ vars
 # ---------------------------------------------------------------------------
@@ -93,8 +92,9 @@ class TestValidateContentPlaceholderLengthThreshold:
     def test_exactly_100_chars_with_template_still_blocked(self):
         """Exactly 100 chars: should still apply placeholder check."""
         # Craft content that _has_unresolved_templates would detect
-        base = "a" * 85  # 85 chars
-        content = base + "{{var}}"  # 85 + 7 = 92 chars < 100
+        base = "a" * 93  # 93 chars
+        content = base + "{{var}}"  # 93 + 7 = 100 chars
+        assert len(content) == 100
         params = {"content": content}
         with pytest.raises(VerificationError):
             VerificationEngine._validate_content_not_empty(
@@ -177,9 +177,4 @@ class TestVerifyParamsContentPlaceholderIntegration:
         }
         # Should not raise a VerificationError (block_placeholders=False for content)
         # This calls verify_params which internally calls _validate_content_not_empty with block_placeholders=False
-        try:
-            VerificationEngine.verify_params("create_document", params)
-        except VerificationError as e:
-            # Only allowed failure is non-content related (e.g. title issues)
-            assert "content" not in str(e).lower() or "placeholder" not in str(e).lower(), \
-                f"content field should not block $ chars, but got: {e}"
+        VerificationEngine.verify_params("create_document", params)

@@ -571,7 +571,6 @@ print(result)"""
                     reason="Export the document content as text using the provided file ID.",
                 ),
             ]
-            export_id_ref = "{{task-1.id}}"
             code_task_id = "task-2"
             sheet_task_id = "task-3"
             append_task_id = "task-4"
@@ -596,7 +595,6 @@ print(result)"""
                     reason="Export the document content as text.",
                 ),
             ]
-            export_id_ref = "{{task-2.id}}"
             code_task_id = "task-3"
             sheet_task_id = "task-4"
             append_task_id = "task-5"

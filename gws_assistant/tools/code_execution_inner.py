@@ -71,18 +71,30 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
 
     def _inplacevar(op, target, expr):
-        if op == "+=": return target + expr
-        if op == "-=": return target - expr
-        if op == "*=": return target * expr
-        if op == "/=": return target / expr
-        if op == "//=": return target // expr
-        if op == "%=": return target % expr
-        if op == "**=": return target ** expr
-        if op == "&=": return target & expr
-        if op == "|=": return target | expr
-        if op == "^=": return target ^ expr
-        if op == "<<=": return target << expr
-        if op == ">>=": return target >> expr
+        if op == "+=":
+            return target + expr
+        if op == "-=":
+            return target - expr
+        if op == "*=":
+            return target * expr
+        if op == "/=":
+            return target / expr
+        if op == "//=":
+            return target // expr
+        if op == "%=":
+            return target % expr
+        if op == "**=":
+            return target ** expr
+        if op == "&=":
+            return target & expr
+        if op == "|=":
+            return target | expr
+        if op == "^=":
+            return target ^ expr
+        if op == "<<=":
+            return target << expr
+        if op == ">>=":
+            return target >> expr
         raise NotImplementedError(f"Unsupported in-place operator: {op}")
 
     sandbox_globals["_inplacevar_"] = _inplacevar

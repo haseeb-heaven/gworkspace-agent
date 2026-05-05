@@ -18,13 +18,11 @@ pytest.importorskip("langchain_core", reason="langchain_core not installed")
 pytest.importorskip("RestrictedPython", reason="RestrictedPython not installed")
 
 from gws_assistant.tools.code_execution import (
-    _BANNED_PATTERNS,
     _SAFE_MODULES,
     _sanitize_llm_code,
     _validate_submitted_code,
     execute_generated_code,
 )
-
 
 # ---------------------------------------------------------------------------
 # _sanitize_llm_code — return type is now tuple[str, dict]
@@ -178,22 +176,19 @@ class TestSafeModulesExpanded:
 class TestBannedPatternsOpenRemoved:
     def test_open_not_in_banned_patterns(self):
         """open() was removed from banned patterns in this PR."""
-        # Check that no pattern explicitly targets the word "open"
-        open_banned = any(
-            "open" in pattern
-            for pattern in _BANNED_PATTERNS
-        )
-        assert open_banned is False
+        # Use _validate_submitted_code to ensure 'open' is allowed
+        assert _validate_submitted_code("open('file.csv')") is None
 
     def test_subprocess_still_banned(self):
-        import re
-        banned = any(re.search(p, "subprocess.run(['ls'])") for p in _BANNED_PATTERNS)
-        assert banned is True
+        # Using _validate_submitted_code for accurate contract check
+        error = _validate_submitted_code("import subprocess\nsubprocess.run(['ls'])")
+        assert error is not None
+        assert "subprocess" in error
 
     def test_os_system_still_banned(self):
-        import re
-        banned = any(re.search(p, "os.system('ls')") for p in _BANNED_PATTERNS)
-        assert banned is True
+        error = _validate_submitted_code("import os\nos.system('ls')")
+        assert error is not None
+        assert r"os\.system" in error
 
 
 # ---------------------------------------------------------------------------

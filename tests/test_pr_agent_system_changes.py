@@ -54,11 +54,11 @@ class TestDriveCodeSheetsSpecialCase:
         """When request involves drive + sheets + code, sheets.get_values should be added."""
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
         plan = agent.plan("Download the sales spreadsheet from Drive, analyze it with Python code")
-        services = [t.service for t in plan.tasks]
         # sheets.get_values should be present when drive+code+sheets all detected
         # This is only triggered by the fallback heuristic when all three are detected
         assert plan.no_service_detected is False
-        assert "sheets" in services, "Expected sheets.get_values to be injected for drive+code+sheets"
+        actions = [f"{t.service}.{t.action}" for t in plan.tasks]
+        assert "sheets.get_values" in actions, "Expected sheets.get_values to be injected for drive+code+sheets"
 
     @pytest.mark.drive
     def test_drive_without_code_no_special_case(self, tmp_path):
@@ -102,10 +102,10 @@ class TestSheetsCreateSpreadsheetTitle:
         agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
         plan = agent.plan("Create a new spreadsheet")
         sheets_tasks = [t for t in plan.tasks if t.service == "sheets"]
-        if sheets_tasks and sheets_tasks[0].action == "create_spreadsheet":
-            title = sheets_tasks[0].parameters.get("title", "New Spreadsheet")
-            # Should either be "New Spreadsheet" or an extracted title
-            assert title is not None
+        assert len(sheets_tasks) > 0
+        assert sheets_tasks[0].action == "create_spreadsheet"
+        title = sheets_tasks[0].parameters.get("title")
+        assert title == "New Spreadsheet"
 
 
 # ---------------------------------------------------------------------------

@@ -22,11 +22,7 @@ pytest.importorskip("langchain_core", reason="langchain_core not installed")
 from gws_assistant.langgraph_workflow import WorkflowNodes
 from gws_assistant.models import (
     AgentState,
-    PlannedTask,
     ReflectionDecision,
-    RequestPlan,
-    StructuredToolResult,
-    TaskExecution,
 )
 
 
@@ -296,9 +292,9 @@ class TestIntentVerificationNode:
             "verification_attempts": 0,
         }
         result = nodes.intent_verification_node(state)
-        if not result["intent_verification"]["passed"]:
-            assert "error" in result
-            assert "email_action" in result["error"]
+        assert result["intent_verification"]["passed"] is False
+        assert "error" in result
+        assert "email_action" in result["error"]
 
     def test_missing_user_text_does_not_crash(self, nodes):
         """Missing user_text should not raise an exception."""
@@ -356,7 +352,7 @@ class TestReflectNodeCodeError:
             "context": {},
             "last_result": None,
         }
-        result = nodes.reflect_node(state)
+        nodes.reflect_node(state)
         mock_executor.reflect_on_error.assert_called_once()
 
     def test_code_error_after_max_retries_falls_through(self, nodes, mock_config):

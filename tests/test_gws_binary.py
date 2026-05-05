@@ -2,12 +2,9 @@
 
 import os
 import subprocess
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -52,11 +49,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files list ---")
+        print("\n--- gws.exe output for drive files list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Should not crash, even if auth fails
         assert result.returncode in [0, 1]  # 0 = success, 1 = auth/scopes issue
 
@@ -69,11 +66,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files list with format ---")
+        print("\n--- gws.exe output for drive files list with format ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.gmail
@@ -85,11 +82,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for gmail messages list ---")
+        print("\n--- gws.exe output for gmail messages list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.sheets
@@ -101,11 +98,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for sheets spreadsheet create ---")
+        print("\n--- gws.exe output for sheets spreadsheet create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # May fail due to auth/scopes, that's expected
         assert result.returncode in [0, 1]
 
@@ -118,11 +115,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for docs document create ---")
+        print("\n--- gws.exe output for docs document create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # May fail due to auth/scopes, that's expected
         assert result.returncode in [0, 1]
 
@@ -135,11 +132,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for calendar events list ---")
+        print("\n--- gws.exe output for calendar events list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.contacts
@@ -151,11 +148,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for contacts list ---")
+        print("\n--- gws.exe output for contacts list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # This may fail with 403 (insufficient scopes) - that's expected
         assert result.returncode in [0, 1, 403]
 
@@ -168,11 +165,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for help ---")
+        print("\n--- gws.exe output for help ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode == 0
         assert "USAGE" in result.stdout
 
@@ -185,11 +182,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for schema ---")
+        print("\n--- gws.exe output for schema ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode == 0
 
     # Additional test scenarios - different combinations
@@ -203,11 +200,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files list with q parameter ---")
+        print("\n--- gws.exe output for drive files list with q parameter ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.drive
@@ -219,11 +216,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files list table format ---")
+        print("\n--- gws.exe output for drive files list table format ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.gmail
@@ -235,11 +232,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for gmail messages list with q ---")
+        print("\n--- gws.exe output for gmail messages list with q ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.calendar
@@ -251,11 +248,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for calendar events list with time range ---")
+        print("\n--- gws.exe output for calendar events list with time range ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.sheets
@@ -267,11 +264,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for sheets spreadsheets get without ID ---")
+        print("\n--- gws.exe output for sheets spreadsheets get without ID ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Should fail with validation error
         assert result.returncode != 0
 
@@ -284,11 +281,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files create folder ---")
+        print("\n--- gws.exe output for drive files create folder ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # May fail due to auth/scopes
         assert result.returncode in [0, 1]
 
@@ -301,11 +298,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for slides presentations create ---")
+        print("\n--- gws.exe output for slides presentations create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # May fail due to auth/scopes
         assert result.returncode in [0, 1]
 
@@ -330,7 +327,7 @@ class TestGwsBinaryDirect:
                 print(f"Schema found for {schema}")
             else:
                 print(f"Schema not found or error for {schema}")
-            print(f"--- End output ---\n")
+            print("--- End output ---\n")
             # Schema should always work if the endpoint exists
             assert result.returncode in [0, 1]
 
@@ -343,11 +340,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files list YAML format ---")
+        print("\n--- gws.exe output for drive files list YAML format ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.contacts
@@ -359,11 +356,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for contacts list with person fields ---")
+        print("\n--- gws.exe output for contacts list with person fields ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # May fail with 403 (insufficient scopes)
         assert result.returncode in [0, 1, 403]
 
@@ -378,11 +375,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for tasks tasklists list ---")
+        print("\n--- gws.exe output for tasks tasklists list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.chat
@@ -394,11 +391,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for chat spaces list ---")
+        print("\n--- gws.exe output for chat spaces list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.forms
@@ -410,11 +407,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for forms forms list ---")
+        print("\n--- gws.exe output for forms forms list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Forms may not have list command or require special setup
         assert result.returncode in [0, 1, 3]
 
@@ -427,11 +424,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for keep notes list ---")
+        print("\n--- gws.exe output for keep notes list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.meet
@@ -443,11 +440,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for meet conferences list ---")
+        print("\n--- gws.exe output for meet conferences list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Meet may not have list command or require special setup
         assert result.returncode in [0, 1, 3]
 
@@ -460,11 +457,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for admin-reports activities list ---")
+        print("\n--- gws.exe output for admin-reports activities list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Admin reports require special admin scope
         assert result.returncode in [0, 1, 3, 403]
 
@@ -477,11 +474,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for classroom courses list ---")
+        print("\n--- gws.exe output for classroom courses list ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.events
@@ -493,11 +490,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for events watch ---")
+        print("\n--- gws.exe output for events watch ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Events may require special setup
         assert result.returncode in [0, 1, 3]
 
@@ -510,11 +507,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for modelarmor help ---")
+        print("\n--- gws.exe output for modelarmor help ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Modelarmor is a specialized filtering service
         assert result.returncode in [0, 1, 3]
 
@@ -527,11 +524,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for workflow help ---")
+        print("\n--- gws.exe output for workflow help ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Workflow is a cross-service automation service
         assert result.returncode in [0, 1, 3]
 
@@ -544,11 +541,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for script help ---")
+        print("\n--- gws.exe output for script help ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Script is for Apps Script projects
         assert result.returncode in [0, 1, 3]
 
@@ -564,11 +561,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files get ---")
+        print("\n--- gws.exe output for drive files get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.drive
@@ -580,11 +577,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files update ---")
+        print("\n--- gws.exe output for drive files update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.drive
@@ -596,11 +593,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for drive files delete ---")
+        print("\n--- gws.exe output for drive files delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Should fail with invalid ID
         assert result.returncode in [0, 1]
 
@@ -614,11 +611,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for gmail messages get ---")
+        print("\n--- gws.exe output for gmail messages get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.gmail
@@ -630,11 +627,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for gmail messages send ---")
+        print("\n--- gws.exe output for gmail messages send ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         # Should fail without valid message body
         assert result.returncode in [0, 1, 3]
 
@@ -647,11 +644,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for gmail messages delete ---")
+        print("\n--- gws.exe output for gmail messages delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.gmail
@@ -663,11 +660,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for gmail messages modify ---")
+        print("\n--- gws.exe output for gmail messages modify ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Sheets CRUD tests
@@ -680,11 +677,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for sheets spreadsheets get ---")
+        print("\n--- gws.exe output for sheets spreadsheets get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.sheets
@@ -696,11 +693,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for sheets spreadsheets update ---")
+        print("\n--- gws.exe output for sheets spreadsheets update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Docs CRUD tests
@@ -713,11 +710,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for docs documents get ---")
+        print("\n--- gws.exe output for docs documents get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.docs
@@ -729,11 +726,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for docs documents batchUpdate ---")
+        print("\n--- gws.exe output for docs documents batchUpdate ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Calendar CRUD tests
@@ -746,11 +743,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for calendar events get ---")
+        print("\n--- gws.exe output for calendar events get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.calendar
@@ -762,11 +759,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for calendar events insert ---")
+        print("\n--- gws.exe output for calendar events insert ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.calendar
@@ -778,11 +775,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for calendar events update ---")
+        print("\n--- gws.exe output for calendar events update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.calendar
@@ -794,11 +791,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for calendar events delete ---")
+        print("\n--- gws.exe output for calendar events delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Tasks CRUD tests
@@ -811,11 +808,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for tasks get ---")
+        print("\n--- gws.exe output for tasks get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.tasks
@@ -827,11 +824,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for tasks insert ---")
+        print("\n--- gws.exe output for tasks insert ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.tasks
@@ -843,11 +840,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for tasks update ---")
+        print("\n--- gws.exe output for tasks update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.tasks
@@ -859,11 +856,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for tasks delete ---")
+        print("\n--- gws.exe output for tasks delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Keep CRUD tests
@@ -876,11 +873,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for keep notes get ---")
+        print("\n--- gws.exe output for keep notes get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.keep
@@ -892,11 +889,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for keep notes create ---")
+        print("\n--- gws.exe output for keep notes create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Slides CRUD tests
@@ -909,11 +906,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for slides presentations get ---")
+        print("\n--- gws.exe output for slides presentations get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.slides
@@ -925,11 +922,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for slides presentations batchUpdate ---")
+        print("\n--- gws.exe output for slides presentations batchUpdate ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     # Contacts CRUD tests
@@ -942,11 +939,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for contacts get ---")
+        print("\n--- gws.exe output for contacts get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 403]
 
     @pytest.mark.contacts
@@ -958,11 +955,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for contacts create ---")
+        print("\n--- gws.exe output for contacts create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 403]
 
     @pytest.mark.contacts
@@ -974,11 +971,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for contacts update ---")
+        print("\n--- gws.exe output for contacts update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 403]
 
     @pytest.mark.contacts
@@ -990,11 +987,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for contacts delete ---")
+        print("\n--- gws.exe output for contacts delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 403]
 
     # Forms CRUD tests
@@ -1007,11 +1004,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for forms create ---")
+        print("\n--- gws.exe output for forms create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     @pytest.mark.forms
@@ -1023,11 +1020,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for forms get ---")
+        print("\n--- gws.exe output for forms get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     @pytest.mark.forms
@@ -1039,11 +1036,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for forms update ---")
+        print("\n--- gws.exe output for forms update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     @pytest.mark.forms
@@ -1055,11 +1052,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for forms delete ---")
+        print("\n--- gws.exe output for forms delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     # Meet CRUD tests
@@ -1072,11 +1069,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for meet create ---")
+        print("\n--- gws.exe output for meet create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     @pytest.mark.meet
@@ -1088,11 +1085,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for meet get ---")
+        print("\n--- gws.exe output for meet get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     # Admin CRUD tests
@@ -1105,11 +1102,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for admin channels stop ---")
+        print("\n--- gws.exe output for admin channels stop ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1, 3]
 
     # Classroom CRUD tests
@@ -1122,11 +1119,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for classroom create ---")
+        print("\n--- gws.exe output for classroom create ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.classroom
@@ -1138,11 +1135,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for classroom get ---")
+        print("\n--- gws.exe output for classroom get ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.classroom
@@ -1154,11 +1151,11 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for classroom update ---")
+        print("\n--- gws.exe output for classroom update ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]
 
     @pytest.mark.classroom
@@ -1170,9 +1167,9 @@ class TestGwsBinaryDirect:
             text=True,
             cwd=str(project_root),
         )
-        print(f"\n--- gws.exe output for classroom delete ---")
+        print("\n--- gws.exe output for classroom delete ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
-        print(f"--- End output ---\n")
+        print("--- End output ---\n")
         assert result.returncode in [0, 1]

@@ -75,7 +75,6 @@ LEGACY_PLACEHOLDER_MAP = {
     "$search_summary_count":    "search_summary_count",
     "$sheet_summary_rows":      "sheet_summary_rows",
     "$sheet_summary_table":     "sheet_summary_table",
-    "$calendar_events":         "calendar_events",
     "$calendar_events_table":   "calendar_events_table",
 }
 
@@ -587,8 +586,8 @@ class ResolverMixin:
                                     if not snippet:
                                         subj = entry.get("subject") or "No Subject"
                                         sender = entry.get("from") or entry.get("sender") or "Unknown"
-                                        date_val = entry.get("date") or ""
-                                        entry["snippet"] = f"{subj} (from {sender})"
+                                        date_val = entry.get("date") or "Unknown Date"
+                                        entry["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
                                     # Normalize for LLM code generation: create from_ object with address
                                     if "from" in entry and "from_" not in entry:
                                         entry["from_"] = {"address": entry["from"]}

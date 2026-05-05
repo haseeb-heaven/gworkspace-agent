@@ -13,9 +13,6 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # helpers._tableify — extracted and tested directly via execute_code helper
 # ---------------------------------------------------------------------------
@@ -25,7 +22,6 @@ class TestTableify:
 
     def _tableify(self, value):
         """Replicate the _tableify logic for unit testing."""
-        from typing import Any
         rows = []
         if isinstance(value, list) and value and isinstance(value[0], dict):
             headers = list(value[0].keys())
@@ -117,7 +113,11 @@ class TestResolverInjectValUnwrapping:
         """Replicate the inject_val unwrapping logic from resolver.py."""
         inject_val = res
         if isinstance(res, dict):
-            for key in ("messages", "items", "files", "events", "tasks", "notes", "spaces", "connections", "people", "activities"):
+            wrapper_keys = (
+                "messages", "items", "files", "events", "tasks",
+                "notes", "spaces", "connections", "people", "activities"
+            )
+            for key in wrapper_keys:
                 if key in res and isinstance(res[key], list):
                     inject_val = res[key]
                     break
@@ -219,8 +219,8 @@ class TestResolverEmailEntryNormalization:
             if not snippet:
                 subj = entry.get("subject") or "No Subject"
                 sender = entry.get("from") or entry.get("sender") or "Unknown"
-                date_val = entry.get("date") or ""
-                entry["snippet"] = f"{subj} (from {sender})"
+                date_val = entry.get("date") or "Unknown Date"
+                entry["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
             # Normalize for LLM: from_ with address
             if "from" in entry and "from_" not in entry:
                 entry["from_"] = {"address": entry["from"]}

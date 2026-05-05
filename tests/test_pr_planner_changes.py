@@ -11,7 +11,6 @@ import json
 
 import pytest
 
-from gws_assistant.exceptions import ValidationError
 from gws_assistant.planner import CommandPlanner
 
 
