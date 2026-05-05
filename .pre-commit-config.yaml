@@ -46,7 +46,7 @@ repos:
           '
         language: system
         pass_filenames: false
-        stages: [push]
+        stages: [pre-push]
 
   # Basic hooks only (no heavy dependencies)
   - repo: https://github.com/pre-commit/pre-commit-hooks
