@@ -55,7 +55,7 @@ class TestTableify:
     def test_list_of_dicts_has_separator_row(self):
         data = [{"A": "1", "B": "2"}]
         table = self._tableify(data)
-        assert "|---|---|" in table or "|---" in table
+        assert "|---|---|" in table
 
     def test_list_of_lists_produces_table(self):
         data = [["Name", "Score"], ["Alice", "95"], ["Bob", "87"]]

@@ -29,12 +29,14 @@ from RestrictedPython import compile_restricted, safe_builtins, safe_globals, ut
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
 
-# Set up logger for the standalone script
+# Set up logger for the standalone script. Configure handler only when invoked
+# as a subprocess entrypoint to avoid duplicating handlers on re-import (e.g., tests).
 logger = logging.getLogger(__name__)
-handler = logging.StreamHandler(sys.stderr)
-handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+if __name__ == "__main__" and not logger.handlers:
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 def get_sandbox_globals() -> dict[str, object]:
@@ -54,7 +56,7 @@ def get_sandbox_globals() -> dict[str, object]:
         sandbox_globals["__builtins__"].pop(dangerous, None)
 
     # Allow __import__ for whitelisted modules only
-    def _safe_import(name, *args, **kwargs):
+    def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
         allowed_modules = {"csv", "io", "math", "random"}
         logger.debug("Import requested for '%s'", name)
         if name in allowed_modules:
@@ -64,10 +66,10 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["__builtins__"]["__import__"] = _safe_import
 
     # Override RestrictedPython's import guard to allow whitelisted modules
-    def _safe_getattr(object, name):
+    def _safe_getattr(obj: Any, name: str) -> Any:
         if name == "__import__":
             return _safe_import
-        return safer_getattr(object, name)
+        return safer_getattr(obj, name)
 
     # Runtime guards - if using standard compile(), these aren't auto-injected
     # but they are good to have if any restricted code is called.
@@ -76,8 +78,8 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_getattr_"] = _safe_getattr
     sandbox_globals["_setattr_"] = guarded_setattr
     sandbox_globals["_write_"] = full_write_guard
-    sandbox_globals["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
-    sandbox_globals["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
+    sandbox_globals["_unpack_sequence_"] = lambda seq, length: list(seq)
+    sandbox_globals["_iter_unpack_sequence_"] = lambda seq, length: list(seq)
 
     def _inplacevar(op: str, target: Any, expr: Any) -> Any:
         if op == "+=":
