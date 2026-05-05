@@ -268,6 +268,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Create event",
                 description="Create an all-day or timed event on the primary calendar. Returns: {id, summary, htmlLink}.",
                 keywords=("create", "event", "schedule", "meeting"),
+                negative_keywords=("update", "edit", "modify", "change"),
                 parameters=(
                     ParameterSpec("summary", "Event summary", "Weekly Sync"),
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
@@ -278,7 +279,6 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("end_datetime", "Optional: Full end ISO datetime", "2026-04-15T11:00:00", required=False),
                     ParameterSpec("time_zone", "Optional: Timezone (default: UTC)", "UTC", required=False),
                     ParameterSpec("description", "Optional: Event description", "Discuss project status", required=False),
-                    ParameterSpec("event_id", "Optional: Specific ID to use for the event", "evt_123", required=False),
                 ),
             ),
             "get_event": ActionSpec(
