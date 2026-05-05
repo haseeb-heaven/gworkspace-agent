@@ -359,6 +359,7 @@ jobs:
   # GraphQL fetches ALL comments per thread (first: 20)
   # Jules trigger embeds FULL comment content -- no truncation
   # always() ensures this job runs even if upstream jobs fail
+  # NOTE: Auto-merge is intentionally DISABLED. PRs must be merged manually.
   # ──────────────────────────────────────────
   review-guard:
     name: Review Guard (Block if Unresolved Comments)
@@ -485,7 +486,7 @@ jobs:
 
           # Jules trigger: embed FULL comment content so Jules needs zero extra fetching
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            printf '@google-labs-jules Unresolved review comments on PR #%s must be fixed before merging.\n\n**Branch to push fixes to:** `%s`\n\n---\n\n## Unresolved Review Comments\n\n%s\n\n---\n\nInstructions:\n- Fix EACH comment listed above exactly as suggested\n- Push your fixes to branch: `%s`\n- Do NOT resolve threads manually -- CI will verify and auto-merge once all checks pass' \
+            printf '@google-labs-jules Unresolved review comments on PR #%s must be fixed before merging.\n\n**Branch to push fixes to:** `%s`\n\n---\n\n## Unresolved Review Comments\n\n%s\n\n---\n\nInstructions:\n- Fix EACH comment listed above exactly as suggested\n- Push your fixes to branch: `%s`\n- Do NOT resolve threads manually -- CI will verify once all checks pass' \
               "$PR_NUM" \
               "$HEAD_REF" \
               "$COMMENT_DETAILS" \
@@ -496,109 +497,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 6: Merge PR into base branch
-  # Waits 3 minutes after all tests pass to allow late reviewer
-  # comments (e.g. Devin) before merging.
-  # Tries --auto first; falls back to direct --squash if auto-merge
-  # is not enabled on the repository.
-  # ──────────────────────────────────────────
-  auto-merge:
-    name: Auto Merge PR
-    runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, security, review-guard]
-    if: |
-      github.event_name == 'pull_request' &&
-      github.actor != 'dependabot[bot]' &&
-      github.actor != 'github-actions[bot]' &&
-      needs.unit-tests.result == 'success' &&
-      needs.integration-tests.result == 'success' &&
-      needs.security.result == 'success' &&
-      needs.review-guard.outputs.safe_to_merge == 'true'
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
-
-      - name: Log merge target
-        run: |
-          echo "Merging PR #${{ github.event.pull_request.number }}"
-          echo "Head : ${{ github.head_ref }}"
-          echo "Base : ${{ github.event.pull_request.base.ref }}"
-
-      - name: Wait 3 minutes for late reviewer comments
-        run: |
-          echo "All tests passed. Waiting 3 minutes for late reviewer comments (e.g. Devin)..."
-          sleep 180
-          echo "Wait complete. Proceeding to merge."
-
-      - name: Re-check unresolved threads after wait
-        run: |
-          PR_NUM=${{ github.event.pull_request.number }}
-          REPO="${{ github.repository }}"
-
-          RESPONSE=$(gh api graphql -f query='
-            query($owner: String!, $repo: String!, $pr: Int!) {
-              repository(owner: $owner, name: $repo) {
-                pullRequest(number: $pr) {
-                  reviewThreads(first: 100) {
-                    nodes {
-                      isResolved
-                      isOutdated
-                      comments(first: 20) {
-                        nodes { author { login } body }
-                      }
-                    }
-                  }
-                }
-              }
-            }' \
-            -f owner="$(echo $REPO | cut -d/ -f1)" \
-            -f repo="$(echo $REPO | cut -d/ -f2)" \
-            -F pr=$PR_NUM)
-
-          echo "$RESPONSE" > /tmp/final_review_check.json
-          UNRESOLVED=$(python3 .github/scripts/count_unresolved.py /tmp/final_review_check.json)
-
-          echo "Final unresolved review threads: $UNRESOLVED"
-
-          if [ "$UNRESOLVED" -gt 0 ]; then
-            echo "::error::New review comments posted during wait window. Blocking merge."
-            exit 1
-          fi
-
-          echo "No new unresolved threads. Proceeding to merge."
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Merge PR (auto if enabled, else direct squash)
-        run: |
-          PR_NUM=${{ github.event.pull_request.number }}
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          BASE_REF="${{ github.event.pull_request.base.ref }}"
-
-          if gh pr merge $PR_NUM \
-               --squash \
-               --auto \
-               --delete-branch \
-               --subject "$PR_TITLE" \
-               --body "Auto-merged by CI into $BASE_REF" 2>/dev/null; then
-            echo "Auto-merge scheduled successfully."
-          else
-            echo "Auto-merge not available. Falling back to direct squash merge."
-            gh pr merge $PR_NUM \
-              --squash \
-              --delete-branch \
-              --subject "$PR_TITLE" \
-              --body "Auto-merged by CI into $BASE_REF"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ──────────────────────────────────────────
-  # JOB 7: CI Failure -- Tag @google-labs-jules to fix via PAT
+  # JOB 6: CI Failure -- Tag @google-labs-jules to fix via PAT
   # ──────────────────────────────────────────
   jules-auto-fix:
     name: Jules Auto-Fix Loop
@@ -673,7 +572,7 @@ jobs:
           gh issue comment $ISSUE_NUM --body-file /tmp/jules_fix_body.md
 
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            printf '@google-labs-jules CI failed on PR #%s. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- CI will auto-merge once all checks pass.' "$PR_NUM" "$HEAD_BRANCH" > /tmp/jules_issue_trigger.md
+            printf '@google-labs-jules CI failed on PR #%s. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- a human reviewer must merge manually after all checks pass.' "$PR_NUM" "$HEAD_BRANCH" > /tmp/jules_issue_trigger.md
             GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh issue comment $ISSUE_NUM --body-file /tmp/jules_issue_trigger.md
           fi
         env:
@@ -699,14 +598,14 @@ jobs:
           gh pr comment $PR_NUM --body-file /tmp/jules_pr_body.md
 
           if [ -n "${{ secrets.JULES_TRIGGER_PAT }}" ]; then
-            printf '@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- CI will auto-merge into `%s` once all checks pass.' "$HEAD_BRANCH" "$BASE_BRANCH" > /tmp/jules_pr_trigger.md
+            printf '@google-labs-jules CI failed. Please read the error details in the comment above, fix the code, and push to branch: `%s`\n\nDo NOT merge -- a human reviewer must merge manually into `%s` after all checks pass.' "$HEAD_BRANCH" "$BASE_BRANCH" > /tmp/jules_pr_trigger.md
             GH_TOKEN="${{ secrets.JULES_TRIGGER_PAT }}" gh pr comment $PR_NUM --body-file /tmp/jules_pr_trigger.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────
-  # JOB 8: Live Integration (manual only)
+  # JOB 7: Live Integration (manual only)
   # ──────────────────────────────────────────
   live-integration:
     name: Live Integration Tests (Manual)
@@ -738,7 +637,7 @@ jobs:
         run: pytest -q -m live_integration -v
 
   # ──────────────────────────────────────────
-  # JOB 9: Deploy to Cloud Run (main/master only)
+  # JOB 8: Deploy to Cloud Run (main/master only)
   # ──────────────────────────────────────────
   deploy:
     name: Deploy to Cloud Run
