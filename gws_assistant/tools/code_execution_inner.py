@@ -24,7 +24,7 @@ import random
 
 # CompileResult import removed: compile_restricted result is used directly as bytecode.
 # Kept unused in prior versions; no longer needed after refactor to flat compile flow.
-from RestrictedPython import safe_builtins, safe_globals, utility_builtins
+from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
 
@@ -111,16 +111,9 @@ def run_code(code_b64: str) -> dict[str, object]:
     # 2. Setup Sandbox
     sandbox_globals = get_sandbox_globals()
 
-    # 3. Compile & Validate
-    # Block common sandbox escapes that standard compile() doesn't catch
-    banned = ["__class__", "__subclasses__", "__base__", "__mro__", "__builtins__"]
-    for b in banned:
-        if b in code:
-            result["error"] = f"SecurityError: use of {b} is blocked"
-            return result
-
+    # 3. Compile
     try:
-        byte_code = compile(code, filename="<string>", mode="exec")
+        byte_code = compile_restricted(code, filename="<string>", mode="exec")
     except SyntaxError as e:
         result["error"] = f"SyntaxError: {e}"
         return result
