@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import io
 import json
 import logging
 import sys
@@ -19,6 +18,7 @@ except ImportError:  # pragma: no cover - Windows
 
 # Allowed modules in the sandbox
 import csv
+import io
 import math
 import random
 
@@ -69,8 +69,6 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_write_"] = full_write_guard
 
     sandbox_globals["_print_"] = PrintCollector
-    import builtins
-    sandbox_globals["__builtins__"]["print"] = builtins.print
 
     # Whitelist allowed modules
     sandbox_globals["csv"] = csv
