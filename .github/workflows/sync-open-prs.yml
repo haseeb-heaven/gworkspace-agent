@@ -3,6 +3,7 @@ name: Re-sync Open PRs on Develop Push
 # Triggered whenever develop branch gets a new commit.
 # Re-merges develop into every open PR targeting develop
 # so no PR ever becomes stale/conflicted after a develop push.
+# After syncing, waits for CI pipeline checks to pass before allowing merge.
 
 on:
   push:
@@ -119,13 +120,66 @@ jobs:
             # Push synced branch back
             if git push origin HEAD:"$BRANCH"; then
               echo "  [PUSHED] $BRANCH synced successfully"
-              SYNCED=$((SYNCED + 1))
             else
               echo "  [FAIL] Push failed for $BRANCH"
               FAILED=$((FAILED + 1))
+              git checkout develop
+              continue
             fi
 
             git checkout develop
+
+            # ──────────────────────────────────────────────────────────────
+            # WAIT FOR CI CHECKS TO PASS before counting as synced
+            # Poll the PR head SHA for check runs every 30s, up to 30 min.
+            # If checks pass  → mark synced.
+            # If checks fail  → post comment, skip — do NOT merge.
+            # ──────────────────────────────────────────────────────────────
+            echo "  [WAIT] Waiting for CI pipeline checks on PR #$PR_NUM..."
+
+            HEAD_SHA=$(gh pr view "$PR_NUM" --json headRefOid -q '.headRefOid')
+            MAX_WAIT=60   # max 60 polls x 30s = 30 minutes
+            POLL=0
+            CI_RESULT="unknown"
+
+            while [ $POLL -lt $MAX_WAIT ]; do
+              sleep 30
+              POLL=$((POLL + 1))
+
+              STATUS=$(gh api \
+                "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
+                --jq '
+                  if .total_count == 0 then "pending"
+                  elif ([.check_runs[] | select(.status != "completed")] | length) > 0 then "pending"
+                  elif ([.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")] | length) > 0 then "failure"
+                  else "success"
+                  end
+                ' 2>/dev/null || echo "pending")
+
+              echo "  [POLL $POLL/$MAX_WAIT] Status: $STATUS"
+
+              if [ "$STATUS" = "success" ]; then
+                CI_RESULT="success"
+                break
+              elif [ "$STATUS" = "failure" ]; then
+                CI_RESULT="failure"
+                break
+              fi
+              # else pending — keep polling
+            done
+
+            if [ "$CI_RESULT" = "success" ]; then
+              echo "  [CI PASS] All checks passed for PR #$PR_NUM"
+              SYNCED=$((SYNCED + 1))
+            elif [ "$CI_RESULT" = "failure" ]; then
+              echo "  [CI FAIL] Checks failed for PR #$PR_NUM — skipping merge"
+              gh pr comment "$PR_NUM" --body $'❌ **CI checks failed** after sync with develop. Please review the failing checks before merging.'
+              FAILED=$((FAILED + 1))
+            else
+              echo "  [CI TIMEOUT] Checks did not complete within 30 min for PR #$PR_NUM — skipping merge"
+              gh pr comment "$PR_NUM" --body $'⏱️ **CI check timeout** after sync with develop. Checks did not complete within 30 minutes. Please review and merge manually.'
+              FAILED=$((FAILED + 1))
+            fi
 
           done <<< "$PRS"
 
@@ -136,7 +190,7 @@ jobs:
           echo "══════════════════════════════════════"
 
           if [ "$FAILED" -gt 0 ]; then
-            echo "::warning::$FAILED PR(s) could not be synced. Manual resolution required."
+            echo "::warning::$FAILED PR(s) could not be synced or CI failed. Manual resolution required."
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
