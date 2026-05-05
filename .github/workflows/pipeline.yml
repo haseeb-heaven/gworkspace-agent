@@ -14,6 +14,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: pipeline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -38,7 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'pull_request' &&
-      github.actor != 'dependabot[bot]'
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]'
     permissions:
       contents: write
       pull-requests: write
@@ -362,7 +367,8 @@ jobs:
     if: |
       always() &&
       github.event_name == 'pull_request' &&
-      github.actor != 'dependabot[bot]'
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]'
     permissions:
       pull-requests: write
       issues: write
@@ -503,6 +509,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' &&
       github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]' &&
       needs.unit-tests.result == 'success' &&
       needs.integration-tests.result == 'success' &&
       needs.security.result == 'success' &&
@@ -600,7 +607,8 @@ jobs:
     if: |
       failure() &&
       github.event_name == 'pull_request' &&
-      github.actor != 'dependabot[bot]'
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]'
     permissions:
       contents: read
       pull-requests: write
