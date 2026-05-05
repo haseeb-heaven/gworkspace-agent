@@ -256,17 +256,19 @@ SERVICES: dict[str, ServiceSpec] = {
             "list_events": ActionSpec(
                 key="list_events",
                 label="List events",
-                description="List or search calendar events. Returns: [{id, summary, start, end, location}].",
+                description="List or search calendar events. If no date range is specified, recurring events (birthdays, etc.) from the past may be returned. Returns: [{id, summary, start, end, location}].",
                 keywords=("list", "show", "events", "meetings", "search"),
                 parameters=(
                     ParameterSpec("calendar_id", "Which calendar ID should I use?", "primary", required=False),
                     ParameterSpec("q", "Free-text search query (e.g. 'Sync')", "", required=False),
+                    ParameterSpec("start_date", "Optional: Start date (YYYY-MM-DD) to filter events", "", required=False),
+                    ParameterSpec("end_date", "Optional: End date (YYYY-MM-DD) to filter events", "", required=False),
                 ),
             ),
             "create_event": ActionSpec(
                 key="create_event",
                 label="Create event",
-                description="Create an all-day or timed event on the primary calendar. Returns: {id, summary, htmlLink}.",
+                description="Create an all-day or timed event on the primary calendar. You do NOT need to list events first. Just provide the summary, start_date, and optional start_time/end_time. Returns: {id, summary, htmlLink}.",
                 keywords=("create", "event", "schedule", "meeting"),
                 negative_keywords=("update", "edit", "modify", "change"),
                 parameters=(
