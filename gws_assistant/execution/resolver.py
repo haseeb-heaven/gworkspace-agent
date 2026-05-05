@@ -178,6 +178,19 @@ class ResolverMixin:
                     expanded.append(new_task)
                 return expanded
 
+        if task.service == "tasks" and task.action == "create_task":
+            titles = resolved_params.get("title")
+            if isinstance(titles, list) and titles:
+                expanded = []
+                for i, title in enumerate(titles):
+                    if not title or not isinstance(title, str) or title == _UNRESOLVED_MARKER:
+                        continue
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i + 1}"
+                    new_task.parameters["title"] = title
+                    expanded.append(new_task)
+                return expanded if expanded else [task]
+
         return [task]
 
     def _resolve_task(self, task: Any, context: dict) -> Any:
@@ -658,6 +671,10 @@ class ResolverMixin:
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
+        if data is None:
+            self.logger.warning(f"Cannot resolve path '{path}': results data is None")
+            return None
+
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first
