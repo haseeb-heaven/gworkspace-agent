@@ -242,6 +242,27 @@ To get the agent running on your local machine, please follow the comprehensive 
    # Windows: .\gws_cli.bat --task "List my drive files"
    ```
 
+### Examples
+
+The agent can orchestrate complex multi-service workflows with a single natural language request:
+
+```bash
+# Email summarization with documentation
+python gws_cli.py --task "Find all unread emails from last week, summarize them, create a Google Doc with the summary, and add a calendar reminder to review it tomorrow"
+
+# Drive analytics to Sheets
+python gws_cli.py --task "List all PDF files in my Drive, extract their names and sizes, and save the data to a new Google Sheets spreadsheet"
+
+# Calendar coordination
+python gws_cli.py --task "List my meetings for this week, create a summary document, and email it to my team"
+
+# Task management
+python gws_cli.py --task "Search for emails with the subject 'invoice', extract the total amounts, and create a task list to follow up"
+
+# Multi-step research
+python gws_cli.py --task "Search the web for the latest AI frameworks, create a comparison document, and share it in Google Chat"
+```
+
 ---
 
 ## Interfaces
