@@ -182,7 +182,20 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["setattr"] = safe_setattr
 
     safe_g["_getiter_"] = iter
-    safe_g["_getitem_"] = lambda obj, key: obj[key]
+    def safe_getitem(obj, key):
+        try:
+            return obj[key]
+        except (KeyError, TypeError):
+            if isinstance(obj, dict):
+                # AI Robustness: Case-insensitive dictionary lookup
+                # Useful when LLM generates row['category'] for {'Category': ...}
+                key_lower = str(key).lower()
+                for k in obj:
+                    if str(k).lower() == key_lower:
+                        return obj[k]
+            raise
+
+    safe_g["_getitem_"] = safe_getitem
     safe_g["_write_"] = lambda obj: obj
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
@@ -398,11 +411,16 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    # Remove return statements since code runs at module level
+    # This must happen before we inject our own helper code that might contain return statements
+    code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
+    code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
+
     # Replace with open(...) as f: blocks with code that uses injected data
     # Pattern: with open(...) as file: ... use injected_vars instead
     code = re.sub(
         r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
-        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]\n    # Add case-insensitive column access helper\n    class CaseInsensitiveDict(dict):\n        def __getitem__(self, key):\n            for k in self:\n                if k.lower() == key.lower():\n                    return super().__getitem__(k)\n            raise KeyError(key)\n    \1 = [CaseInsensitiveDict(row) for row in \1]",
+        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]",
         code,
         flags=re.DOTALL
     )
@@ -412,9 +430,7 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
     # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
     code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
     code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
-    # Remove return statements since code runs at module level
-    code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
-    code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
+
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
         if config is not None

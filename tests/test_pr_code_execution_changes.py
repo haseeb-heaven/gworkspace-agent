@@ -214,8 +214,10 @@ class TestExecuteGeneratedCodeColumnNameFixes:
         code = "x = 5\nreturn x"
         # After removing 'return x', code should execute without SyntaxError
         result = execute_generated_code(code)
-        # Should not fail with SyntaxError about return outside function
-        assert "SyntaxError" not in (result.get("error") or "")
+        assert result.get("success") is True
+        assert result.get("error") is None
+        # Check that x was still defined after 'return x' was removed
+        assert result.get("output", {}).get("x") == 5
 
 
 # ---------------------------------------------------------------------------
@@ -226,10 +228,11 @@ class TestExecuteGeneratedCodeOpenReplacement:
     def test_with_open_block_replaced_with_injected_vars(self):
         """PR: with open(...) as f: blocks are replaced with injected_vars."""
         code = "with open('data.csv', 'r') as f:\n    pass\nresult = 'ok'"
-        result = execute_generated_code(code, extra_globals={"injected_vars": []})
-        # After replacement the code should not fail with a file-not-found error
-        # (it uses injected_vars instead)
-        assert result.get("error") is None or "No such file" not in str(result.get("error", ""))
+        # Provide injected_vars to exercise replacement logic
+        result = execute_generated_code(code, extra_globals={"injected_vars": [[["col1"], ["val1"]]]})
+        # Directly check for success instead of disjunctive assertion
+        assert result["success"] is True
+        assert result["output"].get("parsed_value") == "ok"
 
 
 # ---------------------------------------------------------------------------

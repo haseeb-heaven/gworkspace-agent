@@ -10,6 +10,7 @@ import contextlib
 import json
 import logging
 import sys
+from typing import Any
 
 try:
     import resource
@@ -37,6 +38,14 @@ logger.setLevel(logging.INFO)
 
 
 def get_sandbox_globals() -> dict[str, object]:
+    """Build and return the restricted globals dictionary for the sandbox environment.
+
+    Provides a safe set of builtins and overrides standard functions to prevent
+    unauthorized file access or imports. Whitelists specific modules like 'math'.
+
+    Returns:
+        A dictionary containing the safe globals and builtins for RestrictedPython.
+    """
     sandbox_globals = safe_globals.copy()
     sandbox_globals["__builtins__"] = safe_builtins.copy()
     sandbox_globals["__builtins__"].update(utility_builtins)
@@ -70,31 +79,43 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     sandbox_globals["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
 
-    def _inplacevar(op, target, expr):
+    def _inplacevar(op: str, target: Any, expr: Any) -> Any:
         if op == "+=":
-            return target + expr
+            target += expr
+            return target
         if op == "-=":
-            return target - expr
+            target -= expr
+            return target
         if op == "*=":
-            return target * expr
+            target *= expr
+            return target
         if op == "/=":
-            return target / expr
+            target /= expr
+            return target
         if op == "//=":
-            return target // expr
+            target //= expr
+            return target
         if op == "%=":
-            return target % expr
+            target %= expr
+            return target
         if op == "**=":
-            return target ** expr
+            target **= expr
+            return target
         if op == "&=":
-            return target & expr
+            target &= expr
+            return target
         if op == "|=":
-            return target | expr
+            target |= expr
+            return target
         if op == "^=":
-            return target ^ expr
+            target ^= expr
+            return target
         if op == "<<=":
-            return target << expr
+            target <<= expr
+            return target
         if op == ">>=":
-            return target >> expr
+            target >>= expr
+            return target
         raise NotImplementedError(f"Unsupported in-place operator: {op}")
 
     sandbox_globals["_inplacevar_"] = _inplacevar
@@ -128,6 +149,22 @@ def _trim_output(text: str, max_len: int = 1000) -> str:
 
 
 def run_code(code_b64: str) -> dict[str, object]:
+    """Execute base64-encoded Python code securely within a restricted sandbox.
+
+    Decodes the provided base64 string, compiles it using RestrictedPython,
+    and executes it with a restricted globals dictionary. Captures stdout/stderr.
+
+    Args:
+        code_b64: A base64-encoded string containing the Python source code.
+
+    Returns:
+        A dictionary containing execution results with keys: 'stdout',
+        'stderr', 'success', and 'error'.
+
+    Raises:
+        Does not raise exceptions directly; instead, catches them and
+        returns them in the 'error' field of the result dictionary.
+    """
     result: dict[str, object] = {"stdout": "", "stderr": "", "success": False, "error": None}
 
     # 1. Base64 Decode
