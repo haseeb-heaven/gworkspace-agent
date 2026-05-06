@@ -404,7 +404,7 @@ def test_coerce_structured_value_handles_calendar_logs():
 def test_normalize_injected_vars_returns_sanitized_elements():
     raw_values = [None, "[{\"id\": \"evt-1\"}]", "Found 0 calendar events."]
     normalized = _normalize_injected_vars(raw_values)
-    assert normalized[0] == []
+    assert normalized[0] is None
     assert isinstance(normalized[1], list)
     assert normalized[2] == []
 

@@ -319,22 +319,30 @@ class ResolverMixin:
             return val
 
         # Additional safety: check for circular references in context
-        if isinstance(val, dict) or isinstance(val, list):
-            # Use id() to detect if we've seen this object before
-            if not hasattr(self, '_resolve_cache'):
+        if isinstance(val, (dict, list)):
+            # Create cache at the TOP level only to prevent state pollution and memory leaks
+            if depth == 0:
                 self._resolve_cache: dict[int, Any] = {}
+
             obj_id = id(val)
-            if obj_id in self._resolve_cache:
+            if hasattr(self, "_resolve_cache") and obj_id in self._resolve_cache:
                 self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
                 return self._resolve_cache[obj_id]
+
             # Create an empty clone and store it in the cache before recursion
             clone = {} if isinstance(val, dict) else []
-            self._resolve_cache[obj_id] = clone
+            if hasattr(self, "_resolve_cache"):
+                self._resolve_cache[obj_id] = clone
+
             try:
                 result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
                 return result
             finally:
-                del self._resolve_cache[obj_id]
+                # Clean up cache completely when unwinding top-level call
+                if depth == 0 and hasattr(self, "_resolve_cache"):
+                    del self._resolve_cache
+                elif hasattr(self, "_resolve_cache") and obj_id in self._resolve_cache:
+                    del self._resolve_cache[obj_id]
         else:
             return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
 
@@ -641,7 +649,7 @@ class ResolverMixin:
             return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1) for k, v in val.items()}
         return val
 
-    def _get_value_by_path(self, data: dict, path: str) -> Any:
+    def _get_value_by_path(self, data: dict, path: str, max_unwrap_depth: int = 3) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
         if data is None:
             self.logger.warning(f"Cannot resolve path '{path}': results data is None")
@@ -659,14 +667,16 @@ class ResolverMixin:
             return None
 
         curr: Any = data
+        unwrap_count = 0
         for i, token in enumerate(tokens):
             if token.startswith("["):
                 index = int(token[1:-1])
                 # Auto-unwrap if dict contains a known list key
-                if isinstance(curr, dict):
+                if isinstance(curr, dict) and unwrap_count < max_unwrap_depth:
                     for list_key in ["files", "messages", "items", "events", "values", "threads"]:
                         if list_key in curr and isinstance(curr[list_key], list):
                             curr = curr[list_key]
+                            unwrap_count += 1
                             break
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
@@ -681,12 +691,14 @@ class ResolverMixin:
                         # Auto-unwrap: if current level is a dict and we have a list inside,
                         # and the token exists in the list elements, we can auto-unwrap.
                         unwrapped = False
-                        for list_key in ["files", "messages", "items", "events", "values", "threads"]:
-                            if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
-                                if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
-                                    curr = [item.get(token) for item in curr[list_key]]
-                                    unwrapped = True
-                                    break
+                        if unwrap_count < max_unwrap_depth:
+                            for list_key in ["files", "messages", "items", "events", "values", "threads"]:
+                                if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
+                                    if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
+                                        curr = [item.get(token) for item in curr[list_key]]
+                                        unwrapped = True
+                                        unwrap_count += 1
+                                        break
                         if not unwrapped:
                             curr = None
                 elif isinstance(curr, list):

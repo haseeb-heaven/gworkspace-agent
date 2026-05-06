@@ -11,24 +11,32 @@ logger = logging.getLogger(__name__)
 def _sanitize_file_path_patterns(value: Any) -> Any:
     """Replace [File: ...] patterns with a placeholder to avoid leaking local paths."""
     if isinstance(value, str):
-        return re.sub(r'\[File: [^\]]+\]', '[Document file]', value)
+        return re.sub(r"\[File: [^\]]+\]", "[Document file]", value)
     elif isinstance(value, list):
         return [_sanitize_file_path_patterns(item) for item in value]
     elif isinstance(value, dict):
-        return {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
+        result = {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
+        # AI Robustness: Preserve original type if it's a custom class (e.g. Pydantic)
+        if type(value) is not dict:
+            try:
+                # Try to re-instantiate with sanitized values
+                return type(value)(**result)
+            except Exception:
+                pass
+        return result
     return value
 
 
 def _coerce_structured_value(raw: Any) -> Any:
     """Return list/dict if raw string represents structured data, otherwise keep value."""
     if raw is None:
-        return []
+        return None
     if isinstance(raw, (list, dict)):
         return raw
     if isinstance(raw, str):
         trimmed = raw.strip()
         if not trimmed:
-            return []
+            return ""
 
         try:
             parsed = json.loads(trimmed)
@@ -238,7 +246,8 @@ class HelpersMixin:
                                     files = v.get("files", []) if isinstance(v, dict) else []
                                     logger.info("DEBUG: Found files in %s, count: %d", k, len(files))
                                     break
-                        for file_info in files:
+                        files_to_try = files[:5]  # AI Robustness: Limit to 5 attempts to avoid hangs
+                        for file_info in files_to_try:
                             if isinstance(file_info, dict):
                                 file_name = file_info.get("name", "")
                                 logger.info("DEBUG: Checking file: %s", file_name)
@@ -249,36 +258,41 @@ class HelpersMixin:
                                         # Fetch the actual data - use the actual sheet name from file_info
                                         sheet_name = file_info.get("name", "Sheet1")
                                         get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": sheet_name})]
-                                        get_res = self.runner.run(get_args)
-                                        logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
-                                        if get_res.success and get_res.stdout:
-                                            parsed = _coerce_structured_value(get_res.stdout)
-                                            logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
-                                            if isinstance(parsed, dict) and "values" in parsed:
-                                                values = parsed["values"]
-                                                # Normalize column names to match LLM expectations
-                                                if values and len(values) > 0:
-                                                    headers = values[0]
-                                                    # Column name mapping: normalize common variations
-                                                    header_map = {}
-                                                    for i, h in enumerate(headers):
-                                                        h_lower = str(h).lower().strip()
-                                                        if "category" in h_lower:
-                                                            header_map[i] = "Category"
-                                                        elif "revenue" in h_lower and "total" in h_lower:
-                                                            header_map[i] = "Total Revenue"
-                                                        elif "revenue" in h_lower:
-                                                            header_map[i] = "Revenue"
-                                                        else:
-                                                            header_map[i] = h
-                                                    # Apply mapping to first row
-                                                    values[0] = [header_map[i] for i in range(len(headers))]
-                                                fetched_vars.append(values)
-                                                logger.info("Successfully fetched %d rows from spreadsheet", len(values))
-                                                break
+
+                                        # Execute with inner try to continue to next file if one fails
+                                        try:
+                                            get_res = self.runner.run(get_args)
+                                            logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
+                                            if get_res.success and get_res.stdout:
+                                                parsed = _coerce_structured_value(get_res.stdout)
+                                                logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
+                                                if isinstance(parsed, dict) and "values" in parsed:
+                                                    values = parsed["values"]
+                                                    # Normalize column names to match LLM expectations
+                                                    if values and len(values) > 0:
+                                                        headers = values[0]
+                                                        # Column name mapping: normalize common variations
+                                                        header_map = {}
+                                                        for i, h in enumerate(headers):
+                                                            h_lower = str(h).lower().strip()
+                                                            if "category" in h_lower:
+                                                                header_map[i] = "Category"
+                                                            elif "revenue" in h_lower and "total" in h_lower:
+                                                                header_map[i] = "Total Revenue"
+                                                            elif "revenue" in h_lower:
+                                                                header_map[i] = "Revenue"
+                                                            else:
+                                                                header_map[i] = h
+                                                        # Apply mapping to first row
+                                                        values[0] = [header_map[i] for i in range(len(headers))]
+                                                    fetched_vars.append(values)
+                                                    logger.info("Successfully fetched %d rows from spreadsheet", len(values))
+                                                    break
+                                        except Exception as inner_e:
+                                            logger.warning("Inner spreadsheet fetch failed for %s: %s", file_id, inner_e)
                         else:
-                            # No data found, keep original string
-                            logger.warning("No matching spreadsheet found for: %s", var)
+                            # No data found or all tries failed, keep original string
+                            logger.warning("No matching spreadsheet data fetched for: %s", var)
                             fetched_vars.append(var)
                     except Exception as e:
                         logger.warning("Failed to auto-fetch spreadsheet data: %s", e)
