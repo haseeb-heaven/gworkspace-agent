@@ -611,7 +611,7 @@ class ResolverMixin:
             # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
             # Added ':' to support shorthand like {{:get_message}}
             val = re.sub(
-                r"\{\{([\w\-\.\[\]:]+)\}\}|\{([\w\-\.\[\]:]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)",
+                r"\{\{([\w\-\.\[\]:]+?)\}\}|\{([\w\-\.\[\]:]+?)\}|(\$task-\d+(?:\.[\w\-\[\]]+)*)",
                 replace_match,
                 val,
             )

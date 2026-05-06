@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from gws_assistant.execution.context_updater import (
-    _compute_snippet,
     _normalize_entry,
     _tableify,
     _unwrap,
@@ -221,50 +220,54 @@ class TestResolverEmailEntryNormalization:
 # ---------------------------------------------------------------------------
 
 class TestContextUpdaterSnippetFallback:
-    """Test the _compute_snippet helper used by context_updater."""
+    """Test the _generate_fallback_snippet helper used by context_updater."""
+
+    def setup_method(self) -> None:
+        from gws_assistant.execution.context_updater import ContextUpdaterMixin
+        self.updater = ContextUpdaterMixin()
 
     def test_snippet_present_returned_as_is(self) -> None:
         m = {"snippet": "Your order has been confirmed"}
         h_dict = {"from": "store@example.com", "subject": "Order Confirmed", "date": "2026-01-01"}
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         assert result == "Your order has been confirmed"
 
     def test_empty_snippet_triggers_fallback(self) -> None:
         m = {"snippet": ""}
         h_dict = {"from": "alice@example.com", "subject": "Hello", "date": "2026-01-02"}
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         assert result == "From: alice@example.com | Subject: Hello | Date: 2026-01-02"
 
     def test_none_snippet_triggers_fallback(self) -> None:
         m = {"snippet": None}
         h_dict = {"from": "bob@example.com", "subject": "Meeting", "date": "2026-02-15"}
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         assert result == "From: bob@example.com | Subject: Meeting | Date: 2026-02-15"
 
     def test_missing_snippet_key_triggers_fallback(self) -> None:
         m: dict[str, Any] = {}
         h_dict = {"from": "carol@example.com", "subject": "Invoice", "date": "2026-03-01"}
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         assert result == "From: carol@example.com | Subject: Invoice | Date: 2026-03-01"
 
     def test_fallback_with_missing_headers_uses_defaults(self) -> None:
         m: dict[str, Any] = {}
         h_dict: dict[str, str] = {}  # no from/subject/date
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         assert "Unknown" in result
         assert "No Subject" in result
 
     def test_whitespace_only_snippet_triggers_fallback(self) -> None:
         m = {"snippet": "   "}
         h_dict = {"from": "test@example.com", "subject": "Test", "date": "2026-01-01"}
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         # Whitespace-only snippet is stripped and triggers fallback
         assert result == "From: test@example.com | Subject: Test | Date: 2026-01-01"
 
     def test_fallback_format_includes_pipe_separators(self) -> None:
         m: dict[str, Any] = {}
         h_dict = {"from": "a@b.com", "subject": "Hello", "date": "2026-01-01"}
-        result = _compute_snippet(m, h_dict)
+        result = self.updater._generate_fallback_snippet(m, h_dict)
         assert " | " in result
         parts = result.split(" | ")
         assert len(parts) == 3

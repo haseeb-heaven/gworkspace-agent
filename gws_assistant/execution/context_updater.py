@@ -19,16 +19,18 @@ def _tableify(value: Any) -> Optional[str]:
         A markdown table string, or None if the input is invalid or empty.
     """
     def _esc(v: Any) -> str:
-        return str(v).replace("|", "\\|").replace("\n", " ").strip()
+        return str(v).replace("|", "\\\\|").replace("\n", " ").strip()
 
     rows = []
-    if isinstance(value, list) and value and isinstance(value[0], dict):
+    if isinstance(value, list) and value and isinstance(value[0], dict) and value[0]:
         headers = list(value[0].keys())
+        if not headers:
+            return None
         rows.append([_esc(h) for h in headers])
         for item in value:
             row = [_esc(item.get(h, "")) for h in headers]
             rows.append(row)
-    elif isinstance(value, list) and value and isinstance(value[0], list):
+    elif isinstance(value, list) and value and isinstance(value[0], list) and value[0]:
         rows = [[_esc(cell) for cell in row] for row in value]
     else:
         return None
@@ -92,21 +94,6 @@ def _normalize_entry(entry: Any) -> Any:
     return entry_copy
 
 
-def _compute_snippet(m: Dict[str, Any], h_dict: Dict[str, Any]) -> str:
-    """Compute a fallback snippet if the Gmail snippet field is empty."""
-    sender = h_dict.get("from", "Unknown")
-    subject = h_dict.get("subject", "No Subject")
-    date_val = h_dict.get("date", "Unknown Date")
-
-    snippet_val = str(m.get("snippet") or "").strip()
-    if not snippet_val:
-        snippet_val = f"From: {sender} | Subject: {subject} | Date: {date_val}"
-    return snippet_val
-
-
-
-
-
 class ContextUpdaterMixin:
 
     def _extract_headers(self, payload: Any) -> dict[str, Any]:
@@ -142,16 +129,26 @@ class ContextUpdaterMixin:
 
 
     def _mask_pii(self, text: str) -> str:
-
         """Redact email addresses from text."""
-
         if not text:
-
             return ""
+        # Improved regex for email masking: handle single-letter local parts and invalid dots
+        return re.sub(
+            r'([a-zA-Z0-9_.+-]+?)[a-zA-Z0-9_.+-]*@([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)',
+            r'\g<1>***@\g<2>',
+            str(text)
+        )
 
-        # Fix — escape the dot in domain part
+    def _generate_fallback_snippet(self, m: dict[str, Any], h_dict: dict[str, Any]) -> str:
+        """Compute a fallback snippet if the Gmail snippet field is empty."""
+        sender = h_dict.get("from", "Unknown")
+        subject = h_dict.get("subject", "No Subject")
+        date_val = h_dict.get("date", "Unknown Date")
 
-        return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
+        snippet_val = str(m.get("snippet") or "").strip()
+        if not snippet_val:
+            snippet_val = f"From: {sender} | Subject: {subject} | Date: {date_val}"
+        return snippet_val
 
 
 
@@ -866,17 +863,11 @@ class ContextUpdaterMixin:
 
 
                     sender = h_dict.get("from", "Unknown")
-
                     subject = h_dict.get("subject", "No Subject")
-
                     date_val = h_dict.get("date", "Unknown Date")
-
-                    snippet_val = _compute_snippet(m, h_dict)
-
-
+                    snippet_val = self._generate_fallback_snippet(m, h_dict)
 
                     rows.append([sender, subject, date_val, m_id, t_id])
-
                     snippet_rows.append([sender, snippet_val, date_val, m_id, t_id])
 
 
@@ -982,15 +973,12 @@ class ContextUpdaterMixin:
         if isinstance(files, list):
 
             if len(files) == 0:
-
                 # No files found - set empty context values
-
-                context["drive_metadata_table"] = "No files found matching the search criteria."
-
+                msg = "No files found matching the search criteria."
+                context["drive_metadata_table"] = msg
+                context["drive_summary_table"] = msg
                 context["drive_file_links"] = "No files available."
-
                 context["drive_file_count"] = 0
-
                 return
 
             context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
@@ -1141,42 +1129,25 @@ class ContextUpdaterMixin:
 
             context["sheet_summary_rows"] = rows
 
-
-
-            if rows:
-
+            if rows and any(r for r in rows):
                 cols = max(len(r) for r in rows)
+                if cols > 0:
+                    def pad_row(row_list, length):
+                        safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
+                        return safe_row + [""] * (length - len(safe_row))
 
+                    header_row = pad_row(rows[0], cols)
+                    table_lines = ["| " + " | ".join(header_row) + " |"]
+                    table_lines.append("|" + "|".join(["---"] * cols) + "|")
 
+                    for r in rows[1:]:
+                        padded_r = pad_row(r, cols)
+                        table_lines.append("| " + " | ".join(padded_r) + " |")
 
-                def pad_row(row_list, length):
-
-                    safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
-
-                    return safe_row + [""] * (length - len(safe_row))
-
-
-
-                header_row = pad_row(rows[0], cols)
-
-                table_lines = ["| " + " | ".join(header_row) + " |"]
-
-                table_lines.append("|" + "|".join(["---"] * cols) + "|")
-
-
-
-                for r in rows[1:]:
-
-                    padded_r = pad_row(r, cols)
-
-                    table_lines.append("| " + " | ".join(padded_r) + " |")
-
-
-
-                context["sheet_summary_table"] = "\n".join(table_lines)
-
+                    context["sheet_summary_table"] = "\n".join(table_lines)
+                else:
+                    context["sheet_summary_table"] = ""
             else:
-
                 context["sheet_summary_table"] = ""
 
 

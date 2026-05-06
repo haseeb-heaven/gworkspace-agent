@@ -328,10 +328,19 @@ class HelpersMixin:
             if target_file and result.get("success"):
                 content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
                 if content_to_write:
+                    import os
+                    # Determine safe directory (defaulting to ./output if not in config)
+                    safe_dir = os.path.abspath(getattr(self.config, "output_dir", "./output"))
+                    abs_target = os.path.abspath(target_file)
                     try:
-                        with open(target_file, "w", encoding="utf-8") as f:
-                            f.write(str(content_to_write))
-                        self.logger.info(f"Auto-wrote code output to {target_file}")
+                        # Ensure path is within safe_dir
+                        if os.path.commonpath([safe_dir, abs_target]) != safe_dir:
+                            self.logger.error(f"SECURITY: Rejected file path outside safe directory: {target_file}")
+                        else:
+                            os.makedirs(os.path.dirname(abs_target), exist_ok=True)
+                            with open(abs_target, "w", encoding="utf-8") as f:
+                                f.write(str(content_to_write))
+                            self.logger.info(f"Auto-wrote code output to {target_file}")
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
