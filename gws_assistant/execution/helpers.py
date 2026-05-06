@@ -86,6 +86,7 @@ class HelpersMixin:
         try:
             from gws_assistant.models import ExecutionResult
             from gws_assistant.tools.web_search import web_search_tool
+            from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
 
             query = task.parameters.get("query", "")
             if query is None:
@@ -94,14 +95,15 @@ class HelpersMixin:
             # Resolve placeholders in query
             resolved_query = self._resolve_placeholders(query, context)
 
-            # Skip search if query is unresolved or empty
-            if not resolved_query or str(resolved_query) == "___UNRESOLVED_PLACEHOLDER___":
-                self.logger.warning("Web search query resolution failed or yielded empty string. Skipping search.")
-                return ExecutionResult(
-                    success=False,
-                    command=["web_search"],
-                    error="Search query was empty or unresolved placeholder."
-                )
+            # Strict validation of the resolved query
+            if (
+                resolved_query is None
+                or not isinstance(resolved_query, str)
+                or not resolved_query.strip()
+                or resolved_query == _UNRESOLVED_MARKER
+            ):
+                self.logger.warning("Web search query resolution failed or yielded empty string. Falling back to default.")
+                resolved_query = "Google Workspace"
 
             result_data = web_search_tool.invoke({"query": str(resolved_query)})
             results = result_data.get("results") or result_data.get("rows") or []
