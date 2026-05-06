@@ -84,9 +84,6 @@ Detailed snapshots of the available user interfaces.
 The agent uses a **three-layer architecture**: an LLM Planner that reasons about intent, a LangGraph Workflow that manages stateful execution, and a GWS Executor that calls real Google APIs.
 
 ```mermaid
----
-id: 381d8783-6e2b-46fa-b5fa-879171ca0dbf
----
 flowchart TD
     USER["👤 User Request"] --> AGENT
 
@@ -113,7 +110,7 @@ flowchart TD
 
     subgraph SUP["🛡️ Support"]
         direction LR
-        MEM["Memory\nMem0"] --- SG["Safety\nGuard"] --- MR["Model\nRegistry"]
+        MEM["Memory<br/>Mem0"] --- SG["Safety<br/>Guard"] --- MR["Model<br/>Registry"]
     end
 
     style AGENT fill:#1a1a2e,color:#fff,stroke:#4A90D9
@@ -131,22 +128,22 @@ The agent's execution graph is a **stateful directed acyclic graph** with four c
 flowchart TD
     START(["▶ START"]) --> GP
 
-    GP["🧠 generate_plan\nLLM generates TaskPlan\nwith typed task list\nand service/action pairs"]
+    GP["🧠 generate_plan<br/>LLM generates TaskPlan<br/>with typed task list<br/>and service/action pairs"]
 
     GP --> ET
 
-    ET["⚡ execute_task\n① Resolver expands $placeholders\n② Executor calls GWS API\n③ ContextUpdater writes outputs\n④ Verifier checks integrity"]
+    ET["⚡ execute_task<br/>① Resolver expands $placeholders<br/>② Executor calls GWS API<br/>③ ContextUpdater writes outputs<br/>④ Verifier checks integrity"]
 
     ET --> RN
 
-    RN{"🔍 reflect_node\nAll tasks done?\nAny errors?"}
+    RN{"🔍 reflect_node<br/>All tasks done?<br/>Any errors?"}
 
     RN -->|"more tasks remaining"| ET
     RN -->|"transient error → retry"| GP
     RN -->|"AUTH / NOT_FOUND → skip"| FO
     RN -->|"all tasks complete"| FO
 
-    FO["📋 format_output\nApply output_formatter\nBuild final response string"]
+    FO["📋 format_output<br/>Apply output_formatter<br/>Build final response string"]
 
     FO --> END(["⏹ END"])
 
@@ -364,10 +361,10 @@ All system configuration (API keys, security modes, and service endpoints) is ma
 
 ```mermaid
 flowchart TD
-    REQ["Incoming Task"] --> RO{"Read-Only Mode\nON by default"}
-    RO -->|"write / delete / send action"| BLOCK["🚫 Blocked\nAction rejected immediately"]
-    RO -->|"read-only action"| SB{"Sandbox Mode\nON by default"}
-    SB -->|"state-changing action"| CONF{"User Confirmation\nY / N prompt"}
+    REQ["Incoming Task"] --> RO{"Read-Only Mode<br/>ON by default"}
+    RO -->|"write / delete / send action"| BLOCK["🚫 Blocked<br/>Action rejected immediately"]
+    RO -->|"read-only action"| SB{"Sandbox Mode<br/>ON by default"}
+    SB -->|"state-changing action"| CONF{"User Confirmation<br/>Y / N prompt"}
     CONF -->|"N"| SKIP["⏭ Skipped"]
     CONF -->|"Y"| EXEC["✅ Execute"]
     SB -->|"safe read action"| EXEC
