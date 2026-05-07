@@ -274,6 +274,7 @@ class ExecutionResult:
     stderr: str = ""
     return_code: int = -1
     error: str | None = None
+    error_code: str | None = None
     output: Any = None
 
     def to_structured_result(self) -> StructuredToolResult:

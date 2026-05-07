@@ -1,17 +1,96 @@
 import base64
-
 import logging
-
 import re
-
-from typing import Any
-
-
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
+def _tableify(value: Any) -> Optional[str]:
+    """Convert a list of dicts or list of lists to a markdown table string.
 
+    Escapes pipe characters and newlines within cells to maintain table structure.
+
+    Args:
+        value: The data to convert (must be a non-empty list of dicts or lists).
+
+    Returns:
+        A markdown table string, or None if the input is invalid or empty.
+    """
+    def _esc(v: Any) -> str:
+        return str(v).replace("|", "\\|").replace("\n", " ").strip()
+
+    rows = []
+    if isinstance(value, list) and value and isinstance(value[0], dict) and value[0]:
+        headers = list(value[0].keys())
+        if not headers:
+            return None
+        rows.append([_esc(h) for h in headers])
+        for item in value:
+            row = [_esc(item.get(h, "")) for h in headers]
+            rows.append(row)
+    elif isinstance(value, list) and value and isinstance(value[0], list) and value[0]:
+        rows = [[_esc(cell) for cell in row] for row in value]
+    else:
+        return None
+
+    if not rows:
+        return None
+
+    header = rows[0]
+    table_lines = [
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+    for row in rows[1:]:
+        padded = row + [""] * (len(header) - len(row))
+        table_lines.append("| " + " | ".join(padded) + " |")
+    return "\n".join(table_lines)
+
+
+def _unwrap(res: Any) -> Any:
+    """Unwrap common API response wrappers (messages, files, etc.) to expose the underlying list."""
+    inject_val = res
+    if isinstance(res, dict):
+        wrapper_keys = (
+            "messages", "items", "files", "events", "tasks",
+            "notes", "spaces", "connections", "people", "activities"
+        )
+        for key in wrapper_keys:
+            if key in res and isinstance(res[key], list):
+                inject_val = res[key]
+                break
+    return inject_val
+
+
+def _normalize_entry(entry: Any) -> Any:
+    """Extract headers and normalize email entries for LLM consumption."""
+    if not isinstance(entry, dict):
+        return entry
+    entry_copy = dict(entry)
+    payload = entry_copy.get("payload", {})
+    if isinstance(payload, dict):
+        for hdr in payload.get("headers", []):
+            if isinstance(hdr, dict):
+                hname = str(hdr.get("name", "")).lower()
+                hval = hdr.get("value", "")
+                if hname == "from" and "from" not in entry_copy:
+                    entry_copy["from"] = hval
+                elif hname == "subject" and "subject" not in entry_copy:
+                    entry_copy["subject"] = hval
+                elif hname == "date" and "date" not in entry_copy:
+                    entry_copy["date"] = hval
+
+    snippet = entry_copy.get("snippet")
+    if not snippet:
+        subj = entry_copy.get("subject") or "No Subject"
+        sender = entry_copy.get("from") or entry_copy.get("sender") or "Unknown"
+        date_val = entry_copy.get("date") or "Unknown Date"
+        entry_copy["snippet"] = f"From: {sender} | Subject: {subj} | Date: {date_val}"
+
+    if "from" in entry_copy and "from_" not in entry_copy:
+        entry_copy["from_"] = {"address": entry_copy["from"]}
+    return entry_copy
 
 
 class ContextUpdaterMixin:
@@ -49,16 +128,26 @@ class ContextUpdaterMixin:
 
 
     def _mask_pii(self, text: str) -> str:
-
         """Redact email addresses from text."""
-
         if not text:
-
             return ""
+        # Improved regex for email masking: handle single-letter local parts and invalid dots
+        return re.sub(
+            r'([a-zA-Z0-9_.+-]+?)[a-zA-Z0-9_.+-]*@([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)',
+            r'\g<1>***@\g<2>',
+            str(text)
+        )
 
-        # Fix — escape the dot in domain part
+    def _generate_fallback_snippet(self, m: dict[str, Any], h_dict: dict[str, Any]) -> str:
+        """Compute a fallback snippet if the Gmail snippet field is empty."""
+        sender = h_dict.get("from", "Unknown")
+        subject = h_dict.get("subject", "No Subject")
+        date_val = h_dict.get("date", "Unknown Date")
 
-        return re.sub(r'([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', r'\g<1>***@\g<2>', str(text))
+        snippet_val = str(m.get("snippet") or "").strip()
+        if not snippet_val:
+            snippet_val = f"From: {sender} | Subject: {subject} | Date: {date_val}"
+        return snippet_val
 
 
 
@@ -529,16 +618,17 @@ class ContextUpdaterMixin:
 
 
                 row = [sender, subject, date_val, email_addr]
-
                 data["row"] = row  # For {task-N.row} access
 
-
-
                 # We want to build a cumulative list if this is part of an expansion
-
                 details_list = context.setdefault("gmail_details_values", [])
-
                 details_list.append(row)
+
+                # NEW: Accumulate raw message dicts for code extraction tasks
+                messages_list = context.setdefault("gmail_messages", [])
+                msg_id = data.get("id") or context.get("gmail_message_id")
+                msg_snippet = data.get("snippet") or ""
+                messages_list.append(dict(headers_dict, id=msg_id, snippet=msg_snippet, body=body))
 
 
 
@@ -548,7 +638,7 @@ class ContextUpdaterMixin:
 
             if conns and isinstance(conns, list):
 
-                rows = []
+                contact_rows = []
 
                 def first_val(items, key):
 
@@ -574,19 +664,19 @@ class ContextUpdaterMixin:
 
                     phone = first_val(person.get("phoneNumbers"), "value")
 
-                    rows.append([name, email, phone])
+                    contact_rows.append([name, email, phone])
 
 
 
-                context["contacts_summary_rows"] = rows
+                context["contacts_summary_rows"] = contact_rows
 
-                context["contacts_summary_values"] = [r.copy() for r in rows]
+                context["contacts_summary_values"] = [r.copy() for r in contact_rows]
 
 
 
                 table_lines = ["| Name | Email | Phone |", "|---|---|---|"]
 
-                for r in rows:
+                for r in contact_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -600,7 +690,7 @@ class ContextUpdaterMixin:
 
                 context["last_contacts_list"] = table_str
 
-                context["contacts_summary_count"] = len(rows)
+                context["contacts_summary_count"] = len(contact_rows)
 
 
 
@@ -610,7 +700,7 @@ class ContextUpdaterMixin:
 
             if items and isinstance(items, list):
 
-                rows = []
+                admin_rows = []
 
                 for item in items:
 
@@ -626,15 +716,15 @@ class ContextUpdaterMixin:
 
                     time_val = item.get("id", {}).get("time", "Unknown Time")
 
-                    rows.append([event_type, actor, time_val])
+                    admin_rows.append([event_type, actor, time_val])
 
 
 
-                context["admin_summary_rows"] = rows
+                context["admin_summary_rows"] = admin_rows
 
                 table_lines = ["| Event | Actor | Time |", "|---|---|---|"]
 
-                for r in rows:
+                for r in admin_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -648,7 +738,7 @@ class ContextUpdaterMixin:
 
                 context["last_admin_activities"] = table_str
 
-                context["admin_summary_count"] = len(rows)
+                context["admin_summary_count"] = len(admin_rows)
 
 
 
@@ -658,7 +748,7 @@ class ContextUpdaterMixin:
 
             if spaces and isinstance(spaces, list):
 
-                rows = []
+                chat_rows = []
 
                 for s in spaces:
 
@@ -666,7 +756,7 @@ class ContextUpdaterMixin:
 
                         continue
 
-                    rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
+                    chat_rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
 
 
 
@@ -684,11 +774,11 @@ class ContextUpdaterMixin:
 
 
 
-                context["chat_summary_rows"] = rows
+                context["chat_summary_rows"] = chat_rows
 
                 table_lines = ["| Space Name | Resource Name | Type |", "|---|---|---|"]
 
-                for r in rows:
+                for r in chat_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -702,7 +792,7 @@ class ContextUpdaterMixin:
 
                 context["last_chat_spaces"] = table_str
 
-                context["chat_summary_count"] = len(rows)
+                context["chat_summary_count"] = len(chat_rows)
 
 
 
@@ -754,7 +844,7 @@ class ContextUpdaterMixin:
 
                 # field to use without ambiguity.
 
-                rows: list[list[str]] = []
+                message_rows: list[list[str]] = []
 
                 snippet_rows: list[list[str]] = []
 
@@ -773,26 +863,18 @@ class ContextUpdaterMixin:
 
 
                     sender = h_dict.get("from", "Unknown")
-
                     subject = h_dict.get("subject", "No Subject")
-
                     date_val = h_dict.get("date", "Unknown Date")
+                    snippet_val = self._generate_fallback_snippet(m, h_dict)
 
-                    snippet_val = str(m.get("snippet") or "").strip()
-                    if not snippet_val:
-                        snippet_val = f"From: {sender} | Subject: {subject} | Date: {date_val}"
-
-
-
-                    rows.append([sender, subject, date_val, m_id, t_id])
-
+                    message_rows.append([sender, subject, date_val, m_id, t_id])
                     snippet_rows.append([sender, snippet_val, date_val, m_id, t_id])
 
 
 
-                context["gmail_summary_rows"] = rows
+                context["gmail_summary_rows"] = message_rows
 
-                context["gmail_summary_values"] = [r.copy() for r in rows]
+                context["gmail_summary_values"] = [r.copy() for r in message_rows]
 
                 context["gmail_snippets_rows"] = snippet_rows
 
@@ -804,7 +886,7 @@ class ContextUpdaterMixin:
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
 
-                for r in rows:
+                for r in message_rows:
 
                     # Sanitize cells
 
@@ -891,15 +973,12 @@ class ContextUpdaterMixin:
         if isinstance(files, list):
 
             if len(files) == 0:
-
                 # No files found - set empty context values
-
-                context["drive_metadata_table"] = "No files found matching the search criteria."
-
+                msg = "No files found matching the search criteria."
+                context["drive_metadata_table"] = msg
+                context["drive_summary_table"] = msg
                 context["drive_file_links"] = "No files available."
-
                 context["drive_file_count"] = 0
-
                 return
 
             context["drive_file_ids"] = [f.get("id") for f in files if f.get("id")]
@@ -1050,42 +1129,25 @@ class ContextUpdaterMixin:
 
             context["sheet_summary_rows"] = rows
 
-
-
-            if rows:
-
+            if rows and any(r for r in rows):
                 cols = max(len(r) for r in rows)
+                if cols > 0:
+                    def pad_row(row_list, length):
+                        safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
+                        return safe_row + [""] * (length - len(safe_row))
 
+                    header_row = pad_row(rows[0], cols)
+                    table_lines = ["| " + " | ".join(header_row) + " |"]
+                    table_lines.append("|" + "|".join(["---"] * cols) + "|")
 
+                    for r in rows[1:]:
+                        padded_r = pad_row(r, cols)
+                        table_lines.append("| " + " | ".join(padded_r) + " |")
 
-                def pad_row(row_list, length):
-
-                    safe_row = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in row_list]
-
-                    return safe_row + [""] * (length - len(safe_row))
-
-
-
-                header_row = pad_row(rows[0], cols)
-
-                table_lines = ["| " + " | ".join(header_row) + " |"]
-
-                table_lines.append("|" + "|".join(["---"] * cols) + "|")
-
-
-
-                for r in rows[1:]:
-
-                    padded_r = pad_row(r, cols)
-
-                    table_lines.append("| " + " | ".join(padded_r) + " |")
-
-
-
-                context["sheet_summary_table"] = "\n".join(table_lines)
-
+                    context["sheet_summary_table"] = "\n".join(table_lines)
+                else:
+                    context["sheet_summary_table"] = ""
             else:
-
                 context["sheet_summary_table"] = ""
 
 

@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
+import secrets
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
 
 import gradio as gr
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-import secrets
-import base64
-import hashlib
 
 from .agent_system import WorkspaceAgentSystem
 from .config import AppConfig
@@ -103,16 +99,16 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         if "installed" in credentials_info:
             client_config = credentials_info["installed"]
             client_type = "installed"
-            print(f"DEBUG: Using 'installed' config")
+            print("DEBUG: Using 'installed' config")
         elif "web" in credentials_info:
             client_config = credentials_info["web"]
             client_type = "web"
-            print(f"DEBUG: Using 'web' config")
+            print("DEBUG: Using 'web' config")
         else:
             # Try using the entire file as client config
             client_config = credentials_info
             client_type = None
-            print(f"DEBUG: Using entire file as client config")
+            print("DEBUG: Using entire file as client config")
 
         print(f"DEBUG: Client config keys: {list(client_config.keys())}")
         print(f"DEBUG: Has client_id: {'client_id' in client_config}")
@@ -281,31 +277,31 @@ def create_interface() -> gr.Blocks:
 
     with gr.Blocks(title="Google Workspace Assistant") as demo:
         gr.Markdown("# Google Workspace Assistant")
-        
+
         # Authentication section
         with gr.Accordion("🔐 Google Authentication", open=True):
             gr.Markdown("Upload your Google Cloud `credentials.json` file to authenticate with your own Google account.")
-            
+
             with gr.Row():
                 credentials_upload = gr.File(
                     label="Upload credentials.json",
                     file_types=[".json"],
                     type="filepath"
                 )
-            
+
             auth_status = gr.Textbox(
                 label="Authentication Status",
                 value="🔴 Not authenticated",
                 interactive=False
             )
-            
+
             auth_url_output = gr.Textbox(
                 label="Authorization URL",
                 placeholder="Upload credentials.json to generate authorization URL",
                 interactive=False,
                 lines=2
             )
-            
+
             with gr.Row():
                 auth_code_input = gr.Textbox(
                     label="Paste Authorization Code",
@@ -314,17 +310,17 @@ def create_interface() -> gr.Blocks:
                 )
                 submit_auth_button = gr.Button("Authenticate", visible=False)
                 regenerate_url_button = gr.Button("Generate New Auth URL", visible=False)
-            
+
             auth_message = gr.Textbox(
                 label="Message",
                 value="",
                 interactive=False,
                 visible=False
             )
-        
+
         gr.Markdown("---")
         gr.Markdown("Describe your Google Workspace task in natural language.")
-        
+
         with gr.Row():
             request = gr.Textbox(
                 label="Request",
@@ -336,11 +332,11 @@ def create_interface() -> gr.Blocks:
             clear_button = gr.Button("Clear")
         output = gr.Textbox(label="Result", lines=18)
         plan_preview = gr.Textbox(label="Planned Tasks", lines=8)
-        
+
         # Session state for storing client config and credentials file
         client_config_state = gr.State(value="")
         credentials_file_state = gr.State(value=None)
-        
+
         # Event handlers
         def on_credentials_upload(file):
             client_config, auth_url, status = handle_credentials_upload(file)
@@ -392,11 +388,11 @@ def create_interface() -> gr.Blocks:
                     gr.update(visible=True),
                     gr.update(value=status, visible=True)
                 )
-        
+
         def on_session_end(credentials_file):
             cleanup_credentials(credentials_file)
             return None
-        
+
         credentials_upload.upload(
             fn=on_credentials_upload,
             inputs=[credentials_upload],
@@ -418,7 +414,7 @@ def create_interface() -> gr.Blocks:
             inputs=[client_config_state],
             outputs=[auth_url_output, client_config_state]
         )
-        
+
         submit_auth_button.click(
             fn=on_auth_submit,
             inputs=[client_config_state, auth_code_input],
@@ -430,26 +426,30 @@ def create_interface() -> gr.Blocks:
                 auth_message
             ]
         )
-        
+
         run_button.click(
             fn=run_request_with_auth_check,
             inputs=[request, credentials_file_state],
             outputs=[output, plan_preview]
         )
-        
+
         request.submit(
             fn=run_request_with_auth_check,
             inputs=[request, credentials_file_state],
             outputs=[output, plan_preview]
         )
-        
+
         clear_button.click(
             fn=lambda: ("", "", ""),
             outputs=[request, output, plan_preview]
         )
-        
-        # Note: Gradio doesn't support reliable session cleanup on page unload
-        # Temporary credential files will be cleaned up by OS temp directory cleanup
+
+        # Register cleanup handler for session/app shutdown
+        demo.unload(
+            fn=on_session_end,
+            inputs=[credentials_file_state],
+            outputs=[credentials_file_state]
+        )
 
     return demo
 

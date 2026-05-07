@@ -11,24 +11,32 @@ logger = logging.getLogger(__name__)
 def _sanitize_file_path_patterns(value: Any) -> Any:
     """Replace [File: ...] patterns with a placeholder to avoid leaking local paths."""
     if isinstance(value, str):
-        return re.sub(r'\[File: [^\]]+\]', '[Document file]', value)
+        return re.sub(r"\[File: [^\]]+\]", "[Document file]", value)
     elif isinstance(value, list):
         return [_sanitize_file_path_patterns(item) for item in value]
     elif isinstance(value, dict):
-        return {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
+        result = {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
+        # AI Robustness: Preserve original type if it's a custom class (e.g. Pydantic)
+        if type(value) is not dict:
+            try:
+                # Try to re-instantiate with sanitized values
+                return type(value)(**result)
+            except Exception:
+                pass
+        return result
     return value
 
 
 def _coerce_structured_value(raw: Any) -> Any:
     """Return list/dict if raw string represents structured data, otherwise keep value."""
     if raw is None:
-        return []
+        return None
     if isinstance(raw, (list, dict)):
         return raw
     if isinstance(raw, str):
         trimmed = raw.strip()
         if not trimmed:
-            return []
+            return ""
 
         try:
             parsed = json.loads(trimmed)
@@ -53,6 +61,11 @@ def _coerce_structured_value(raw: Any) -> Any:
 
 def _normalize_injected_vars(values: list[Any]) -> list[Any]:
     return [_coerce_structured_value(item) for item in values]
+
+
+# Global safety limits for spreadsheet fetching
+MAX_TOTAL_FETCH_ATTEMPTS = 10
+AUTO_FETCH_TOTAL_TIMEOUT = 30.0  # seconds
 
 
 class HelpersMixin:
@@ -84,22 +97,39 @@ class HelpersMixin:
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
         try:
+            from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
             from gws_assistant.models import ExecutionResult
             from gws_assistant.tools.web_search import web_search_tool
 
             query = task.parameters.get("query", "")
-            result_data = web_search_tool.invoke({"query": query})
+            if query is None:
+                query = "Google Workspace"
+
+            # Resolve placeholders in query
+            resolved_query = self._resolve_placeholders(query, context)
+
+            # Strict validation of the resolved query
+            if (
+                resolved_query is None
+                or not isinstance(resolved_query, str)
+                or not resolved_query.strip()
+                or resolved_query == _UNRESOLVED_MARKER
+            ):
+                self.logger.warning("Web search query resolution failed or yielded empty string. Falling back to default.")
+                resolved_query = "Google Workspace"
+
+            result_data = web_search_tool.invoke({"query": str(resolved_query)})
             results = result_data.get("results") or result_data.get("rows") or []
 
             markdown_lines = []
             table_values = []
             for r in results:
                 if isinstance(r, dict):
-                    title   = r.get("title", "")
+                    title = r.get("title", "")
                     # The web search tool returns 'snippet' and 'url'
                     # But if we receive 'content' and 'link' fallback to those.
                     content = r.get("snippet", r.get("content", ""))
-                    link    = r.get("url", r.get("link", ""))
+                    link = r.get("url", r.get("link", ""))
                     markdown_lines.append(f"## {title}\n{content}\n{link}")
                     table_values.append([title, link, content])
                 elif isinstance(r, list):
@@ -115,7 +145,7 @@ class HelpersMixin:
             result_data["summary_table"] = "\n\n".join(markdown_lines)
 
             return ExecutionResult(
-                success=True, command=["web_search", query], stdout=json.dumps(result_data), output=result_data
+                success=True, command=["web_search", str(resolved_query)], stdout=json.dumps(result_data), output=result_data
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
@@ -145,15 +175,22 @@ class HelpersMixin:
             from gws_assistant.tools.code_execution import execute_generated_code
 
             # Use code-safe resolution (use repr for dicts/lists)
-            raw_code = task.parameters.get("code")
-            if not raw_code:
+            raw_code = task.parameters.get("code") if task.parameters else None
+            if not raw_code and task.parameters:
                 # Try variations
                 for k in ["script", "python", "content", "text", "body", "python_code"]:
                     if k in task.parameters:
                         raw_code = task.parameters[k]
                         break
 
+            if not raw_code:
+                logger.error("No code found in task parameters: %s", task.parameters)
+                return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
+
             code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
+            if code is None:
+                logger.error("Placeholder resolution returned None for code")
+                return ExecutionResult(success=False, command=["code_execute"], error="Code resolution failed")
             # Replace any remaining unresolved markers with an empty string sentinel
             # to avoid RestrictedPython SyntaxErrors from identifiers starting with '_'
             from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
@@ -196,7 +233,20 @@ class HelpersMixin:
 
             # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
             fetched_vars = []
+            import time
+            auto_fetch_start = time.time()
+            total_auto_fetch_attempts = 0
             for var in injected_vars:
+                # Check global limits
+                if total_auto_fetch_attempts >= MAX_TOTAL_FETCH_ATTEMPTS:
+                    logger.warning("Reached maximum total spreadsheet fetch attempts (%d). Skipping further auto-fetches.", MAX_TOTAL_FETCH_ATTEMPTS)
+                    fetched_vars.append(var)
+                    continue
+                if time.time() - auto_fetch_start > AUTO_FETCH_TOTAL_TIMEOUT:
+                    logger.warning("Auto-fetch loop exceeded total timeout of %ds. Skipping further auto-fetches.", AUTO_FETCH_TOTAL_TIMEOUT)
+                    fetched_vars.append(var)
+                    continue
+
                 logger.info("DEBUG: Processing injected_vars item: type=%s, value=%s", type(var), str(var)[:100])
                 if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
                     # Try to fetch spreadsheet data by name from drive
@@ -214,7 +264,14 @@ class HelpersMixin:
                                     files = v.get("files", []) if isinstance(v, dict) else []
                                     logger.info("DEBUG: Found files in %s, count: %d", k, len(files))
                                     break
-                        for file_info in files:
+                        files_to_try = files[:5]  # AI Robustness: Limit to 5 attempts to avoid hangs
+                        for file_info in files_to_try:
+                            # Check global limits inside the inner loop as well
+                            if total_auto_fetch_attempts >= MAX_TOTAL_FETCH_ATTEMPTS:
+                                break
+                            if time.time() - auto_fetch_start > AUTO_FETCH_TOTAL_TIMEOUT:
+                                break
+
                             if isinstance(file_info, dict):
                                 file_name = file_info.get("name", "")
                                 logger.info("DEBUG: Checking file: %s", file_name)
@@ -225,36 +282,42 @@ class HelpersMixin:
                                         # Fetch the actual data - use the actual sheet name from file_info
                                         sheet_name = file_info.get("name", "Sheet1")
                                         get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": sheet_name})]
-                                        get_res = self.runner.run(get_args)
-                                        logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
-                                        if get_res.success and get_res.stdout:
-                                            parsed = self._coerce_structured_value(get_res.stdout)
-                                            logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
-                                            if isinstance(parsed, dict) and "values" in parsed:
-                                                values = parsed["values"]
-                                                # Normalize column names to match LLM expectations
-                                                if values and len(values) > 0:
-                                                    headers = values[0]
-                                                    # Column name mapping: normalize common variations
-                                                    header_map = {}
-                                                    for i, h in enumerate(headers):
-                                                        h_lower = str(h).lower().strip()
-                                                        if "category" in h_lower:
-                                                            header_map[i] = "Category"
-                                                        elif "revenue" in h_lower and "total" in h_lower:
-                                                            header_map[i] = "Total Revenue"
-                                                        elif "revenue" in h_lower:
-                                                            header_map[i] = "Revenue"
-                                                        else:
-                                                            header_map[i] = h
-                                                    # Apply mapping to first row
-                                                    values[0] = [header_map[i] for i in range(len(headers))]
-                                                fetched_vars.append(values)
-                                                logger.info("Successfully fetched %d rows from spreadsheet", len(values))
-                                                break
+
+                                        # Execute with inner try to continue to next file if one fails
+                                        try:
+                                            total_auto_fetch_attempts += 1
+                                            get_res = self.runner.run(get_args, timeout_seconds=15)
+                                            logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
+                                            if get_res.success and get_res.stdout:
+                                                parsed = _coerce_structured_value(get_res.stdout)
+                                                logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
+                                                if isinstance(parsed, dict) and "values" in parsed:
+                                                    values = parsed["values"]
+                                                    # Normalize column names to match LLM expectations
+                                                    if values and len(values) > 0:
+                                                        headers = values[0]
+                                                        # Column name mapping: normalize common variations
+                                                        header_map = {}
+                                                        for i, h in enumerate(headers):
+                                                            h_lower = str(h).lower().strip()
+                                                            if "category" in h_lower:
+                                                                header_map[i] = "Category"
+                                                            elif "revenue" in h_lower and "total" in h_lower:
+                                                                header_map[i] = "Total Revenue"
+                                                            elif "revenue" in h_lower:
+                                                                header_map[i] = "Revenue"
+                                                            else:
+                                                                header_map[i] = h
+                                                        # Apply mapping to first row
+                                                        values[0] = [header_map[i] for i in range(len(headers))]
+                                                    fetched_vars.append(values)
+                                                    logger.info("Successfully fetched %d rows from spreadsheet", len(values))
+                                                    break
+                                        except Exception as inner_e:
+                                            logger.warning("Inner spreadsheet fetch failed for %s: %s", file_id, inner_e)
                         else:
-                            # No data found, keep original string
-                            logger.warning("No matching spreadsheet found for: %s", var)
+                            # No data found or all tries failed, keep original string
+                            logger.warning("No matching spreadsheet data fetched for: %s", var)
                             fetched_vars.append(var)
                     except Exception as e:
                         logger.warning("Failed to auto-fetch spreadsheet data: %s", e)
@@ -304,36 +367,23 @@ class HelpersMixin:
             if target_file and result.get("success"):
                 content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
                 if content_to_write:
+                    import os
+                    # Determine safe directory (defaulting to ./output if not in config)
+                    safe_dir = os.path.abspath(getattr(self.config, "output_dir", "./output"))
+                    abs_target = os.path.abspath(target_file)
                     try:
-                        with open(target_file, "w", encoding="utf-8") as f:
-                            f.write(str(content_to_write))
-                        self.logger.info(f"Auto-wrote code output to {target_file}")
+                        # Ensure path is within safe_dir
+                        if os.path.commonpath([safe_dir, abs_target]) != safe_dir:
+                            self.logger.error(f"SECURITY: Rejected file path outside safe directory: {target_file}")
+                        else:
+                            os.makedirs(os.path.dirname(abs_target), exist_ok=True)
+                            with open(abs_target, "w", encoding="utf-8") as f:
+                                f.write(str(content_to_write))
+                            self.logger.info(f"Auto-wrote code output to {target_file}")
                     except Exception as e:
                         self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
 
-            def _tableify(value: Any) -> str | None:
-                rows: list[list[str]] = []
-                if isinstance(value, list) and value and isinstance(value[0], dict):
-                    headers = list(value[0].keys())
-                    rows.append(headers)
-                    for item in value:
-                        row = [str(item.get(h, "")) for h in headers]
-                        rows.append(row)
-                elif isinstance(value, list) and value and isinstance(value[0], list):
-                    rows = [[str(cell) for cell in row] for row in value]
-                else:
-                    return None
-
-                if not rows:
-                    return None
-
-                header = rows[0]
-                table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
-                for row in rows[1:]:
-                    # pad row
-                    padded = row + [""] * (len(header) - len(row))
-                    table_lines.append("| " + " | ".join(padded) + " |")
-                return "\n".join(table_lines)
+            from .context_updater import _tableify
 
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
@@ -391,19 +441,37 @@ class HelpersMixin:
             from gws_assistant.models import ExecutionResult
             from gws_assistant.tools.telegram import redact_sensitive, send_telegram
 
-            message = task.parameters.get("message", "")
-            message = self._resolve_placeholders(message, context)
-            sent = send_telegram(str(message), context=context)
+            if not task.parameters:
+                return ExecutionResult(success=False, command=["telegram"], error="No parameters provided for Telegram task")
+
+            message = task.parameters.get("message", "Task completed.")
+            if message is None:
+                message = "Task completed (null message)."
+
+            # Resolve placeholders in message
+            resolved_msg = self._resolve_placeholders(message, context)
+
+            # Skip send if message is unresolved or empty
+            if resolved_msg is None or str(resolved_msg).strip() == "" or str(resolved_msg) == "___UNRESOLVED_PLACEHOLDER___":
+                self.logger.warning("Telegram message resolution failed or yielded empty string. Skipping send.")
+                return ExecutionResult(
+                    success=False,
+                    command=["telegram"],
+                    error="Message content was empty or unresolved placeholder.",
+                    error_code="UNRESOLVED_PLACEHOLDER"
+                )
+
+            sent = send_telegram(str(resolved_msg), context=context)
 
             return ExecutionResult(
                 success=sent,
                 command=["telegram", "send_message"],
-                stdout=redact_sensitive(message),
+                stdout=redact_sensitive(str(resolved_msg)),
                 stderr="" if sent else "Telegram send failed.",
                 return_code=0 if sent else 1,
                 output={"success": sent},
             )
         except Exception as exc:
             from gws_assistant.models import ExecutionResult
-
+            self.logger.error(f"Telegram execution failed: {exc}")
             return ExecutionResult(success=False, command=["telegram"], error=str(exc))

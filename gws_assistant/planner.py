@@ -323,9 +323,9 @@ class CommandPlanner:
             mime_type = str(params.get("mime_type") or "application/vnd.google-apps.document").strip()
             folder_id = str(params.get("folder_id") or "").strip()
 
-            payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
+            file_payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
             if folder_id:
-                payload["parents"] = [folder_id]
+                file_payload["parents"] = [folder_id]
 
             return [
                 "drive",
@@ -334,7 +334,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps(payload, ensure_ascii=True),
+                json.dumps(file_payload, ensure_ascii=True),
             ]
 
         if action == "export_file":

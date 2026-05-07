@@ -244,9 +244,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         )
                         if isinstance(data, ExecutionResult):
                             return data
-                        parents = data.get("parents")
-                        if parents and isinstance(parents, list):
-                            context["fetch_parents"] = ",".join(parents)
+                        if isinstance(data, dict):
+                            parents = data.get("parents")
+                            if parents and isinstance(parents, list):
+                                context["fetch_parents"] = ",".join(parents)
                         else:
                             return ExecutionResult(
                                 success=False,
@@ -312,6 +313,12 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
                 # Special Case: gmail.list_messages — auto-enrich messages with snippet/headers
                 if task.service == "gmail" and task.action == "list_messages":
+                    if not isinstance(data, dict):
+                        return ExecutionResult(
+                            success=False,
+                            command=task.to_command(),
+                            error=f"Expected dict result for gmail.list_messages, got {type(data).__name__}",
+                        )
                     msgs = data.get("messages", [])
                     # Skip enrichment if messages already carry snippets or payload headers
                     needs_enrich = isinstance(msgs, list) and msgs and not any(
@@ -353,6 +360,12 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 #     ... (auto-insert logic commented out)
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
+                    if not isinstance(data, dict):
+                        return ExecutionResult(
+                            success=False,
+                            command=task.to_command(),
+                            error=f"Expected dict result for drive.export_file/get_file, got {type(data).__name__}",
+                        )
                     saved_file = data.get("saved_file")
                     if saved_file:
                         # Try to determine if it is readable as text
@@ -362,7 +375,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                             ext = os.path.splitext(saved_file)[1].lower()
                             is_text = ext in (".txt", ".csv", ".json", ".md", ".py", ".js", ".html")
 
-                        file_content = None
+                        file_content: str | None = None
                         if is_text:
                             try:
                                 if not is_within_allowed_dir(saved_file):
