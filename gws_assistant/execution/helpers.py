@@ -23,7 +23,7 @@ def _sanitize_file_path_patterns(value: Any) -> Any:
 def _coerce_structured_value(raw: Any) -> Any:
     """Return list/dict if raw string represents structured data, otherwise keep value."""
     if raw is None:
-        return []
+        return None
     if isinstance(raw, (list, dict)):
         return raw
     if isinstance(raw, str):
@@ -53,7 +53,9 @@ def _coerce_structured_value(raw: Any) -> Any:
 
 
 def _normalize_injected_vars(values: list[Any]) -> list[Any]:
-    return [_coerce_structured_value(item) for item in values]
+    normalized = [_coerce_structured_value(item) for item in values]
+    # Convert None to empty list for injected vars context
+    return [item if item is not None else [] for item in normalized]
 
 
 class HelpersMixin:
