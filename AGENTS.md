@@ -294,6 +294,7 @@ lint → unit-tests → integration-tests → security
 - Snyk SCA (Software Composition Analysis) and SAST (Static Application Security Testing) if SNYK_TOKEN is configured
 - Security findings are uploaded as artifacts for review
 - **IMPORTANT:** Security scans now fail the pipeline on HIGH/CRITICAL findings
+- **Exception:** Snyk SCA is allowed to fail for third-party vulnerabilities with no available fixes (already reviewed and dismissed)
 
 ---
 
@@ -394,7 +395,8 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
 - Never log full email bodies, file contents, or user PII
 - `bandit`, `safety`, and `pip-audit` run on every PR — fix all HIGH severity findings before pushing
 - Security scans now fail the pipeline on HIGH/CRITICAL findings (non-blocking mode removed)
-- Snyk SCA and SAST scans run if SNYK_TOKEN is configured (non-blocking for forks without token)
+- Snyk SAST (code security) runs on every PR and blocks merge on HIGH severity findings
+- Snyk SCA (dependency scan) runs on every PR but is allowed to fail for third-party vulnerabilities with no available fixes (e.g. gradio, litellm)
 - Secrets live in GitHub Actions Secrets only — never in committed `.env` files
 - `.env.example` documents required keys but contains no real values
 - The `safety_guard.py` policy matrix is the authoritative source for what operations are allowed without user confirmation
