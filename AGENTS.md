@@ -289,6 +289,12 @@ lint → unit-tests → integration-tests → security
 - Posts full error logs and instructions to the linked Issue (or PR if no Issue found)
 - **Agent must push fixes to the same head branch — never open a new PR or merge manually**
 
+### Security Scan
+- Runs `bandit` (Python code security), `safety` (dependency vulnerabilities), and `pip-audit` (CVE scan)
+- Snyk SCA (Software Composition Analysis) and SAST (Static Application Security Testing) if SNYK_TOKEN is configured
+- Security findings are uploaded as artifacts for review
+- **IMPORTANT:** Security scans now fail the pipeline on HIGH/CRITICAL findings
+
 ---
 
 ## PR & Commit Instructions
@@ -387,9 +393,12 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
 
 - Never log full email bodies, file contents, or user PII
 - `bandit`, `safety`, and `pip-audit` run on every PR — fix all HIGH severity findings before pushing
+- Security scans now fail the pipeline on HIGH/CRITICAL findings (non-blocking mode removed)
+- Snyk SCA and SAST scans run if SNYK_TOKEN is configured (non-blocking for forks without token)
 - Secrets live in GitHub Actions Secrets only — never in committed `.env` files
 - `.env.example` documents required keys but contains no real values
 - The `safety_guard.py` policy matrix is the authoritative source for what operations are allowed without user confirmation
+- Pre-commit hooks block commits of `.env` and secret files
 
 ---
 

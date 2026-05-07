@@ -312,7 +312,7 @@ class WorkspaceAgentSystem:
                     # Use the drive task's ID in the placeholder reference
                     new_tasks.append(
                         PlannedTask(
-                            id=f"task-{len(new_tasks) + 1}",
+                            id=None,
                             service="sheets",
                             action="get_values",
                             parameters={"spreadsheet_id": f"{{{{{drive_task_id}.id}}}}", "range": "Sheet1"},

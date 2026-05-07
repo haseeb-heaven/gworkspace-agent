@@ -1566,21 +1566,25 @@ class VerificationEngine:
             )
 
         # Check for placeholders if enabled
-        # Skip placeholder detection for long content strings (>100 chars) that are
-        # clearly resolved real data (e.g. email summaries containing $, %, etc.)
-        if block_placeholders and len(val_str) <= 100:
-            if cls._is_placeholder(val_str):
-                raise VerificationError(
-                    tool_name,
-                    f"Field '{field}' contains placeholder value '{val_str[:50]}...' - template variable was not resolved",
-                    severity=VerificationSeverity.ERROR,
-                    field=field
-                )
-
+        # Always check for unresolved template patterns regardless of length,
+        # as these indicate actual template syntax that should never appear in resolved output.
+        # Only skip simple placeholder checks for very long strings to avoid false positives
+        # on legitimate content (e.g. email summaries containing $, %, etc.)
+        if block_placeholders:
+            # Always check for unresolved template patterns (critical security check)
             if cls._has_unresolved_templates(val_str):
                 raise VerificationError(
                     tool_name,
                     f"Field '{field}' contains unresolved template variable - value was not properly substituted",
+                    severity=VerificationSeverity.ERROR,
+                    field=field
+                )
+
+            # Only check simple placeholders for shorter strings to avoid false positives
+            if len(val_str) <= 100 and cls._is_placeholder(val_str):
+                raise VerificationError(
+                    tool_name,
+                    f"Field '{field}' contains placeholder value '{val_str[:50]}...' - template variable was not resolved",
                     severity=VerificationSeverity.ERROR,
                     field=field
                 )

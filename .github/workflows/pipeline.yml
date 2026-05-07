@@ -311,24 +311,23 @@ jobs:
         run: pip install bandit safety pip-audit
 
       - name: Bandit -- code security
-        run: bandit -c .bandit -r gws_assistant/ -ll --skip B101 -q 2>&1 | tee /tmp/security_errors.txt || true
+        run: bandit -c .bandit -r gws_assistant/ -ll -q 2>&1 | tee /tmp/security_errors.txt
 
       - name: Safety -- dependency vulnerabilities
-        run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt || true
+        run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt
 
       - name: pip-audit -- CVE scan
-        run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt || true
+        run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt
 
       - name: Snyk -- vulnerability scan (SCA)
         uses: snyk/actions/python-3.11@9adf32b1121593767fc3c057af55b55db032dc04  # v1.0.0
-        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high --sarif-file-output=snyk-sca.sarif
 
       - name: Snyk -- code security (SAST)
-        run: snyk code test --severity-threshold=high --sarif-file-output=snyk-sast.sarif 2>&1 | tee -a /tmp/security_errors.txt || true
+        run: snyk code test --severity-threshold=high --sarif-file-output=snyk-sast.sarif 2>&1 | tee -a /tmp/security_errors.txt
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
