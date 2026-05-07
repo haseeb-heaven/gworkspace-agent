@@ -605,7 +605,7 @@ class ContextUpdaterMixin:
 
             if items and isinstance(items, list):
 
-                rows = []
+                rows: list[Any] = []
 
                 for item in items:
 

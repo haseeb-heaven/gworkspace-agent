@@ -373,7 +373,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                 if not is_within_allowed_dir(saved_file):
                                     result.success = False
                                     result.error = (
-                                        f"Path traversal blocked while reading exported file: {saved_file}"
+                                        f"Path traversal blocked while reading exported file: {os.path.basename(saved_file)}"
                                     )
                                     result.stdout = json.dumps({"error": result.error})
                                     return result
@@ -381,16 +381,12 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
                                     file_content = f.read().lstrip("\ufeff")
                             except Exception as e:
-                                logger.warning("Failed to read exported file %s: %s", saved_file, e)
+                                logger.warning("Failed to read exported file %s: %s", os.path.basename(saved_file), e)
 
                         # Always set content, fallback to path if binary or read failed
-                        final_content = file_content if file_content is not None else f"[File: {saved_file}]"
+                        final_content = file_content if file_content is not None else f"[File: {os.path.basename(saved_file)}]"
 
-                        self.logger.info(
-                            "Exported file content for %s. Size: %s",
-                            saved_file,
-                            len(final_content) if file_content is not None else "N/A (Binary/Path only)",
-                        )
+                        self.logger.info("Exported file (content details omitted for security)")
 
                         if isinstance(data, dict):
                             data["content"] = final_content

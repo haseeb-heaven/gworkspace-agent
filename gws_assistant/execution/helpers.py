@@ -1,6 +1,7 @@
 import ast
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any
@@ -22,13 +23,13 @@ def _sanitize_file_path_patterns(value: Any) -> Any:
 def _coerce_structured_value(raw: Any) -> Any:
     """Return list/dict if raw string represents structured data, otherwise keep value."""
     if raw is None:
-        return []
+        return None
     if isinstance(raw, (list, dict)):
         return raw
     if isinstance(raw, str):
         trimmed = raw.strip()
         if not trimmed:
-            return []
+            return None
 
         try:
             parsed = json.loads(trimmed)
@@ -88,6 +89,14 @@ class HelpersMixin:
             from gws_assistant.tools.web_search import web_search_tool
 
             query = task.parameters.get("query", "")
+            query = self._resolve_placeholders(query, context)
+            # Validate query is not empty or unresolved
+            if not query or "{{" in str(query) or "<" in str(query):
+                return ExecutionResult(
+                    success=False,
+                    command=["web_search"],
+                    error="Query must be resolved and non-empty before web search",
+                )
             result_data = web_search_tool.invoke({"query": query})
             results = result_data.get("results") or result_data.get("rows") or []
 
@@ -159,7 +168,7 @@ class HelpersMixin:
             from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
             if _UNRESOLVED_MARKER in code:
                 code = code.replace(f'"{_UNRESOLVED_MARKER}"', '""').replace(f"'{_UNRESOLVED_MARKER}'", "''").replace(_UNRESOLVED_MARKER, '""')
-            logger.info("Executing generated code:\n%s", code)
+            logger.info("Executing generated code (code content omitted for security)")
 
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
@@ -197,7 +206,7 @@ class HelpersMixin:
             # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
             fetched_vars = []
             for var in injected_vars:
-                logger.info("DEBUG: Processing injected_vars item: type=%s, value=%s", type(var), str(var)[:100])
+                logger.info("Processing injected_vars item: type=%s", type(var))
                 if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
                     # Try to fetch spreadsheet data by name from drive
                     logger.info("Auto-fetching spreadsheet data for: %s", var)
@@ -205,19 +214,15 @@ class HelpersMixin:
                         # Try to find spreadsheet in drive results
                         drive_results = task_results.get("drive", {})
                         files = drive_results.get("files", [])
-                        logger.info("DEBUG: drive_results keys: %s, files count: %d", list(task_results.keys()), len(files))
                         if not files:
                             # Check task-1 (usually drive.list_files)
                             for k, v in task_results.items():
-                                logger.info("DEBUG: Checking task_results key %s, type=%s", k, type(v))
                                 if "drive" in k.lower() or isinstance(v, dict) and "files" in v:
                                     files = v.get("files", []) if isinstance(v, dict) else []
-                                    logger.info("DEBUG: Found files in %s, count: %d", k, len(files))
                                     break
                         for file_info in files:
                             if isinstance(file_info, dict):
                                 file_name = file_info.get("name", "")
-                                logger.info("DEBUG: Checking file: %s", file_name)
                                 if var.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
                                     file_id = file_info.get("id")
                                     if file_id:
@@ -226,10 +231,9 @@ class HelpersMixin:
                                         sheet_name = file_info.get("name", "Sheet1")
                                         get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": sheet_name})]
                                         get_res = self.runner.run(get_args)
-                                        logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
+                                        logger.info("get_values result: success=%s", get_res.success)
                                         if get_res.success and get_res.stdout:
                                             parsed = _coerce_structured_value(get_res.stdout)
-                                            logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
                                             if isinstance(parsed, dict) and "values" in parsed:
                                                 values = parsed["values"]
                                                 # Normalize column names to match LLM expectations
@@ -307,9 +311,9 @@ class HelpersMixin:
                     try:
                         with open(target_file, "w", encoding="utf-8") as f:
                             f.write(str(content_to_write))
-                        self.logger.info(f"Auto-wrote code output to {target_file}")
+                        self.logger.info(f"Auto-wrote code output to {os.path.basename(target_file)}")
                     except Exception as e:
-                        self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
+                        self.logger.warning(f"Failed to auto-write code output to {os.path.basename(target_file)}: {e}")
 
             def _tableify(value: Any) -> str | None:
                 rows: list[list[str]] = []
@@ -393,6 +397,13 @@ class HelpersMixin:
 
             message = task.parameters.get("message", "")
             message = self._resolve_placeholders(message, context)
+            # Validate message before sending
+            if not message or "{{" in str(message) or "<" in str(message):
+                return ExecutionResult(
+                    success=False,
+                    command=["telegram", "send_message"],
+                    error="Message must be resolved and non-empty before sending",
+                )
             sent = send_telegram(str(message), context=context)
 
             return ExecutionResult(

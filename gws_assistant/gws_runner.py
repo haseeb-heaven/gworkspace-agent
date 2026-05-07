@@ -177,7 +177,7 @@ class GWSRunner:
             self.logger.warning("Oversized CLI arg detected (WinError 206 risk); rewriting large args to temp files.")
             command, tmp_files, stdin_input = _rewrite_large_args_via_tempfile(command)
 
-        self.logger.info("Executing command: %s", " ".join(a[:80] if len(a) > 80 else a for a in command))
+        self.logger.info("Executing command: %s", args[0] if args else "unknown")
         try:
             proc_kwargs: dict[str, Any] = dict(
                 capture_output=True,
