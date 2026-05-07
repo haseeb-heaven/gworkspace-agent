@@ -1580,7 +1580,8 @@ class VerificationEngine:
                     field=field
                 )
 
-            # Only check simple placeholders for shorter strings to avoid false positives
+            # Check for placeholders - use length limit to avoid false positives on legitimate content
+            # but also check for unresolved template patterns which should never appear regardless of length
             if len(val_str) <= 100 and cls._is_placeholder(val_str):
                 raise VerificationError(
                     tool_name,

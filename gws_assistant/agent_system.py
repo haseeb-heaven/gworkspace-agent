@@ -296,35 +296,6 @@ class WorkspaceAgentSystem:
         # Final Fallback: Single Task per Service
         tasks = [self._single_service_task(service, text, index) for index, service in enumerate(services, start=1)]
 
-        # Special case: if both drive (for download) and code are detected, fetch spreadsheet data
-        has_drive = any(s == "drive" for s in services)
-        has_code = any(s in ("code", "script", "python") for s in services)
-        has_sheets = any(s == "sheets" for s in services)
-        if has_drive and has_code and has_sheets:
-            # Replace drive.get_file with sheets.get_values to fetch actual data
-            new_tasks: list[PlannedTask] = []
-            drive_task_id: str | None = None
-            for task in tasks:
-                if task.service == "drive" and task.action == "get_file":
-                    # Store the drive task ID for reference
-                    drive_task_id = task.id
-                    # Add sheets.get_values to fetch data from the spreadsheet
-                    # Use the drive task's ID in the placeholder reference
-                    new_tasks.append(
-                        PlannedTask(
-                            id=None,
-                            service="sheets",
-                            action="get_values",
-                            parameters={"spreadsheet_id": f"{{{{{drive_task_id}.id}}}}", "range": "Sheet1"},
-                            reason="Fetch spreadsheet data for processing",
-                        )
-                    )
-                new_tasks.append(task)
-            # Reassign IDs to ensure uniqueness after insertion
-            for idx, task in enumerate(new_tasks, start=1):
-                task.id = f"task-{idx}"
-            tasks = new_tasks
-
         return RequestPlan(
             raw_text=text,
             tasks=tasks,
