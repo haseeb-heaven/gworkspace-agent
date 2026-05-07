@@ -85,7 +85,7 @@ pytest tests/ \
   -m "not live_integration" \
   --ignore=tests/manual \
   --ignore=tests/test_live_integration.py \
-  --cov=src --cov=gws_assistant \
+  --cov=gws_assistant \
   --cov-fail-under=70 \
   -v
 
@@ -130,7 +130,7 @@ tests/
 ruff check .
 
 # Type check
-mypy src --ignore-missing-imports
+mypy gws_assistant --ignore-missing-imports
 
 # Auto-fix safe lint issues
 ruff check . --fix

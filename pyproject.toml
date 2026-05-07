@@ -7,17 +7,23 @@ name = "google-workspace-assistant"
 version = "1.0.0"
 description = "Professional CLI and GUI assistant for Google Workspace gws commands."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "langchain-core>=0.3.84",
-    "langchain-openai>=0.3.11",
+    # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 but requires
+    # openai>=2.26.0; litellm 1.83.14 pins openai==2.24.0, so the CVE fix is
+    # currently blocked on litellm upstream. Pin to 1.1.10 (the highest
+    # release compatible with the rest of the dep tree) until litellm allows
+    # openai>=2.26.0; then bump to >=1.1.14.
+    "langchain-openai>=1.1.10,<1.1.11",
     "langgraph>=0.3.34",
     "langchain-community>=0.3.31",
     "langchain-tavily>=0.2.0",
     "duckduckgo-search>=6.0.0",
     "RestrictedPython>=8.1",
     "httpx>=0.28.1",
-    "openai>=1.109.1",
+    # openai 2.24.0 is required by litellm 1.83.14; align the floor here.
+    "openai>=2.24.0,<3.0.0",
     "python-dotenv>=1.2.1",
     "typer>=0.24.0",
     "rich>=14.3.3",
@@ -25,12 +31,17 @@ dependencies = [
     "customtkinter>=5.2.2",
     "gradio>=5.27.0",
     "e2b-code-interpreter>=1.0.0",
-    "mem0ai>=0.1.33",
+    "mem0ai>=2.0.0",
+    "litellm>=1.83.14",
+    "python-telegram-bot>=22.7",
+    "google-auth>=2.23.0",
+    "google-auth-oauthlib>=1.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.2",
+    "pytest-cov>=7.1.0",
     "pytest-mock>=3.14.0",
     "pytest-asyncio>=0.24.0",
 ]
@@ -46,15 +57,11 @@ package-dir = {"" = "."}
 [tool.setuptools.packages.find]
 where = ["."]
 
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
-addopts = "-q"
-asyncio_mode = "auto"
+# Pytest configuration lives in pytest.ini (single source of truth).
 
 [tool.ruff]
 line-length = 120
-target-version = "v0.9.4"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -79,7 +86,7 @@ max-line-length = 120
 [tool.pyright]
 include = ["gws_assistant"]
 exclude = ["**/__pycache__", "tests"]
-pythonversion = "v0.9.4"
+pythonVersion = "3.11"
 typeCheckingMode = "basic"
 
 

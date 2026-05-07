@@ -3,8 +3,10 @@ import json
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from gws_assistant.exceptions import SafetyBlockedError, ValidationError
@@ -512,11 +514,15 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
         resolved_attachment_paths: list[str] = []
+        drive_export_tempdirs: set[str] = set()
         for path in attachment_paths:
             if self._looks_like_drive_file_id(path):
                 local_path = self.planner._export_drive_file_to_temp(path)
                 if local_path:
                     resolved_attachment_paths.append(local_path)
+                    parent = str(Path(local_path).resolve().parent)
+                    if Path(parent).name.startswith("gws_attach_"):
+                        drive_export_tempdirs.add(parent)
                     continue
                 drive_link = f"https://drive.google.com/file/d/{path}/view"
                 body = (
@@ -558,23 +564,27 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             "--json",
             json.dumps({"raw": raw_email}, ensure_ascii=True),
         ]
-        result = self.runner.run(args)
-        if result.success and result.stdout:
-            try:
-                data = self._parse_json_result(
-                    result,
-                    "gmail",
-                    "send_message",
-                    require_mapping=True,
-                    context_message="gmail send result",
-                )
-                if not isinstance(data, ExecutionResult):
-                    result.output = data
-                    # Add verification call for gmail.send_message
-                    VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
-            except Exception as e:
-                logger.warning(f"Failed to parse or verify Gmail send result: {e}")
-        return result
+        try:
+            result = self.runner.run(args)
+            if result.success and result.stdout:
+                try:
+                    data = self._parse_json_result(
+                        result,
+                        "gmail",
+                        "send_message",
+                        require_mapping=True,
+                        context_message="gmail send result",
+                    )
+                    if not isinstance(data, ExecutionResult):
+                        result.output = data
+                        # Add verification call for gmail.send_message
+                        VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
+                except Exception as e:
+                    logger.warning(f"Failed to parse or verify Gmail send result: {e}")
+            return result
+        finally:
+            for tempdir in drive_export_tempdirs:
+                shutil.rmtree(tempdir, ignore_errors=True)
 
     @staticmethod
     def _looks_like_drive_file_id(value: str) -> bool:

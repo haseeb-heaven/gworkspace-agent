@@ -1,30 +1,53 @@
-langchain-core>=0.3.0
-langchain-openai>=0.3.0
-langgraph>=0.2.0
-langchain-community>=0.3.0
-RestrictedPython>=7.0
-httpx>=0.27.0
-openai>=1.40.0
-python-dotenv>=1.0.1
-typer>=0.12.3
-rich>=13.7.1
-questionary>=2.0.1
+# Runtime + dev dependencies. Keep in sync with pyproject.toml.
+# pyproject.toml is the source of truth for package metadata; this file
+# exists to support `pip install -r requirements.txt` workflows in CI/Docker.
+
+# LangChain / LangGraph stack
+# NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 but requires
+# openai>=2.26.0; litellm 1.83.14 pins openai==2.24.0, so the CVE fix is
+# blocked on litellm upstream. Pin to the highest release that resolves
+# with the rest of the dep tree until litellm supports openai>=2.26.0.
+langchain-core>=0.3.84
+langchain-openai>=1.1.10,<1.1.11
+langgraph>=0.3.34
+langchain-community>=0.3.31
+langchain-tavily>=0.2.0
+
+# Sandboxing
+RestrictedPython>=8.1
+
+# HTTP / OpenAI (openai is pinned at the litellm-1.83.14 floor)
+httpx>=0.28.1
+openai>=2.24.0,<3.0.0
+
+# Config / CLI / GUI
+python-dotenv>=1.2.1
+typer>=0.24.0
+rich>=14.3.3
+questionary>=2.1.1
 customtkinter>=5.2.2
-gradio>=5.0.0
+gradio>=5.27.0
+
+# Test tooling
 pytest>=9.0.3
 pytest-cov>=7.1.0
 pytest-mock>=3.14.0
 pytest-asyncio>=0.24.0
-ddgs>=9.14.2
-e2b-code-interpreter>=0.1.0
+
+# Search backends
+duckduckgo-search>=6.0.0
+
+# Memory + sandbox + LLM router
+e2b-code-interpreter>=1.0.0
 mem0ai>=2.0.0
 litellm>=1.83.14
-# Telegram Polling Bot
+
+# Telegram polling bot
 python-telegram-bot>=22.7
-langchain-tavily>=0.2.0
-duckduckgo-search>=6.0.0
+
 # Google OAuth for multi-user authentication
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
+
 # Pre-commit hooks for blocking secret files
 pre-commit>=3.6.0

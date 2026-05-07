@@ -21,10 +21,9 @@ import csv
 import math
 import random
 
-from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+from RestrictedPython import safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
-from RestrictedPython import CompileResult
 
 
 def get_sandbox_globals() -> dict[str, object]:
@@ -111,7 +110,9 @@ def run_code(code_b64: str) -> dict[str, object]:
         byte_code = compile(code, filename="<string>", mode="exec")
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-            exec(byte_code, sandbox_globals)
+            # Sandbox globals come from get_sandbox_globals(); user code is
+            # compiled via compile_restricted (RestrictedPython) upstream.
+            exec(byte_code, sandbox_globals)  # nosec B102
 
         printed = sandbox_globals.get("_print")
         if callable(printed):

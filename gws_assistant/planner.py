@@ -1145,6 +1145,7 @@ class CommandPlanner:
                 part["Content-Disposition"] = f'attachment; filename="{filename}"'
                 msg.attach(part)
             except Exception:
+                logging.warning("Skipping attachment %s: failed to read/encode", normalized_path, exc_info=True)
                 continue
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 

@@ -19,7 +19,7 @@ import time
 from typing import Any
 
 from langchain_core.tools import tool
-from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+from RestrictedPython import safe_builtins, safe_globals, utility_builtins
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 

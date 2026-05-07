@@ -12,7 +12,7 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from gws_assistant.tools.telegram import redact_sensitive
+from gws_assistant.tools.telegram import redact_sensitive  # noqa: E402
 
 # Try to import dotenv, fallback gracefully
 try:
@@ -64,7 +64,8 @@ def send_telegram_message(message: str, max_retries: int = 3):
     last_error: Exception | None = None
     for attempt in range(max_retries):
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            # URL is the literal Telegram bot API endpoint; no user scheme.
+            with urllib.request.urlopen(req, timeout=20) as response:  # nosec B310
                 result = json.loads(response.read().decode())
                 if result.get("ok"):
                     print("Telegram message sent successfully.")
