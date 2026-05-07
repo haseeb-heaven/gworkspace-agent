@@ -12,8 +12,6 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from gws_assistant.tools.telegram import redact_sensitive  # noqa: E402
-
 # Try to import dotenv, fallback gracefully
 try:
     from dotenv import dotenv_values
@@ -22,6 +20,10 @@ except ImportError:
 
 
 def _safe_stderr(message: object) -> None:
+    try:
+        from gws_assistant.tools.telegram import redact_sensitive
+    except ImportError:
+        def redact_sensitive(msg): return str(msg)
     print(redact_sensitive(message), file=sys.stderr)
 
 

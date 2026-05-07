@@ -10,11 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "langchain-core>=0.3.84",
-    # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 but requires
-    # openai>=2.26.0; litellm 1.83.14 pins openai==2.24.0, so the CVE fix is
-    # currently blocked on litellm upstream. Pin to 1.1.10 (the highest
-    # release compatible with the rest of the dep tree) until litellm allows
-    # openai>=2.26.0; then bump to >=1.1.14.
+    # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
+    # but requires langchain-core>=1.2.22 and langchain-openai==1.1.9 with langchain-core==1.2.11.
+    # Upgrade is deferred due to litellm 1.83.14 pinning openai==2.24.0 (conflicts with openai>=2.26.0).
+    # This is tracked and will be upgraded when litellm supports the required openai version.
     "langchain-openai>=1.1.10,<1.1.11",
     "langgraph>=0.3.34",
     "langchain-community>=0.3.31",
@@ -24,12 +23,12 @@ dependencies = [
     "httpx>=0.28.1",
     # openai 2.24.0 is required by litellm 1.83.14; align the floor here.
     "openai>=2.24.0,<3.0.0",
-    "python-dotenv>=1.2.1",
+    "python-dotenv==1.2.2",
     "typer>=0.24.0",
     "rich>=14.3.3",
     "questionary>=2.1.1",
     "customtkinter>=5.2.2",
-    "gradio>=5.27.0",
+    "gradio>=6.6.0",
     "e2b-code-interpreter>=1.0.0",
     "mem0ai>=2.0.0",
     "litellm>=1.83.14",
@@ -88,7 +87,3 @@ include = ["gws_assistant"]
 exclude = ["**/__pycache__", "tests"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
-
-
-
-
