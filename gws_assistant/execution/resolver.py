@@ -571,7 +571,10 @@ class ResolverMixin:
     def _get_value_by_path(self, data: dict, path: str, max_unwrap_depth: int = 3) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
         if data is None:
-            self.logger.warning(f"Cannot resolve path '{path}': results data is None")
+            self.logger.warning(
+                "Cannot resolve path: results data is None (path_len=%d)",
+                len(str(path)) if path is not None else 0,
+            )
             return None
 
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
