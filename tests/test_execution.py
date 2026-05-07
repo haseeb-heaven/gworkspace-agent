@@ -577,3 +577,15 @@ def test_execute_single_task_rejects_unsafe_local_attachment_path():
     result = executor.execute_single_task(task, {})
     assert result.success is False
     assert "scratch/" in (result.error or "") or "downloads/" in (result.error or "")
+
+
+# Security tests for PII logging prevention and input validation
+
+def test_coerce_structured_value_preserves_none():
+    """Test that _coerce_structured_value preserves None values instead of converting to empty list."""
+    assert _coerce_structured_value(None) is None
+    assert _coerce_structured_value("") is None
+    assert _coerce_structured_value("   ") is None
+    assert _coerce_structured_value("[]") == []
+    assert _coerce_structured_value("{}") == {}
+    assert _coerce_structured_value("test") == "test"
