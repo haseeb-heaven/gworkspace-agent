@@ -24,7 +24,7 @@ dependencies = [
     # openai 2.24.0 is required by litellm 1.83.14; align the floor here.
     "openai>=2.24.0,<3.0.0",
     "python-dotenv==1.2.2",
-    "typer>=0.24.0",
+    "typer>=0.12.0",
     "rich>=14.3.3",
     "questionary>=2.1.1",
     "customtkinter>=5.2.2",
