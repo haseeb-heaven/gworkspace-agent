@@ -151,10 +151,10 @@ class TestResolverInjectValUnwrapping:
         inject = _unwrap(res)
         assert inject == [{"id": "m1"}]
 
-    def test_empty_list_value_not_unwrapped(self) -> None:
+    def test_empty_list_value_unwrapped(self) -> None:
         res = {"messages": [], "resultSizeEstimate": 0}
         inject = _unwrap(res)
-        assert inject == res
+        assert inject == []
 
 
 # ---------------------------------------------------------------------------

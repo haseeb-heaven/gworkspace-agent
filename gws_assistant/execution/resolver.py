@@ -313,48 +313,54 @@ class ResolverMixin:
 
         return task
 
-    def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
+    def _resolve_placeholders(
+        self,
+        val: Any,
+        context: dict,
+        use_repr_for_complex: bool = False,
+        depth: int = 0,
+        _cache: dict[int, Any] | None = None,
+    ) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context.
 
         The depth guard prevents infinite recursion when resolved values themselves
         contain brace/dollar characters (e.g. JSON tool output, base64 content).
         Depth is incremented only when descending into dict/list structures, NOT
         when substituting a value from context — that substitution is always final.
+
+        The _cache parameter is a local dict threaded through recursion to detect
+        circular references without using fragile instance attributes.
         """
         if depth > 15:
             # Depth exceeded — return as-is to prevent stack overflow.
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
 
-        # Additional safety: check for circular references in context
-        if isinstance(val, (dict, list)):
-            # Create cache at the TOP level only to prevent state pollution and memory leaks
-            if depth == 0:
-                self._resolve_cache: dict[int, Any] = {}
+        if _cache is None:
+            _cache = {}
 
+        # Circular reference detection for dicts and lists
+        if isinstance(val, (dict, list)):
             obj_id = id(val)
-            if hasattr(self, "_resolve_cache") and obj_id in self._resolve_cache:
-                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
-                return self._resolve_cache[obj_id]
+            if obj_id in _cache:
+                self.logger.warning(
+                    "_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone",
+                    obj_id,
+                )
+                return _cache[obj_id]
 
             # Create an empty clone and store it in the cache before recursion
             clone = {} if isinstance(val, dict) else []
-            if hasattr(self, "_resolve_cache"):
-                self._resolve_cache[obj_id] = clone
+            _cache[obj_id] = clone
 
-            try:
-                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
-                return result
-            finally:
-                # Clean up cache completely when unwinding top-level call
-                if depth == 0 and hasattr(self, "_resolve_cache"):
-                    del self._resolve_cache
-                elif hasattr(self, "_resolve_cache") and obj_id in self._resolve_cache:
-                    del self._resolve_cache[obj_id]
+            result = self._resolve_placeholders_impl(
+                val, context, use_repr_for_complex, depth, clone=clone, _cache=_cache,
+            )
+            return result
         else:
-            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
+            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, _cache=_cache)
 
-    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None) -> Any:
+    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None, _cache: dict[int, Any] | None = None) -> Any:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
@@ -540,7 +546,7 @@ class ResolverMixin:
             # If the list contains a single placeholder string, and that placeholder
             # resolves to a list, return the resolved list directly to avoid double-wrapping.
             if len(val) == 1 and isinstance(val[0], str) and ("{" in val[0] or "$" in val[0]):
-                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex, depth + 1)
+                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex, depth + 1, _cache=_cache)
                 if isinstance(resolved_item, list):
                     self.logger.debug(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
                     return resolved_item
@@ -548,16 +554,16 @@ class ResolverMixin:
             if clone is not None:
                 # Use the memoized clone for circular reference handling
                 for i, item in enumerate(val):
-                    clone.append(self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1))
+                    clone.append(self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1, _cache=_cache))
                 return clone
-            return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1) for item in val]
+            return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1, _cache=_cache) for item in val]
         elif isinstance(val, dict):
             if clone is not None:
                 # Use the memoized clone for circular reference handling
                 for k, v in val.items():
-                    clone[k] = self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1)
+                    clone[k] = self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1, _cache=_cache)
                 return clone
-            return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1) for k, v in val.items()}
+            return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1, _cache=_cache) for k, v in val.items()}
         return val
 
     def _get_value_by_path(self, data: dict, path: str, max_unwrap_depth: int = 3) -> Any:

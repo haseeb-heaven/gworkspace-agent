@@ -18,7 +18,7 @@ def _tableify(value: Any) -> Optional[str]:
         A markdown table string, or None if the input is invalid or empty.
     """
     def _esc(v: Any) -> str:
-        return str(v).replace("|", "\\\\|").replace("\n", " ").strip()
+        return str(v).replace("|", "\\|").replace("\n", " ").strip()
 
     rows = []
     if isinstance(value, list) and value and isinstance(value[0], dict) and value[0]:
@@ -57,7 +57,7 @@ def _unwrap(res: Any) -> Any:
             "notes", "spaces", "connections", "people", "activities"
         )
         for key in wrapper_keys:
-            if key in res and isinstance(res[key], list) and res[key]:
+            if key in res and isinstance(res[key], list):
                 inject_val = res[key]
                 break
     return inject_val

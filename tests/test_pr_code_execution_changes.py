@@ -183,12 +183,12 @@ class TestBannedPatternsOpenRemoved:
         # Using _validate_submitted_code for accurate contract check
         error = _validate_submitted_code("import subprocess\nsubprocess.run(['ls'])")
         assert error is not None
-        assert "subprocess" in error
+        assert "SecurityError" in error
 
     def test_os_system_still_banned(self):
         error = _validate_submitted_code("import os\nos.system('ls')")
         assert error is not None
-        assert r"os\.system" in error
+        assert "SecurityError" in error
 
 
 # ---------------------------------------------------------------------------

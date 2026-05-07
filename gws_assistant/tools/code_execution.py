@@ -20,6 +20,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+from RestrictedPython.Guards import full_write_guard
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
@@ -201,7 +202,7 @@ def get_safe_globals() -> dict[str, Any]:
             raise
 
     safe_g["_getitem_"] = safe_getitem
-    safe_g["_write_"] = lambda obj: obj
+    safe_g["_write_"] = full_write_guard
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
 
@@ -323,10 +324,6 @@ def _run_in_thread_sandbox(
         iter_pattern = re.compile(rf"for ([a-zA-Z_]\w*) in {reader_var}:")
         sanitized = iter_pattern.sub(r"for idx, \1 in df.iterrows():", sanitized)
 
-        # Standardize column access: LLM often uses lowercase keys
-        # Pattern: row['category'] -> row['Category']
-        sanitized = sanitized.replace("row['category']", "row['Category']")
-        sanitized = sanitized.replace("row['revenue']", "row['Total Revenue']")
 
         try:
             byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
@@ -412,7 +409,9 @@ def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
         "parsed_value": result.return_value,
     }
     if isinstance(result.return_value, dict):
-        output.update(result.return_value)
+        _RESERVED_KEYS = {"code", "stdout", "stderr", "parsed_value", "success", "error"}
+        safe_updates = {k: v for k, v in result.return_value.items() if k not in _RESERVED_KEYS}
+        output.update(safe_updates)
 
     return StructuredToolResult(
         success=result.success,
