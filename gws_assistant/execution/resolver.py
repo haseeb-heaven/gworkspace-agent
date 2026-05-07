@@ -88,9 +88,10 @@ class ResolverMixin:
         """Expand a single task into a list of executable tasks.
         Example: gmail.get_message with message_id=['id1', 'id2']
         """
-        # Resolve placeholders in parameters FIRST to see if we have a list
         import copy
+        task = copy.deepcopy(task)  # Harden: prevent side-effects on original task
 
+        # Resolve placeholders in parameters FIRST to see if we have a list
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
 
         if task.service == "gmail" and task.action == "get_message":
@@ -189,7 +190,14 @@ class ResolverMixin:
                     new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["title"] = title
                     expanded.append(new_task)
-                return expanded if expanded else [task]
+
+                if not expanded:
+                    # If we had a list but all items were filtered out, it's a resolution failure.
+                    # We return a list with a special sentinel task that will fail validation.
+                    error_task = copy.deepcopy(task)
+                    error_task.parameters["title"] = f"{_UNRESOLVED_MARKER} (All titles in list were invalid or empty)"
+                    return [error_task]
+                return expanded
 
         return [task]
 
@@ -361,8 +369,6 @@ class ResolverMixin:
                 res = context[LEGACY_PLACEHOLDER_MAP[val]]
                 if res is None:
                     return ""
-                # If we are in code context, we might want repr, but for expansion we want the raw list.
-                # Usually expansion happens before final resolution.
                 if use_repr_for_complex and isinstance(res, (dict, list)):
                     return repr(res)
                 return res
@@ -373,12 +379,10 @@ class ResolverMixin:
             if stripped.startswith("{{") and stripped.endswith("}}"):
                 path = stripped[2:-2].strip()
             elif stripped.startswith("{") and stripped.endswith("}"):
-                # Single braces: only resolve if it looks like a task path (e.g. {task-1} or {create_doc})
                 potential_path = stripped[1:-1].strip()
                 if "task-" in potential_path.lower() or potential_path in results_map or potential_path.startswith(":"):
                     path = potential_path
                 elif potential_path in context:
-                    # Also resolve plain context keys like {last_code_result}
                     path = potential_path
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
@@ -386,14 +390,11 @@ class ResolverMixin:
             def resolve_shorthand(shorthand_path):
                 shorthand_tokens = [t for t in re.split(r"[._]", shorthand_path.lower()) if t]
                 for key, val_item in reversed(list(results_map.items())):
-                    # Skip numeric keys and task-N keys for shorthand matching to avoid noise
                     if re.match(r"^task-\d+$|^\d+$", str(key)):
                         continue
-
                     key_tokens = [t for t in re.split(r"[._]", str(key).lower()) if t]
                     matches = 0
                     for st in shorthand_tokens:
-                        # Check exact, plural, or synonyms
                         is_match = any(
                             st == kt
                             or st + "s" == kt
@@ -406,20 +407,15 @@ class ResolverMixin:
                         )
                         if is_match:
                             matches += 1
-
                     if matches > 0 and matches >= len(shorthand_tokens):
-                        # If we have a perfect or better match, take it.
-                        # Since we are reversed, this is the most recent one.
                         return val_item
                 return None
 
             if path:
-                logger.debug("DEBUG: Found placeholder path (redacted), length=%d", len(path))
                 if path in context:
                     res = context[path]
                     if res is not None:
                         return res
-                # Allow nested lookups like contacts_summary_rows[0][0] against the global context
                 context_path_value = self._get_value_by_path(context, path)
                 if context_path_value is not None:
                     return context_path_value
@@ -429,9 +425,6 @@ class ResolverMixin:
                     resolved = resolve_shorthand(path[1:])
                 else:
                     resolved = self._get_value_by_path(results_map, path)
-
-                    # Fallback: if {{task-N.key}} failed, try to find 'key' in ANY task.
-                    # This handles LLM off-by-one errors in task indexing.
                     if resolved is None and "." in path:
                         parts = path.split(".")
                         if parts[0].startswith("task-") or parts[0].isdigit():
@@ -439,37 +432,13 @@ class ResolverMixin:
                             self.logger.info(f"RESOLVER: '{path}' failed. Trying fallback for '{key_to_find}'...")
                             resolved = resolve_shorthand(key_to_find)
 
-                    if resolved is None:
-                         keys_summary = {k: type(v).__name__ for k, v in results_map.items()}
-                         self.logger.warning(f"RESOLVER: Failed to resolve '{val}'. Path: '{path}'. Available keys/types: {keys_summary}")
-
-                # Smart unwrap:
-                # 1. If the resolved value is a dict with 'content', promote the content.
                 if isinstance(resolved, dict) and "content" in resolved:
                     resolved = resolved["content"]
 
-                # 2. If we resolved to a list, but we are a single-token placeholder
-                # (e.g. {{task-1.id}}), pick the first item.
-                singular_suffixes = [
-                    ".id",
-                    ".name",
-                    ".url",
-                    ".title",
-                    ".email",
-                    ".spreadsheet_id",
-                    ".document_id",
-                    ".spreadsheetId",
-                    ".documentId",
-                ]
+                singular_suffixes = [".id", ".name", ".url", ".title", ".email", ".spreadsheet_id", ".document_id", ".spreadsheetId", ".documentId"]
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
-                    self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
-                    # We have a list. Check if we need to do the folder heuristic.
-                    # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
-                    # we can't easily check mime types unless we look at the original objects.
-                    # Let's get the original objects using a parent path.
                     parent_path = path.rsplit('.', 1)[0]
                     parent_objects = self._get_value_by_path(results_map, parent_path)
-
                     picked = resolved[0]
                     if isinstance(parent_objects, list) and len(parent_objects) == len(resolved):
                         for i, obj in enumerate(parent_objects):
@@ -480,14 +449,65 @@ class ResolverMixin:
 
                 if resolved is not None:
                     return resolved
-
-                self.logger.warning(
-                    f"Placeholder '{path}' resolved to None in context. "
-                    f"Available context keys: {list(context.keys())}"
-                )
                 return _UNRESOLVED_MARKER
 
-            # 3. Partial string replacement
+            # 3. Large Artifact / Complexity Guard
+            val_len = len(val)
+            if val_len > 10000:
+                if "{{" not in val and "$task-" not in val:
+                    self.logger.debug("Skipping heavy resolution for massive string (len=%d) without explicit tokens", val_len)
+                    return val
+                if val_len > 100000:
+                    self.logger.warning("Refusing to run regex resolution on oversized string (len=%d) to prevent ReDoS", val_len)
+                    return val
+
+            # 4. Partial string replacement with separate passes
+            def replace_match(match):
+                p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
+                if p.startswith("$"):
+                    p = p[1:]
+
+                res = context.get(p)
+                if res is None:
+                    if p.startswith(":"):
+                        res = resolve_shorthand(p[1:])
+                    else:
+                        res = self._get_value_by_path(context, p)
+                        if res is None:
+                            res = self._get_value_by_path(results_map, p)
+
+                if p in context and context[p] is None:
+                    return ""
+
+                if res is not None:
+                    if isinstance(res, dict) and "content" in res:
+                        res = res["content"]
+
+                    if use_repr_for_complex:
+                        if "injected_vars" not in context:
+                            context["injected_vars"] = []
+                        idx = len(context["injected_vars"])
+                        from .context_updater import _normalize_entry, _unwrap
+                        inject_val = _unwrap(res)
+
+                        # Auto-fetch logic (simplified for regex pass to avoid too much logic here)
+                        # The real robust auto-fetch is now in helpers.py _handle_code_execution_task
+
+                        if isinstance(inject_val, list):
+                            inject_val = [_normalize_entry(e) if isinstance(e, dict) else e for e in inject_val]
+                        context["injected_vars"].append(inject_val)
+                        return f"injected_vars[{idx}]"
+                    elif isinstance(res, (dict, list)):
+                        return json.dumps(res)
+                    return str(res)
+
+                is_explicit = bool(match.group(1) or match.group(3))
+                is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":")))
+                if is_explicit or is_task_token:
+                    return _UNRESOLVED_MARKER
+                return match.group(0)
+
+            # Pass A: Legacy $ placeholders
             if "$" in val:
                 for placeholder, ctx_key in LEGACY_PLACEHOLDER_MAP.items():
                     if placeholder in val and ctx_key in context:
@@ -499,130 +519,21 @@ class ResolverMixin:
                         else:
                             val = val.replace(placeholder, str(res))
 
-            def replace_match(match):
-                # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...
-                p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
-                if p.startswith("$"):
-                    p = p[1:]  # strip $ from $task-N
+            # Pass B: {{...}} Double Braces
+            val = re.sub(r"\{\{([\w\-\.\[\]:]+?)\}\}", replace_match, val)
 
-                res = context.get(p)
-                if res is None:
-                    # Semantic/Shorthand resolution: if it starts with a colon like :get_message
-                    if p.startswith(":"):
-                        shorthand = p[1:].lower().replace("_", "")
-                        # Try to find a match in results_map keys
-                        for key, val_item in results_map.items():
-                            norm_key = str(key).lower().replace("_", "")
-                            # Direct match or containment
-                            if shorthand == norm_key or norm_key in shorthand or shorthand in norm_key:
-                                res = val_item
-                                break
-                    else:
-                        # Try nested lookups in the global context before falling back to task results
-                        res = self._get_value_by_path(context, p)
-                        if res is None:
-                            res = self._get_value_by_path(results_map, p)
+            # Pass C: $task-N tokens
+            val = re.sub(r"(\$task-\d+(?:\.[\w\-\[\]]+)*)", replace_match, val)
 
-                if p in context and context[p] is None:
-                    return ""
+            # Pass D: {...} Single Braces (Selective)
+            if val_len < 5000:
+                def single_brace_replace(m):
+                    p = m.group(1).strip()
+                    if "task-" in p.lower() or p in results_map or p.startswith(":"):
+                        return replace_match(m)
+                    return m.group(0)
+                val = re.sub(r"\{([\w\-\.\[\]:]+?)\}", single_brace_replace, val)
 
-                if res is not None:
-                    # Smart unwrap: if the resolved value is a dict with 'content',
-                    # promote the content.
-                    if isinstance(res, dict) and "content" in res:
-                        res = res["content"]
-
-                    if use_repr_for_complex:
-                        if "injected_vars" not in context:
-                            context["injected_vars"] = []
-                        idx = len(context["injected_vars"])
-                        from .context_updater import _normalize_entry, _unwrap
-                        inject_val = _unwrap(res)
-
-                        # Auto-fetch spreadsheet data if inject_val is a string reference
-                        if isinstance(inject_val, str) and (".csv" in inject_val.lower() or "sheet" in inject_val.lower()):
-                            # Try to fetch actual spreadsheet data
-                            try:
-                                # Find spreadsheet in drive results
-                                drive_results = results_map.get("drive", {})
-                                files = drive_results.get("files", [])
-                                if not files:
-                                    # Check all task results for files
-                                    for k, v in results_map.items():
-                                        if isinstance(v, dict) and "files" in v:
-                                            files = v.get("files", [])
-                                            break
-                                for file_info in files:
-                                    if isinstance(file_info, dict):
-                                        file_name = file_info.get("name", "")
-                                        if inject_val.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
-                                            file_id = file_info.get("id")
-                                            if file_id:
-                                                # Fetch the actual data using the runner - use empty range to get first sheet
-                                                # First try to get spreadsheet metadata to find sheet name
-                                                meta_args = ["sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": file_id, "fields": "sheets.properties.title"})]
-                                                meta_res = self.runner.run(meta_args)
-                                                sheet_name = "Sheet1"  # default
-                                                if meta_res.success and meta_res.stdout:
-                                                    try:
-                                                        meta_parsed = json.loads(meta_res.stdout)
-                                                        if isinstance(meta_parsed, dict) and "sheets" in meta_parsed and meta_parsed["sheets"]:
-                                                            sheet_name = meta_parsed["sheets"][0].get("properties", {}).get("title", "Sheet1")
-                                                    except json.JSONDecodeError:
-                                                        pass
-                                                get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": f"{sheet_name}"})]
-                                                get_res = self.runner.run(get_args)
-                                                if get_res.success and get_res.stdout:
-                                                    try:
-                                                        parsed = json.loads(get_res.stdout)
-                                                        if isinstance(parsed, dict) and "values" in parsed:
-                                                            inject_val = parsed["values"]
-                                                            break
-                                                    except json.JSONDecodeError:
-                                                        pass
-                            except Exception as e:
-                                self.logger.debug(f"RESOLVER: Failed to fetch spreadsheet data: {e}")
-                        if isinstance(inject_val, list):
-                            normalized_list = []
-                            for entry in inject_val:
-                                if isinstance(entry, dict):
-                                    normalized_list.append(_normalize_entry(entry))
-                                else:
-                                    normalized_list.append(entry)
-                            inject_val = normalized_list
-                        context["injected_vars"].append(inject_val)
-                        return f"injected_vars[{idx}]"
-                    elif isinstance(res, (dict, list)):
-                        return json.dumps(res)
-                    return str(res)
-
-                # Safety: Only return _UNRESOLVED_MARKER for tokens that are obviously intended as placeholders
-                # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
-                # This prevents accidental corruption of JSON payloads containing single braces.
-                is_explicit = bool(match.group(1) or match.group(3))
-                is_task_token = bool(
-                    p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":"))
-                )
-
-                if is_explicit or is_task_token:
-                    return _UNRESOLVED_MARKER
-                return match.group(0)
-
-            # 3. Large Artifact Guard (Issue 14)
-            # If the string is very long, skip regex scanning if it lacks placeholder indicators.
-            if len(val) > 5000:
-                if not ("{{" in val or "$task-" in val or "{task-" in val or "{:" in val):
-                    self.logger.debug(f"DEBUG: Skipping regex scan for large string (len={len(val)})")
-                    return val
-
-            # 4. Partial string replacement with regex
-            # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
-            # Added ':' to support shorthand like {{:get_message}}
-            val = re.sub(
-                r"\{\{([\w\-\.\[\]:]+?)\}\}|\{([\w\-\.\[\]:]+?)\}|(\$task-\d+(?:\.[\w\-\[\]]+)*)",
-                replace_match,
-                val,
-            )
             return val
 
         elif isinstance(val, list):

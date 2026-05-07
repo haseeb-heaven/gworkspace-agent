@@ -63,6 +63,11 @@ def _normalize_injected_vars(values: list[Any]) -> list[Any]:
     return [_coerce_structured_value(item) for item in values]
 
 
+# Global safety limits for spreadsheet fetching
+MAX_TOTAL_FETCH_ATTEMPTS = 10
+AUTO_FETCH_TOTAL_TIMEOUT = 30.0  # seconds
+
+
 class HelpersMixin:
     # Type hints for mypy
     config: Any
@@ -92,9 +97,9 @@ class HelpersMixin:
     def _handle_web_search_task(self, task: Any, context: dict) -> Any:
         """Execute a web search task and populate context with results."""
         try:
+            from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
             from gws_assistant.models import ExecutionResult
             from gws_assistant.tools.web_search import web_search_tool
-            from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
 
             query = task.parameters.get("query", "")
             if query is None:
@@ -228,7 +233,20 @@ class HelpersMixin:
 
             # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
             fetched_vars = []
+            import time
+            auto_fetch_start = time.time()
+            total_auto_fetch_attempts = 0
             for var in injected_vars:
+                # Check global limits
+                if total_auto_fetch_attempts >= MAX_TOTAL_FETCH_ATTEMPTS:
+                    logger.warning("Reached maximum total spreadsheet fetch attempts (%d). Skipping further auto-fetches.", MAX_TOTAL_FETCH_ATTEMPTS)
+                    fetched_vars.append(var)
+                    continue
+                if time.time() - auto_fetch_start > AUTO_FETCH_TOTAL_TIMEOUT:
+                    logger.warning("Auto-fetch loop exceeded total timeout of %ds. Skipping further auto-fetches.", AUTO_FETCH_TOTAL_TIMEOUT)
+                    fetched_vars.append(var)
+                    continue
+
                 logger.info("DEBUG: Processing injected_vars item: type=%s, value=%s", type(var), str(var)[:100])
                 if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
                     # Try to fetch spreadsheet data by name from drive
@@ -248,6 +266,12 @@ class HelpersMixin:
                                     break
                         files_to_try = files[:5]  # AI Robustness: Limit to 5 attempts to avoid hangs
                         for file_info in files_to_try:
+                            # Check global limits inside the inner loop as well
+                            if total_auto_fetch_attempts >= MAX_TOTAL_FETCH_ATTEMPTS:
+                                break
+                            if time.time() - auto_fetch_start > AUTO_FETCH_TOTAL_TIMEOUT:
+                                break
+
                             if isinstance(file_info, dict):
                                 file_name = file_info.get("name", "")
                                 logger.info("DEBUG: Checking file: %s", file_name)
@@ -261,7 +285,8 @@ class HelpersMixin:
 
                                         # Execute with inner try to continue to next file if one fails
                                         try:
-                                            get_res = self.runner.run(get_args)
+                                            total_auto_fetch_attempts += 1
+                                            get_res = self.runner.run(get_args, timeout_seconds=15)
                                             logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
                                             if get_res.success and get_res.stdout:
                                                 parsed = _coerce_structured_value(get_res.stdout)
@@ -432,7 +457,8 @@ class HelpersMixin:
                 return ExecutionResult(
                     success=False,
                     command=["telegram"],
-                    error="Message content was empty or unresolved placeholder."
+                    error="Message content was empty or unresolved placeholder.",
+                    error_code="UNRESOLVED_PLACEHOLDER"
                 )
 
             sent = send_telegram(str(resolved_msg), context=context)

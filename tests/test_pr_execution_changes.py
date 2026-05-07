@@ -13,14 +13,13 @@ Covers:
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from gws_assistant.execution.context_updater import (
     _normalize_entry,
     _tableify,
     _unwrap,
 )
-
 
 # ---------------------------------------------------------------------------
 # helpers._tableify — extracted and tested directly

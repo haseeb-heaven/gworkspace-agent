@@ -1,7 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from gws_assistant.execution.helpers import HelpersMixin
-from gws_assistant.models import ExecutionResult
+
 
 class MockTask:
     def __init__(self, parameters):
