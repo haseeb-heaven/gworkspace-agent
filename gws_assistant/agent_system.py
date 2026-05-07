@@ -1079,14 +1079,23 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         """
         query = _gmail_query_from_text(text)
         extract_code = """
-emails = $gmail_details_values
+emails = $gmail_messages
 items = []
+# Keywords to identify potential action items
+keywords = [
+    "action item", "todo", "please", "need to", "follow up", "review",
+    "complete", "assign", "ensure", "check", "prepare", "draft",
+    "send", "update", "create", "schedule", "confirm"
+]
 for msg in emails:
     content = msg.get('body', msg.get('snippet', ''))
-    lines = content.split('\\n')
+    if not content:
+        continue
+    # Handle various newline types
+    lines = str(content).replace('\\r\\n', '\\n').split('\\n')
     for line in lines:
         l = line.strip()
-        if len(l) > 10 and any(kw in l.lower() for kw in ['todo:', 'action:', 'task:', 'should', 'need to']):
+        if len(l) > 10 and any(kw in l.lower() for kw in keywords):
             items.append(l)
 print(f'Found {len(items)} action items.')
 result = items

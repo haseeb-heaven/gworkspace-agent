@@ -618,16 +618,17 @@ class ContextUpdaterMixin:
 
 
                 row = [sender, subject, date_val, email_addr]
-
                 data["row"] = row  # For {task-N.row} access
 
-
-
                 # We want to build a cumulative list if this is part of an expansion
-
                 details_list = context.setdefault("gmail_details_values", [])
-
                 details_list.append(row)
+
+                # NEW: Accumulate raw message dicts for code extraction tasks
+                messages_list = context.setdefault("gmail_messages", [])
+                msg_id = data.get("id") or context.get("gmail_message_id")
+                msg_snippet = data.get("snippet") or ""
+                messages_list.append(dict(headers_dict, id=msg_id, snippet=msg_snippet, body=body))
 
 
 

@@ -307,22 +307,6 @@ def _run_in_thread_sandbox(
         # Strip import statements before compilation — the sandbox forbids them
         # but pre-injects the most common modules (math, re, json) as globals.
         sanitized, aliases = _sanitize_llm_code(code)
-        # Fix LLM code that tries to use csv.DictReader on files - use injected DataFrame instead
-        # Replaces 'with open(...) as f: reader = csv.DictReader(f)' with 'df = ...'
-        # Captures the reader variable name to rewrite the iteration later.
-        match = _RE_WITH_OPEN_CSV.search(sanitized)
-        reader_var = "reader"
-        if match:
-            reader_var = match.group(2)
-            sanitized = _RE_WITH_OPEN_CSV.sub(
-                "df = injected_vars[0] if injected_vars else None",
-                sanitized
-            )
-
-        # Pattern: for row in reader: -> for idx, row in df.iterrows():
-        # Uses captured reader variable name if available.
-        iter_pattern = re.compile(rf"for ([a-zA-Z_]\w*) in {reader_var}:")
-        sanitized = iter_pattern.sub(r"for idx, \1 in df.iterrows():", sanitized)
 
 
         try:
@@ -494,6 +478,11 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
                         body_indent = body_match.group(1)
                         # Expected indentation is the with-block indent plus the detected body indent
                         expected_indent = indent + body_match.group(1)
+
+                        # AI Robustness: Detect 'reader = csv.DictReader(f)' and bypass it
+                        # if 'f' is our var_name.
+                        dict_reader_pattern = re.compile(rf'^(\s*)(\w+)\s*=\s*csv\.DictReader\(\s*{var_name}\s*\)\s*$')
+
                         # Collect all lines that belong to the with-block body
                         while i < len(lines):
                             body_line = lines[i]
@@ -509,7 +498,16 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
                                 else:
                                     # Keep as-is if indentation doesn't match expected
                                     de_indented = body_line
-                                result_lines.append(de_indented)
+
+                                # Check for csv.DictReader(var_name) in this line
+                                dr_match = dict_reader_pattern.match(de_indented)
+                                if dr_match:
+                                    # Bypass DictReader - assign list directly to reader variable
+                                    dr_indent = dr_match.group(1)
+                                    dr_var = dr_match.group(2)
+                                    result_lines.append(f"{dr_indent}{dr_var} = {var_name}")
+                                else:
+                                    result_lines.append(de_indented)
                                 i += 1
                             else:
                                 # Line is not indented enough - end of with-block

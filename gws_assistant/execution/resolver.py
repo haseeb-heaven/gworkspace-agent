@@ -22,6 +22,8 @@ LEGACY_PLACEHOLDER_MAP = {
     "$gmail_message_id": "gmail_message_id",
     "$gmail_message_ids":       "gmail_message_ids",
     "$gmail_details_values":    "gmail_details_values",
+    "$gmail_messages":          "gmail_messages",
+    "$gmail_details":           "gmail_messages",
     "$calendar_events":         "calendar_events",
     "$calendar_items":          "calendar_events",
     "$drive_file_ids":          "drive_file_ids",
