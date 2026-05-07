@@ -1,6 +1,6 @@
 import time
 import argparse
-import subprocess
+import subprocess  # nosec B404 — subprocess is used safely with controlled commands
 import datetime
 
 def run_review(pr_number, repo_name):
@@ -17,7 +17,7 @@ def run_review(pr_number, repo_name):
         # but subprocess.run with a list is generally safer.
         # However, 'gemini' might not be in the PATH as an executable but a script.
         # I'll stick to the provided cmd list.
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)  # nosec B603 — using list argument, not shell=True
         print(f"[{timestamp}] Review finished successfully.")
         # print(result.stdout) # Optional: too much output?
     except subprocess.CalledProcessError as e:

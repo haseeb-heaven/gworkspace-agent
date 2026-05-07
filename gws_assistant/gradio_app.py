@@ -450,8 +450,8 @@ def create_interface() -> gr.Blocks:
     return demo
 
 
-def main(  # nosec B104 — binding to 0.0.0.0 is intentional for container deploy
-    host: str = "0.0.0.0",
+def main(
+    host: str = "0.0.0.0",  # nosec B104 — binding to 0.0.0.0 is intentional for container deploy
     port: int = int(os.environ.get("PORT", 8080)),
     share: bool = False,
 ) -> None:
