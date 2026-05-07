@@ -579,8 +579,18 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         result.output = data
                         # Add verification call for gmail.send_message
                         VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
+                except VerificationError as e:
+                    logger.error("Verification engine failed for gmail.send_message: %s", e)
+                    return ExecutionResult(
+                        success=False,
+                        command=args,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        return_code=result.return_code,
+                        error=f"Verification failed for gmail.send_message: {e}",
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to parse or verify Gmail send result: {e}")
+                    logger.warning("Failed to parse Gmail send result: %s", e)
             return result
         finally:
             for tempdir in drive_export_tempdirs:

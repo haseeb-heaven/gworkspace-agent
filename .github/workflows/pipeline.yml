@@ -311,7 +311,7 @@ jobs:
         run: pip install bandit safety pip-audit
 
       - name: Bandit -- code security
-        run: bandit -r gws_assistant/ -ll --skip B101 -q 2>&1 | tee /tmp/security_errors.txt || true
+        run: bandit -c .bandit -r gws_assistant/ -ll --skip B101 -q 2>&1 | tee /tmp/security_errors.txt || true
 
       - name: Safety -- dependency vulnerabilities
         run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt || true

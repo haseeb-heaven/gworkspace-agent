@@ -1,9 +1,12 @@
-# Editor / IDE
-.idea/
-.vscode/
-.windsurf/
-.antigravity/
-.cursor/
+*.eml
+.gemini/settings.json
+*.json
+*.jsonl
+
+# Dependencies
+node_modules/
+package.json
+package-lock.json
 
 # Python
 *.py[cod]
@@ -21,15 +24,10 @@ venv/
 env/
 .coverage
 
-# Node (only used by tooling)
-node_modules/
-package-lock.json
-
-# Logs
+# Logs and Environment
 logs/
 *.log
-
-# Secrets / env
+# Environment files
 .env
 .env.local
 .env.backup*
@@ -38,38 +36,57 @@ logs/
 .env.test*
 .env.production*
 secrets*.json
-credentials*.json
-api_keys*
 !.env.example
 
-# OS / system noise
+# IDEs
+.idea/
+.vscode/
+.windsurf/
+.antigravity/
+.cursor/
+
+# System
 .DS_Store
 Thumbs.db
-google-cloud-sdk/
-gcloud/
-$params
-
-# Local agent / planning artefacts (project-internal)
-.gemini/
+google-cloud-sdk
+.config
+.gemini
+gcloud
 .agent/
 artifacts/
 .skill
 *.skill
+skills/
+!skills/*/SKILL.md
+.gemini
+$params
+.git
+docs/
+scratch/
+
+# Planning and Local Extensions
 .planning/phases/
 .planning/research/
 conductor/
-scratch/
-*.scratchpad
-read_mem0.py
-ISSUES.md
 
-# Generated / binary assets
+# Files
 *.exe
-*.eml
+*.txt
 *.pdf
 *.docx
 *.xlsx
 *.pptx
+*.html
 
-# Misc
+# Trash/Temp scripts
+read_mem0.py
+*.scratchpad
+.planning
+ISSUES.md
+
+# Allowed
+!README.md
+!framework/
+!tests/
 *.orig
+!requirements.txt
