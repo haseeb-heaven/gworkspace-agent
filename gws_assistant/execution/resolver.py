@@ -352,7 +352,7 @@ class ResolverMixin:
                 return _cache[obj_id]
 
             # Create an empty clone and store it in the cache before recursion
-            clone = {} if isinstance(val, dict) else []
+            clone: Any = {} if isinstance(val, dict) else []
             _cache[obj_id] = clone
 
             result = self._resolve_placeholders_impl(

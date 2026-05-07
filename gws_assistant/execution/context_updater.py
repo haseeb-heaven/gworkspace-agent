@@ -638,7 +638,7 @@ class ContextUpdaterMixin:
 
             if conns and isinstance(conns, list):
 
-                rows = []
+                contact_rows = []
 
                 def first_val(items, key):
 
@@ -664,19 +664,19 @@ class ContextUpdaterMixin:
 
                     phone = first_val(person.get("phoneNumbers"), "value")
 
-                    rows.append([name, email, phone])
+                    contact_rows.append([name, email, phone])
 
 
 
-                context["contacts_summary_rows"] = rows
+                context["contacts_summary_rows"] = contact_rows
 
-                context["contacts_summary_values"] = [r.copy() for r in rows]
+                context["contacts_summary_values"] = [r.copy() for r in contact_rows]
 
 
 
                 table_lines = ["| Name | Email | Phone |", "|---|---|---|"]
 
-                for r in rows:
+                for r in contact_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -690,7 +690,7 @@ class ContextUpdaterMixin:
 
                 context["last_contacts_list"] = table_str
 
-                context["contacts_summary_count"] = len(rows)
+                context["contacts_summary_count"] = len(contact_rows)
 
 
 
@@ -700,7 +700,7 @@ class ContextUpdaterMixin:
 
             if items and isinstance(items, list):
 
-                rows = []
+                admin_rows = []
 
                 for item in items:
 
@@ -716,15 +716,15 @@ class ContextUpdaterMixin:
 
                     time_val = item.get("id", {}).get("time", "Unknown Time")
 
-                    rows.append([event_type, actor, time_val])
+                    admin_rows.append([event_type, actor, time_val])
 
 
 
-                context["admin_summary_rows"] = rows
+                context["admin_summary_rows"] = admin_rows
 
                 table_lines = ["| Event | Actor | Time |", "|---|---|---|"]
 
-                for r in rows:
+                for r in admin_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -738,7 +738,7 @@ class ContextUpdaterMixin:
 
                 context["last_admin_activities"] = table_str
 
-                context["admin_summary_count"] = len(rows)
+                context["admin_summary_count"] = len(admin_rows)
 
 
 
@@ -748,7 +748,7 @@ class ContextUpdaterMixin:
 
             if spaces and isinstance(spaces, list):
 
-                rows = []
+                chat_rows = []
 
                 for s in spaces:
 
@@ -756,7 +756,7 @@ class ContextUpdaterMixin:
 
                         continue
 
-                    rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
+                    chat_rows.append([s.get("displayName", "Unnamed"), s.get("name", "N/A"), s.get("type", "N/A")])
 
 
 
@@ -774,11 +774,11 @@ class ContextUpdaterMixin:
 
 
 
-                context["chat_summary_rows"] = rows
+                context["chat_summary_rows"] = chat_rows
 
                 table_lines = ["| Space Name | Resource Name | Type |", "|---|---|---|"]
 
-                for r in rows:
+                for r in chat_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -792,7 +792,7 @@ class ContextUpdaterMixin:
 
                 context["last_chat_spaces"] = table_str
 
-                context["chat_summary_count"] = len(rows)
+                context["chat_summary_count"] = len(chat_rows)
 
 
 
@@ -844,7 +844,7 @@ class ContextUpdaterMixin:
 
                 # field to use without ambiguity.
 
-                rows: list[list[str]] = []
+                message_rows: list[list[str]] = []
 
                 snippet_rows: list[list[str]] = []
 
@@ -867,14 +867,14 @@ class ContextUpdaterMixin:
                     date_val = h_dict.get("date", "Unknown Date")
                     snippet_val = self._generate_fallback_snippet(m, h_dict)
 
-                    rows.append([sender, subject, date_val, m_id, t_id])
+                    message_rows.append([sender, subject, date_val, m_id, t_id])
                     snippet_rows.append([sender, snippet_val, date_val, m_id, t_id])
 
 
 
-                context["gmail_summary_rows"] = rows
+                context["gmail_summary_rows"] = message_rows
 
-                context["gmail_summary_values"] = [r.copy() for r in rows]
+                context["gmail_summary_values"] = [r.copy() for r in message_rows]
 
                 context["gmail_snippets_rows"] = snippet_rows
 
@@ -886,7 +886,7 @@ class ContextUpdaterMixin:
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
 
-                for r in rows:
+                for r in message_rows:
 
                     # Sanitize cells
 
