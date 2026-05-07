@@ -246,7 +246,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         )
                         if isinstance(data, ExecutionResult):
                             return data
-                        parents = data.get("parents")
+                        parents = None
+                        if isinstance(data, dict):
+                            parents = data.get("parents")
                         if parents and isinstance(parents, list):
                             context["fetch_parents"] = ",".join(parents)
                         else:
@@ -314,7 +316,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
                 # Special Case: gmail.list_messages — auto-enrich messages with snippet/headers
                 if task.service == "gmail" and task.action == "list_messages":
-                    msgs = data.get("messages", [])
+                    msgs = data.get("messages", []) if isinstance(data, dict) else []
                     # Skip enrichment if messages already carry snippets or payload headers
                     needs_enrich = isinstance(msgs, list) and msgs and not any(
                         (isinstance(m, dict) and (m.get("snippet") or m.get("payload", {}).get("headers")))
@@ -344,7 +346,8 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                             enriched.append(m)
                         # Keep any remaining un-enriched messages
                         enriched.extend(msgs[max_enrich:])
-                        data["messages"] = enriched
+                        if isinstance(data, dict):
+                            data["messages"] = enriched
                         self.logger.info("Auto-enriched %d/%d messages with metadata", max_enrich, len(msgs))
 
                 # Special Case: docs.create_document with initial content
@@ -355,10 +358,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 #     ... (auto-insert logic commented out)
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
-                    saved_file = data.get("saved_file")
+                    saved_file = data.get("saved_file") if isinstance(data, dict) else None
                     if saved_file:
                         # Try to determine if it is readable as text
-                        mime_type = str(task.parameters.get("mime_type") or data.get("mimeType") or "").lower()
+                        mime_type = str(task.parameters.get("mime_type") or (data.get("mimeType") if isinstance(data, dict) else None) or "").lower()
                         is_text = any(x in mime_type for x in ("text/", "csv", "json", "javascript", "xml"))
                         if not is_text:
                             ext = os.path.splitext(saved_file)[1].lower()
@@ -389,9 +392,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                             len(final_content) if file_content is not None else "N/A (Binary/Path only)",
                         )
 
-                        data["content"] = final_content
-                        data["drive_export_content"] = final_content
-                        data["drive_export_path"] = saved_file
+                        if isinstance(data, dict):
+                            data["content"] = final_content
+                            data["drive_export_content"] = final_content
+                            data["drive_export_path"] = saved_file
                 result.output = data
             except Exception as exc:
                 self.logger.exception("Failed to enrich parsed result for %s.%s", task.service, task.action)

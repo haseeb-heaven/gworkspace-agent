@@ -315,7 +315,7 @@ class ResolverMixin:
                 self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
                 return self._resolve_cache[obj_id]
             # Create an empty clone and store it in the cache before recursion
-            clone = {} if isinstance(val, dict) else []
+            clone: Any = {} if isinstance(val, dict) else []
             self._resolve_cache[obj_id] = clone
             try:
                 result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)

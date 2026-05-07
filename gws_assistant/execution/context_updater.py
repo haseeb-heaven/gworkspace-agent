@@ -543,7 +543,7 @@ class ContextUpdaterMixin:
 
             if conns and isinstance(conns, list):
 
-                rows = []
+                contact_rows = []
 
                 def first_val(items, key):
 
@@ -569,19 +569,19 @@ class ContextUpdaterMixin:
 
                     phone = first_val(person.get("phoneNumbers"), "value")
 
-                    rows.append([name, email, phone])
+                    contact_rows.append([name, email, phone])
 
 
 
-                context["contacts_summary_rows"] = rows
+                context["contacts_summary_rows"] = contact_rows
 
-                context["contacts_summary_values"] = [r.copy() for r in rows]
+                context["contacts_summary_values"] = [r.copy() for r in contact_rows]
 
 
 
                 table_lines = ["| Name | Email | Phone |", "|---|---|---|"]
 
-                for r in rows:
+                for r in contact_rows:
 
                     safe_r = [str(c).replace("\n", " ").replace("\r", "").replace("|", r"\|") for c in r]
 
@@ -595,7 +595,7 @@ class ContextUpdaterMixin:
 
                 context["last_contacts_list"] = table_str
 
-                context["contacts_summary_count"] = len(rows)
+                context["contacts_summary_count"] = len(contact_rows)
 
 
 
@@ -749,7 +749,7 @@ class ContextUpdaterMixin:
 
                 # field to use without ambiguity.
 
-                rows: list[list[str]] = []
+                message_rows: list[list[str]] = []
 
                 snippet_rows: list[list[str]] = []
 
@@ -785,9 +785,9 @@ class ContextUpdaterMixin:
 
 
 
-                context["gmail_summary_rows"] = rows
+                context["gmail_summary_rows"] = message_rows
 
-                context["gmail_summary_values"] = [r.copy() for r in rows]
+                context["gmail_summary_values"] = [r.copy() for r in message_rows]
 
                 context["gmail_snippets_rows"] = snippet_rows
 
@@ -799,7 +799,7 @@ class ContextUpdaterMixin:
 
                 table_lines = ["| Sender | Subject | Date | ID | Thread ID |", "|---|---|---|---|---|"]
 
-                for r in rows:
+                for r in message_rows:
 
                     # Sanitize cells
 

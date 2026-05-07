@@ -302,7 +302,7 @@ class WorkspaceAgentSystem:
         has_sheets = any(s == "sheets" for s in services)
         if has_drive and has_code and has_sheets:
             # Replace drive.get_file with sheets.get_values to fetch actual data
-            new_tasks = []
+            new_tasks: list[PlannedTask] = []
             for task in tasks:
                 if task.service == "drive" and task.action == "get_file":
                     # Add sheets.get_values to fetch data from the spreadsheet

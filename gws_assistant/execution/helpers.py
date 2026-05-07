@@ -228,7 +228,7 @@ class HelpersMixin:
                                         get_res = self.runner.run(get_args)
                                         logger.info("DEBUG: get_values result: success=%s, stdout=%s", get_res.success, str(get_res.stdout)[:200])
                                         if get_res.success and get_res.stdout:
-                                            parsed = self._coerce_structured_value(get_res.stdout)
+                                            parsed = _coerce_structured_value(get_res.stdout)
                                             logger.info("DEBUG: parsed type=%s, has values=%s", type(parsed), isinstance(parsed, dict) and "values" in parsed)
                                             if isinstance(parsed, dict) and "values" in parsed:
                                                 values = parsed["values"]
