@@ -21,7 +21,7 @@ import csv
 import math
 import random
 
-from RestrictedPython import safe_builtins, safe_globals, utility_builtins
+from RestrictedPython import safe_builtins, safe_globals, utility_builtins, compile_restricted
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
 
@@ -105,9 +105,9 @@ def run_code(code_b64: str) -> dict[str, object]:
     sandbox_globals = get_sandbox_globals()
 
     try:
-        # Use standard compile instead of compile_restricted to allow imports
+        # Use compile_restricted to transform print calls to _print_
         # Runtime guards will enforce security
-        byte_code = compile(code, filename="<string>", mode="exec")
+        byte_code = compile_restricted(code, filename="<string>", mode="exec")
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
             # Sandbox globals come from get_sandbox_globals(); user code is

@@ -19,7 +19,7 @@ import time
 from typing import Any
 
 from langchain_core.tools import tool
-from RestrictedPython import safe_builtins, safe_globals, utility_builtins
+from RestrictedPython import safe_builtins, safe_globals, utility_builtins, compile_restricted
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
@@ -270,9 +270,9 @@ def _run_in_thread_sandbox(
         # Pattern: row['category'] -> row['Category'] (case-insensitive match)
         sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
         sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
-        # Use standard compile to bypass RestrictedPython security pattern checks
+        # Use RestrictedPython's compile_restricted to transform print calls to _print_
         # Runtime guards in get_safe_globals() still enforce security
-        byte_code = compile(sanitized, filename="<string>", mode="exec")
+        byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
         # Add import aliases to sandbox globals (e.g., pd for pandas)
         sandbox_globals.update(aliases)

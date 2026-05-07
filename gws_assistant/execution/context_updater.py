@@ -779,7 +779,7 @@ class ContextUpdaterMixin:
 
 
 
-                    rows.append([sender, subject, date_val, m_id, t_id])
+                    message_rows.append([sender, subject, date_val, m_id, t_id])
 
                     snippet_rows.append([sender, snippet_val, date_val, m_id, t_id])
 

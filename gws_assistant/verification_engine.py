@@ -229,7 +229,7 @@ class VerificationEngine:
 
         # CHECK 1: Parameter Validation (STRICT, ERROR severity)
         try:
-            cls._check_1_parameter_validation(tool_name, params)
+            cls._check_1_parameter_validation(tool_name, params, pre_execution=False)
             logger.info("[CHECK 1] PASSED - Parameter Validation")
         except VerificationError as e:
             if e.severity == VerificationSeverity.WARNING:
@@ -286,7 +286,7 @@ class VerificationEngine:
     # =========================================================================
 
     @classmethod
-    def _check_1_parameter_validation(cls, tool_name: str, params: dict) -> None:
+    def _check_1_parameter_validation(cls, tool_name: str, params: dict, pre_execution: bool = True) -> None:
         """
         CHECK 1: Parameter Validation
         Validates all input parameters for correctness and completeness.
@@ -300,6 +300,7 @@ class VerificationEngine:
                 params,
                 location="params",
                 block_empty_strings=False,
+                pre_execution=pre_execution,
             )
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
@@ -1250,6 +1251,7 @@ class VerificationEngine:
                     values,
                     location="values",
                     block_empty_strings=not ("sheets" in tool_name and "append" in tool_name),
+                    pre_execution=True,
                 )
 
     # =========================================================================
@@ -1263,6 +1265,7 @@ class VerificationEngine:
         payload: Any,
         location: str,
         block_empty_strings: bool = True,
+        pre_execution: bool = False,
     ) -> None:
         """Recursively block placeholders, empty generated content, and invalid sentinel values."""
         for path, value in cls._iter_payload_leaf_values(payload, location):
@@ -1285,6 +1288,8 @@ class VerificationEngine:
                     value,
                     block_empty=block_empty_strings,
                     block_generic_placeholders=block_generic,
+                    location=location,
+                    pre_execution=pre_execution,
                 ):
                     raise VerificationError(
                         tool_name,
@@ -1406,6 +1411,8 @@ class VerificationEngine:
         value: str,
         block_empty: bool = True,
         block_generic_placeholders: bool = True,
+        location: str = "unknown",
+        pre_execution: bool = False,
     ) -> bool:
         val_str = str(value).strip()
         if block_empty and not val_str:
@@ -1418,8 +1425,12 @@ class VerificationEngine:
             return True
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
 
-        if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
-            return True
+        # Block legacy placeholders in params during pre-execution (they should be resolved before execution)
+        # Allow legacy placeholders in params during regular verification (they should have been resolved by executor)
+        # Always block legacy placeholders in results if block_generic_placeholders is True
+        if (pre_execution and location == "params") or (location == "result" and block_generic_placeholders):
+            if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
+                return True
         if cls._has_unresolved_templates(val_str):
             return True
         if block_generic_placeholders and cls._is_placeholder(val_str):
