@@ -303,19 +303,26 @@ class WorkspaceAgentSystem:
         if has_drive and has_code and has_sheets:
             # Replace drive.get_file with sheets.get_values to fetch actual data
             new_tasks: list[PlannedTask] = []
+            drive_task_id: str | None = None
             for task in tasks:
                 if task.service == "drive" and task.action == "get_file":
+                    # Store the drive task ID for reference
+                    drive_task_id = task.id
                     # Add sheets.get_values to fetch data from the spreadsheet
+                    # Use the drive task's ID in the placeholder reference
                     new_tasks.append(
                         PlannedTask(
                             id=f"task-{len(new_tasks) + 1}",
                             service="sheets",
                             action="get_values",
-                            parameters={"spreadsheet_id": "{{task-1.id}}", "range": "Sheet1"},
+                            parameters={"spreadsheet_id": f"{{{{{drive_task_id}.id}}}}", "range": "Sheet1"},
                             reason="Fetch spreadsheet data for processing",
                         )
                     )
                 new_tasks.append(task)
+            # Reassign IDs to ensure uniqueness after insertion
+            for idx, task in enumerate(new_tasks, start=1):
+                task.id = f"task-{idx}"
             tasks = new_tasks
 
         return RequestPlan(
