@@ -60,7 +60,7 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
     "openrouter/deepseek/deepseek-chat:free",
     "openrouter/deepseek/deepseek-r1:free",
-    "openrouter/openai/gpt-oss-20b:free",
+    "openrouter/openai/gpt-oss-120b:free",
     "openrouter/mistralai/mistral-small-24b-instruct-2501:free",
     "openrouter/nvidia/nemotron-super-49b-v1:free",
     "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free",

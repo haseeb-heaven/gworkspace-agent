@@ -279,6 +279,24 @@ class ContextUpdaterMixin:
 
                 if events and isinstance(events, list):
 
+                    # Sort by start date (most recent first)
+                    try:
+                        from datetime import datetime
+                        def get_event_date(evt):
+                            start_data = evt.get("start", {})
+                            date_str = start_data.get("dateTime", start_data.get("date", ""))
+                            if date_str:
+                                try:
+                                    return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                except Exception:
+                                    return datetime.min
+                            return datetime.min
+
+                        events.sort(key=get_event_date, reverse=True)
+                    except Exception:
+                        # If sorting fails, keep original order
+                        pass
+
                     context["calendar_events"] = events
 
                     # Also create a formatted table for email bodies

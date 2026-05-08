@@ -15,22 +15,30 @@ def clear_config_cache():
 
 
 def _required(monkeypatch):
-    monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "recipient@example.test")
-    monkeypatch.setenv("GWS_BINARY_PATH", r"d:\Code\gworkspace-agent\gws.exe")
+    monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "EMAIL_ADDRESS")
+    monkeypatch.setenv("GWS_BINARY_PATH", "GWS_BINARY_PATH")
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("LLM_MODEL", "openrouter/nvidia/nemotron-super-49b-v1:free")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "TELEGRAM_CHAT_ID")
 
 
 def test_config_prefers_openrouter_when_openrouter_key_present(monkeypatch):
     _required(monkeypatch)
+    # Clear any existing environment variables that might interfere
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY1", raising=False)
+    monkeypatch.delenv("LLM_API_KEY2", raising=False)
+    monkeypatch.delenv("LLM_API_KEY3", raising=False)
+
+    # Set test values
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("LLM_PROVIDER", "")
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    # Patch load_dotenv to prevent loading from .env file
     with patch("gws_assistant.config.load_dotenv"):
         config = AppConfig.from_env()
     assert config.provider == "openrouter"

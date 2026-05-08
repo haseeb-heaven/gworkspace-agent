@@ -370,6 +370,92 @@ class TestResolverMixin:
 
 
 
+    def test_get_value_by_path_flattened_key_with_array_index_and_field_access(self, logger):
+
+        resolver = MockResolver(logger_=logger)
+
+        # Test case for flattened keys like 'task-1.messages' (list of dicts) with array indexing and field access
+        # This is the scenario that was failing in the user's command
+        data = {
+
+            "task-1.messages": [
+
+                {"id": "msg1", "subject": "Subject 1"},
+
+                {"id": "msg2", "subject": "Subject 2"},
+
+                {"id": "msg3", "subject": "Subject 3"}
+
+            ]
+
+        }
+
+        # Access id field of first message
+
+        assert resolver._get_value_by_path(data, "task-1.messages[0].id") == "msg1"
+
+        # Access subject field of second message
+
+        assert resolver._get_value_by_path(data, "task-1.messages[1].subject") == "Subject 2"
+
+        # Access out of bounds should return None
+
+        assert resolver._get_value_by_path(data, "task-1.messages[10].id") is None
+
+        # Access non-existent field should return None
+
+        assert resolver._get_value_by_path(data, "task-1.messages[0].nonexistent") is None
+
+
+
+    def test_get_value_by_path_flattened_key_field_mapping(self, logger):
+
+        resolver = MockResolver(logger_=logger)
+
+        # Test case for mapping a field across a flattened list
+        # This handles 'task-1.messages.id' to extract all IDs from the messages list
+        data = {
+
+            "task-1.messages": [
+
+                {"id": "msg1", "subject": "Subject 1"},
+
+                {"id": "msg2", "subject": "Subject 2"},
+
+                {"id": "msg3", "subject": "Subject 3"}
+
+            ]
+
+        }
+
+        # Map id field across all messages
+
+        assert resolver._get_value_by_path(data, "task-1.messages.id") == ["msg1", "msg2", "msg3"]
+
+        # Map subject field across all messages
+
+        assert resolver._get_value_by_path(data, "task-1.messages.subject") == ["Subject 1", "Subject 2", "Subject 3"]
+
+        # Map across empty list
+
+        data_empty = {"task-1.messages": []}
+
+        assert resolver._get_value_by_path(data_empty, "task-1.messages.id") == []
+
+        # Map across list with non-dict items should return list of None
+
+        data_mixed = {"task-1.messages": [{"id": "msg1"}, "string", 123]}
+
+        result = resolver._get_value_by_path(data_mixed, "task-1.messages.id")
+
+        assert result[0] == "msg1"
+
+        assert result[1] is None
+
+        assert result[2] is None
+
+
+
     def test_get_artifact_links_body(self, logger):
 
         resolver = MockResolver(logger_=logger)
