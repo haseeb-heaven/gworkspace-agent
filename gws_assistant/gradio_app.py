@@ -78,19 +78,13 @@ class GradioAssistant:
         return output, "Plan tracking handled by LangGraph workflow."
 
 
-def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
+def handle_credentials_upload(file_data: bytes | None) -> tuple[str, str, str]:
     """Handle credentials.json upload and generate OAuth URL."""
-    if file_path is None:
+    if file_data is None:
         return "", "No file uploaded", "🔴 Not authenticated"
 
     try:
-        # Sanitize path to prevent traversal attacks
-        base_dir = os.path.dirname(file_path)
-        filename = os.path.basename(file_path)
-        safe_path = os.path.join(base_dir, filename)
-
-        with open(safe_path, "r") as f:
-            credentials_info = json.load(f)
+        credentials_info = json.loads(file_data)
 
         # Check if it's a service account (not supported for OAuth flow)
         if credentials_info.get("type") == "service_account":
@@ -267,7 +261,7 @@ def create_interface() -> gr.Blocks:
                 credentials_upload = gr.File(
                     label="Upload credentials.json",
                     file_types=[".json"],
-                    type="filepath"
+                    type="binary"
                 )
 
             auth_status = gr.Textbox(
