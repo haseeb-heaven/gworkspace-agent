@@ -11,9 +11,8 @@ requires-python = ">=3.11"
 dependencies = [
     "langchain-core>=0.3.84",
     # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
-    # but requires langchain-core>=1.2.22 and langchain-openai==1.1.9 with langchain-core==1.2.11.
-    # Upgrade is deferred due to litellm 1.83.14 pinning openai==2.24.0 (conflicts with openai>=2.26.0).
-    # This is tracked and will be upgraded when litellm supports the required openai version.
+    # but requires openai>=2.26.0 which conflicts with litellm 1.83.7 pinning openai==2.30.0.
+    # Upgrade is deferred until a litellm release ships that allows a newer openai.
     "langchain-openai>=1.1.10,<1.1.11",
     "langgraph>=0.3.34",
     "langchain-community>=0.3.31",
@@ -21,9 +20,12 @@ dependencies = [
     "duckduckgo-search>=6.0.0",
     "RestrictedPython>=8.1",
     "httpx>=0.28.1",
-    # openai 2.24.0 is required by litellm 1.83.14; exact pin to match litellm constraint.
-    "openai==2.24.0",
-    "python-dotenv==1.2.2",
+    # openai 2.30.0 is the exact version required by litellm 1.83.7.
+    # Changing this will cause a ResolutionImpossible error in pip.
+    "openai==2.30.0",
+    # python-dotenv 1.0.1 is the exact version required by litellm 1.83.7.
+    # litellm 1.83.7 hard-pins python-dotenv==1.0.1; using 1.2.x causes ResolutionImpossible.
+    "python-dotenv==1.0.1",
     "typer>=0.12.0",
     "rich>=14.3.3",
     "questionary>=2.1.1",
@@ -31,10 +33,10 @@ dependencies = [
     "gradio>=6.7.0",
     "e2b-code-interpreter>=1.0.0",
     "mem0ai>=2.0.0",
-    # NOTE: litellm 1.83.14 has a critical Arbitrary Code Injection vulnerability via /guardrails/test_custom_code endpoint.
-    # Pinned to >=1.83.7,<1.83.14 which patches SQL Injection and Template Injection vulnerabilities but is before the code injection issue.
-    # Monitor for security patches beyond 1.83.14 before upgrading.
-    "litellm>=1.83.7,<1.83.14",
+    # litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0 and python-dotenv==1.0.1.
+    # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
+    # via /guardrails/test_custom_code. Upgrade only when a patched release is available.
+    "litellm==1.83.7",
     "python-telegram-bot>=22.7",
     "google-auth>=2.23.0",
     "google-auth-oauthlib>=1.1.0",
