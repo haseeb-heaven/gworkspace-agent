@@ -34,7 +34,7 @@ def read_env_safe() -> dict[str, str]:
 
 def write_env_safe(mutations: dict[str, str]) -> None:
     """
-    Acquires lock, re-reads latest state, applies mutation, 
+    Acquires lock, re-reads latest state, applies mutation,
     verifies integrity, and atomically writes changes.
     """
     lock = FileLock(str(ENV_LOCK_PATH), timeout=10)
@@ -45,20 +45,20 @@ def write_env_safe(mutations: dict[str, str]) -> None:
             else:
                 with open(ENV_PATH, "r", encoding="utf-8") as f:
                     lines = f.readlines()
-            
+
             env_vars = {}
             for line in lines:
                 if "=" in line and not line.strip().startswith("#"):
                     key, val = line.split("=", 1)
                     env_vars[key.strip()] = val.strip()
-            
+
             for k, v in mutations.items():
                 env_vars[k] = v
-            
+
             if not env_vars and lines:
                 logger.error("Integrity check failed: Attempted to write empty .env")
                 return
-            
+
             new_lines = []
             mutated_keys = set()
             for line in lines:
@@ -71,18 +71,18 @@ def write_env_safe(mutations: dict[str, str]) -> None:
                         new_lines.append(line)
                 else:
                     new_lines.append(line)
-            
+
             for k, v in mutations.items():
                 if k not in mutated_keys:
                     new_lines.append(f"{k}={v}\\n")
-            
+
             temp_path = ENV_PATH.with_suffix(".env.tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
-            
+
             _safe_replace(temp_path, ENV_PATH)
             logger.info(f"Safely mutated .env with keys: {list(mutations.keys())}")
-            
+
     except Timeout:
         logger.error("Could not acquire lock to mutate .env")
     except Exception as e:
@@ -99,7 +99,7 @@ def rotate_api_key_in_env(failed_key: str):
                 return
             with open(ENV_PATH, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            
+
             key_map = {}
             for line in lines:
                 if "=" in line and not line.strip().startswith("#"):
@@ -108,20 +108,20 @@ def rotate_api_key_in_env(failed_key: str):
                     v = v.strip()
                     if k.startswith("LLM_API_KEY"):
                         key_map[k] = v
-            
+
             if failed_key not in key_map.values():
                 return
-            
+
             sorted_keys = sorted(key_map.keys(), key=lambda x: int(x.replace("LLM_API_KEY", "") or 1))
             values = [key_map[k] for k in sorted_keys]
-            
+
             if values[0] == failed_key:
                 values.append(values.pop(0))
-                
+
                 mutations = {}
                 for i, k in enumerate(sorted_keys):
                     mutations[k] = values[i]
-                
+
                 new_lines = []
                 for line in lines:
                     if "=" in line and not line.strip().startswith("#"):
@@ -132,11 +132,11 @@ def rotate_api_key_in_env(failed_key: str):
                             new_lines.append(line)
                     else:
                         new_lines.append(line)
-                
+
                 temp_path = ENV_PATH.with_suffix(".env.tmp")
                 with open(temp_path, "w", encoding="utf-8") as f:
                     f.writelines(new_lines)
-                
+
                 _safe_replace(temp_path, ENV_PATH)
                 logger.info("Successfully rotated API key in .env")
 
@@ -156,30 +156,30 @@ def rotate_model_in_env(failed_model: str):
                 return
             with open(ENV_PATH, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            
+
             key_map = {}
             for line in lines:
                 if "=" in line and not line.strip().startswith("#"):
                     k, v = line.split("=", 1)
                     key_map[k.strip()] = v.strip()
-            
+
             current_model = key_map.get("LLM_MODEL", "")
             if current_model != failed_model:
                 return
-                
+
             fallback_keys = [k for k in key_map.keys() if k.startswith("LLM_FALLBACK_MODEL")]
             sorted_fallbacks = sorted(fallback_keys, key=lambda x: int(x.replace("LLM_FALLBACK_MODEL", "") or 1))
-            
+
             if not sorted_fallbacks:
                 return
-                
+
             new_model = key_map[sorted_fallbacks[0]]
-            
+
             mutations = {"LLM_MODEL": new_model}
             for i in range(len(sorted_fallbacks) - 1):
                 mutations[sorted_fallbacks[i]] = key_map[sorted_fallbacks[i+1]]
             mutations[sorted_fallbacks[-1]] = failed_model
-            
+
             new_lines = []
             for line in lines:
                 if "=" in line and not line.strip().startswith("#"):
@@ -190,11 +190,11 @@ def rotate_model_in_env(failed_model: str):
                         new_lines.append(line)
                 else:
                     new_lines.append(line)
-            
+
             temp_path = ENV_PATH.with_suffix(".env.tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
-            
+
             _safe_replace(temp_path, ENV_PATH)
             logger.info(f"Successfully rotated model to {new_model} in .env")
 
