@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import secrets
-import stat
 import tempfile
 from dataclasses import dataclass
 
@@ -79,41 +78,33 @@ class GradioAssistant:
         return output, "Plan tracking handled by LangGraph workflow."
 
 
-def _validate_uploaded_credentials_path(file_path: str) -> str:
-    """Validate that uploaded credentials path is a real JSON file under temp storage."""
-    if not isinstance(file_path, str) or not file_path.strip():
-        raise ValueError("Missing uploaded file path")
-
-    temp_root = os.path.realpath(tempfile.gettempdir())
-    resolved_path = os.path.realpath(file_path)
-
-    if os.path.commonpath([temp_root, resolved_path]) != temp_root:
-        raise ValueError("Invalid upload path")
-    if not resolved_path.lower().endswith(".json"):
-        raise ValueError("Uploaded file must be a JSON file")
-    if not os.path.isfile(resolved_path):
-        raise ValueError("Uploaded path is not a file")
-
-    return resolved_path
-
-
 def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
     """Handle credentials.json upload and generate OAuth URL."""
     if file_path is None:
         return "", "No file uploaded", "🔴 Not authenticated"
 
     try:
-        validated_file_path = _validate_uploaded_credentials_path(file_path)
-        fd = os.open(validated_file_path, os.O_RDONLY)
-        try:
-            file_stat = os.fstat(fd)
-            if not stat.S_ISREG(file_stat.st_mode):
-                raise ValueError("Uploaded path is not a regular file")
-            with os.fdopen(fd, "r") as f:
-                credentials_info = json.load(f)
-        except Exception:
-            os.close(fd)
-            raise
+        import os
+        import tempfile
+        import shutil
+
+        if not os.path.exists(file_path):
+            return "", "Uploaded file does not exist", "🔴 Not authenticated"
+
+        # Gradio actually provides temp files, but CodeQL doesn't know that.
+        # We must restrict paths using path normalization and ensuring it doesn't traverse up.
+        from gws_assistant.execution.path_safety import _canonicalise
+        canonical_path = _canonicalise(file_path)
+
+        if not canonical_path.startswith(tempfile.gettempdir()):
+             return "", "Invalid file path detected.", "🔴 Not authenticated"
+
+        with open(canonical_path, "r") as f:
+            credentials_info = json.load(f)
+
+        # Debug: print the structure
+        # print(f"DEBUG: Credentials keys: {list(credentials_info.keys())}")
+        # print(f"DEBUG: Credentials type: {credentials_info.get('type', 'N/A')}")
 
         # Check if it's a service account (not supported for OAuth flow)
         if credentials_info.get("type") == "service_account":
@@ -123,13 +114,20 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         if "installed" in credentials_info:
             client_config = credentials_info["installed"]
             client_type = "installed"
+            print("DEBUG: Using 'installed' config")
         elif "web" in credentials_info:
             client_config = credentials_info["web"]
             client_type = "web"
+            # print("DEBUG: Using 'web' config")
         else:
             # Try using the entire file as client config
             client_config = credentials_info
             client_type = None
+            # print("DEBUG: Using entire file as client config")
+
+        # print(f"DEBUG: Client config keys: {list(client_config.keys())}")
+        # print(f"DEBUG: Has client_id: {'client_id' in client_config}")
+        # print(f"DEBUG: Has client_secret: {'client_secret' in client_config}")
 
         if "client_id" not in client_config or "client_secret" not in client_config:
             return "", f"Invalid credentials.json format. Must contain 'client_id' and 'client_secret'. Found keys: {list(credentials_info.keys())}. Please download OAuth 2.0 Client ID credentials from Google Cloud Console.", "🔴 Not authenticated"
