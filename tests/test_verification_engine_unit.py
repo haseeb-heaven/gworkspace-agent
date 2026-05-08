@@ -261,20 +261,27 @@ class TestVerifyAttachmentSent:
                 {"payload": {}},
             )
 
-    def test_empty_attachment_file_fails(self, tmp_path):
-        empty_file = tmp_path / "empty.txt"
-        empty_file.write_text("")
-        with pytest.raises(VerificationError, match="Attachment file is empty"):
-            VerificationEngine.verify_params("gmail_send_message", {
-                "to": "real@example.org",
-                "subject": "Test Subject",
-                "body": "Hello, this is a valid body.",
-                "attachments": [{
-                    "filename": "empty.txt",
-                    "mime_type": "text/plain",
-                    "file_path": str(empty_file),
-                }],
-            })
+    def test_empty_attachment_file_fails(self):
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False) as empty_file:
+            empty_file.write(b"")
+            empty_file_path = empty_file.name
+
+        try:
+            with pytest.raises(VerificationError, match="Attachment file is empty"):
+                VerificationEngine.verify_params("gmail_send_message", {
+                    "to": "real@example.org",
+                    "subject": "Test Subject",
+                    "body": "Hello, this is a valid body.",
+                    "attachments": [{
+                        "filename": os.path.basename(empty_file_path),
+                        "mime_type": "text/plain",
+                        "file_path": empty_file_path
+                    }]
+                })
+        finally:
+            os.unlink(empty_file_path)
 
 
 # ---------- verify_document_not_empty ----------
