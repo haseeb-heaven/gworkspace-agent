@@ -2,9 +2,10 @@ name: Build Binaries
 
 on:
   push:
-    branches: [ main, develop ]
     tags:
       - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
