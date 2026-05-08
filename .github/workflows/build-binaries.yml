@@ -19,13 +19,13 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: gws-agent-windows.exe
-            pyinstaller_args: "--onefile --name gws-agent"
+            pyinstaller_args: "--onefile --name gws-agent --collect-all litellm --collect-all langchain"
           - os: ubuntu-latest
             artifact_name: gws-agent-linux
-            pyinstaller_args: "--onefile --name gws-agent"
+            pyinstaller_args: "--onefile --name gws-agent --collect-all litellm --collect-all langchain"
           - os: macos-latest
             artifact_name: gws-agent-macos
-            pyinstaller_args: "--onefile --name gws-agent"
+            pyinstaller_args: "--onefile --name gws-agent --collect-all litellm --collect-all langchain"
 
     steps:
       - name: Checkout Code
