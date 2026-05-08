@@ -650,14 +650,31 @@ class ResolverMixin:
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
-        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
+        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'.
+        Also handles flattened keys like 'task-7.result[0]' where 'task-7.result' is a top-level key.
+        """
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first
         if path in data:
             return data[path]
 
-        # 2. Split path into tokens, handling dots and brackets
+        # 2. Handle flattened keys with array indexing (e.g., 'task-7.result[0]')
+        # Check if the path ends with an array index like [0], [1], etc.
+        array_index_match = re.search(r'\[(\d+)\]$', path)
+        if array_index_match:
+            base_path = path[:array_index_match.start()]
+            index = int(array_index_match.group(1))
+            # Check if the base path exists as a flattened key
+            if base_path in data:
+                base_value = data[base_path]
+                if isinstance(base_value, list) and 0 <= index < len(base_value):
+                    return base_value[index]
+                else:
+                    self.logger.debug(f"DEBUG: base path '{base_path}' exists but is not a list or index out of range")
+                    return None
+
+        # 3. Split path into tokens, handling dots and brackets
         tokens = re.findall(r"[^.\[\]]+|\[\d+\]", path)
         if not tokens:
             return None

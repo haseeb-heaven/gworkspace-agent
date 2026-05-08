@@ -333,6 +333,43 @@ class TestResolverMixin:
 
 
 
+    def test_get_value_by_path_flattened_key_with_array_index(self, logger):
+
+        resolver = MockResolver(logger_=logger)
+
+        # Test case for flattened keys like 'task-7.result' with array indexing
+        data = {
+
+            "task-7.result": ["action_item_1", "action_item_2", "action_item_3"],
+
+            "task-7.stdout": "code execution output",
+
+            "7.result": ["alt_1", "alt_2"]
+
+        }
+
+        # Access first element of flattened key with array index
+
+        assert resolver._get_value_by_path(data, "task-7.result[0]") == "action_item_1"
+
+        # Access second element
+
+        assert resolver._get_value_by_path(data, "task-7.result[1]") == "action_item_2"
+
+        # Access out of bounds should return None
+
+        assert resolver._get_value_by_path(data, "task-7.result[10]") is None
+
+        # Access non-list flattened key with index should return None
+
+        assert resolver._get_value_by_path(data, "task-7.stdout[0]") is None
+
+        # Test with numeric key variant
+
+        assert resolver._get_value_by_path(data, "7.result[0]") == "alt_1"
+
+
+
     def test_get_artifact_links_body(self, logger):
 
         resolver = MockResolver(logger_=logger)
