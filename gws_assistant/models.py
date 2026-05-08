@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
+from pydantic import BaseModel
+
 
 @dataclass(slots=True)
 class AppConfigModel:
@@ -68,7 +70,7 @@ class AppConfigModel:
 
     # Verification Engine Configuration
     verification_exact_placeholders: set[str] = field(default_factory=lambda: {
-        "none", "null", "n/a", "na", "undefined",
+        "none", "null", "undefined",
         "todo", "fixme", "placeholder", "example", "sample", "dummy",
         "your_value", "insert_here", "replace_me", "changeme", "default",
         "fake", "mock", "temporary", "tbd", "missing"
@@ -214,6 +216,9 @@ def validate_planned_task(task: "PlannedTask") -> None:
         # Skip code parameter validation for code.execute - allow it to fail in sandbox
         if task.service in ("code", "computation") and task.action == "execute" and key == "code":
             continue
+        # Skip file_id validation for drive.export_file - may be resolved from empty list
+        if task.service == "drive" and task.action == "export_file" and key == "file_id":
+            continue
 
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
@@ -322,6 +327,8 @@ class AgentState(TypedDict, total=False):
     current_attempt: int
     thought_trace: list[dict]
     abort_plan: bool
+    intent_verification: dict[str, Any] | None
+    verification_attempts: int
 
 
 class StructuredToolResult(TypedDict):
@@ -357,3 +364,10 @@ class CodeExecutionResult:
     return_value: Any = None
     success: bool = False
     error: str | None = None
+
+
+class CodeExecutionOutput(BaseModel):
+    """Container for inter-agent data passing from code execution."""
+
+    parsed_value: Any | None = None
+    code_output: Any | None = None

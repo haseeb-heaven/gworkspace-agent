@@ -27,9 +27,25 @@ env/
 # Logs and Environment
 logs/
 *.log
+# Environment files
 .env
 .env.local
 .env.backup*
+.env.*.local
+.env.development*
+.env.test*
+.env.production*
+secrets*.json
+credentials*.json
+api_keys*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+token*.json
+!.env.example
 
 # IDEs
 .idea/
@@ -56,8 +72,6 @@ $params
 .git
 docs/
 scratch/
-!scratch/auto_release.sh
-!scratch/auto_release.ps1
 
 # Planning and Local Extensions
 .planning/phases/
@@ -66,12 +80,15 @@ conductor/
 
 # Files
 *.exe
+*.tar.gz
+*.app
 *.txt
 *.pdf
 *.docx
 *.xlsx
 *.pptx
 *.html
+binaries/*
 
 # Trash/Temp scripts
 read_mem0.py
@@ -85,3 +102,5 @@ ISSUES.md
 !tests/
 *.orig
 !requirements.txt
+gws-agent.spec
+TAGS

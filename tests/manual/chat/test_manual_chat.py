@@ -14,6 +14,7 @@ TEST_CHAT_MESSAGE = os.getenv("TEST_CHAT_MESSAGE", "GWS Agent automated test mes
 
 
 @pytest.mark.live_integration
+
 def test_manual_1():
     """Send message to primary space verification - Create operation."""
     run_task(
@@ -21,10 +22,12 @@ def test_manual_1():
         expected=["completed", "message"],
         service="chat",
         skip_verification=True,  # May not have chat space
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_2():
     """List spaces and email verification - Read/Integration operation."""
     run_task(
@@ -32,10 +35,12 @@ def test_manual_2():
         expected=["completed", "email"],
         service="chat",
         skip_verification=True,  # Email may not be configured
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_3():
     """List messages in space verification - Read operation."""
     run_task(
@@ -43,10 +48,12 @@ def test_manual_3():
         expected=["completed", "message"],
         service="chat",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_4():
     """Get specific message verification - Read operation."""
     run_task(
@@ -54,10 +61,12 @@ def test_manual_4():
         expected=["completed"],
         service="chat",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_5():
     """Cross-service: Notify about new file - Integration operation."""
     run_task(
@@ -65,10 +74,12 @@ def test_manual_5():
         expected=["completed"],
         service="chat",
         skip_verification=True,  # Complex cross-service operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_6():
     """Cross-service: Chat alert for calendar event - Integration operation."""
     run_task(
@@ -76,4 +87,5 @@ def test_manual_6():
         expected=["completed"],
         service="chat",
         skip_verification=True,  # Complex cross-service operation
+        skip_5step_verification=False,
     )

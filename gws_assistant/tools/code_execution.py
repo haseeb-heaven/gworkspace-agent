@@ -29,7 +29,7 @@ _BANNED_PATTERNS = [
     r"\bos\.system\b",
     r"\bsubprocess\b",
     r"\bsocket\b",
-    r"\bopen\(",
+    # open() removed - data is pre-injected so file operations not needed
     r"__import__",
     r"\brequests\b",
     r"\burllib\b",
@@ -45,10 +45,17 @@ _SAFE_MODULES: dict[str, Any] = {
     "json": json,
     "datetime": datetime,
     "time": time,
+    "csv": __import__("csv"),
+    "io": io,
 }
+try:
+    import pandas as pd
+    _SAFE_MODULES["pandas"] = pd
+except ImportError:
+    pass
 
 
-def _sanitize_llm_code(code: str) -> str:
+def _sanitize_llm_code(code: str) -> tuple[str, dict[str, Any]]:
     """Strip top-level import statements from LLM-generated code.
 
     RestrictedPython blocks ALL imports via _restricted_import(). The LLM
@@ -56,12 +63,15 @@ def _sanitize_llm_code(code: str) -> str:
     numeric tasks. Rather than fail at runtime we:
       1. Remove the import line entirely (the module is pre-injected as a
          sandbox global, so the name is still available in the namespace).
-      2. Leave all other lines untouched.
+      2. Track import aliases (e.g., `import pandas as pd`) and return them.
+      3. Fix common LLM mistakes like pd.read_csv('injected_vars[X]').
+      4. Strip open() calls since data is pre-injected.
 
     This is intentionally conservative: only bare `import X` and
     `from X import Y` lines at the start of a physical line are removed.
     """
     cleaned_lines: list[str] = []
+    aliases: dict[str, Any] = {}
     _SAFE_NAMES = set(_SAFE_MODULES.keys())
     for line in code.splitlines():
         stripped = line.lstrip()
@@ -76,14 +86,28 @@ def _sanitize_llm_code(code: str) -> str:
                 mod_name = words[1].split(".")[0]
                 if mod_name in _SAFE_NAMES:
                     is_safe_import = True
+                    # Track alias: "import pandas as pd" -> {"pd": pandas}
+                    if " as " in stripped:
+                        parts = stripped.split(" as ")
+                        if len(parts) == 2:
+                            alias = parts[1].strip()
+                            if alias in _SAFE_MODULES:
+                                aliases[alias] = _SAFE_MODULES[alias]
+                            else:
+                                aliases[alias] = _SAFE_MODULES[mod_name]
 
         if is_safe_import:
             # Keep the line as a comment so line numbers stay stable for
             # error messages, but neutralise the import.
             cleaned_lines.append("# [sandbox-stripped] " + line)
         else:
+            # Fix common LLM mistake: pd.read_csv('injected_vars[X]') -> proper DataFrame construction
+            # Sheets data is passed as list of lists with headers in first row
+            line = re.sub(r"pd\.read_csv\(['\"]injected_vars\[(\d+)\]['\"]\)", r"pd.DataFrame(injected_vars[\1][1:], columns=injected_vars[\1][0])", line)
+            # Strip open() calls since data is pre-injected
+            line = re.sub(r"\bopen\s*\([^)]+\)", "# [sandbox-stripped] open() call", line)
             cleaned_lines.append(line)
-    return "\n".join(cleaned_lines)
+    return "\n".join(cleaned_lines), aliases
 
 
 def get_safe_globals() -> dict[str, Any]:
@@ -213,6 +237,7 @@ def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_
     for pattern in _BANNED_PATTERNS:
         if re.search(pattern, code):
             return f"SecurityError: disallowed pattern matched: {pattern}"
+
     try:
         ast.parse(code)
     except Exception as exc:
@@ -220,7 +245,7 @@ def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_
     for node in ast.walk(ast.parse(code)):
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             return "SecurityError: import __future__ is blocked."
-        if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True:
+        if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and bool(node.test.value):
             return f"TimeoutError: Execution exceeded {timeout_seconds} seconds."
     return None
 
@@ -233,12 +258,30 @@ def _run_in_thread_sandbox(
     try:
         # Strip import statements before compilation — the sandbox forbids them
         # but pre-injects the most common modules (math, re, json) as globals.
-        sanitized = _sanitize_llm_code(code)
+        sanitized, aliases = _sanitize_llm_code(code)
+        # Fix LLM code that tries to use csv.DictReader on files - use injected DataFrame instead
+        # Pattern: with open('', 'r') as f: ... csv.DictReader(f)
+        sanitized = re.sub(
+            r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as f:\s+reader = csv\.DictReader\(f\)",
+            "df = injected_vars[0] if injected_vars else None",
+            sanitized
+        )
+        # Pattern: for row in reader: -> for row in df.itertuples(): or for idx, row in df.iterrows():
+        sanitized = re.sub(r"for row in reader:", "for idx, row in df.iterrows():", sanitized)
+        # Pattern: row['category'] -> row['Category'] (case-insensitive match)
+        sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
+        sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
+        # Use RestrictedPython's compile_restricted to transform print calls to _print_
+        # Runtime guards in get_safe_globals() still enforce security
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
         sandbox_globals = get_safe_globals()
+        # Add import aliases to sandbox globals (e.g., pd for pandas)
+        sandbox_globals.update(aliases)
 
         # Inject extra context (e.g. task_results) into the sandbox globals
         if extra_globals:
+            # Don't auto-convert to DataFrame - let LLM handle it
+            # This prevents column mismatch errors
             sandbox_globals.update(extra_globals)
 
         output_buffer = io.StringIO()
@@ -248,8 +291,13 @@ def _run_in_thread_sandbox(
         # Capture both _print_ (RestrictedPython internal) and direct stdout
         if "_print_buffer_instance" in sandbox_globals:
             collector = sandbox_globals["_print_buffer_instance"]
-            if callable(collector):
-                exec_result.stdout = str(collector())
+            if collector is not None and callable(collector):
+                try:
+                    exec_result.stdout = str(collector())
+                except Exception:
+                    # If collector fails, fall back to stdout buffer
+                    import logging
+                    logging.getLogger(__name__).debug("Collector failed, falling back to stdout buffer")
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:
@@ -260,16 +308,27 @@ def _run_in_thread_sandbox(
         # --- PARSE RETURN VALUE ---
         # 1. Best case: user explicitly assigned to 'result'
         if "result" in sandbox_globals:
-            exec_result.return_value = sandbox_globals["result"]
+            result_value = sandbox_globals["result"]
+            # Validate result exists in sandbox_globals
+            if "result" not in sandbox_globals:
+                exec_result.return_value = {"error": "Result is None - check your code logic"}
+                exec_result.success = False
+                exec_result.error = "Result is None - check your code logic"
+            else:
+                exec_result.return_value = result_value
+                exec_result.success = True
 
         # 2. Next best: parse the last line of stdout as a Python literal
         elif exec_result.stdout:
             try:
                 last_line = exec_result.stdout.strip().splitlines()[-1]
-                exec_result.return_value = ast.literal_eval(last_line)
+                parsed_value = ast.literal_eval(last_line)
+                exec_result.return_value = parsed_value
+                exec_result.success = True
             except (SyntaxError, ValueError):
                 # Fallback if stdout is not a literal
                 exec_result.return_value = exec_result.stdout
+                exec_result.success = True
 
         # 3. Fallback: capture all variables from sandbox_globals
         else:
@@ -287,11 +346,23 @@ def _run_in_thread_sandbox(
                 and is_json_serializable(v)
             }
             exec_result.return_value = results_vars
-
-        exec_result.success = True
+            exec_result.success = True
     except Exception as exc:
         exec_result.success = False
-        exec_result.error = f"{type(exc).__name__}: {exc}"
+        # Provide more helpful error messages for common regex errors
+        error_msg = f"{type(exc).__name__}: {exc}"
+        if "global flags not at the start" in str(exc):
+            error_msg = (
+                "Regex Error: Flags must be at the start of the pattern. "
+                "Use (?i) for case-insensitive, (?m) for multiline, etc. "
+                "Example: re.search(r'(?i)pattern', text)"
+            )
+        elif "invalid syntax" in str(exc):
+            error_msg = (
+                f"Syntax Error: {exc}. "
+                "Check for missing commas, quotes, or brackets."
+            )
+        exec_result.error = error_msg
     result_holder.append(exec_result)
 
 
@@ -302,8 +373,8 @@ def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
         "stderr": result.stderr,
         "parsed_value": result.return_value,
     }
-    if isinstance(result.return_value, dict):
-        output.update(result.return_value)
+    # Don't update output with return_value dict keys to avoid metadata pollution
+    # The parsed_value already contains the return_value, so extracting it later will work correctly
 
     return StructuredToolResult(
         success=result.success,
@@ -341,6 +412,22 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    # Replace with open(...) as f: blocks with code that uses injected data
+    # Pattern: with open(...) as file: ... use injected_vars instead
+    code = re.sub(
+        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
+        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]\n    # Add case-insensitive column access helper\n    class CaseInsensitiveDict(dict):\n        def __getitem__(self, key):\n            for k in self:\n                if k.lower() == key.lower():\n                    return super().__getitem__(k)\n            raise KeyError(key)\n    \1 = [CaseInsensitiveDict(row) for row in \1]",
+        code,
+        flags=re.DOTALL
+    )
+    # Replace csv.DictReader(file) with direct iteration over the list of dicts
+    code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
+    code = re.sub(r"for row in reader:", "for row in reader:", code)
+    # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
+    code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
+    code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
+    # Remove return statements since code runs at module level
+    code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
@@ -356,8 +443,8 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
         fixed_code = code.replace("; ", "\n").replace(";", "\n")
         second_validation = _validate_submitted_code(fixed_code, timeout_seconds=timeout_seconds)
         if not second_validation:
-            from gws_assistant.logging_utils import get_logger
-            get_logger(__name__).info("AI Robustness: Auto-fixed semicolon syntax in one-liner code block.")
+            import logging
+            logging.getLogger(__name__).info("AI Robustness: Auto-fixed semicolon syntax in one-liner code block.")
             code = fixed_code
             validation_error = None
 

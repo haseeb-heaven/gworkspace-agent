@@ -3,13 +3,15 @@ import json
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from gws_assistant.exceptions import SafetyBlockedError, ValidationError
 from gws_assistant.models import ExecutionResult
-from gws_assistant.verification_engine import VerificationEngine, VerificationError
+from gws_assistant.verification_engine import VerificationEngine, VerificationError, VerificationSeverity
 
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
@@ -190,9 +192,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 try:
                     VerificationEngine.verify_pre_execution(f"{task.service}_{task.action}", task.parameters)
                 except VerificationError as e:
-                    from gws_assistant.exceptions import VerificationError as ExistingVerificationError
-                    self.logger.error(f"Pre-execution verification failed: {e}")
-                    raise ExistingVerificationError(str(e))
+                    if e.severity == VerificationSeverity.WARNING:
+                        self.logger.warning(f"Pre-execution verification warning (continuing): {e}")
+                    else:
+                        self.logger.error(f"Pre-execution verification failed: {e}")
+                        raise
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 
@@ -242,7 +246,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         )
                         if isinstance(data, ExecutionResult):
                             return data
-                        parents = data.get("parents")
+                        parents = None
+                        if isinstance(data, dict):
+                            parents = data.get("parents")
                         if parents and isinstance(parents, list):
                             context["fetch_parents"] = ",".join(parents)
                         else:
@@ -308,26 +314,60 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 if isinstance(data, ExecutionResult):
                     return data
 
+                # Special Case: gmail.list_messages — auto-enrich messages with snippet/headers
+                if task.service == "gmail" and task.action == "list_messages":
+                    msgs = data.get("messages", []) if isinstance(data, dict) else []
+                    # Skip enrichment if messages already carry snippets or payload headers
+                    needs_enrich = isinstance(msgs, list) and msgs and not any(
+                        (isinstance(m, dict) and (m.get("snippet") or m.get("payload", {}).get("headers")))
+                        for m in msgs[:3]
+                    )
+                    if needs_enrich:
+                        max_enrich = min(len(msgs), 20)  # Cap to avoid excessive API calls
+                        enriched = []
+                        for idx, m in enumerate(msgs[:max_enrich]):
+                            mid = m.get("id")
+                            if not mid:
+                                enriched.append(m)
+                                continue
+                            try:
+                                # Use 'full' format for the first 5 messages to enable high-quality extraction
+                                # Use 'metadata' for the rest to preserve performance
+                                fmt = "full" if idx < 5 else "metadata"
+                                get_params = {"userId": "me", "id": mid, "format": fmt}
+                                if fmt == "metadata":
+                                    get_params["metadataHeaders"] = ["From", "Subject", "Date"]
+
+                                get_args = ["gmail", "users", "messages", "get", "--params", json.dumps(get_params)]
+                                get_res = self.runner.run(get_args)
+                                if get_res.success and get_res.stdout:
+                                    full_msg = self._parse_json_result(get_res, "gmail", "get_message", require_mapping=True, context_message="auto-enrich")
+                                    if isinstance(full_msg, dict):
+                                        # Preserve original id to ensure code execution can reference it
+                                        full_msg["id"] = mid
+                                        enriched.append(full_msg)
+                                        continue
+                            except Exception as e:
+                                self.logger.debug("Auto-enrich failed for %s: %s", mid, e)
+                            enriched.append(m)
+                        # Keep any remaining un-enriched messages
+                        enriched.extend(msgs[max_enrich:])
+                        if isinstance(data, dict):
+                            data["messages"] = enriched
+                        self.logger.info("Auto-enriched %d/%d messages with metadata", max_enrich, len(msgs))
+
                 # Special Case: docs.create_document with initial content
-                if task.service == "docs" and task.action == "create_document":
-                    content = task.parameters.get("content")
-                    if content and "documentId" in data:
-                        update_args = self.planner.build_command(
-                            "docs", "batch_update", {"document_id": data["documentId"], "text": content}
-                        )
-                        update_res = self.runner.run(update_args)
-                        if not update_res.success:
-                            self.logger.warning(
-                                f"Failed to add initial content to doc {data['documentId']}: {update_res.error}"
-                            )
-                        else:
-                            self.logger.info(f"Successfully added initial content to doc {data['documentId']}")
+                # DISABLED: Auto-insert is causing batch_update JSON body errors.
+                # Let separate batch_update task handle content insertion.
+                # if task.service == "docs" and task.action == "create_document":
+                #     content = task.parameters.get("content")
+                #     ... (auto-insert logic commented out)
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
-                    saved_file = data.get("saved_file")
+                    saved_file = data.get("saved_file") if isinstance(data, dict) else None
                     if saved_file:
                         # Try to determine if it is readable as text
-                        mime_type = str(task.parameters.get("mime_type") or data.get("mimeType") or "").lower()
+                        mime_type = str(task.parameters.get("mime_type") or (data.get("mimeType") if isinstance(data, dict) else None) or "").lower()
                         is_text = any(x in mime_type for x in ("text/", "csv", "json", "javascript", "xml"))
                         if not is_text:
                             ext = os.path.splitext(saved_file)[1].lower()
@@ -339,7 +379,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                 if not is_within_allowed_dir(saved_file):
                                     result.success = False
                                     result.error = (
-                                        f"Path traversal blocked while reading exported file: {saved_file}"
+                                        f"Path traversal blocked while reading exported file: {os.path.basename(saved_file)}"
                                     )
                                     result.stdout = json.dumps({"error": result.error})
                                     return result
@@ -347,20 +387,17 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
                                     file_content = f.read().lstrip("\ufeff")
                             except Exception as e:
-                                logger.warning("Failed to read exported file %s: %s", saved_file, e)
+                                logger.warning("Failed to read exported file %s: %s", os.path.basename(saved_file), e)
 
                         # Always set content, fallback to path if binary or read failed
-                        final_content = file_content if file_content is not None else f"[File: {saved_file}]"
+                        final_content = file_content if file_content is not None else f"[File: {os.path.basename(saved_file)}]"
 
-                        self.logger.info(
-                            "Exported file content for %s. Size: %s",
-                            saved_file,
-                            len(final_content) if file_content is not None else "N/A (Binary/Path only)",
-                        )
+                        self.logger.info("Exported file (content details omitted for security)")
 
-                        data["content"] = final_content
-                        data["drive_export_content"] = final_content
-                        data["drive_export_path"] = saved_file
+                        if isinstance(data, dict):
+                            data["content"] = final_content
+                            data["drive_export_content"] = final_content
+                            data["drive_export_path"] = saved_file
                 result.output = data
             except Exception as exc:
                 self.logger.exception("Failed to enrich parsed result for %s.%s", task.service, task.action)
@@ -380,8 +417,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     # Use service_action format for verification engine
                     VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
                 except VerificationError as e:
-                    from gws_assistant.verification_engine import VerificationSeverity
-
                     if e.severity == VerificationSeverity.ERROR or e.severity == VerificationSeverity.CRITICAL:
                         from gws_assistant.exceptions import VerificationError as ExistingVerificationError
 
@@ -485,11 +520,15 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
         resolved_attachment_paths: list[str] = []
+        drive_export_tempdirs: set[str] = set()
         for path in attachment_paths:
             if self._looks_like_drive_file_id(path):
                 local_path = self.planner._export_drive_file_to_temp(path)
                 if local_path:
                     resolved_attachment_paths.append(local_path)
+                    parent = str(Path(local_path).resolve().parent)
+                    if Path(parent).name.startswith("gws_attach_"):
+                        drive_export_tempdirs.add(parent)
                     continue
                 drive_link = f"https://drive.google.com/file/d/{path}/view"
                 body = (
@@ -531,23 +570,37 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             "--json",
             json.dumps({"raw": raw_email}, ensure_ascii=True),
         ]
-        result = self.runner.run(args)
-        if result.success and result.stdout:
-            try:
-                data = self._parse_json_result(
-                    result,
-                    "gmail",
-                    "send_message",
-                    require_mapping=True,
-                    context_message="gmail send result",
-                )
-                if not isinstance(data, ExecutionResult):
-                    result.output = data
-                    # Add verification call for gmail.send_message
-                    VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
-            except Exception as e:
-                logger.warning(f"Failed to parse or verify Gmail send result: {e}")
-        return result
+        try:
+            result = self.runner.run(args)
+            if result.success and result.stdout:
+                try:
+                    data = self._parse_json_result(
+                        result,
+                        "gmail",
+                        "send_message",
+                        require_mapping=True,
+                        context_message="gmail send result",
+                    )
+                    if not isinstance(data, ExecutionResult):
+                        result.output = data
+                        # Add verification call for gmail.send_message
+                        VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
+                except VerificationError as e:
+                    logger.error("Verification engine failed for gmail.send_message: %s", e)
+                    return ExecutionResult(
+                        success=False,
+                        command=args,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        return_code=result.return_code,
+                        error=f"Verification failed for gmail.send_message: {e}",
+                    )
+                except Exception as e:
+                    logger.warning("Failed to parse Gmail send result: %s", e)
+            return result
+        finally:
+            for tempdir in drive_export_tempdirs:
+                shutil.rmtree(tempdir, ignore_errors=True)
 
     @staticmethod
     def _looks_like_drive_file_id(value: str) -> bool:

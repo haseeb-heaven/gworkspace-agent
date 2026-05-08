@@ -16,6 +16,7 @@ TEST_UPDATE_SUFFIX = os.getenv("TEST_UPDATE_SUFFIX", "Updated")
 
 
 @pytest.mark.live_integration
+
 def test_manual_1():
     """List events verification - Read operation."""
     run_task(
@@ -23,10 +24,12 @@ def test_manual_1():
         expected=["completed", "event"],
         service="calendar",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_2():
     """Create event verification - Create operation."""
     import time
@@ -37,11 +40,13 @@ def test_manual_2():
         f"Create a calendar event for tomorrow at 10am with the subject '{event_name}' and description '{TEST_EVENT_DESCRIPTION}'.",
         expected=["completed", event_name],
         service="calendar",
-        expected_fields={"summary": event_name}
+        expected_fields={"summary": event_name},
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_3():
     """Get event verification - Read operation."""
     run_task(
@@ -49,10 +54,12 @@ def test_manual_3():
         expected=["completed"],
         service="calendar",
         skip_verification=True,  # May not exist
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_4():
     """Update event verification - Update operation."""
     import time
@@ -65,10 +72,12 @@ def test_manual_4():
         expected=["completed", updated_name],
         service="calendar",
         skip_verification=True,  # May not find exact event
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_5():
     """Delete event verification - Delete operation."""
     run_task(
@@ -76,10 +85,12 @@ def test_manual_5():
         expected=["completed"],
         service="calendar",
         skip_verification=True,  # Destructive operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_6():
     """Full CRUD workflow - Create, Read, Update, Delete sequence."""
     import time
@@ -96,10 +107,12 @@ def test_manual_6():
         expected=["completed"],
         service="calendar",
         skip_verification=True,  # Complex multi-step, skip verification
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_7():
     """Cross-service: Create event with Meet link - Integration operation."""
     import time
@@ -111,10 +124,12 @@ def test_manual_7():
         expected=["completed", "meeting", "event"],
         service="calendar",
         skip_verification=True,  # Cross-service operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_8():
     """Email event details - Integration operation."""
     run_task(
@@ -122,4 +137,5 @@ def test_manual_8():
         expected=["completed", "email"],
         service="calendar",
         skip_verification=True,  # Email may not be configured
+        skip_5step_verification=False,
     )

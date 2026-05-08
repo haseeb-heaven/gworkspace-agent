@@ -1,25 +1,61 @@
-langchain-core>=0.3.0
-langchain-openai>=0.3.0
-langgraph>=0.2.0
-langchain-community>=0.3.0
-RestrictedPython>=7.0
-httpx>=0.27.0
-openai>=1.40.0
-python-dotenv>=1.0.1
-typer>=0.12.3
-rich>=13.7.1
-questionary>=2.0.1
+# Runtime + dev dependencies. Keep in sync with pyproject.toml.
+# pyproject.toml is the source of truth for package metadata; this file
+# exists to support `pip install -r requirements.txt` workflows in CI/Docker.
+
+# LangChain / LangGraph stack
+# NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
+# but the current constraint langchain-openai>=1.1.10,<1.2.2 excludes 1.1.14, so the CVE remains unpatched.
+# Upgrade is deferred due to litellm 1.83.7 pinning openai==2.30.0 (conflicts with openai>=2.26.0 needed by patched langchain-openai).
+# This is tracked and will be upgraded when litellm supports the required openai version.
+langchain-core>=0.3.84
+langchain-openai>=1.1.10,<1.2.2
+langgraph>=0.3.34
+langchain-community>=0.3.31
+langchain-tavily>=0.2.0
+
+# Sandboxing
+RestrictedPython>=8.1
+
+# HTTP / OpenAI
+# openai is pinned to exactly what litellm 1.83.7 requires to avoid ResolutionImpossible.
+# litellm 1.83.7 hard-pins openai==2.30.0 — any deviation causes pip to fail.
+httpx>=0.28.1
+openai==2.30.0
+
+# Config / CLI / GUI
+# python-dotenv is pinned to 1.0.1 — the exact version litellm 1.83.7 hard-requires.
+# litellm 1.83.7 depends on python-dotenv==1.2.2; using 1.2.x causes ResolutionImpossible.
+python-dotenv==1.2.2
+typer>=0.12.0
+rich>=14.3.3
+questionary>=2.1.1
 customtkinter>=5.2.2
-gradio>=5.0.0
+gradio>=6.7.0
+
+# Test tooling
 pytest>=9.0.3
 pytest-cov>=7.1.0
 pytest-mock>=3.14.0
 pytest-asyncio>=0.24.0
-ddgs>=9.13.0
-e2b-code-interpreter>=0.1.0
-mem0ai>=2.0.0
-litellm>=1.83.14
-# Telegram Polling Bot
-python-telegram-bot>=21.0
-langchain-tavily>=0.2.0
+
+# Search backends
 duckduckgo-search>=6.0.0
+
+# Memory + sandbox + LLM router
+e2b-code-interpreter>=1.0.0
+mem0ai>=2.0.0
+# NOTE: litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0 and python-dotenv==1.0.1.
+# Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
+# via /guardrails/test_custom_code. Upgrade only when a patched release is available that also
+# allows openai>=2.26.0 and a newer python-dotenv.
+litellm==1.83.7
+
+# Telegram polling bot
+python-telegram-bot>=22.7
+
+# Google OAuth for multi-user authentication
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+
+# Pre-commit hooks for blocking secret files
+pre-commit>=3.6.0

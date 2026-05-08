@@ -15,6 +15,7 @@ TEST_UPDATE_SUFFIX = os.getenv("TEST_UPDATE_SUFFIX", "Updated")
 
 
 @pytest.mark.live_integration
+
 def test_manual_1():
     """Get presentation and email verification - Read operation."""
     run_task(
@@ -22,10 +23,12 @@ def test_manual_1():
         expected=["completed", "Sent"],
         service="slides",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_2():
     """Create presentation verification - Create operation."""
     import time
@@ -37,10 +40,12 @@ def test_manual_2():
         expected=["completed", "Presentation"],  # GWS returns "Untitled Presentation" initially
         service="slides",
         skip_verification=True,  # May have API limitations
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_3():
     """List presentations verification - Read operation."""
     run_task(
@@ -48,10 +53,12 @@ def test_manual_3():
         expected=["completed", "presentation"],
         service="slides",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_4():
     """Share presentation via email - Integration operation."""
     run_task(
@@ -59,10 +66,12 @@ def test_manual_4():
         expected=["completed", "email"],
         service="slides",
         skip_verification=True,  # May not have presentation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_5():
     """Cross-service: Create presentation from document - Integration operation."""
     import time
@@ -74,4 +83,5 @@ def test_manual_5():
         expected=["completed"],
         service="slides",
         skip_verification=True,  # Complex multi-service operation
+        skip_5step_verification=False,
     )

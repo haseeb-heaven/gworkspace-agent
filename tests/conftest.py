@@ -13,11 +13,11 @@ def clear_config_cache():
         from gws_assistant.config import AppConfig
         AppConfig.clear_cache()
         # Clean up any potential state pollution from tests that modify environ
-        for key in ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL"]:
+        for key in ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY", "LLM_API_KEY1", "LLM_API_KEY2", "LLM_API_KEY3"]:
             os.environ.pop(key, None)
         yield
         AppConfig.clear_cache()
-        for key in ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL"]:
+        for key in ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY", "LLM_API_KEY1", "LLM_API_KEY2", "LLM_API_KEY3"]:
             os.environ.pop(key, None)
     except ImportError:
         yield
@@ -26,6 +26,12 @@ def clear_config_cache():
 @pytest.fixture(scope="session", autouse=True)
 def setup_session_env():
     """Ensure required environment variables are set for the entire test session."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     if not os.getenv("GWS_BINARY_PATH"):
         os.environ["GWS_BINARY_PATH"] = "gws"
     if not os.getenv("DEFAULT_RECIPIENT_EMAIL"):
@@ -103,6 +109,15 @@ def default_email(request):
 
 def pytest_collection_modifyitems(config, items):
     """Automatically mark tests based on their directory and filename."""
+    # First pass: mark manual tests and prepare gws_binary filtering
+    items_to_remove = []
+
+    # Check if any test is from test_gws_binary.py
+    is_gws_binary = any("test_gws_binary.py" in str(item.fspath).replace("\\", "/") for item in items)
+    if is_gws_binary:
+        enabled_services = os.environ.get("GWS_ENABLED_SERVICES", "gmail,docs,sheets,drive,calendar,tasks,keep,slides")
+        print(f"\nGWS_BINARY TESTS: Filtering by enabled services ({enabled_services})\n")
+
     for item in items:
         # Get path relative to tests directory
         rel_path = str(item.fspath).replace("\\", "/")
@@ -111,7 +126,42 @@ def pytest_collection_modifyitems(config, items):
         if "tests/manual" in rel_path:
             item.add_marker(pytest.mark.manual)
 
-        # Service mapping
+        # When running test_gws_binary.py, filter by service markers
+        if "test_gws_binary.py" in rel_path:
+            # Get enabled services from environment or default to main services
+            enabled_services = os.getenv("GWS_ENABLED_SERVICES", "gmail,docs,sheets,drive,calendar,tasks,keep,slides")
+            enabled_list = [s.strip() for s in enabled_services.split(",")]
+
+            # Check if test has any of the enabled service markers
+            # Check both the test method and its parent class
+            marker_names = []
+            for marker in item.iter_markers():
+                marker_names.append(marker.name)
+            # Also check class-level markers
+            if item.cls:
+                for marker in item.cls.pytestmark if hasattr(item.cls, 'pytestmark') else []:
+                    marker_names.append(marker.name)
+
+            has_enabled_marker = any(service in marker_names for service in enabled_list)
+
+            # Also allow gws_binary marked tests (schema, help tests)
+            has_gws_binary_marker = "gws_binary" in marker_names
+
+            if not has_enabled_marker and not has_gws_binary_marker:
+                service_name = item.name.replace("test_", "").split("_")[0]  # Extract service from test name
+                print(f"  SKIPPING: {item.name} (service: {service_name} not enabled)")
+                items_to_remove.append(item)
+
+    # Remove filtered items
+    removed_count = len(items_to_remove)
+    for item in items_to_remove:
+        items.remove(item)
+    if removed_count > 0:
+        print(f"\n  Filtered out {removed_count} tests for disabled services\n")
+
+    # Service mapping - auto-mark tests based on file path
+    for item in items:
+        rel_path = str(item.fspath).replace("\\", "/")
         services = {
             "gmail": pytest.mark.gmail,
             "docs": pytest.mark.docs,

@@ -492,6 +492,9 @@ $last_export_file_content"""
         query = _drive_query_from_text(text)
         recipient = _extract_email(text, default=self.config.default_recipient_email)
 
+        # Check if user provided an explicit file ID — skip list step (use original case)
+        explicit_id = _extract_id(text)
+
         # Extract the document name from the query for the sheet title
         sheet_title = "Results"
         if "'" in query:
@@ -500,11 +503,11 @@ $last_export_file_content"""
 
         # Code to convert document text to table format
         code_script = """# Read the exported document content
-content = $last_export_file_content
+content = $drive_export_content
 
-if not content or len(content.strip()) == 0:
-    print('No content found in document.')
-    result = []
+if not content or len(content.strip()) == 0 or str(content).startswith('[File:'):
+    print('No readable text content found in document (may be a binary/PDF file).')
+    result = [['Note', 'Value'], ['Status', 'Document could not be read as text. Use a Google Docs native file.']]
 else:
     # Split content into lines
     lines = content.strip().split('\\n')
@@ -532,50 +535,76 @@ else:
 
 print(result)"""
 
-        tasks = [
+        if explicit_id:
+            # User provided an explicit file ID — skip list, export directly
+            tasks = [
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="export_file",
+                    parameters={
+                        "file_id": explicit_id,
+                        "mime_type": "text/plain",
+                    },
+                    reason="Export the document content as text using the provided file ID.",
+                ),
+            ]
+            code_task_id = "task-2"
+            sheet_task_id = "task-3"
+            append_task_id = "task-4"
+            gmail_task_id = "task-5"
+        else:
+            tasks = [
+                PlannedTask(
+                    id="task-1",
+                    service="drive",
+                    action="list_files",
+                    parameters={"q": query, "page_size": 50},
+                    reason="Search for the requested document.",
+                ),
+                PlannedTask(
+                    id="task-2",
+                    service="drive",
+                    action="export_file",
+                    parameters={
+                        "file_id": "{{task-1.files[0].id}}",
+                        "mime_type": "text/plain",
+                    },
+                    reason="Export the document content as text.",
+                ),
+            ]
+            code_task_id = "task-3"
+            sheet_task_id = "task-4"
+            append_task_id = "task-5"
+            gmail_task_id = "task-6"
+
+        tasks += [
             PlannedTask(
-                id="task-1",
-                service="drive",
-                action="list_files",
-                parameters={"q": query, "page_size": 50},
-                reason="Search for the requested document.",
-            ),
-            PlannedTask(
-                id="task-2",
-                service="drive",
-                action="export_file",
-                parameters={
-                    "file_id": "{{task-1.files[0].id}}",
-                    "mime_type": "text/plain",
-                },
-                reason="Export the document content as text.",
-            ),
-            PlannedTask(
-                id="task-3",
+                id=code_task_id,
                 service="code",
                 action="execute",
                 parameters={"code": code_script},
                 reason="Convert document content to table format.",
             ),
             PlannedTask(
-                id="task-4",
+                id=sheet_task_id,
                 service="sheets",
                 action="create_spreadsheet",
                 parameters={"title": sheet_title},
                 reason="Create a spreadsheet to store the results.",
             ),
             PlannedTask(
-                id="task-5",
+                id=append_task_id,
                 service="sheets",
                 action="append_values",
                 parameters={
-                    "spreadsheet_id": "{{task-4.spreadsheetId}}",
+                    "spreadsheet_id": f"{{{{{sheet_task_id}.spreadsheetId}}}}",
                     "values": "$last_code_result",
                 },
                 reason="Append the converted table data to the sheet.",
             ),
             PlannedTask(
-                id="task-6",
+                id=gmail_task_id,
                 service="gmail",
                 action="send_message",
                 parameters={
@@ -1309,7 +1338,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
         elif service == "docs" and action == "create_document":
             parameters["title"] = _extract_quoted(lowered) or "New Document"
         elif service == "sheets" and action == "create_spreadsheet":
-            parameters["title"] = _extract_quoted(lowered) or "New Spreadsheet"
+            parameters["title"] = _extract_sheet_title(lowered) or "New Spreadsheet"
         elif service == "tasks" and action == "create_task":
             parameters["title"] = _extract_quoted(lowered) or "New Task"
         elif service in ("code", "computation"):
@@ -1438,24 +1467,84 @@ print('Processing task: {lowered}')"""
         ]
 
     def _calendar_find_delete_tasks(self, text: str, lowered: str) -> list[PlannedTask]:
-        """Calendar: find event by name then delete it."""
-        event_title = _extract_calendar_event_title(text, 0) or "Event"
-        search_query = event_title
+        """Calendar: find event(s) by name or date range then delete them."""
+        import re
+        from datetime import datetime, timedelta
+
+        # Try to extract date range (e.g., "4th and 5th May 2026", "May 4-5 2026")
+        date_pattern = r'(\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:and|to|-)\s+\d{1,2}(?:st|nd|rd|th)?)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})'
+        date_match = re.search(date_pattern, text, re.IGNORECASE)
+
+        list_params: dict[str, Any] = {}
+        search_query = ""
+        reason = ""
+
+        if date_match:
+            # Extract dates and build timeMin/timeMax query
+            date_str = date_match.group(1)
+            # Parse the date(s) - this is a simplified heuristic
+            # For "4th and 5th May 2026", we need to find the start and end
+            months = {
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+            }
+
+            # Try to extract month and year
+            month_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})', date_str, re.IGNORECASE)
+            if month_match:
+                month_name = month_match.group(1).lower()
+                year = int(month_match.group(2))
+                month = months.get(month_name[:3], 1)
+
+                # Extract day(s)
+                day_matches = re.findall(r'(\d{1,2})(?:st|nd|rd|th)?', date_str)
+                if day_matches:
+                    days = [int(d) for d in day_matches]
+                    start_day = min(days)
+                    end_day = max(days)
+
+                    # Build timeMin and timeMax in ISO format
+                    time_min = datetime(year, month, start_day).isoformat() + 'Z'
+                    time_max = (datetime(year, month, end_day) + timedelta(days=1)).isoformat() + 'Z'
+
+                    list_params = {"timeMin": time_min, "timeMax": time_max, "maxResults": 100}
+                    reason = f"List events between {start_day}-{end_day} {month_name} {year}"
+                else:
+                    # Fallback to full month
+                    time_min = datetime(year, month, 1).isoformat() + 'Z'
+                    if month == 12:
+                        time_max = datetime(year + 1, 1, 1).isoformat() + 'Z'
+                    else:
+                        time_max = datetime(year, month + 1, 1).isoformat() + 'Z'
+                    list_params = {"timeMin": time_min, "timeMax": time_max, "maxResults": 100}
+                    reason = f"List events for {month_name} {year}"
+            else:
+                # Fallback: try to use the date string as-is in the query
+                search_query = date_str
+                reason = f"Search for events matching '{date_str}'"
+        else:
+            # Fallback to title-based search
+            event_title = _extract_calendar_event_title(text, 0) or "Event"
+            search_query = event_title
+            reason = f"Search for calendar event '{event_title}'"
+
+        if search_query:
+            list_params["q"] = search_query
 
         return [
             PlannedTask(
                 id="task-1",
                 service="calendar",
                 action="list_events",
-                parameters={"q": search_query},
-                reason=f"Search for calendar event '{event_title}'.",
+                parameters=list_params,
+                reason=reason,
             ),
             PlannedTask(
                 id="task-2",
                 service="calendar",
                 action="delete_event",
-                parameters={"event_id": "{{task-1.id}}"},
-                reason=f"Delete the found event '{event_title}'.",
+                parameters={"event_id": "$calendar_events"},  # Use placeholder for bulk expansion
+                reason="Delete all found events.",
             ),
         ]
 
@@ -1715,9 +1804,30 @@ def _gmail_query_from_text(text: str) -> str:
     quoted = RE_GMAIL_QUERY_QUOTED.search(text)
     if quoted:
         q = quoted.group(1).strip()
+        # Extract any Gmail operators/filters from the original text outside the quotes
+        # Common Gmail operators: from:, to:, subject:, cc:, bcc:, in:, is:, has:, label:, filename:, after:, before:
+        # Also keywords: unread, read, starred, important, snoozed, sent, draft, category:, etc.
+        filters = []
+        # Look for common Gmail operators in the text
+        for operator in ["from:", "to:", "subject:", "cc:", "bcc:", "in:", "is:", "has:", "label:", "filename:", "after:", "before:"]:
+            if operator.lower() in text.lower():
+                # Extract the operator and its value
+                operator_pattern = re.compile(rf"{operator}\S+", re.IGNORECASE)
+                operator_match = operator_pattern.search(text)
+                if operator_match:
+                    filters.append(operator_match.group(0))
+        # Look for common Gmail keywords
+        for keyword in ["unread", "read", "starred", "important", "snoozed", "sent", "draft", "inbox", "spam", "trash"]:
+            keyword_pattern = re.compile(rf"\b{keyword}\b", re.IGNORECASE)
+            if keyword_pattern.search(text) and keyword_pattern.search(text) not in q.lower():
+                filters.append(keyword)
         # If the user says "subject:...", keep it. Otherwise, just use the keywords.
         if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
+            # q already contains the operator, return as-is
             return q
+        # Merge quoted term with filters
+        if filters:
+            return f"{q} {' '.join(filters)}"
         return q
     match = RE_GMAIL_QUERY_MATCH.search(text)
     if match:
@@ -1730,12 +1840,19 @@ def _gmail_query_from_text(text: str) -> str:
 def _drive_query_from_text(text: str) -> str:
     quoted = RE_DRIVE_QUERY_QUOTED.search(text)
     if quoted:
-        return f"fullText contains '{quoted.group(1).strip()}'"
+        term = quoted.group(1).strip()
+        # Use name contains for file-like terms (with extension or short names)
+        # Use fullText for longer descriptive search terms
+        if "." in term or len(term.split()) <= 2:
+            return f"name contains '{term}'"
+        return f"name contains '{term}' or fullText contains '{term}'"
     match = RE_DRIVE_QUERY_MATCH.search(text)
     if match:
         query = match.group(1).strip()
         query = RE_DRIVE_QUERY_SPLIT.split(query)[0].strip()
-        return f"fullText contains '{query}'"
+        if "." in query or len(query.split()) <= 2:
+            return f"name contains '{query}'"
+        return f"name contains '{query}' or fullText contains '{query}'"
     return ""
 
 
@@ -1900,13 +2017,26 @@ def _is_calendar_create_update_request(text: str) -> bool:
 
 
 def _is_calendar_find_delete_request(text: str) -> bool:
-    """Detect 'find and delete calendar event X' patterns."""
+    """Detect 'find and delete calendar event X' patterns or delete by date range patterns."""
     lowered = text.lower()
+
+    # Check for date pattern (e.g., "4th and 5th May 2026", "May 4-5 2026")
+    has_date_pattern = bool(re.search(r'\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:and|to|-)\s+\d{1,2}(?:st|nd|rd|th)?)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}', text))
+
+    # Match if: (find/search AND delete) OR (delete AND date pattern)
     return (
         "calendar" in lowered
-        and any(kw in lowered for kw in ("find", "search", "delete", "remove", "cancel"))
-        and ("find" in lowered or "search" in lowered)
-        and ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+        and (
+            (
+                any(kw in lowered for kw in ("find", "search", "delete", "remove", "cancel"))
+                and ("find" in lowered or "search" in lowered)
+                and ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+            )
+            or (
+                ("delete" in lowered or "remove" in lowered or "cancel" in lowered)
+                and has_date_pattern
+            )
+        )
     )
 
 
@@ -2752,7 +2882,7 @@ class CalendarFindDeleteStrategy(PlanningStrategy):
         return 53
 
     def matches(self, ctx: PlanningContext) -> bool:
-        return len(ctx.services) == 1 and ctx.services[0] == "calendar" and _is_calendar_find_delete_request(ctx.text)
+        return "calendar" in ctx.services and _is_calendar_find_delete_request(ctx.text)
 
     def execute(self, ctx: PlanningContext, agent: "WorkspaceAgentSystem") -> RequestPlan:
         tasks = agent._calendar_find_delete_tasks(ctx.text, ctx.lowered)

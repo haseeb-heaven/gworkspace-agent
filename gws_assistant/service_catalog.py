@@ -26,7 +26,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Create folder",
                 description="Create a new folder in Google Drive. Returns: {id, name}.",
                 keywords=("create", "new", "folder", "drive"),
-                parameters=(ParameterSpec("folder_name", "What should the folder be named?", "My Folder"),),
+                parameters=(ParameterSpec("folder_name", "What should the folder be named?", ""),),
             ),
             "upload_file": ActionSpec(
                 key="upload_file",
@@ -34,8 +34,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Upload a local file to Google Drive. Supports documents (doc, docx, pdf, txt, csv, md, html), spreadsheets (xls, xlsx, ods), presentations (ppt, pptx, odp), images (png, jpg, gif, svg, webp), audio (mp3, wav, ogg, flac, m4a), video (mp4, mkv, avi, mov, wmv, webm, mpeg), archives (zip, tar, gz, 7z), and code files (py, js, json, yaml). Returns: {id, name, mimeType}.",
                 keywords=("upload", "add", "put", "drive"),
                 parameters=(
-                    ParameterSpec("file_path", "Local path to the file to upload", "README.md"),
-                    ParameterSpec("name", "Optional: name for the file on Drive", "Uploaded File", required=False),
+                    ParameterSpec("file_path", "Local path to the file to upload", ""),
+                    ParameterSpec("name", "Optional: name for the file on Drive", "", required=False),
                     ParameterSpec("folder_id", "Optional: ID of the folder to upload the file into", "", required=False),
                 ),
             ),
@@ -44,7 +44,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Get file details",
                 description="Get metadata for a specific Drive file by id. Returns: {id, name, mimeType, size, webViewLink}.",
                 keywords=("get", "details", "file", "open"),
-                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", ""),),
             ),
             "create_file": ActionSpec(
                 key="create_file",
@@ -52,14 +52,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Create a new file in Google Drive. Returns: {id, name, mimeType}.",
                 keywords=("create", "new", "file"),
                 parameters=(
-                    ParameterSpec("name", "What should the file be named?", "New Document"),
+                    ParameterSpec("name", "What should the file be named?", ""),
                     ParameterSpec(
                         "mime_type",
                         "Optional: MIME type (e.g. application/vnd.google-apps.document)",
                         "application/vnd.google-apps.document",
                         required=False,
                     ),
-                    ParameterSpec("folder_id", "Optional: Parent folder ID", "1AbCd...", required=False),
+                    ParameterSpec("folder_id", "Optional: Parent folder ID", "", required=False),
                 ),
             ),
             "export_file": ActionSpec(
@@ -68,7 +68,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Read or download the content of a file. Supports Google Workspace docs (export to docx, pdf, txt, odt, html, csv, xlsx, ods, pptx, odp) and regular files (images, audio, video, pdf, zip, office files) via direct download. Returns the saved file path and content metadata.",
                 keywords=("export", "download", "read", "content", "text", "binary", "attachment"),
                 parameters=(
-                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", ""),
                     ParameterSpec(
                         "mime_type",
                         "Target export MIME type (optional for regular files)",
@@ -82,14 +82,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Delete file",
                 description="Permanently delete a Drive file by id. Irreversible — use with caution.",
                 keywords=("delete", "remove", "trash"),
-                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", ""),),
             ),
             "move_to_trash": ActionSpec(
                 key="move_to_trash",
                 label="Move file to trash",
                 description="Move a Drive file to trash. The file can be recovered from trash within 30 days.",
                 keywords=("trash", "move to trash", "bin", "soft delete"),
-                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", ""),),
             ),
             "update_file_metadata": ActionSpec(
                 key="update_file_metadata",
@@ -97,9 +97,9 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Update an existing file's name or description.",
                 keywords=("update", "rename", "edit", "metadata"),
                 parameters=(
-                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
-                    ParameterSpec("name", "New name for the file", "Updated Name", required=False),
-                    ParameterSpec("description", "New description for the file", "Updated Description", required=False),
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", ""),
+                    ParameterSpec("name", "New name for the file", "", required=False),
+                    ParameterSpec("description", "New description for the file", "", required=False),
                 ),
             ),
             "move_file": ActionSpec(
@@ -108,8 +108,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Move a Drive file to a new folder. Requires file_id and folder_id.",
                 keywords=("move", "relocate", "transfer", "organize"),
                 parameters=(
-                    ParameterSpec("file_id", "Enter the Google Drive file ID", "1AbCdEFg123"),
-                    ParameterSpec("folder_id", "Enter the destination folder ID", "1XyZ..."),
+                    ParameterSpec("file_id", "Enter the Google Drive file ID", ""),
+                    ParameterSpec("folder_id", "Enter the destination folder ID", ""),
                 ),
             ),
             "copy_file": ActionSpec(
@@ -118,9 +118,9 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Create a copy of a Drive file. Returns metadata for the new copy.",
                 keywords=("copy", "duplicate", "backup", "clone"),
                 parameters=(
-                    ParameterSpec("file_id", "ID of the file to copy", "1AbCdEFg123"),
-                    ParameterSpec("name", "New name for the copy", "Backup of File", required=False),
-                    ParameterSpec("folder_id", "Optional: destination folder ID", "1XyZ...", required=False),
+                    ParameterSpec("file_id", "ID of the file to copy", ""),
+                    ParameterSpec("name", "New name for the copy", "", required=False),
+                    ParameterSpec("folder_id", "Optional: destination folder ID", "", required=False),
                 ),
             ),
         },
@@ -137,14 +137,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Create a new Google Sheets spreadsheet. Returns: {spreadsheetId, spreadsheetUrl, title}. Use spreadsheetId in subsequent append_values or get_values calls.",
                 keywords=("create", "new", "sheet", "spreadsheet"),
                 negative_keywords=("read", "get", "search", "fetch", "find"),
-                parameters=(ParameterSpec("title", "What should the spreadsheet title be?", "Quarterly Budget"),),
+                parameters=(ParameterSpec("title", "What should the spreadsheet title be?", ""),),
             ),
             "get_spreadsheet": ActionSpec(
                 key="get_spreadsheet",
                 label="Get spreadsheet details",
                 description="Get metadata and sheet names for a spreadsheet by spreadsheetId. Returns: {spreadsheetId, title, sheets[]}.",
                 keywords=("get", "open", "show", "spreadsheet", "sheet"),
-                parameters=(ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", ""),),
             ),
             "get_values": ActionSpec(
                 key="get_values",
@@ -152,7 +152,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Read cell values from a spreadsheet range. Returns: {values: [[row1col1, ...], ...]}. Use range format 'Sheet1!A1:Z500'.",
                 keywords=("read", "fetch", "get", "search", "values", "data", "sheet"),
                 parameters=(
-                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", ""),
                     ParameterSpec("range", "Enter values range", "Sheet1!A1:Z500", required=False),
                 ),
             ),
@@ -162,9 +162,9 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Append rows to a spreadsheet. 'values' must be a 2D array [[col1, col2], ...] or a $placeholder resolved at runtime. Requires spreadsheet_id from a preceding create_spreadsheet.",
                 keywords=("append", "add", "save", "write", "insert", "rows"),
                 parameters=(
-                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", ""),
                     ParameterSpec("range", "Enter the target range", "Sheet1!A1", required=False),
-                    ParameterSpec("values", "Enter rows to append", "value", required=False),
+                    ParameterSpec("values", "Enter rows to append", "", required=False),
                 ),
             ),
             "delete_spreadsheet": ActionSpec(
@@ -172,7 +172,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Delete spreadsheet",
                 description="Delete a spreadsheet by ID. This actually deletes the file from Google Drive.",
                 keywords=("delete", "remove", "trash", "spreadsheet"),
-                parameters=(ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", ""),),
             ),
             "clear_values": ActionSpec(
                 key="clear_values",
@@ -180,7 +180,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Clear all values from a spreadsheet range.",
                 keywords=("clear", "empty", "delete values", "reset", "wipe"),
                 parameters=(
-                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", "1AbCdEFg123"),
+                    ParameterSpec("spreadsheet_id", "Enter spreadsheet ID", ""),
                     ParameterSpec("range", "Enter the range to clear", "Sheet1!A1:Z100"),
                 ),
             ),
@@ -190,29 +190,29 @@ SERVICES: dict[str, ServiceSpec] = {
         key="gmail",
         label="Gmail",
         aliases=("gmail", "mail", "email", "emails", "inbox", "messages", "message"),
-        description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
+        description="Read and send Gmail messages. For bulk operations (summarize, count, report), use list_messages with snippet data. For reading a specific message, use get_message.",
         actions={
             "list_messages": ActionSpec(
                 key="list_messages",
                 label="List messages",
-                description="Search the Gmail inbox and return a list of message stubs. Returns: [{id, threadId}]. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com'). Must call get_message next to read content.",
-                keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
+                description="Search the Gmail inbox and return message stubs. Returns: [{id, threadId, snippet, subject}]. Snippets are POOR for data extraction. For bulk summaries, snippets might work, but for extracting specific fields like 'Company', 'Role', or 'Price', you MUST use gmail.get_message for each ID to see the full body. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com').",
+                keywords=("list", "show", "find", "search", "messages", "emails", "inbox", "summarize", "count", "report"),
                 negative_keywords=("send", "compose", "mail to", "write email", "email to"),
                 parameters=(
-                    ParameterSpec("max_results", "How many emails should I show?", "10", required=False),
-                    ParameterSpec("q", "What Gmail search query should I use?", "ticket", required=False),
+                    ParameterSpec("max_results", "How many emails should I show? (Use 5-10 for summaries, avoid 100+)", "10", required=False),
+                    ParameterSpec("q", "What Gmail search query should I use?", "", required=False),
                 ),
             ),
             "get_message": ActionSpec(
                 key="get_message",
                 label="Get message details",
-                description="Fetch the full content of a Gmail message. Returns a dictionary: {id, subject, from, to, date, snippet, body}. NOTE: If this task was expanded (e.g. following list_messages), the placeholder resolves to a flat LIST of these dictionaries. Use 'for msg in messages:' to iterate, NOT 'messages['messages']'.",
+                description="Fetch the full content of ONE specific Gmail message by ID. Returns: {id, subject, from, to, date, snippet, body}. Use this for detailed data extraction (e.g. tracking job apps, finding order totals). If you have multiple IDs from list_messages, you MUST include a get_message task step for the specific IDs to fetch their full bodies before parsing.",
                 keywords=("get", "open", "message", "email"),
-                negative_keywords=("send", "list", "search"),
+                negative_keywords=("send", "list", "search", "summarize", "all", "bulk"),
                 parameters=(
                     ParameterSpec(
                         "message_id",
-                        "Enter message ID (or omit — auto-resolved from list_messages)",
+                        "Enter message ID",
                         "18c5a4fbe123",
                         required=False,
                     ),
@@ -223,14 +223,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Trash message",
                 description="Move a Gmail message to the trash by id.",
                 keywords=("trash", "remove", "delete"),
-                parameters=(ParameterSpec("message_id", "Enter message ID", "18c5a4fbe123"),),
+                parameters=(ParameterSpec("message_id", "Enter message ID", ""),),
             ),
             "delete_message": ActionSpec(
                 key="delete_message",
                 label="Delete message permanently",
                 description="Permanently delete a Gmail message by id. Irreversible.",
                 keywords=("delete", "permanently", "remove"),
-                parameters=(ParameterSpec("message_id", "Enter message ID", "18c5a4fbe123"),),
+                parameters=(ParameterSpec("message_id", "Enter message ID", ""),),
             ),
             "send_message": ActionSpec(
                 key="send_message",
@@ -240,9 +240,9 @@ SERVICES: dict[str, ServiceSpec] = {
                 negative_keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
                     ParameterSpec("to_email", "Recipient email address", "recipient@example.com"),
-                    ParameterSpec("subject", "Email subject", "Requested data"),
-                    ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
-                    ParameterSpec("attachments", "Optional local attachment paths", "path/to/file.pdf", required=False),
+                    ParameterSpec("subject", "Email subject", ""),
+                    ParameterSpec("body", "Email body or $placeholder", ""),
+                    ParameterSpec("attachments", "Optional local attachment paths", "", required=False),
                 ),
             ),
         },
@@ -256,20 +256,23 @@ SERVICES: dict[str, ServiceSpec] = {
             "list_events": ActionSpec(
                 key="list_events",
                 label="List events",
-                description="List or search calendar events. Returns: [{id, summary, start, end, location}].",
+                description="List or search calendar events. If no date range is specified, recurring events (birthdays, etc.) from the past may be returned. Returns: [{id, summary, start, end, location}].",
                 keywords=("list", "show", "events", "meetings", "search"),
                 parameters=(
                     ParameterSpec("calendar_id", "Which calendar ID should I use?", "primary", required=False),
                     ParameterSpec("q", "Free-text search query (e.g. 'Sync')", "", required=False),
+                    ParameterSpec("start_date", "Optional: Start date (YYYY-MM-DD) to filter events", "", required=False),
+                    ParameterSpec("end_date", "Optional: End date (YYYY-MM-DD) to filter events", "", required=False),
                 ),
             ),
             "create_event": ActionSpec(
                 key="create_event",
                 label="Create event",
-                description="Create an all-day or timed event on the primary calendar. Returns: {id, summary, htmlLink}.",
+                description="Create an all-day or timed event on the primary calendar. You do NOT need to list events first. Just provide the summary, start_date, and optional start_time/end_time. Returns: {id, summary, htmlLink}.",
                 keywords=("create", "event", "schedule", "meeting"),
+                negative_keywords=("update", "edit", "modify", "change"),
                 parameters=(
-                    ParameterSpec("summary", "Event summary", "Weekly Sync"),
+                    ParameterSpec("summary", "Event summary", ""),
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
                     ParameterSpec("end_date", "Optional: End date (YYYY-MM-DD)", "2026-04-15", required=False),
                     ParameterSpec("start_time", "Optional: Start time (e.g. 10am, 14:30)", "10:00 AM", required=False),
@@ -277,8 +280,7 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("start_datetime", "Optional: Full start ISO datetime", "2026-04-15T10:00:00", required=False),
                     ParameterSpec("end_datetime", "Optional: Full end ISO datetime", "2026-04-15T11:00:00", required=False),
                     ParameterSpec("time_zone", "Optional: Timezone (default: UTC)", "UTC", required=False),
-                    ParameterSpec("description", "Optional: Event description", "Discuss project status", required=False),
-                    ParameterSpec("event_id", "Optional: Specific ID to use for the event", "evt_123", required=False),
+                    ParameterSpec("description", "Optional: Event description", "", required=False),
                 ),
             ),
             "get_event": ActionSpec(
@@ -287,7 +289,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Fetch the details of a calendar event by ID. Returns: {id, summary, start, end, location}.",
                 keywords=("get", "details", "event", "open"),
                 parameters=(
-                    ParameterSpec("event_id", "Enter the Calendar event ID", "icfdpe6lrg7jvtinujvd5h6qa4"),
+                    ParameterSpec("event_id", "Enter the Calendar event ID", ""),
                     ParameterSpec("calendar_id", "Which calendar ID? (default: primary)", "primary", required=False),
                 ),
             ),
@@ -297,7 +299,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Delete an event from a calendar by ID.",
                 keywords=("delete", "remove", "cancel", "trash"),
                 parameters=(
-                    ParameterSpec("event_id", "Enter the Calendar event ID", "icfdpe6lrg7jvtinujvd5h6qa4"),
+                    ParameterSpec("event_id", "Enter the Calendar event ID", ""),
                     ParameterSpec("calendar_id", "Which calendar ID? (default: primary)", "primary", required=False),
                 ),
             ),
@@ -307,9 +309,9 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Update an existing calendar event. Only provided fields are changed.",
                 keywords=("update", "edit", "modify", "patch"),
                 parameters=(
-                    ParameterSpec("event_id", "Enter the Calendar event ID", "icfdpe6lrg7jvtinujvd5h6qa4"),
-                    ParameterSpec("summary", "New summary", "Updated Title", required=False),
-                    ParameterSpec("description", "New description", "Updated notes", required=False),
+                    ParameterSpec("event_id", "Enter the Calendar event ID", ""),
+                    ParameterSpec("summary", "New summary", "", required=False),
+                    ParameterSpec("description", "New description", "", required=False),
                     ParameterSpec("calendar_id", "Which calendar ID? (default: primary)", "primary", required=False),
                 ),
             ),
@@ -327,7 +329,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Create a new Google Doc with an optional initial body. 'content' can be a $placeholder (e.g. $web_search_summary). Returns: {documentId, title, documentUrl}.",
                 keywords=("create", "new", "write", "draft"),
                 parameters=(
-                    ParameterSpec("title", "What should the document title be?", "My Document"),
+                    ParameterSpec("title", "What should the document title be?", ""),
                     ParameterSpec(
                         "content", "Initial document content or $placeholder", "$web_search_summary", required=False
                     ),
@@ -338,7 +340,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Get document",
                 description="Fetch the content and metadata of a Google Doc by documentId. Returns: {documentId, title, body}.",
                 keywords=("get", "open", "show", "read", "fetch"),
-                parameters=(ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("document_id", "Enter the Google Docs document ID", ""),),
             ),
             "batch_update": ActionSpec(
                 key="batch_update",
@@ -353,8 +355,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 ),
                 negative_keywords=("read", "get", "show", "find", "search", "open"),
                 parameters=(
-                    ParameterSpec("document_id", "Enter the Google Docs document ID", "1AbCdEFg123"),
-                    ParameterSpec("text", "Text to append/insert", "Hello world"),
+                    ParameterSpec("document_id", "Enter the Google Docs document ID", ""),
+                    ParameterSpec("text", "Text to append/insert", ""),
                 ),
             ),
         },
@@ -371,7 +373,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Create a new Google Slides presentation. Returns: {presentationId, title, presentationUrl}.",
                 keywords=("create", "new", "write"),
                 negative_keywords=("search", "find", "list", "show"),
-                parameters=(ParameterSpec("title", "What should the presentation title be?", "My Presentation"),),
+                parameters=(ParameterSpec("title", "What should the presentation title be?", ""),),
             ),
             "get_presentation": ActionSpec(
                 key="get_presentation",
@@ -380,7 +382,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("get", "open", "show", "read"),
                 negative_keywords=("create", "new", "search"),
                 parameters=(
-                    ParameterSpec("presentation_id", "Enter the Google Slides presentation ID", "1AbCdEFg123"),
+                    ParameterSpec("presentation_id", "Enter the Google Slides presentation ID", ""),
                 ),
             ),
         },
@@ -411,7 +413,7 @@ SERVICES: dict[str, ServiceSpec] = {
                         "names,emailAddresses,phoneNumbers",
                         required=False,
                     ),
-                    ParameterSpec("sources", "Sources (DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE)", "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE", required=False),
+                    ParameterSpec("sources", "Sources (DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE)", "", required=False),
                 ),
             ),
             "get_person": ActionSpec(
@@ -420,8 +422,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Get a specific person's profile by resourceName. Returns: {resourceName, names[], emailAddresses[], phoneNumbers[]}.",
                 keywords=("get", "show", "read", "person", "contact"),
                 parameters=(
-                    ParameterSpec("resourceName", "Person resource name (e.g. people/c123)", "people/c123"),
-                    ParameterSpec("personFields", "Fields to return", "names,emailAddresses,phoneNumbers", required=False),
+                    ParameterSpec("resourceName", "Person resource name (e.g. people/c123)", ""),
+                    ParameterSpec("personFields", "Fields to return", "", required=False),
                 ),
             ),
         },
@@ -445,8 +447,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Post a text message to a Chat space. Requires 'space' (e.g. spaces/AAAA1234) from list_spaces.",
                 keywords=("send", "message", "post", "chat"),
                 parameters=(
-                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
-                    ParameterSpec("text", "Message text", "Hello team!"),
+                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", ""),
+                    ParameterSpec("text", "Message text", ""),
                 ),
             ),
             "list_messages": ActionSpec(
@@ -455,7 +457,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="List recent messages in a Chat space. Returns: [{name, text, sender, createTime}].",
                 keywords=("list", "show", "messages", "chat", "history"),
                 parameters=(
-                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234"),
+                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", ""),
                     ParameterSpec("page_size", "How many messages should I show?", "10", required=False),
                 ),
             ),
@@ -465,7 +467,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Fetch a single Chat message by its resource name. Returns: {name, text, sender, createTime}.",
                 keywords=("get", "read", "message", "fetch"),
                 parameters=(
-                    ParameterSpec("name", "Full message resource name (e.g. spaces/AAAA1234/messages/xyz)", "spaces/AAAA1234/messages/xyz"),
+                    ParameterSpec("name", "Full message resource name (e.g. spaces/AAAA1234/messages/xyz)", ""),
                 ),
             ),
         },
@@ -482,7 +484,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="List existing Meet spaces. Returns: [{name, meetingUri, activeConference}].",
                 keywords=("list", "show", "find", "conferences", "meetings", "video"),
                 parameters=(
-                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "spaces/AAAA1234", required=False),
+                    ParameterSpec("space", "Space name (e.g. spaces/AAAA1234)", "", required=False),
                 ),
             ),
             "get_conference": ActionSpec(
@@ -490,7 +492,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Get conference",
                 description="Get details for a specific Meet space by name. Returns: {name, meetingUri, activeConference}.",
                 keywords=("get", "show", "details", "conference", "meeting", "video"),
-                parameters=(ParameterSpec("name", "Conference name", "spaces/AAAA1234"),),
+                parameters=(ParameterSpec("name", "Conference name", ""),),
             ),
             "create_meeting": ActionSpec(
                 key="create_meeting",
@@ -520,8 +522,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Create a new Google Keep note. Returns: {name, title, body}.",
                 keywords=("create", "new", "note", "keep"),
                 parameters=(
-                    ParameterSpec("title", "What should the note title be?", "My Note"),
-                    ParameterSpec("body", "Initial note content", "Hello world", required=False),
+                    ParameterSpec("title", "What should the note title be?", ""),
+                    ParameterSpec("body", "Initial note content", "", required=False),
                 ),
             ),
             "get_note": ActionSpec(
@@ -559,7 +561,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Search the web",
                 description="Run a web search query and return structured results. Returns: {summary, rows: [[col1, col2], ...]}. Use $web_search_summary for doc content, $web_search_rows or $web_search_table_values for sheet cell values.",
                 keywords=("search", "find", "lookup", "info", "information", "web"),
-                parameters=(ParameterSpec("query", "What would you like to search for?", "Top Agentic AI frameworks"),),
+                parameters=(ParameterSpec("query", "What would you like to search for?", ""),),
             ),
         },
     ),
@@ -574,7 +576,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Log activity",
                 description="Synthetic internal tool to record an audit log entry for the agent's actions. Returns: {success, logged_at}.",
                 keywords=("record", "audit", "track", "metadata", "store"),
-                parameters=(ParameterSpec("data", "Metadata or activity to log", "User performed X"),),
+                parameters=(ParameterSpec("data", "Metadata or activity to log", ""),),
             ),
             "list_activities": ActionSpec(
                 key="list_activities",
@@ -582,7 +584,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Retrieve audit logs for a specific application (e.g. 'drive', 'admin'). Returns: {items: [...]}.",
                 keywords=("list", "activities", "reports", "find", "search", "logs", "audit", "events"),
                 parameters=(
-                    ParameterSpec("application_name", "Application to audit (admin, drive, etc.)", "drive"),
+                    ParameterSpec("application_name", "Application to audit (admin, drive, etc.)", ""),
                     ParameterSpec("max_results", "How many logs to show?", "10", required=False),
                 ),
             ),
@@ -608,7 +610,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("list", "show", "tasks", "todos"),
                 parameters=(
                     ParameterSpec("tasklist", "Task list ID", "@default"),
-                    ParameterSpec("show_completed", "Show completed tasks?", "true", required=False),
+                    ParameterSpec("show_completed", "Show completed tasks?", "", required=False),
                 ),
             ),
             "create_task": ActionSpec(
@@ -617,7 +619,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Creates a new task on the specified task list. Returns: {id, title, status}.",
                 keywords=("create", "new", "add", "task", "todo"),
                 parameters=(
-                    ParameterSpec("title", "Task title", "Buy milk"),
+                    ParameterSpec("title", "Task title", ""),
                     ParameterSpec("tasklist", "Task list ID", "@default", required=False),
                     ParameterSpec("notes", "Optional task notes", "", required=False),
                     ParameterSpec("due", "Due date (RFC3339)", "", required=False),
@@ -629,7 +631,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Returns the specified task. Returns: {id, title, status, updated, due, notes}.",
                 keywords=("get", "show", "read", "task", "todo"),
                 parameters=(
-                    ParameterSpec("task_id", "The ID of the task", "task-123"),
+                    ParameterSpec("task_id", "The ID of the task", ""),
                     ParameterSpec("tasklist", "Task list ID", "@default", required=False),
                 ),
             ),
@@ -639,12 +641,12 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Updates an existing task. Returns: {id, title, status}.",
                 keywords=("update", "edit", "change", "modify", "task", "todo"),
                 parameters=(
-                    ParameterSpec("task_id", "The ID of the task", "task-123"),
+                    ParameterSpec("task_id", "The ID of the task", ""),
                     ParameterSpec("tasklist", "Task list ID", "@default", required=False),
-                    ParameterSpec("title", "New task title", "Buy organic milk", required=False),
-                    ParameterSpec("status", "Task status (needsAction, completed)", "completed", required=False),
-                    ParameterSpec("notes", "New task notes", "Get 2% milk", required=False),
-                    ParameterSpec("due", "Due date (RFC3339)", "2026-04-18T12:00:00Z", required=False),
+                    ParameterSpec("title", "New task title", "", required=False),
+                    ParameterSpec("status", "Task status (needsAction, completed)", "", required=False),
+                    ParameterSpec("notes", "New task notes", "", required=False),
+                    ParameterSpec("due", "Due date (RFC3339)", "", required=False),
                 ),
             ),
             "delete_task": ActionSpec(
@@ -653,7 +655,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Deletes a task by ID. Returns: {id}.",
                 keywords=("delete", "remove", "trash", "task", "todo"),
                 parameters=(
-                    ParameterSpec("task_id", "The ID of the task", "task-123"),
+                    ParameterSpec("task_id", "The ID of the task", ""),
                     ParameterSpec("tasklist", "Task list ID", "@default", required=False),
                 ),
             ),
@@ -677,7 +679,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Get course",
                 description="Returns a specific course by ID. Returns: {id, name, section, description, alternateLink}.",
                 keywords=("get", "details", "course", "class"),
-                parameters=(ParameterSpec("id", "Course ID", "12345678"),),
+                parameters=(ParameterSpec("id", "Course ID", ""),),
             ),
         },
     ),
@@ -699,7 +701,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Get project",
                 description="Get a specific Apps Script project by scriptId. Returns: {scriptId, title, createTime, updateTime}.",
                 keywords=("get", "details", "project", "script"),
-                parameters=(ParameterSpec("script_id", "Script project ID", "abc12345"),),
+                parameters=(ParameterSpec("script_id", "Script project ID", ""),),
             ),
         },
     ),
@@ -714,14 +716,14 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Create form",
                 description="Create a new Google Form. Returns: {formId, info: {title}}.",
                 keywords=("create", "new", "form", "survey"),
-                parameters=(ParameterSpec("title", "What should the form title be?", "Untitled Form"),),
+                parameters=(ParameterSpec("title", "What should the form title be?", ""),),
             ),
             "get_form": ActionSpec(
                 key="get_form",
                 label="Get form",
                 description="Fetch metadata for a Google Form by ID. Returns: {formId, info, items}.",
                 keywords=("get", "open", "read", "form"),
-                parameters=(ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),),
+                parameters=(ParameterSpec("form_id", "Enter the Google Form ID", ""),),
             ),
             "batch_update": ActionSpec(
                 key="batch_update",
@@ -729,8 +731,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Update a Google Form (add questions, update info). 'requests' must be a list of update requests.",
                 keywords=("update", "edit", "modify", "add question", "batch"),
                 parameters=(
-                    ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),
-                    ParameterSpec("requests", "List of update requests", "[{'createItem': {...}}]", required=True),
+                    ParameterSpec("form_id", "Enter the Google Form ID", ""),
+                    ParameterSpec("requests", "List of update requests", "", required=True),
                 ),
             ),
         },
@@ -789,7 +791,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 label="Send Telegram Message",
                 description="Send a text message to the user's Telegram chat.",
                 keywords=("send", "update", "notify", "telegram", "message"),
-                parameters=(ParameterSpec("message", "The update message to send", "Completed task X"),),
+                parameters=(ParameterSpec("message", "The update message to send", ""),),
             ),
         },
     ),
@@ -835,8 +837,8 @@ SERVICES: dict[str, ServiceSpec] = {
                 description="Sanitize a block of text through a Model Armor template. Returns: {sanitizedText, findings: [...]}.",
                 keywords=("sanitize", "filter", "check", "safety", "clean"),
                 parameters=(
-                    ParameterSpec("text", "Text to sanitize", "User input here"),
-                    ParameterSpec("template", "Model Armor template path", "projects/..."),
+                    ParameterSpec("text", "Text to sanitize", ""),
+                    ParameterSpec("template", "Model Armor template path", ""),
                 ),
             ),
         },

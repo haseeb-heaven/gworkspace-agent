@@ -14,14 +14,14 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import UnsupportedServiceError, ValidationError
 from .file_types import default_export_mime, guess_mime_type, supported_export_formats
 from .gmail_query_builder import sanitize_gmail_query
-from .models import ActionSpec, ParameterSpec
+from .models import ActionSpec, CodeExecutionOutput, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
 
 _UNSUPPORTED_STUB_SERVICES = frozenset({"analytics", "bigquery"})
@@ -239,8 +239,14 @@ class CommandPlanner:
             }
             if raw_query:
                 # If the query looks like a document search, prioritize Google Docs mimeType.
+                # But skip if the query has a file extension (e.g. .pdf, .docx) since that's a specific file.
                 lowered = raw_query.lower()
-                if any(kw in lowered for kw in ("document", "doc", "12th", "class")) and "mimetype" not in lowered:
+                has_extension = bool(re.search(r"\.[a-z]{2,5}\b", lowered))
+                if (
+                    not has_extension
+                    and any(kw in lowered for kw in ("document", "doc", "12th", "class"))
+                    and "mimetype" not in lowered
+                ):
                     request_params["q"] = (
                         f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
                     )
@@ -317,9 +323,9 @@ class CommandPlanner:
             mime_type = str(params.get("mime_type") or "application/vnd.google-apps.document").strip()
             folder_id = str(params.get("folder_id") or "").strip()
 
-            payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
+            file_payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
             if folder_id:
-                payload["parents"] = [folder_id]
+                file_payload["parents"] = [folder_id]
 
             return [
                 "drive",
@@ -328,7 +334,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps(payload, ensure_ascii=True),
+                json.dumps(file_payload, ensure_ascii=True),
             ]
 
         if action == "export_file":
@@ -479,6 +485,16 @@ class CommandPlanner:
             range_name = self._format_range(str(params.get("range") or "A1"))
 
             values = params.get("values")
+
+            # Extract values if the input is from code.execute (model or dict)
+            if isinstance(values, CodeExecutionOutput):
+                values = values.parsed_value if values.parsed_value is not None else values.code_output
+            elif isinstance(values, dict):
+                if "parsed_value" in values and values["parsed_value"] is not None:
+                    values = values["parsed_value"]
+                elif "code_output" in values and values["code_output"] is not None:
+                    values = values["code_output"]
+
             # Ensure 'values' is a list of lists, even if it's a single string or flat list
             if isinstance(values, str):
                 values = [[values]]  # e.g. "hello" -> [["hello"]]
@@ -487,7 +503,7 @@ class CommandPlanner:
                     values = [values]  # e.g. ['a', 'b'] -> [['a', 'b']]
                 elif not values:  # Handle empty list
                     values = [["No values supplied"]]
-            else:  # Handle non-string, non-list types (e.g., None, int, etc.)
+            else:  # Handle non-string, non-list types (e.g., None, int, dict without parsed_value, etc.)
                 val_str = "" if values is None else str(values)
                 values = [[val_str]]  # Wrap in list of lists
 
@@ -539,7 +555,7 @@ class CommandPlanner:
             request_params: dict[str, Any] = {
                 "userId": "me",
                 "maxResults": max_results,
-                "fields": "messages(id,threadId),nextPageToken,resultSizeEstimate",
+                "fields": "messages(id,threadId,snippet),nextPageToken,resultSizeEstimate",
             }
             if raw_query:
                 # Fix #8 — sanitize Gmail query just like we sanitize Drive queries.
@@ -547,8 +563,8 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "list", "--params", json.dumps(request_params, ensure_ascii=True)]
 
         if action == "get_message":
-            # Allow message_id to be missing or a placeholder during planning
-            message_id = params.get("message_id") or "{{message_id}}"
+            # Allow message_id or id parameter for flexibility
+            message_id = params.get("message_id") or params.get("id") or "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "trash_message":
@@ -606,6 +622,29 @@ class CommandPlanner:
             query = str(params.get("q") or "").strip()
             if query:
                 list_params["q"] = query
+
+            # Handle start_date and end_date parameters
+            start_date = str(params.get("start_date") or "").strip()
+            end_date = str(params.get("end_date") or "").strip()
+
+            if start_date:
+                # Convert YYYY-MM-DD to ISO datetime format
+                time_min = f"{start_date}T00:00:00Z"
+                list_params["timeMin"] = time_min
+
+            if end_date:
+                # Convert YYYY-MM-DD to ISO datetime format
+                time_max = f"{end_date}T23:59:59Z"
+                list_params["timeMax"] = time_max
+
+            # If no date range specified, add default range to avoid returning all historical events
+            if not start_date and not end_date:
+                now = datetime.now(timezone.utc)
+                past_30_days = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                future_30_days = (now + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                list_params["timeMin"] = past_30_days
+                list_params["timeMax"] = future_30_days
+
             return [
                 "calendar",
                 "events",
@@ -672,8 +711,8 @@ class CommandPlanner:
                 "start": event_start,
                 "end": event_end,
             }
-            if event_id:
-                event_body["id"] = event_id
+            # Do not inject event_id for create_event as it leads to "identifier already exists"
+            # if the LLM hallucinates the same ID on retries or across tasks.
 
             if description:
                 event_body["description"] = description
@@ -787,6 +826,9 @@ class CommandPlanner:
                 location = {"endOfSegmentLocation": {"segmentId": ""}}
 
             requests_payload = [{"insertText": {**location, "text": text}}]
+            json_body = json.dumps({"requests": requests_payload}, ensure_ascii=True)
+            if not json_body or json_body.strip() == "":
+                raise ValidationError("batch_update JSON body is empty - check text parameter")
             return [
                 "docs",
                 "documents",
@@ -794,7 +836,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"documentId": document_id}),
                 "--json",
-                json.dumps({"requests": requests_payload}, ensure_ascii=True),
+                json_body,
             ]
 
         raise ValidationError(f"Unsupported docs action: {action}")
@@ -1136,6 +1178,11 @@ class CommandPlanner:
                 part["Content-Disposition"] = f'attachment; filename="{filename}"'
                 msg.attach(part)
             except Exception:
+                logging.warning(
+                    "Skipping attachment %s: failed to read/encode",
+                    os.path.basename(normalized_path),
+                    exc_info=True,
+                )
                 continue
         return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 

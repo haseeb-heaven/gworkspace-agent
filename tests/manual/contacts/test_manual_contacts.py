@@ -15,6 +15,7 @@ TEST_CONTACT_EMAIL = os.getenv("TEST_CONTACT_EMAIL", "gws-test@example.com")
 
 
 @pytest.mark.live_integration
+
 def test_manual_1():
     """List contacts and email verification - Read/Integration operation."""
     run_task(
@@ -22,10 +23,12 @@ def test_manual_1():
         expected=["completed", "email"],
         service="contacts",
         skip_verification=True,  # Email may not be configured
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_2():
     """List directory users verification - Read operation."""
     run_task(
@@ -33,10 +36,12 @@ def test_manual_2():
         expected=["completed", "email"],
         service="contacts",
         skip_verification=True,  # Email may not be configured
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_3():
     """Get person by resource name verification - Read operation."""
     run_task(
@@ -44,10 +49,12 @@ def test_manual_3():
         expected=["completed"],
         service="contacts",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_4():
     """Search contacts verification - Read operation."""
     run_task(
@@ -55,10 +62,12 @@ def test_manual_4():
         expected=["completed"],
         service="contacts",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_5():
     """Cross-service: Save contact to sheet - Integration operation."""
     run_task(
@@ -66,10 +75,12 @@ def test_manual_5():
         expected=["completed"],
         service="contacts",
         skip_verification=True,  # Cross-service operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_6():
     """Export contacts to document - Integration operation."""
     run_task(
@@ -77,4 +88,5 @@ def test_manual_6():
         expected=["completed"],
         service="contacts",
         skip_verification=True,  # Cross-service operation
+        skip_5step_verification=False,
     )

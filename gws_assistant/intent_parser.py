@@ -151,30 +151,55 @@ class IntentParser:
         return None
 
     def parse_heuristically(self, text: str) -> Intent:
-        service = self._detect_service(text)
+        services = self._detect_services(text)
+
+        service = None
+        needs_clarification = False
+        reason = None
+
+        if not services:
+            needs_clarification = True
+            reason = "I could not detect a supported Google service."
+        elif len(services) > 1:
+            # If we detect a specific Workspace service alongside generic 'search', prioritize the Workspace service.
+            workspace_services = [s for s in services if s != "search"]
+            if len(workspace_services) == 1:
+                service = workspace_services[0]
+            else:
+                # When multiple workspace services are detected, prefer the most specific one
+                # Priority: docs > drive (docs is more specific for documents)
+                # Priority: calendar > events (calendar is more specific for calendar events)
+                if "docs" in workspace_services and "drive" in workspace_services:
+                    service = "docs"
+                elif "calendar" in workspace_services and "events" in workspace_services:
+                    service = "calendar"
+                else:
+                    # Fallback: use the first detected service
+                    service = workspace_services[0]
+        else:
+            service = services[0]
+
         action = self._detect_action(service, text) if service else None
 
         # IDs are case-sensitive, so we need original text
         parameters = self._extract_simple_parameters(text)
 
-        needs_clarification = not service
-        reason = None
-        if not service:
-            reason = "I could not detect a supported Google service."
-        elif not action:
-            reason = "I found the service but could not detect the action."
+        if service and not action:
+            needs_clarification = True
+            reason = f"I found the {SERVICES[service].label} service but could not detect the action."
 
         return Intent(
             raw_text=text,
             service=service,
             action=action,
             parameters=parameters,
-            confidence=0.4 if service else 0.1,
+            confidence=0.4 if service and not needs_clarification else 0.1,
             needs_clarification=needs_clarification,
             clarification_reason=reason,
         )
 
-    def _detect_service(self, text: str) -> str | None:
+    def _detect_services(self, text: str) -> list[str]:
+        """Detect all services mentioned in the text."""
         # Sort aliases by length descending to match 'google docs' before 'docs' or 'google'
         all_aliases = []
         for service_key, spec in SERVICES.items():
@@ -184,19 +209,36 @@ class IntentParser:
 
         all_aliases.sort(key=lambda x: len(x[0]), reverse=True)
 
+        detected_services = set()
+
         # High-signal word check first (whole word)
         for alias, service_key in all_aliases:
             pattern = re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE)
             if pattern.search(text):
-                # If we detect a specific Workspace service, prioritize it over generic 'search'
-                if service_key != "search":
-                    return service_key
+                detected_services.add(service_key)
 
-        # Fallback to substring if no whole word match
-        for alias, service_key in all_aliases:
-            if alias.lower() in text.lower():
-                return service_key
-        return None
+        # Fallback to substring if no whole word match was found
+        if not detected_services:
+            for alias, service_key in all_aliases:
+                if alias.lower() in text.lower():
+                    detected_services.add(service_key)
+
+        return sorted(list(detected_services))
+
+    def _detect_service(self, text: str) -> str | None:
+        """Heuristically detect the most likely service.
+
+        Deprecated: Use _detect_services instead. Kept for backward compatibility
+        with internal methods or tests if needed.
+        """
+        services = self._detect_services(text)
+        if not services:
+            return None
+        if len(services) == 1:
+            return services[0]
+        # Prioritize workspace service over 'search'
+        workspace_services = [s for s in services if s != "search"]
+        return workspace_services[0] if workspace_services else services[0]
 
     def _detect_action(self, service: str | None, text: str) -> str | None:
         if not service or service not in SERVICES:

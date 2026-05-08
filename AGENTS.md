@@ -85,7 +85,7 @@ pytest tests/ \
   -m "not live_integration" \
   --ignore=tests/manual \
   --ignore=tests/test_live_integration.py \
-  --cov=src --cov=gws_assistant \
+  --cov=gws_assistant \
   --cov-fail-under=70 \
   -v
 
@@ -130,7 +130,7 @@ tests/
 ruff check .
 
 # Type check
-mypy src --ignore-missing-imports
+mypy gws_assistant --ignore-missing-imports
 
 # Auto-fix safe lint issues
 ruff check . --fix
@@ -141,6 +141,47 @@ ruff check . --fix
 - Use type annotations on all function signatures
 - Inter-agent data must use Pydantic models from `models.py` — never pass raw `dict` between layers
 - Return type from any tool wrapper must be `ToolResult` (defined in `models.py`)
+
+---
+
+## Pre-commit Hooks
+
+This project uses pre-commit hooks to prevent accidental commits of secret files (`.env`, `secrets*.json`, etc.) and to enforce code quality.
+
+### Installation
+
+```bash
+# After installing dependencies from requirements.txt
+pre-commit install
+```
+
+### What It Blocks
+
+The pre-commit configuration (`.pre-commit-config.yaml`) includes:
+
+- **Secret file detection**: Blocks commits containing `.env`, `.env.local`, `.env.*.local`, `secrets*.json`, `credentials`, `api_keys`, and other secret files
+- **Basic formatting**: YAML/JSON validation, trailing whitespace, end-of-file fixer
+- **Private key detection**: Detects private keys in code
+
+### Running Hooks Manually
+
+```bash
+# Run on all files
+pre-commit run --all-files
+
+# Run on staged files only
+pre-commit run
+```
+
+### Bypassing Hooks (Not Recommended)
+
+If you must bypass hooks (use with extreme caution):
+
+```bash
+git commit --no-verify -m "your message"
+```
+
+**Never bypass hooks to commit `.env` or secrets files.**
 
 ---
 
@@ -248,6 +289,13 @@ lint → unit-tests → integration-tests → security
 - Posts full error logs and instructions to the linked Issue (or PR if no Issue found)
 - **Agent must push fixes to the same head branch — never open a new PR or merge manually**
 
+### Security Scan
+- Runs `bandit` (Python code security), `safety` (dependency vulnerabilities), and `pip-audit` (CVE scan)
+- Snyk SCA (Software Composition Analysis) and SAST (Static Application Security Testing) if SNYK_TOKEN is configured
+- Security findings are uploaded as artifacts for review
+- **IMPORTANT:** Security scans now fail the pipeline on HIGH/CRITICAL findings
+- **Exception:** Snyk SCA is allowed to fail for third-party vulnerabilities with no available fixes (already reviewed and dismissed)
+
 ---
 
 ## PR & Commit Instructions
@@ -289,27 +337,70 @@ To use these skills, read the instructions in `skills/<skill-name>/SKILL.md`.
 
 ---
 
-## What an Agent Must Not Do
+### 🚫 Agent Safety & Integrity Rules (Python Projects)
 
-- Modify test assertions or lower coverage thresholds
-- Remove or weaken `safety_guard.py` risk policies
-- Remove the CI mode bypass in `config.py` (`if not ci_mode`)
-- Merge PRs manually — CI manages all merges
-- Resolve review threads manually — fix the code and let CI re-verify
-- Add hardcoded credentials, API keys, or secrets in source files
-- Change `GCP_PROJECT_ID`, `GCP_REGION`, or `GCP_SERVICE` in pipeline.yml
-- Hardcode `main` or `master` as a merge target — always use `base.ref`
-- Pass raw `dict` objects between agent layers — use Pydantic models
-- Delete or modify the .env file or expose them to commit.
----
+#### 1. Testing & Quality Assurance
+- Never modify or weaken test assertions to force passing results
+- Do not reduce code coverage thresholds under any circumstances
+- Avoid skipping, mocking, or bypassing critical test paths unless explicitly approved
+- Ensure all changes maintain or improve existing test reliability
+
+#### 2. Security & Secrets Management
+- Never hardcode credentials, API keys, tokens, or secrets in source code
+- Do not commit `.env`, `secrets.json`, or any sensitive configuration files
+- Never expose environment variables in logs, outputs, or error messages
+- Use secure configuration management (e.g., environment variables, secret managers)
+
+#### 3. Core Safety Mechanisms
+- Do not remove, weaken, or bypass rules in `safety_guard.py`
+- Maintain all risk policies and validation checks intact
+- Any change affecting safety logic must be explicitly reviewed and justified
+
+#### 4. CI/CD Discipline
+- Never manually merge pull requests — CI pipeline owns all merges
+- Do not resolve review comments manually without fixing underlying code issues
+- Avoid introducing CI bypasses or conditional shortcuts that skip validation
+- Preserve all pipeline safeguards and verification steps
+
+#### 5. Configuration Integrity
+- Do not modify critical infrastructure variables:
+  - `GCP_PROJECT_ID`
+  - `GCP_REGION`
+  - `GCP_SERVICE`
+- Do not remove or alter CI mode conditions such as:
+  - `if not ci_mode`
+- Avoid hardcoding branch names like `main` or `master`; always use dynamic references (e.g., `base.ref`)
+
+#### 6. Architecture & Data Contracts
+- Never pass raw `dict` objects across layers
+- Always use typed schemas (Pydantic models) for:
+  - Validation
+  - Serialization
+  - Inter-layer communication
+- Maintain strict typing and schema consistency across services
+
+#### 7. Repository Hygiene
+- Do not delete or modify `.env` files within the repository
+- Ensure `.gitignore` properly excludes sensitive files
+- Prevent accidental commits of generated or local configuration artifacts
+
+#### 8. Code Integrity Principles
+- Do not introduce hacks, shortcuts, or temporary fixes that bypass system design
+- Preserve modular architecture and separation of concerns
+- Maintain backward compatibility unless explicitly breaking changes are approved
+- Ensure logging, error handling, and observability remain intact
 
 ## Security Considerations
 
 - Never log full email bodies, file contents, or user PII
 - `bandit`, `safety`, and `pip-audit` run on every PR — fix all HIGH severity findings before pushing
+- Security scans now fail the pipeline on HIGH/CRITICAL findings (non-blocking mode removed)
+- Snyk SAST (code security) runs on every PR and blocks merge on HIGH severity findings
+- Snyk SCA (dependency scan) runs on every PR but is allowed to fail for third-party vulnerabilities with no available fixes (e.g. gradio, litellm)
 - Secrets live in GitHub Actions Secrets only — never in committed `.env` files
 - `.env.example` documents required keys but contains no real values
 - The `safety_guard.py` policy matrix is the authoritative source for what operations are allowed without user confirmation
+- Pre-commit hooks block commits of `.env` and secret files
 
 ---
 

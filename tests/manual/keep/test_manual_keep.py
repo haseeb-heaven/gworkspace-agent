@@ -16,6 +16,7 @@ TEST_UPDATE_SUFFIX = os.getenv("TEST_UPDATE_SUFFIX", "Updated")
 
 
 @pytest.mark.live_integration
+
 def test_manual_1():
     """Create note verification - Create operation."""
     run_task(
@@ -23,10 +24,12 @@ def test_manual_1():
         expected=["completed", TEST_NOTE_TITLE],
         service="keep",
         expected_fields={"title": TEST_NOTE_TITLE},
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_2():
     """List notes verification - Read operation."""
     run_task(
@@ -34,10 +37,12 @@ def test_manual_2():
         expected=["completed", "note"],
         service="keep",
         skip_verification=True,  # Read-only operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_3():
     """Get note verification - Read operation."""
     run_task(
@@ -45,10 +50,12 @@ def test_manual_3():
         expected=["completed", TEST_NOTE_TITLE],
         service="keep",
         skip_verification=True,  # May not exist
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_4():
     """Update note verification - Update operation."""
     updated_title = f"{TEST_NOTE_TITLE} {TEST_UPDATE_SUFFIX}"
@@ -56,11 +63,13 @@ def test_manual_4():
         f"Update the Keep note '{TEST_NOTE_TITLE}' with the new title '{updated_title}'.",
         expected=["completed", updated_title],
         service="keep",
-        skip_verification=True  # May not find exact note
+        skip_verification=True,  # May not find exact note
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_5():
     """Delete note verification - Delete operation."""
     run_task(
@@ -68,10 +77,12 @@ def test_manual_5():
         expected=["completed", "deleted"],
         service="keep",
         skip_verification=True,  # Destructive operation
+        skip_5step_verification=False,
     )
 
 
 @pytest.mark.live_integration
+
 def test_manual_6():
     """Full CRUD workflow - Create, Read, Update, Delete sequence."""
     import time
@@ -87,5 +98,6 @@ def test_manual_6():
         f"and finally delete it.",
         expected=["completed"],
         service="keep",
-        skip_verification=True  # Complex multi-step, skip verification
+        skip_verification=True,  # Complex multi-step, skip verification
+        skip_5step_verification=False,
     )

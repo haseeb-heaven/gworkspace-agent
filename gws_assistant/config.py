@@ -79,8 +79,8 @@ class AppConfig:
                 gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
 
             default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
-            if not default_recipient_email:
-                raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
+            # BUG FIX: Don't raise ValueError if empty; some users may want to skip this security override.
+            # The tool will handle empty recipient by logging a warning if needed.
 
             drive_folder_name = (os.getenv("DRIVE_FOLDER_NAME") or "New Folder").strip() or "New Folder"
 
@@ -141,6 +141,8 @@ class AppConfig:
                 os.getenv("LLM_FALLBACK_MODEL") or "",
                 os.getenv("LLM_FALLBACK_MODEL2") or "",
                 os.getenv("LLM_FALLBACK_MODEL3") or "",
+                os.getenv("LLM_FALLBACK_MODEL4") or "",
+                os.getenv("LLM_FALLBACK_MODEL5") or "",
             ]
             llm_fallback_models = []
             for m in fallback_raw:
@@ -223,7 +225,7 @@ class AppConfig:
             verification_exact_placeholders = _to_set(
                 os.getenv("VERIFICATION_EXACT_PLACEHOLDERS"),
                 default={
-                    "none", "null", "n/a", "na", "undefined",
+                    "none", "null", "undefined",
                     "todo", "fixme", "placeholder", "example", "sample", "dummy",
                     "your_value", "insert_here", "replace_me", "changeme", "default",
                     "fake", "mock", "temporary", "tbd", "missing"

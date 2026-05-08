@@ -1,9 +1,114 @@
+import ast
 import json
 import logging
+import os
+import re
 from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_file_path_patterns(value: Any) -> Any:
+    """Replace [File: ...] patterns with a placeholder to avoid leaking local paths."""
+    if isinstance(value, str):
+        return re.sub(r'\[File: [^\]]+\]', '[Document file]', value)
+    elif isinstance(value, list):
+        return [_sanitize_file_path_patterns(item) for item in value]
+    elif isinstance(value, dict):
+        return {k: _sanitize_file_path_patterns(v) for k, v in value.items()}
+    return value
+
+
+def _is_safe_file_path(file_path: str) -> bool:
+    """Validate that a file path is safe and doesn't contain path traversal sequences.
+
+    Prevents path traversal attacks by checking for:
+    - .. (parent directory traversal)
+    - Absolute paths outside sandbox directories
+    - Null bytes
+    - Control characters
+
+    Args:
+        file_path: The file path to validate
+
+    Returns:
+        True if the path is safe, False otherwise
+    """
+    if not file_path or not isinstance(file_path, str):
+        return False
+
+    # Check for null bytes
+    if '\x00' in file_path:
+        return False
+
+    # Normalize the path to resolve any traversal attempts
+    try:
+        normalized = os.path.normpath(file_path)
+    except (ValueError, TypeError):
+        return False
+
+    # Check for path traversal sequences
+    if '..' in normalized:
+        return False
+
+    # Check for absolute paths - only allow if within sandbox directories
+    if os.path.isabs(normalized):
+        # Get sandbox directories from environment or use defaults
+        sandbox_dirs = [
+            os.environ.get('GWS_SANDBOX_DIR', ''),
+            os.environ.get('GWS_SCRATCH_DIR', 'scratch'),
+            os.environ.get('GWS_DOWNLOADS_DIR', 'downloads'),
+        ]
+        # Allow absolute paths only if they're within sandbox directories
+        is_in_sandbox = any(
+            normalized.startswith(sandbox_dir.rstrip(os.sep) + os.sep)
+            for sandbox_dir in sandbox_dirs if sandbox_dir
+        )
+        if not is_in_sandbox:
+            return False
+
+    # Check for suspicious control characters
+    if any(ord(c) < 32 for c in file_path if c not in '\t\n\r'):
+        return False
+
+    return True
+
+
+def _coerce_structured_value(raw: Any) -> Any:
+    """Return list/dict if raw string represents structured data, otherwise keep value."""
+    if raw is None:
+        return None
+    if isinstance(raw, (list, dict)):
+        return raw
+    if isinstance(raw, str):
+        trimmed = raw.strip()
+        if not trimmed:
+            return ""
+
+        try:
+            parsed = json.loads(trimmed)
+        except json.JSONDecodeError:
+            parsed = None
+
+        if parsed is None:
+            try:
+                parsed = ast.literal_eval(trimmed)
+            except (SyntaxError, ValueError):
+                parsed = None
+
+        if isinstance(parsed, (list, dict)):
+            return parsed
+
+        # Heuristic for "Found 0 calendar events" style logs
+        if "calendar events" in trimmed.lower() and "found" in trimmed.lower():
+            return []
+
+    return raw
+
+
+def _normalize_injected_vars(values: list[Any]) -> list[Any]:
+    return [_coerce_structured_value(item) for item in values]
 
 
 class HelpersMixin:
@@ -39,6 +144,14 @@ class HelpersMixin:
             from gws_assistant.tools.web_search import web_search_tool
 
             query = task.parameters.get("query", "")
+            query = self._resolve_placeholders(query, context)
+            # Validate query is not empty or unresolved
+            if not query or "{{" in str(query) or "<" in str(query):
+                return ExecutionResult(
+                    success=False,
+                    command=["web_search"],
+                    error="Query must be resolved and non-empty before web search",
+                )
             result_data = web_search_tool.invoke({"query": query})
             results = result_data.get("results") or result_data.get("rows") or []
 
@@ -105,7 +218,12 @@ class HelpersMixin:
                         break
 
             code = self._resolve_placeholders(raw_code or "", context, use_repr_for_complex=True)
-            logger.info("Executing generated code:\n%s", code)
+            # Replace any remaining unresolved markers with an empty string sentinel
+            # to avoid RestrictedPython SyntaxErrors from identifiers starting with '_'
+            from gws_assistant.execution.resolver import _UNRESOLVED_MARKER
+            if _UNRESOLVED_MARKER in code:
+                code = code.replace(f'"{_UNRESOLVED_MARKER}"', '""').replace(f"'{_UNRESOLVED_MARKER}'", "''").replace(_UNRESOLVED_MARKER, '""')
+            logger.info("Executing generated code (code content omitted for security)")
 
             if not code:
                 return ExecutionResult(success=False, command=["code_execute"], error="No code provided")
@@ -137,6 +255,84 @@ class HelpersMixin:
             if not isinstance(injected_vars, list):
                 logger.warning("injected_vars was a %s, forcing to list", type(injected_vars))
                 injected_vars = []
+
+            injected_vars = _normalize_injected_vars(injected_vars)
+
+            # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
+            # Only attempt auto-fetch for short strings that look like spreadsheet names/IDs
+            # Skip long text content (like email bodies) to avoid false positives
+            fetched_vars = []
+            for var in injected_vars:
+                logger.info("Processing injected_vars item: type=%s", type(var))
+                if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
+                    # Only attempt auto-fetch if the string is reasonably short (likely a name/ID)
+                    # Skip long text content (>200 chars) which is likely email body or other content
+                    if len(var) > 200:
+                        logger.info("Skipping auto-fetch for long content (%d chars)", len(var))
+                        fetched_vars.append(var)
+                        continue
+
+                    # Try to fetch spreadsheet data by name from drive
+                    logger.info("Auto-fetching spreadsheet data for: %s", var)
+                    try:
+                        # Try to find spreadsheet in drive results
+                        drive_results = task_results.get("drive", {})
+                        files = drive_results.get("files", [])
+                        if not files:
+                            # Check task-1 (usually drive.list_files)
+                            for k, v in task_results.items():
+                                if "drive" in k.lower() or isinstance(v, dict) and "files" in v:
+                                    files = v.get("files", []) if isinstance(v, dict) else []
+                                    break
+                        for file_info in files:
+                            if isinstance(file_info, dict):
+                                file_name = file_info.get("name", "")
+                                if var.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
+                                    file_id = file_info.get("id")
+                                    if file_id:
+                                        logger.info("Found spreadsheet ID %s for %s", file_id, var)
+                                        # Fetch the actual data - use the actual sheet name from file_info
+                                        sheet_name = file_info.get("name", "Sheet1")
+                                        get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": sheet_name})]
+                                        get_res = self.runner.run(get_args)
+                                        logger.info("get_values result: success=%s", get_res.success)
+                                        if get_res.success and get_res.stdout:
+                                            parsed = _coerce_structured_value(get_res.stdout)
+                                            if isinstance(parsed, dict) and "values" in parsed:
+                                                values = parsed["values"]
+                                                # Normalize column names to match LLM expectations
+                                                if values and len(values) > 0:
+                                                    headers = values[0]
+                                                    # Column name mapping: normalize common variations
+                                                    header_map = {}
+                                                    for i, h in enumerate(headers):
+                                                        h_lower = str(h).lower().strip()
+                                                        if "category" in h_lower:
+                                                            header_map[i] = "Category"
+                                                        elif "revenue" in h_lower and "total" in h_lower:
+                                                            header_map[i] = "Total Revenue"
+                                                        elif "revenue" in h_lower:
+                                                            header_map[i] = "Revenue"
+                                                        else:
+                                                            header_map[i] = h
+                                                    # Apply mapping to first row
+                                                    values[0] = [header_map[i] for i in range(len(headers))]
+                                                fetched_vars.append(values)
+                                                logger.info("Successfully fetched %d rows from spreadsheet", len(values))
+                                                break
+                        else:
+                            # No data found, keep original string
+                            logger.warning("No matching spreadsheet found for: %s", var)
+                            fetched_vars.append(var)
+                    except Exception as e:
+                        logger.warning("Failed to auto-fetch spreadsheet data: %s", e)
+                        fetched_vars.append(var)
+                else:
+                    fetched_vars.append(var)
+            injected_vars = fetched_vars
+
+            # Don't auto-convert to DataFrame - let LLM handle it
+            # This prevents column mismatch errors
 
             extra_globals = {
                 "task_results": results_with_numeric,
@@ -174,19 +370,54 @@ class HelpersMixin:
             # and we have content in parsed_value or stdout, write it.
             target_file = task.parameters.get("file_path")
             if target_file and result.get("success"):
-                content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
-                if content_to_write:
-                    try:
-                        with open(target_file, "w", encoding="utf-8") as f:
-                            f.write(str(content_to_write))
-                        self.logger.info(f"Auto-wrote code output to {target_file}")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to auto-write code output to {target_file}: {e}")
+                # Security: Validate file path to prevent path traversal attacks
+                if not _is_safe_file_path(target_file):
+                    self.logger.warning(
+                        f"Auto-write blocked: unsafe file path detected: {os.path.basename(target_file) if target_file else 'None'}"
+                    )
+                else:
+                    content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
+                    if content_to_write:
+                        try:
+                            with open(target_file, "w", encoding="utf-8") as f:
+                                f.write(str(content_to_write))
+                            self.logger.info(f"Auto-wrote code output to {os.path.basename(target_file)}")
+                        except Exception as e:
+                            self.logger.warning(f"Failed to auto-write code output to {os.path.basename(target_file)}: {e}")
+
+            def _tableify(value: Any) -> str | None:
+                rows: list[list[str]] = []
+                if isinstance(value, list) and value and isinstance(value[0], dict):
+                    headers = list(value[0].keys())
+                    rows.append(headers)
+                    for item in value:
+                        row = [str(item.get(h, "")) for h in headers]
+                        rows.append(row)
+                elif isinstance(value, list) and value and isinstance(value[0], list):
+                    rows = [[str(cell) for cell in row] for row in value]
+                else:
+                    return None
+
+                if not rows:
+                    return None
+
+                header = rows[0]
+                table_lines = ["| " + " | ".join(header) + " |", "|" + "|".join(["---"] * len(header)) + "|"]
+                for row in rows[1:]:
+                    # pad row
+                    padded = row + [""] * (len(header) - len(row))
+                    table_lines.append("| " + " | ".join(padded) + " |")
+                return "\n".join(table_lines)
 
             if output_data.get("parsed_value") is not None:
                 parsed = output_data["parsed_value"]
+                # Sanitize [File: ...] patterns to avoid leaking local paths in sheets
+                parsed = _sanitize_file_path_patterns(parsed)
                 context["last_code_result"] = parsed
                 context["code_parsed_value"] = parsed
+                table_text = _tableify(parsed)
+                if table_text:
+                    context["last_code_result_table"] = table_text
 
                 # Promote parsed_value keys to results_map for easy placeholder access
                 if isinstance(parsed, dict):
@@ -236,6 +467,13 @@ class HelpersMixin:
 
             message = task.parameters.get("message", "")
             message = self._resolve_placeholders(message, context)
+            # Validate message before sending
+            if not message or "{{" in str(message) or "<" in str(message):
+                return ExecutionResult(
+                    success=False,
+                    command=["telegram", "send_message"],
+                    error="Message must be resolved and non-empty before sending",
+                )
             sent = send_telegram(str(message), context=context)
 
             return ExecutionResult(
