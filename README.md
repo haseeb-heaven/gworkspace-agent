@@ -14,7 +14,7 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 ## Table of Contents
 
 - [Key Features](#key-features)
-- [Demos](#demos)
+- [Demos](#-demos--showcases)
 - [Architecture](#architecture)
 - [LangGraph DAG](#langgraph-dag)
 - [ReAct Loop](#react-loop)

@@ -14,9 +14,9 @@ def clear_config_cache():
     AppConfig.clear_cache()
 
 
-def _required(monkeypatch):
+def _required(monkeypatch) -> None:
     monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "recipient@example.test")
-    monkeypatch.setenv("GWS_BINARY_PATH", r"d:\Code\gworkspace-agent\gws.exe")
+    monkeypatch.setenv("GWS_BINARY_PATH", "gws")
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("LLM_MODEL", "openrouter/nvidia/nemotron-super-49b-v1:free")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "mock_bot_token")

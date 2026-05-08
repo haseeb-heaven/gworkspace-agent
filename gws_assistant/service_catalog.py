@@ -242,7 +242,7 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("to_email", "Recipient email address", "recipient@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
-                    ParameterSpec("attachments", "Optional local attachment paths", "path/to/file.pdf", required=False),
+                    ParameterSpec("attachments", "Optional local attachment paths", "", required=False),
                 ),
             ),
         },
@@ -732,7 +732,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("update", "edit", "modify", "add question", "batch"),
                 parameters=(
                     ParameterSpec("form_id", "Enter the Google Form ID", "1AbCdEFg123"),
-                    ParameterSpec("requests", "List of update requests", "[{'createItem': {...}}]", required=True),
+                    ParameterSpec("requests", "List of update requests", '[{"createItem": {}}]', required=True),
                 ),
             ),
         },

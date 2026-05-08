@@ -25,48 +25,54 @@ def verify_with_gws(service: str, action: str, resource_id: str) -> bool:
     """Verify operation using gws.exe binary for GWS_Verification."""
     try:
         if service == "drive" and action == "create_folder":
+            params_json = json.dumps({"fileId": resource_id, "fields": "id,name"})
             result = subprocess.run(
-                [str(GWS_BINARY), "drive", "files", "get", "--params", json.dumps({"fileId": resource_id, "fields": "id,name"})],
+                [str(GWS_BINARY), "drive", "files", "get", "--params", params_json],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "docs" and action == "create_document":
+            params_json = json.dumps({"documentId": resource_id})
             result = subprocess.run(
-                [str(GWS_BINARY), "docs", "documents", "get", "--params", json.dumps({"documentId": resource_id})],
+                [str(GWS_BINARY), "docs", "documents", "get", "--params", params_json],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "sheets" and action == "create_spreadsheet":
+            params_json = json.dumps({"spreadsheetId": resource_id})
             result = subprocess.run(
-                [str(GWS_BINARY), "sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": resource_id})],
+                [str(GWS_BINARY), "sheets", "spreadsheets", "get", "--params", params_json],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "gmail" and action == "send_message":
+            params_json = json.dumps({"userId": "me", "id": resource_id})
             result = subprocess.run(
-                [str(GWS_BINARY), "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": resource_id})],
+                [str(GWS_BINARY), "gmail", "users", "messages", "get", "--params", params_json],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "calendar" and action == "create_event":
+            params_json = json.dumps({"calendarId": "primary", "eventId": resource_id})
             result = subprocess.run(
-                [str(GWS_BINARY), "calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": resource_id})],
+                [str(GWS_BINARY), "calendar", "events", "get", "--params", params_json],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "slides" and action == "create_presentation":
+            params_json = json.dumps({"presentationId": resource_id})
             result = subprocess.run(
-                [str(GWS_BINARY), "slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})],
+                [str(GWS_BINARY), "slides", "presentations", "get", "--params", params_json],
                 capture_output=True,
                 text=True,
                 timeout=30
