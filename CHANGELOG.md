@@ -1,6 +1,6 @@
 ## [v1.0.2] - 2026-05-08
 ### Added/Changed/Fixed
-- chore(version): sync pyproject.toml version to v1.0.1
+- chore(version): sync pyproject.toml version to v1.0.2
 - feat(resolver): enhance flattened key resolution and array indexing
 - ci: add binary build workflow for Windows, Linux, and macOS
 - docs: optimize README structure and add full presentation walkthrough
@@ -31,7 +31,7 @@
 - docs: update README to document gws_cli executable scripts
 - feat: add executable CLI scripts (gws_cli for Unix, gws_cli.bat for Windows)
 - Potential fix for code scanning alert no. 1792: Clear-text logging of sensitive information
-- docs: add TAGS and RELEASES files for v1.0.1
+- docs: add TAGS and RELEASES files for v1.0.2
 
 ## [v1.0.1] - 2026-05-05
 ### Added/Changed/Fixed
