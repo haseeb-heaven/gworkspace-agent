@@ -23,7 +23,9 @@ dependencies = [
     # openai 2.30.0 is the exact version required by litellm 1.83.7.
     # Changing this will cause a ResolutionImpossible error in pip.
     "openai==2.30.0",
-    "python-dotenv==1.2.2",
+    # python-dotenv 1.0.1 is the exact version required by litellm 1.83.7.
+    # litellm 1.83.7 hard-pins python-dotenv==1.0.1; using 1.2.x causes ResolutionImpossible.
+    "python-dotenv==1.0.1",
     "typer>=0.12.0",
     "rich>=14.3.3",
     "questionary>=2.1.1",
@@ -31,10 +33,9 @@ dependencies = [
     "gradio>=6.7.0",
     "e2b-code-interpreter>=1.0.0",
     "mem0ai>=2.0.0",
-    # litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0.
-    # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection
-    # vulnerability via /guardrails/test_custom_code. Upgrade only when a patched
-    # release is available that also allows openai>=2.26.0.
+    # litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0 and python-dotenv==1.0.1.
+    # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
+    # via /guardrails/test_custom_code. Upgrade only when a patched release is available.
     "litellm==1.83.7",
     "python-telegram-bot>=22.7",
     "google-auth>=2.23.0",
