@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-pytest-brightgreen.svg)](https://pytest.org/)
 [![CI/CD](https://github.com/haseeb-heaven/gworkspace-agent/actions/workflows/pipeline.yml/badge.svg)](https://github.com/haseeb-heaven/gworkspace-agent/actions/workflows/pipeline.yml)</br>
 
-An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct + LangGraph DAG** architecture. It converts natural language into verified, multi-step workflows across Gmail, Drive, Sheets, Docs, Calendar, and 15+ other Google services — with built-in safety, memory, and sandboxed code execution.
+An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct + LangGraph DAG** architecture. It converts natural language into verified, multi-step workflows across Gmail, Drive, Sheets, Docs, Calendar, and 19+ other Google services — with built-in safety, memory, and sandboxed code execution.
 
 ---
 
@@ -74,7 +74,7 @@ Snapshots of the diverse user interfaces supported by the agent.
 ---
 
 ### 📊 Project Presentation
-For a detailed overview of the system design, features, and roadmap, you can view the complete presentation walkthrough below:
+For a detailed overview of the system design, features, and roadmap, you can view the primary slides below:
 
 <p align="center">
   <img src="assets/slides/image1.png" alt="Slide 1" width="900">
@@ -83,29 +83,9 @@ For a detailed overview of the system design, features, and roadmap, you can vie
   <br><i>Slide 2: System Overview</i><br><br>
   <img src="assets/slides/image3.png" alt="Slide 3" width="900">
   <br><i>Slide 3: Core Architecture</i><br><br>
-  <img src="assets/slides/image4.png" alt="Slide 4" width="900">
-  <br><i>Slide 4: Key Features & Capabilities</i><br><br>
-  <img src="assets/slides/image5.png" alt="Slide 5" width="900">
-  <br><i>Slide 5: Service Integration</i><br><br>
-  <img src="assets/slides/image6.png" alt="Slide 6" width="900">
-  <br><i>Slide 6: Security & Safety Protocols</i><br><br>
-  <img src="assets/slides/image7.png" alt="Slide 7" width="900">
-  <br><i>Slide 7: Execution Workflow</i><br><br>
-  <img src="assets/slides/image8.png" alt="Slide 8" width="900">
-  <br><i>Slide 8: LangGraph State Machine</i><br><br>
-  <img src="assets/slides/image9.png" alt="Slide 9" width="900">
-  <br><i>Slide 9: Memory & Context Management</i><br><br>
-  <img src="assets/slides/image10.png" alt="Slide 10" width="900">
-  <br><i>Slide 10: Multi-Interface Support</i><br><br>
-  <img src="assets/slides/image11.png" alt="Slide 11" width="900">
-  <br><i>Slide 11: Performance & Reliability</i><br><br>
-  <img src="assets/slides/image12.png" alt="Slide 12" width="900">
-  <br><i>Slide 12: Roadmap & Future Work</i><br><br>
-  <img src="assets/slides/image13.png" alt="Slide 13" width="900">
-  <br><i>Slide 13: Summary & Conclusion</i><br><br>
 </p>
 
-[**Download Original Presentation (PPTX)**](assets/Google_Workspace_Agent.pptx)
+[**🚀 View Full 13-Slide Walkthrough**](PRESENTATION.md) | [**📥 Download PPTX**](assets/Google_Workspace_Agent.pptx)
 
 ---
 
@@ -150,7 +130,6 @@ flowchart TD
     style SUP fill:#1a1a2e,color:#fff,stroke:#8E44AD
 ```
 
-![Architecture](assets/architecture_diagram.png)
 
 ---
 
@@ -238,17 +217,68 @@ gws_cli --task "List my drive files"
 
 ## 💻 Usage & Workflows
 
-### 📧 Gmail & Communication
-- `"Find emails from boss, summarize, and forward to manager@company.com"`
-- `"Search for invoices in April, download attachments to Drive, and log to Sheets"`
+### Examples
+Here are high-impact, realistic examples that showcase the full power of your agent — multi-service chaining, NLP complexity, and things no standard CLI can do:
 
-### 📂 Documents & Sheets
-- `"Open spreadsheet 'Sales', calculate regional totals, and email the report"`
-- `"Find Docs modified this week, summarize them, and create a 'Weekly Report' Doc"`
+***
 
-### 📅 Coordination & Memory
-- `"List meetings for tomorrow, create Doc agendas, and email links to attendees"`
-- `"Remember that I prefer summaries in bullet points for all future tasks"`
+### 📧 Gmail Workflows
+```bash
+gws_cli --task "Find all emails from my boss this week, mark them as read, and reply to any that have a question mark in the subject"
+```
+```bash
+gws_cli --task "Search for all invoices received in April, download their attachments to Drive folder 'Invoices/April', and create a Sheets log with sender, date, and amount"
+```
+
+***
+
+### 📅 Calendar Workflows
+```bash
+gws_cli --task "List all my meetings tomorrow, create a Google Doc agenda for each one with the title and attendees, and send the doc link to all attendees via email"
+```
+```bash
+gws_cli --task "Find all meetings I have next week that are longer than 1 hour and add a 15-minute prep reminder before each one"
+```
+
+***
+
+### 📂 Drive + Docs Workflows
+```bash
+gws_cli --task "Find all Google Docs modified in the last 7 days, create a summary of each, and compile everything into a single 'Weekly Report' Doc"
+```
+```bash
+gws_cli --task "Search Drive for files shared with me that I haven't opened in 30 days and list them in a Sheets file called 'Stale Shares'"
+```
+
+***
+
+### 📊 Sheets Workflows
+```bash
+gws_cli --task "Open the spreadsheet 'Sales Q1', calculate total revenue per region, and email a summary report to the sales team"
+```
+```bash
+gws_cli --task "Read the 'Team Tasks' sheet, find all rows where status is 'overdue', and send a reminder email to the person in the assignee column"
+```
+
+***
+
+### 🔗 Complex Multi-Service Chains
+```bash
+gws_cli --task "Read my unread emails, extract all action items mentioned, add them as Google Tasks, create a Calendar block tomorrow morning called 'Action Items Review', and send me a summary on Telegram"
+```
+```bash
+gws_cli --task "Get all attendees from my 'Quarterly Review' calendar event, create a shared Google Doc called 'Q2 Review Notes', and send each attendee an email with the doc link"
+```
+
+***
+
+### 🐍 Code Execution (E2B Sandbox)
+```bash
+gws_cli --task "Download the 'Revenue.csv' file from my Drive, run a Python script to calculate month-over-month growth, and write the results back to a new sheet called 'Growth Analysis'"
+```
+```bash
+gws_cli --task "Read the JSON config file from Drive folder 'Configs', validate it with Python, and email me the validation errors if any are found"
+```
 
 ---
 
@@ -280,25 +310,41 @@ python -m pytest
 python -m pytest --cov=gws_assistant
 ```
 
-| Test Suite | Focus Area |
-| :--- | :--- |
-| `tests/test_resolver.py` | Placeholder resolution & data path expansion |
-| `tests/test_drive_metadata.py` | Drive file processing & metadata extraction |
-| `tests/test_placeholder_contracts.py` | Integration between Planner and Executor |
+| Test Type | Directory / File | Description |
+| :--- | :--- | :--- |
+| **🧪 Unit Tests** | `tests/test_unit_*.py` | Fully mocked tests for individual components. No GWS binary or credentials required. |
+| **⚙️ Integration** | `tests/test_integration.py` | Validates the LangGraph state machine with mocked GWS tools. |
+| **⚡ Live Integration** | `tests/test_live_integration.py` | End-to-end tests using real Google Workspace credentials and the GWS binary. |
+| **🛡️ Hardening** | `tests/test_hardening_*.py` | Security and safety policy verification (Regex ReDoS, Sandbox isolation). |
+| **🛠️ Manual** | `tests/manual/` | One-off scripts for manual feature verification and debugging. |
 
 ---
 
-## 📈 Project Insights
+## License
 
-- **Architecture:** Haseeb Mir
-- **License:** [MIT License](LICENSE)
-- **Releases:** See [CHANGELOG.md](CHANGELOG.md) for full history.
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=haseeb-heaven%2Fgworkspace-agent&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
+> **Note:** This project was **architected and designed** by **Haseeb Mir**.
+> AI tools (GitHub Copilot, Jules) were used to assist with **implementation**,
+> **boilerplate generation**, and **refactoring** — all **features**, **architecture**
+> **decisions**, and **system design** are **original**.
 
 <p align="center">
-  <a href="https://github.com/haseeb-heaven">
-    <img src="https://img.shields.io/badge/Developed%20by-Haseeb%20Mir-blue?style=for-the-badge&logo=github" alt="Developer">
-  </a>
+  <img src="https://img.shields.io/badge/Built%20with-%E2%9D%A4-red?style=for-the-badge" alt="Built with Love">
+  <br>
+  <b>Developed by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a></b>
 </p>
-
----
-<p align="center">Built with ❤️ for the Open Source Community</p>
