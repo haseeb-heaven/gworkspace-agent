@@ -21,17 +21,20 @@ dependencies = [
     "duckduckgo-search>=6.0.0",
     "RestrictedPython>=8.1",
     "httpx>=0.28.1",
-    # openai 2.24.0 is required by litellm 1.83.14; align the floor here.
-    "openai>=2.24.0,<3.0.0",
+    # openai 2.24.0 is required by litellm 1.83.14; exact pin to match litellm constraint.
+    "openai==2.24.0",
     "python-dotenv==1.2.2",
     "typer>=0.12.0",
     "rich>=14.3.3",
     "questionary>=2.1.1",
     "customtkinter>=5.2.2",
-    "gradio>=6.6.0",
+    "gradio>=6.7.0",
     "e2b-code-interpreter>=1.0.0",
     "mem0ai>=2.0.0",
-    "litellm>=1.83.14",
+    # NOTE: litellm 1.83.14 has a critical Arbitrary Code Injection vulnerability via /guardrails/test_custom_code endpoint.
+    # Pinned to >=1.83.7,<1.83.14 which patches SQL Injection and Template Injection vulnerabilities but is before the code injection issue.
+    # Monitor for security patches beyond 1.83.14 before upgrading.
+    "litellm>=1.83.7,<1.83.14",
     "python-telegram-bot>=22.7",
     "google-auth>=2.23.0",
     "google-auth-oauthlib>=1.1.0",
