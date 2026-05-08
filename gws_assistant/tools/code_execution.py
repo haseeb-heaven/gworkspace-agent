@@ -400,22 +400,6 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
-<<<<<<< HEAD
-    # Replace with open(...) as f: blocks with code that uses injected data
-    # Pattern: with open(...) as file: ... use injected_vars instead
-    code = re.sub(
-        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
-        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]\n    # Add case-insensitive column access helper\n    class CaseInsensitiveDict(dict):\n        def __getitem__(self, key):\n            for k in self:\n                if k.lower() == key.lower():\n                    return super().__getitem__(k)\n            raise KeyError(key)\n    \1 = [CaseInsensitiveDict(row) for row in \1]",
-        code,
-        flags=re.DOTALL
-    )
-    # Replace csv.DictReader(file) with direct iteration over the list of dicts
-    code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
-    code = re.sub(r"for row in reader:", "for row in reader:", code)
-    # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
-    code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
-    code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
-=======
     # Replace `with open(...) as VAR:` with a safe single-line assignment.
     # Multi-line replacements break indentation and cause RestrictedPython to
     # compile invalid code where identifiers resolve to None.
@@ -425,7 +409,6 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
         code,
         flags=re.DOTALL,
     )
->>>>>>> develop
     # Remove return statements since code runs at module level
     code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
