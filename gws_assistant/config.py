@@ -141,6 +141,8 @@ class AppConfig:
                 os.getenv("LLM_FALLBACK_MODEL") or "",
                 os.getenv("LLM_FALLBACK_MODEL2") or "",
                 os.getenv("LLM_FALLBACK_MODEL3") or "",
+                os.getenv("LLM_FALLBACK_MODEL4") or "",
+                os.getenv("LLM_FALLBACK_MODEL5") or "",
             ]
             llm_fallback_models = []
             for m in fallback_raw:
