@@ -76,6 +76,10 @@ jobs:
               "--collect-all", "langchain_community",
               "--collect-all", "langchain_openai",
               "--collect-all", "langgraph",
+              "--collect-all", "tiktoken",
+              "--collect-all", "tiktoken_ext",
+              "--hidden-import", "tiktoken_ext",
+              "--hidden-import", "tiktoken_ext.openai_public",
               *add_data_args,
               "gws_cli.py",
           ]
