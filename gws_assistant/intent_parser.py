@@ -151,18 +151,42 @@ class IntentParser:
         return None
 
     def parse_heuristically(self, text: str) -> Intent:
-        service = self._detect_service(text)
+        services = self._detect_services(text)
+
+        service = None
+        needs_clarification = False
+        reason = None
+
+        if not services:
+            needs_clarification = True
+            reason = "I could not detect a supported Google service."
+        elif len(services) > 1:
+            # If we detect a specific Workspace service alongside generic 'search', prioritize the Workspace service.
+            workspace_services = [s for s in services if s != "search"]
+            if len(workspace_services) == 1:
+                service = workspace_services[0]
+            else:
+                # When multiple workspace services are detected, prefer the most specific one
+                # Priority: docs > drive (docs is more specific for documents)
+                # Priority: calendar > events (calendar is more specific for calendar events)
+                if "docs" in workspace_services and "drive" in workspace_services:
+                    service = "docs"
+                elif "calendar" in workspace_services and "events" in workspace_services:
+                    service = "calendar"
+                else:
+                    # Fallback: use the first detected service
+                    service = workspace_services[0]
+        else:
+            service = services[0]
+
         action = self._detect_action(service, text) if service else None
 
         # IDs are case-sensitive, so we need original text
         parameters = self._extract_simple_parameters(text)
 
-        needs_clarification = not service
-        reason = None
-        if not service:
-            reason = "I could not detect a supported Google service."
-        elif not action:
-            reason = "I found the service but could not detect the action."
+        if service and not action:
+            needs_clarification = True
+            reason = f"I found the {SERVICES[service].label} service but could not detect the action."
 
         return Intent(
             raw_text=text,
