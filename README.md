@@ -41,6 +41,11 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 Watch the Google Workspace Agent in action, performing multi-service orchestration across Gmail, Drive, and Sheets.
 
 <p align="center">
+  <a href="https://github.com/haseeb-heaven/gworkspace-agent/blob/develop/assets/GworkspaceAgent.mp4">
+    <img src="https://img.shields.io/badge/▶%20Watch%20Demo-Click%20to%20Play-red?style=for-the-badge&logo=github" alt="Watch Demo Video">
+  </a>
+  <br><br>
+  <i>👆 Click to watch the full demo — multi-service orchestration across Gmail, Drive, and Sheets</i>
   <video src="assets/GworkspaceAgent.mp4" width="100%" controls></video>
   <br>
   <a href="assets/GworkspaceAgent.mp4">📺 Click here to view or download the demo video</a>
