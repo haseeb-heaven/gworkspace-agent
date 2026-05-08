@@ -13,17 +13,11 @@ def clear_config_cache():
         from gws_assistant.config import AppConfig
         AppConfig.clear_cache()
         # Clean up any potential state pollution from tests that modify environ
-        cleanup_keys = ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL", "OPENROUTER_API_KEY", "OPENAI_API_KEY"]
-        # Also cleanup any LLM_API_KEY variants
-        cleanup_keys.extend([k for k in os.environ.keys() if k.startswith("LLM_API_KEY")])
-        for key in cleanup_keys:
+        for key in ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL"]:
             os.environ.pop(key, None)
         yield
         AppConfig.clear_cache()
-        # Cleanup after test as well
-        cleanup_keys = ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL", "OPENROUTER_API_KEY", "OPENAI_API_KEY"]
-        cleanup_keys.extend([k for k in os.environ.keys() if k.startswith("LLM_API_KEY")])
-        for key in cleanup_keys:
+        for key in ["LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODEL2", "LLM_FALLBACK_MODEL3", "OPENROUTER_MODEL"]:
             os.environ.pop(key, None)
     except ImportError:
         yield

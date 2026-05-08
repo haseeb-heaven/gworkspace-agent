@@ -34,63 +34,56 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
     """Verify operation using gws.exe binary for GWS_Verification."""
     try:
         if service == "drive" and action in ("create_folder", "create"):
-            params_json = json.dumps({"fileId": resource_id, "fields": "id,name"})
             result = subprocess.run(
-                [str(binary_path), "drive", "files", "get", "--params", params_json],
+                [str(binary_path), "drive", "files", "get", "--params", json.dumps({"fileId": resource_id, "fields": "id,name"})],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "docs" and action in ("create_document", "create"):
-            params_json = json.dumps({"documentId": resource_id})
             result = subprocess.run(
-                [str(binary_path), "docs", "documents", "get", "--params", params_json],
+                [str(binary_path), "docs", "documents", "get", "--params", json.dumps({"documentId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "sheets" and action in ("create_spreadsheet", "create", "append"):
-            params_json = json.dumps({"spreadsheetId": resource_id})
             result = subprocess.run(
-                [str(binary_path), "sheets", "spreadsheets", "get", "--params", params_json],
+                [str(binary_path), "sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "gmail" and action in ("send_message", "send"):
-            params_json = json.dumps({"userId": "me", "id": resource_id})
             result = subprocess.run(
-                [str(binary_path), "gmail", "users", "messages", "get", "--params", params_json],
+                [str(binary_path), "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "calendar" and action in ("create_event", "create"):
-            params_json = json.dumps({"calendarId": "primary", "eventId": resource_id})
             result = subprocess.run(
-                [str(binary_path), "calendar", "events", "get", "--params", params_json],
+                [str(binary_path), "calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "slides" and action in ("create_presentation", "create"):
-            params_json = json.dumps({"presentationId": resource_id})
             result = subprocess.run(
-                [str(binary_path), "slides", "presentations", "get", "--params", params_json],
+                [str(binary_path), "slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             return result.returncode == 0
         elif service == "keep" and action in ("create_note", "create"):
-            params_json = json.dumps({"name": resource_id})
             result = subprocess.run(
-                [str(binary_path), "keep", "notes", "get", "--params", params_json],
+                [str(binary_path), "keep", "notes", "get", "--params", json.dumps({"name": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30

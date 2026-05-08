@@ -308,22 +308,20 @@ class ResolverMixin:
         # Additional safety: check for circular references in context
         if isinstance(val, dict) or isinstance(val, list):
             # Use id() to detect if we've seen this object before
-            resolve_cache = getattr(self, '_resolve_cache', None)
-            if resolve_cache is None:
-                self._resolve_cache = {}
-                resolve_cache = self._resolve_cache
+            if not hasattr(self, '_resolve_cache'):
+                self._resolve_cache: dict[int, Any] = {}
             obj_id = id(val)
-            if obj_id in resolve_cache:
+            if obj_id in self._resolve_cache:
                 self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
-                return resolve_cache[obj_id]
+                return self._resolve_cache[obj_id]
             # Create an empty clone and store it in the cache before recursion
             clone: Any = {} if isinstance(val, dict) else []
-            resolve_cache[obj_id] = clone
+            self._resolve_cache[obj_id] = clone
             try:
                 result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
                 return result
             finally:
-                resolve_cache.pop(obj_id, None)
+                del self._resolve_cache[obj_id]
         else:
             return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
 

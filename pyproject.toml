@@ -13,7 +13,7 @@ dependencies = [
     # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
     # but requires openai>=2.26.0 which conflicts with litellm 1.83.7 pinning openai==2.30.0.
     # Upgrade is deferred until a litellm release ships that allows a newer openai.
-    "langchain-openai>=1.1.10,<1.2.2",
+    "langchain-openai>=1.1.10,<1.1.11",
     "langgraph>=0.3.34",
     "langchain-community>=0.3.31",
     "langchain-tavily>=0.2.0",

@@ -679,15 +679,7 @@ class CommandPlanner:
                 "end": event_end,
             }
             if event_id:
-                # Validate event_id: must be lowercase base32hex (a-v, 0-9), length 5-1024
-                normalized_id = str(event_id).lower()
-                if (
-                    5 <= len(normalized_id) <= 1024
-                    and all(c in "abcdefghijklmnopqrstuv0123456789" for c in normalized_id)
-                ):
-                    event_body["id"] = normalized_id
-                else:
-                    self.logger.warning(f"Invalid event_id '{event_id}' ignored (must be base32hex, 5-1024 chars)")
+                event_body["id"] = event_id
 
             if description:
                 event_body["description"] = description

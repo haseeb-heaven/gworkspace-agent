@@ -972,7 +972,7 @@ class VerificationEngine:
                 notes = params.get("notes")
                 if notes is not None:
                     cls._validate_content_not_empty(
-                        tool_name, params, field="notes", min_length=1, block_placeholders=True
+                        tool_name, params, field="notes", min_length=5, block_placeholders=True
                     )
 
             due = params.get("due")
