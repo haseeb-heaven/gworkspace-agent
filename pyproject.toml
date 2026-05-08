@@ -33,7 +33,7 @@ dependencies = [
     "gradio>=6.7.0",
     "e2b-code-interpreter>=1.0.0",
     "mem0ai>=2.0.0",
-    # litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0 and python-dotenv==1.0.1.
+    # litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0 and python-dotenv==1.2.2.
     # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
     # via /guardrails/test_custom_code. Upgrade only when a patched release is available.
     "litellm==1.83.7",
