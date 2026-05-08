@@ -284,6 +284,7 @@ class WorkflowNodes:
                 updates["context"] = context
                 updates["current_attempt"] = 0
                 updates["current_task_index"] = 0
+                updates["retry_count"] = state.get("retry_count", 0) + 1
                 updates["error"] = None
                 decision.reason = "Retries exhausted, requesting new plan."
             else:
@@ -293,6 +294,12 @@ class WorkflowNodes:
         self._log_step("reflection", {"error": error, "attempt": attempts}, decision)
         updates["reflection"] = decision
         updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))
+
+        if decision.action == "replan":
+            # BUG FIX: retry_count must be incremented and returned in updates
+            # so that route_after_reflection can stop infinite replan loops.
+            updates["retry_count"] = state.get("retry_count", 0) + 1
+
         return updates
 
     def format_output_node(self, state: AgentState) -> dict[str, Any]:

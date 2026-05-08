@@ -14,14 +14,14 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import UnsupportedServiceError, ValidationError
 from .file_types import default_export_mime, guess_mime_type, supported_export_formats
 from .gmail_query_builder import sanitize_gmail_query
-from .models import ActionSpec, ParameterSpec
+from .models import ActionSpec, CodeExecutionOutput, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
 
 _UNSUPPORTED_STUB_SERVICES = frozenset({"analytics", "bigquery"})
@@ -486,8 +486,10 @@ class CommandPlanner:
 
             values = params.get("values")
 
-            # Extract parsed_value if the input is a dictionary from code.execute
-            if isinstance(values, dict):
+            # Extract values if the input is from code.execute (model or dict)
+            if isinstance(values, CodeExecutionOutput):
+                values = values.parsed_value if values.parsed_value is not None else values.code_output
+            elif isinstance(values, dict):
                 if "parsed_value" in values and values["parsed_value"] is not None:
                     values = values["parsed_value"]
                 elif "code_output" in values and values["code_output"] is not None:
@@ -637,7 +639,7 @@ class CommandPlanner:
 
             # If no date range specified, add default range to avoid returning all historical events
             if not start_date and not end_date:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 past_30_days = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 future_30_days = (now + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 list_params["timeMin"] = past_30_days

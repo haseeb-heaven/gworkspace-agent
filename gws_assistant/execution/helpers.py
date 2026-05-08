@@ -268,7 +268,7 @@ class HelpersMixin:
                     # Only attempt auto-fetch if the string is reasonably short (likely a name/ID)
                     # Skip long text content (>200 chars) which is likely email body or other content
                     if len(var) > 200:
-                        logger.info("Skipping auto-fetch for long content (%d chars): %s...", len(var), var[:50])
+                        logger.info("Skipping auto-fetch for long content (%d chars)", len(var))
                         fetched_vars.append(var)
                         continue
 
