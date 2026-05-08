@@ -84,12 +84,13 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         return "", "No file uploaded", "🔴 Not authenticated"
 
     try:
-        with open(file_path, "r") as f:
-            credentials_info = json.load(f)
+        # Sanitize path to prevent traversal attacks
+        base_dir = os.path.dirname(file_path)
+        filename = os.path.basename(file_path)
+        safe_path = os.path.join(base_dir, filename)
 
-        # Debug: print the structure
-        print(f"DEBUG: Credentials keys: {list(credentials_info.keys())}")
-        print(f"DEBUG: Credentials type: {credentials_info.get('type', 'N/A')}")
+        with open(safe_path, "r") as f:
+            credentials_info = json.load(f)
 
         # Check if it's a service account (not supported for OAuth flow)
         if credentials_info.get("type") == "service_account":
@@ -99,20 +100,13 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         if "installed" in credentials_info:
             client_config = credentials_info["installed"]
             client_type = "installed"
-            print("DEBUG: Using 'installed' config")
         elif "web" in credentials_info:
             client_config = credentials_info["web"]
             client_type = "web"
-            print("DEBUG: Using 'web' config")
         else:
             # Try using the entire file as client config
             client_config = credentials_info
             client_type = None
-            print("DEBUG: Using entire file as client config")
-
-        print(f"DEBUG: Client config keys: {list(client_config.keys())}")
-        print(f"DEBUG: Has client_id: {'client_id' in client_config}")
-        print(f"DEBUG: Has client_secret: {'client_secret' in client_config}")
 
         if "client_id" not in client_config or "client_secret" not in client_config:
             return "", f"Invalid credentials.json format. Must contain 'client_id' and 'client_secret'. Found keys: {list(credentials_info.keys())}. Please download OAuth 2.0 Client ID credentials from Google Cloud Console.", "🔴 Not authenticated"
@@ -123,8 +117,6 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         else:
             # If no type specified, assume it's already in the right format
             client_secrets = client_config
-
-        print(f"DEBUG: Client secrets structure: {list(client_secrets.keys())}")
 
         # Create OAuth flow with out-of-band redirect
         flow = Flow.from_client_config(
@@ -139,8 +131,7 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         return json.dumps({"client_config": client_config, "client_type": client_type, "code_verifier": code_verifier}), auth_url, "🟡 Waiting for auth code"
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logging.getLogger(__name__).error(f"Error processing credentials: {str(e)}")
         return "", f"Error processing credentials: {str(e)}", "🔴 Not authenticated"
 
 
@@ -219,8 +210,7 @@ def handle_auth_code(client_config_json: str, auth_code: str) -> tuple[str, str]
         return temp_path, "🟢 Authenticated — ready to use"
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logging.getLogger(__name__).error(f"Error exchanging auth code: {str(e)}")
         error_msg = str(e)
         if "invalid_grant" in error_msg.lower():
             error_msg = "Authorization code expired or already used. Please generate a new auth URL and try again."
