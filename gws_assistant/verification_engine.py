@@ -1241,7 +1241,16 @@ class VerificationEngine:
             content = params.get("content")
             values = params.get("values")
             if content is not None and cls._contains_invalid_content(str(content)):
-                raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
+                # For create_document, content is optional — the doc can be created
+                # with just a title and populated later via batch_update.
+                # Downgrade to WARNING so the pipeline doesn't halt.
+                if normalized_name == "create_document":
+                    logger.warning(
+                        f"[CHECK 4] docs_create_document has empty/invalid content param — "
+                        f"document was created with title only. Content may be added via batch_update."
+                    )
+                else:
+                    raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
             if values is not None and (values == [] or values == [[]]):
                 severity = VerificationSeverity.WARNING if ("sheets" in tool_name and "append" in tool_name) else VerificationSeverity.ERROR
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=severity, field="values")

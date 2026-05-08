@@ -68,6 +68,10 @@ TOOL_CAPABLE_MODELS: list[str] = [
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-8b-instant",
+    "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+    "groq/compound",
+    "groq/openai/gpt-oss-120b",
+    "groq/qwen/qwen3-32b",
     # ── Cerebras (fast inference, tool-calling confirmed) ───────────
     "cerebras/llama3.1-70b",
     "cerebras/llama3.1-8b",
