@@ -12,11 +12,8 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Try to import dotenv, fallback gracefully
-try:
-    from dotenv import dotenv_values
-except ImportError:
-    def dotenv_values(path): return {}
+# Lazy import placeholder for dotenv_values (imported in send_telegram_message to avoid hard startup-time dependency)
+dotenv_values = None
 
 
 def _safe_stderr(message: object) -> None:
@@ -49,7 +46,14 @@ def send_telegram_message(message: str, max_retries: int = 3):
     # Determine the root directory and find the .env file
     root_dir = Path(__file__).resolve().parents[1]
     env_path = root_dir / ".env"
-    # Load .env variables
+    # Load .env variables - import dotenv lazily to avoid hard startup-time dependency
+    global dotenv_values
+    if dotenv_values is None:
+        try:
+            from dotenv import dotenv_values as _dotenv_values
+            dotenv_values = _dotenv_values
+        except ImportError:
+            def dotenv_values(path): return {}
     env = dotenv_values(env_path)
 
     # Use value from .env or fallback to system environment variables

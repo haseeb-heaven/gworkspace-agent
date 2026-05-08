@@ -227,15 +227,6 @@ def handle_auth_code(client_config_json: str, auth_code: str) -> tuple[str, str]
         return "", f"Error exchanging auth code: {error_msg}"
 
 
-def cleanup_credentials(credentials_file: str | None) -> None:
-    """Clean up temporary credentials file."""
-    if credentials_file and os.path.exists(credentials_file):
-        try:
-            os.remove(credentials_file)
-        except Exception:
-            pass
-
-
 def create_interface() -> gr.Blocks:
     config = AppConfig.from_env()
     logger = setup_logging(config)
@@ -389,10 +380,6 @@ def create_interface() -> gr.Blocks:
                     gr.update(value=status, visible=True)
                 )
 
-        def on_session_end(credentials_file):
-            cleanup_credentials(credentials_file)
-            return None
-
         credentials_upload.upload(
             fn=on_credentials_upload,
             inputs=[credentials_upload],
@@ -443,9 +430,6 @@ def create_interface() -> gr.Blocks:
             fn=lambda: ("", "", ""),
             outputs=[request, output, plan_preview]
         )
-
-        # Note: Gradio doesn't support reliable session cleanup on page unload
-        # Temporary credential files will be cleaned up by OS temp directory cleanup
 
     return demo
 

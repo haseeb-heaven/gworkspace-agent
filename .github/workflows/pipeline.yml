@@ -28,6 +28,8 @@ env:
   GCP_REGION: us-central1
   GCP_SERVICE: gworkspace-agent
   PYTHON_VERSION: "3.11"
+  # Production branches for deployment (comma-separated)
+  PRODUCTION_BRANCHES: "main,master"
 
 jobs:
   # ──────────────────────────────────────────
@@ -645,14 +647,14 @@ jobs:
         run: pytest -q -m live_integration -v
 
   # ──────────────────────────────────────────
-  # JOB 8: Deploy to Cloud Run (main/master only)
+  # JOB 8: Deploy to Cloud Run (production branches only)
   # ──────────────────────────────────────────
   deploy:
     name: Deploy to Cloud Run
     needs: [unit-tests, integration-tests, security]
     if: |
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      contains(env.PRODUCTION_BRANCHES, github.ref_name)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
