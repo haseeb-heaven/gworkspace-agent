@@ -237,6 +237,7 @@ def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_
     for pattern in _BANNED_PATTERNS:
         if re.search(pattern, code):
             return f"SecurityError: disallowed pattern matched: {pattern}"
+
     try:
         ast.parse(code)
     except Exception as exc:
@@ -307,16 +308,32 @@ def _run_in_thread_sandbox(
         # --- PARSE RETURN VALUE ---
         # 1. Best case: user explicitly assigned to 'result'
         if "result" in sandbox_globals:
-            exec_result.return_value = sandbox_globals["result"]
+            result_value = sandbox_globals["result"]
+            # Validate result is not None or provide better error message
+            if result_value is None:
+                exec_result.return_value = {"error": "Result is None - check your code logic"}
+                exec_result.success = False
+                exec_result.error = "Result is None - check your code logic"
+            else:
+                exec_result.return_value = result_value
+                exec_result.success = True
 
         # 2. Next best: parse the last line of stdout as a Python literal
         elif exec_result.stdout:
             try:
                 last_line = exec_result.stdout.strip().splitlines()[-1]
-                exec_result.return_value = ast.literal_eval(last_line)
+                parsed_value = ast.literal_eval(last_line)
+                if parsed_value is None:
+                    exec_result.return_value = {"error": "Parsed value is None - check your code logic"}
+                    exec_result.success = False
+                    exec_result.error = "Parsed value is None - check your code logic"
+                else:
+                    exec_result.return_value = parsed_value
+                    exec_result.success = True
             except (SyntaxError, ValueError):
                 # Fallback if stdout is not a literal
                 exec_result.return_value = exec_result.stdout
+                exec_result.success = True
 
         # 3. Fallback: capture all variables from sandbox_globals
         else:
@@ -334,11 +351,16 @@ def _run_in_thread_sandbox(
                 and is_json_serializable(v)
             }
             exec_result.return_value = results_vars
-
-        exec_result.success = True
+            exec_result.success = True
     except Exception as exc:
         exec_result.success = False
-        exec_result.error = f"{type(exc).__name__}: {exc}"
+        # Provide more helpful error messages for common regex errors
+        error_msg = f"{type(exc).__name__}: {exc}"
+        if "global flags not at the start" in str(exc):
+            error_msg = "Regex Error: Flags must be at the start of the pattern. Use (?i) for case-insensitive, (?m) for multiline, etc. Example: re.search(r'(?i)pattern', text)"
+        elif "invalid syntax" in str(exc):
+            error_msg = f"Syntax Error: {exc}. Check for missing commas, quotes, or brackets."
+        exec_result.error = error_msg
     result_holder.append(exec_result)
 
 
@@ -349,8 +371,8 @@ def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
         "stderr": result.stderr,
         "parsed_value": result.return_value,
     }
-    if isinstance(result.return_value, dict):
-        output.update(result.return_value)
+    # Don't update output with return_value dict keys to avoid metadata pollution
+    # The parsed_value already contains the return_value, so extracting it later will work correctly
 
     return StructuredToolResult(
         success=result.success,

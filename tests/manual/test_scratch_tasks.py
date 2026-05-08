@@ -21,60 +21,7 @@ def verify_gws_binary() -> bool:
     return GWS_BINARY.exists()
 
 
-def verify_with_gws(service: str, action: str, resource_id: str) -> bool:
-    """Verify operation using gws.exe binary for GWS_Verification."""
-    try:
-        if service == "drive" and action == "create_folder":
-            result = subprocess.run(
-                [str(GWS_BINARY), "drive", "files", "get", "--params", json.dumps({"fileId": resource_id, "fields": "id,name"})],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "docs" and action == "create_document":
-            result = subprocess.run(
-                [str(GWS_BINARY), "docs", "documents", "get", "--params", json.dumps({"documentId": resource_id})],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "sheets" and action == "create_spreadsheet":
-            result = subprocess.run(
-                [str(GWS_BINARY), "sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": resource_id})],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "gmail" and action == "send_message":
-            result = subprocess.run(
-                [str(GWS_BINARY), "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": resource_id})],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "calendar" and action == "create_event":
-            result = subprocess.run(
-                [str(GWS_BINARY), "calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": resource_id})],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "slides" and action == "create_presentation":
-            result = subprocess.run(
-                [str(GWS_BINARY), "slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        return True
-    except Exception:
-        return False
+from tests.manual.shared import verify_with_gws
 
 
 def check_verification_engine_output(stdout: str) -> bool:
@@ -173,7 +120,7 @@ def test_task_execution(task_file: Path):
 
         if task_path in action_map:
             service, action = action_map[task_path]
-            gws_verify = verify_with_gws(service, action, resource_id)
+            gws_verify = verify_with_gws(service, action, resource_id, GWS_BINARY)
             assert gws_verify, f"GWS_Verification with gws.exe failed for {service}.{action} with ID {resource_id}"
 
 
@@ -191,7 +138,7 @@ def test_google_drive_folder_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("drive", "create_folder", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("drive", "create_folder", resource_id, GWS_BINARY), "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -208,7 +155,7 @@ def test_google_docs_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("docs", "create_document", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("docs", "create_document", resource_id, GWS_BINARY), "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -225,7 +172,7 @@ def test_google_sheets_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("sheets", "create_spreadsheet", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("sheets", "create_spreadsheet", resource_id, GWS_BINARY), "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -242,7 +189,7 @@ def test_google_slides_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("slides", "create_presentation", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("slides", "create_presentation", resource_id, GWS_BINARY), "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -259,7 +206,7 @@ def test_google_gmail_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("gmail", "send_message", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("gmail", "send_message", resource_id, GWS_BINARY), "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -276,7 +223,7 @@ def test_google_calendar_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("calendar", "create_event", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("calendar", "create_event", resource_id, GWS_BINARY), "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -293,4 +240,4 @@ def test_cross_service_task():
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("sheets", "create_spreadsheet", resource_id), "GWS_Verification failed"
+        assert verify_with_gws("sheets", "create_spreadsheet", resource_id, GWS_BINARY), "GWS_Verification failed"

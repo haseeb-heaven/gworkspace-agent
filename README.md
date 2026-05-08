@@ -7,86 +7,94 @@
 [![Safety: Sandbox](https://img.shields.io/badge/Safety-Sandboxed-green.svg)](#safety--security)
 [![Tests](https://img.shields.io/badge/tests-pytest-brightgreen.svg)](https://pytest.org/)
 [![CI/CD](https://github.com/haseeb-heaven/gworkspace-agent/actions/workflows/pipeline.yml/badge.svg)](https://github.com/haseeb-heaven/gworkspace-agent/actions/workflows/pipeline.yml)</br>
-An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct + LangGraph DAG** architecture. It converts natural language into verified, multi-step workflows across Gmail, Drive, Sheets, Docs, Calendar, and 15+ other Google services — with built-in safety, memory, and sandboxed code execution.
+
+An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct + LangGraph DAG** architecture. It converts natural language into verified, multi-step workflows across Gmail, Drive, Sheets, Docs, Calendar, and 19+ other Google services — with built-in safety, memory, and sandboxed code execution.
 
 ---
 
-## Table of Contents
+## 📌 Navigation & Status
 
-- [Key Features](#key-features)
-- [Demos](#demos)
-- [Architecture](#architecture)
-- [LangGraph DAG](#langgraph-dag)
-- [ReAct Loop](#react-loop)
-- [Supported Services](#supported-services)
-- [Getting Started](#getting-started)
-- [Interfaces](#interfaces)
-- [Configuration](#configuration)
-- [Safety & Security](#safety--security)
-- [Testing](#testing)
-- [Statistics](#statistics)
-- [Contributing](#contributing)
+| Section | Description | Version |
+| :--- | :--- | :--- |
+| [🚀 Quick Start](#-getting-started) | Get up and running in minutes | **Current: v1.0.2** |
+| [🎬 Demos](#-demos--showcases) | Visual previews and galleries | [Changelog](CHANGELOG.md) |
+| [⚙️ Architecture](#️-architecture) | System design and execution flow | [Statistics](STATS.md) |
+| [🛡️ Safety](#️-safety--security) | Security protocols and read-only mode | [Issues](ISSUES.md) |
 
 ---
 
-## Version
-Latest: **v1.0.1**
-See [CHANGELOG.md](CHANGELOG.md) for full version history.
+## 🌟 Key Features
 
----
-
-## Key Features
-
-- **5-Step Verification Engine** - Strict, non-bypassable verification system with severity levels (CRITICAL, ERROR, WARNING) that validates parameters, permissions, results, data integrity, and idempotency
-- **Hybrid ReAct + LangGraph Engine** — LLM-driven planner generates a typed DAG of tasks; LangGraph executes nodes with full state persistence and smart retry logic
-- **Multi-Service Orchestration** — a single natural language request can chain Gmail, Drive, Sheets, Docs, Calendar, and Code execution in one plan
-- **Long-Term Memory via Mem0** — agent learns from past interactions and recalls user preferences across sessions
-- **Sandboxed Code Execution** — Python code runs inside a restricted E2B sandbox with stdout/stderr capture and exit code tracking
-- **Safety-by-Default** — Read-Only mode blocks all writes; Sandbox mode requires manual confirmation before any state-changing action
-- **Multi-Interface** — CLI, Desktop GUI, Web (Gradio), and Telegram Bot all share the same agent core
-- **Model Agnostic** — works with any OpenAI-spec tool-calling model (Gemini, GPT-4o, Claude, Mistral, LLaMA) via OpenRouter or direct APIs
-- **Verified Tool-Calling** — `model_registry.py` validates that the configured model supports function calling before any plan is generated
-
----
+- **5-Step Verification Engine** - Strict, non-bypassable verification system that validates parameters, permissions, results, data integrity, and idempotency.
+- **Hybrid ReAct + LangGraph Engine** — LLM-driven planner generates a typed DAG of tasks; LangGraph executes nodes with full state persistence.
+- **Multi-Service Orchestration** — Chain Gmail, Drive, Sheets, Docs, Calendar, and Code execution in a single request.
+- **Long-Term Memory** — Powered by Mem0 to recall user preferences across sessions.
+- **Sandboxed Code Execution** — Python code runs inside a restricted E2B sandbox.
+- **Safety-by-Default** — Read-Only mode and manual confirmation for state-changing actions.
+- **Multi-Interface** — CLI, Desktop GUI, Web (Gradio), and Telegram Bot support.
 
 ---
 
 ## 🎬 Demos & Showcases
 
-### ⚡ Live Previews
-The following animated showcases demonstrate the agent's autonomous planning and multi-service execution in real-time.
+### 🎥 Featured Demo
+Watch the Google Workspace Agent in action, performing multi-service orchestration across Gmail, Drive, and Sheets.
 
-| Autonomous Workflow Demo | Multi-Interface Simulation |
-| :---: | :---: |
-| ![Animated Demo](assets/demo_animated.svg) | ![Simulation](assets/simulation_animated.svg) |
-
-> **Dynamic Multi-Mode Preview:** The simulation on the right is automatically generated and cycles through the CLI, Desktop, and Web interfaces.
-
-### 🖼️ Interface Gallery
-Detailed snapshots of the available user interfaces.
-
-#### 💻 CLI (Typer + Rich)
-![CLI Demo](assets/cli_demo.png)
-
-#### 🖥️ Desktop GUI
-![Desktop GUI Demo](assets/gui_desktop_demo.png)
-
-#### 🌐 Web Interface (Gradio)
-![Web GUI Demo](assets/gui_web_demo.png)
-
-### Architecture Diagram
-![Architecture](assets/architecture_diagram.png)
+<p align="center">
+  <video src="assets/GworkspaceAgent.mp4" width="900" controls muted autoplay>
+    Your browser does not support the video tag.
+  </video>
+</p>
 
 ---
 
-## Architecture
+### ⚡ Interactive Previews
+High-level animated showcases of the agent's autonomous planning.
 
-The agent uses a **three-layer architecture**: an LLM Planner that reasons about intent, a LangGraph Workflow that manages stateful execution, and a GWS Executor that calls real Google APIs.
+#### 🧠 Autonomous Workflow Demo
+![Animated Demo](assets/demo_animated.svg)
+
+#### 🔄 Multi-Interface Simulation
+![Simulation](assets/simulation_animated.svg)
+
+---
+
+### 🖼️ Visual Gallery
+Snapshots of the diverse user interfaces supported by the agent.
+
+<p align="center">
+  <img src="assets/cli_demo.png" alt="CLI Demo" width="900">
+  <br><i>CLI Interface (Typer + Rich)</i><br><br>
+  <img src="assets/gui_desktop_demo.png" alt="Desktop GUI" width="900">
+  <br><i>Desktop GUI (Tkinter)</i><br><br>
+  <img src="assets/gui_web_demo.png" alt="Web GUI" width="900">
+  <br><i>Web Interface (Gradio)</i><br><br>
+</p>
+
+---
+
+### 📊 Project Presentation
+For a detailed overview of the system design, features, and roadmap, you can view the primary slides below:
+
+<p align="center">
+  <img src="assets/slides/image1.png" alt="Slide 1" width="900">
+  <br><i>Slide 1: Project Introduction</i><br><br>
+  <img src="assets/slides/image2.png" alt="Slide 2" width="900">
+  <br><i>Slide 2: System Overview</i><br><br>
+  <img src="assets/slides/image3.png" alt="Slide 3" width="900">
+  <br><i>Slide 3: Core Architecture</i><br><br>
+</p>
+
+[**🚀 View Full 13-Slide Walkthrough**](PRESENTATION.md) | [**📥 Download PPTX**](assets/Google_Workspace_Agent.pptx)
+
+---
+
+## ⚙️ Architecture
+
+### 📐 System Design
+The agent uses a **three-layer architecture**: an LLM Planner, a LangGraph Workflow state manager, and a GWS Executor for API calls.
 
 ```mermaid
----
-id: 381d8783-6e2b-46fa-b5fa-879171ca0dbf
----
 flowchart TD
     USER["👤 User Request"] --> AGENT
 
@@ -121,11 +129,12 @@ flowchart TD
     style APIS fill:#16213e,color:#fff,stroke:#2ECC71
     style SUP fill:#1a1a2e,color:#fff,stroke:#8E44AD
 ```
+
+
 ---
 
-## LangGraph DAG
-
-The agent's execution graph is a **stateful directed acyclic graph** with four core nodes and conditional edges. Each node operates on a shared `AgentState` object that persists across the entire request lifecycle.
+### 📉 LangGraph Execution DAG
+Stateful directed acyclic graph managing the execution lifecycle.
 
 ```mermaid
 flowchart TD
@@ -156,283 +165,158 @@ flowchart TD
     style FO fill:#8E44AD,color:#fff,stroke:#6b2f87
     style START fill:#2ECC71,color:#fff,stroke:#27ae60
     style END fill:#E74C3C,color:#fff,stroke:#c0392b
-
 ```
 
 ---
 
-### AgentState Schema
-
-python
-class AgentState(TypedDict):
-    user_request:   str            # original natural language query
-    task_plan:      list[Task]     # planned task list generated by LLM
-    context:        dict           # shared execution context (placeholders live here)
-    task_results:   dict           # keyed outputs per task ID e.g. task-1, task-2
-    current_index:  int            # execution cursor pointing to current task
-    error:          str | None     # last error string for reflect_node classification
-    retry_count:    int            # retry counter — capped per task to prevent loops
-    final_output:   str            # formatted final response string
-
-
----
-
-## ReAct Loop
-
-Each task execution follows the **ReAct (Reason → Act → Observe)** pattern:
+### 🔄 ReAct Loop
+Each task execution follows the **Reason → Act → Observe** pattern.
 
 ```mermaid
 flowchart LR
-    R["REASON<br>Planner reads user intent<br>+ service catalog 100+ actions<br>+ Mem0 conversation memory<br>→ generates typed TaskPlan JSON"]
-    A["ACT<br>For each Task in plan:<br>① Resolver expands $placeholders<br>② Task validated vs model registry<br>③ GWS API called via executor<br>④ Result written to shared context"]
-    O["OBSERVE<br>Verifier checks output integrity<br>Reflect node classifies errors<br>AUTH/NOT_FOUND → skip<br>SERVER/UNKNOWN → retry<br>Memory updated with outcome"]
+    R["REASON<br>Planner reads user intent<br>+ catalog + memory<br>→ TaskPlan JSON"]
+    A["ACT<br>Resolver expands paths<br>+ GWS API called<br>+ Context updated"]
+    O["OBSERVE<br>Verifier checks integrity<br>Reflect node retry/skip<br>Memory updated"]
 
     R --> A --> O --> R
 ```
 
 ---
 
-## Supported Services
+## 🔌 Supported Services
 
-The agent orchestrates **20+ Google services** and **100+ actions** via `service_catalog.py`:
+The agent orchestrates **20+ Google services** and **100+ actions**:
 
-| Service | Key Actions |
-|---|---|
-| 📧 **Gmail** | send, read, search, reply, forward, label, delete messages |
-| 📂 **Drive** | list, upload, download, export, move, delete, share files and folders |
-| 📊 **Sheets** | create, read, append, update, format spreadsheets |
-| 📝 **Docs** | create, read, batch-update documents |
-| 📅 **Calendar** | create, list, update, delete events with reminders |
-| 📽️ **Slides** | create and read presentations |
-| 👥 **Contacts** | list, search, create contacts |
-| 💬 **Chat** | send messages to Google Chat spaces |
-| 🐍 **Code** | execute Python in E2B sandbox, capture stdout/stderr/exit code |
-| 🔍 **Web Search** | search and summarize web results |
-| 🧠 **Memory** | store and retrieve user preferences via Mem0 |
-| 🛡️ **Admin SDK** | manage users, groups, org units |
-| 📜 **Apps Script** | run Google Apps Scripts |
-| 🔐 **Model Armor** | content safety screening |
-| 📋 **Tasks** | manage Google Tasks lists |
-| 🗒️ **Keep** | create and read Google Keep notes |
-| 📝 **Forms** | create and read Google Forms |
-| 👥 **Meet** | create Meet links |
-| 🏫 **Classroom** | manage courses and assignments |
+| Category | Services |
+| :--- | :--- |
+| **Communication** | 📧 Gmail, 💬 Chat, 👥 Contacts, 📽️ Meet |
+| **Storage & Docs** | 📂 Drive, 📊 Sheets, 📝 Docs, 📽️ Slides, 📋 Tasks, 🗒️ Keep |
+| **Automation** | 🐍 Python Sandbox, 📜 Apps Script, 🔍 Web Search |
+| **Management** | 🛡️ Admin SDK, 📝 Forms, 🏫 Classroom, 🔐 Model Armor |
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
-To get the agent running on your local machine, please follow the comprehensive **[Setup Guide (SETUP.md)](SETUP.md)**.
+Follow the **[Detailed Setup Guide (SETUP.md)](SETUP.md)** for credentials and environment configuration.
 
-### Quick Start
-1. **Clone & Install:**
-   ```bash
-   git clone https://github.com/haseeb-heaven/gworkspace-agent.git
-   cd gworkspace-agent
-   pip install -e .
-   ```
-2. **Configure Credentials:** Follow the [Google Cloud Setup](SETUP.md#%EF%B8%8F-step-3-google-cloud--credentials-setup) instructions.
-3. **Run the Agent:**
-   ```bash
-   # Using Python (all platforms)
-   gws_cli --task "List my drive files"
+### Quick Install
+```bash
+git clone https://github.com/haseeb-heaven/gworkspace-agent.git
+cd gworkspace-agent
+pip install -e .
+```
 
-   # Or use the executable scripts
-   # Linux/macOS: ./gws_cli --task "List my drive files"
-   # Windows: .\gws_cli.bat --task "List my drive files"
-   ```
+### Run the Agent
+```bash
+# Start a task via CLI
+gws_cli --task "List my drive files"
+```
+
+---
+
+## 💻 Usage & Workflows
 
 ### Examples
-
-Here are high-impact, realistic examples that showcase the full power of your agent — multi-service chaining, NLP complexity, and things no dumb CLI can do:
+Here are high-impact, realistic examples that showcase the full power of your agent — multi-service chaining, NLP complexity, and things no standard CLI can do:
 
 ***
 
-## 📧 Gmail Workflows
-
+### 📧 Gmail Workflows
 ```bash
 gws_cli --task "Find all emails from my boss this week, mark them as read, and reply to any that have a question mark in the subject"
 ```
-
 ```bash
 gws_cli --task "Search for all invoices received in April, download their attachments to Drive folder 'Invoices/April', and create a Sheets log with sender, date, and amount"
 ```
 
-```bash
-gws_cli --task "Find emails with subject containing 'approval needed', summarize each one, and forward the summaries to manager@company.com"
-```
-
 ***
 
-## 📅 Calendar Workflows
-
+### 📅 Calendar Workflows
 ```bash
 gws_cli --task "List all my meetings tomorrow, create a Google Doc agenda for each one with the title and attendees, and send the doc link to all attendees via email"
 ```
-
 ```bash
 gws_cli --task "Find all meetings I have next week that are longer than 1 hour and add a 15-minute prep reminder before each one"
 ```
 
 ***
 
-## 📂 Drive + Docs Workflows
-
+### 📂 Drive + Docs Workflows
 ```bash
 gws_cli --task "Find all Google Docs modified in the last 7 days, create a summary of each, and compile everything into a single 'Weekly Report' Doc"
 ```
-
 ```bash
 gws_cli --task "Search Drive for files shared with me that I haven't opened in 30 days and list them in a Sheets file called 'Stale Shares'"
 ```
 
 ***
 
-## 📊 Sheets Workflows
-
+### 📊 Sheets Workflows
 ```bash
 gws_cli --task "Open the spreadsheet 'Sales Q1', calculate total revenue per region, and email a summary report to the sales team"
 ```
-
 ```bash
 gws_cli --task "Read the 'Team Tasks' sheet, find all rows where status is 'overdue', and send a reminder email to the person in the assignee column"
 ```
 
 ***
 
-## 🔗 Complex Multi-Service Chains
-
+### 🔗 Complex Multi-Service Chains
 ```bash
 gws_cli --task "Read my unread emails, extract all action items mentioned, add them as Google Tasks, create a Calendar block tomorrow morning called 'Action Items Review', and send me a summary on Telegram"
 ```
-
 ```bash
 gws_cli --task "Get all attendees from my 'Quarterly Review' calendar event, create a shared Google Doc called 'Q2 Review Notes', and send each attendee an email with the doc link"
 ```
 
-```bash
-gws_cli --task "Search my emails for any job applications I sent last month, list them in a Sheets tracker with company name, role, and date, then set a weekly Calendar reminder to follow up"
-```
-
 ***
 
-## 🐍 Code Execution (E2B Sandbox)
-
+### 🐍 Code Execution (E2B Sandbox)
 ```bash
 gws_cli --task "Download the 'Revenue.csv' file from my Drive, run a Python script to calculate month-over-month growth, and write the results back to a new sheet called 'Growth Analysis'"
 ```
-
 ```bash
 gws_cli --task "Read the JSON config file from Drive folder 'Configs', validate it with Python, and email me the validation errors if any are found"
 ```
 
-***
-
-## 🛡️ Safety Mode Examples
-
-```bash
-# Read-only audit — no writes, safe to run anytime
-gws_cli --task "List all files in my Drive shared publicly and show their owners"
-
-# Explicit write permission required
-gws_cli --read-write --task "Delete all emails in Trash older than 30 days and empty the spam folder"
-```
-
 ---
 
-## Interfaces
-
-| Interface | Command | Description |
-|---|---|---|
-| **💻 CLI** | `gws_cli` or `./gws_cli` (Unix) or `.\gws_cli.bat` (Windows) | Rich terminal UI with streaming output, tables, and interactive prompts |
-| **🖥️ Desktop GUI** | `python gws_gui.py` | Native app with visual task logs and manual controls |
-| **🌐 Web UI** | `python gws_gui_web.py` | Gradio chat interface accessible from any browser |
-| **🤖 Telegram Bot** | `python gws_telegram.py` | Secure mobile access via whitelisted Telegram Bot API |
-
----
-
-## Configuration
-
-All system configuration (API keys, security modes, and service endpoints) is managed via the `.env` file.
-
-> [!IMPORTANT]
-> Detailed configuration steps and a full environment variable reference can be found in the **[Configuration Section of SETUP.md](SETUP.md#%EF%B8%8F-step-5-agent-configuration)**.
-
----
-
-## Safety & Security
+## 🛡️ Safety & Security
 
 ```mermaid
 flowchart TD
     REQ["Incoming Task"] --> RO{"Read-Only Mode\nON by default"}
-    RO -->|"write / delete / send action"| BLOCK["🚫 Blocked\nAction rejected immediately"]
-    RO -->|"read-only action"| SB{"Sandbox Mode\nON by default"}
-    SB -->|"state-changing action"| CONF{"User Confirmation\nY / N prompt"}
-    CONF -->|"N"| SKIP["⏭ Skipped"]
+    RO -->|"write action"| BLOCK["🚫 Blocked"]
+    RO -->|"read action"| SB{"Sandbox Mode"}
+    SB -->|"state change"| CONF{"User Confirmation"}
     CONF -->|"Y"| EXEC["✅ Execute"]
-    SB -->|"safe read action"| EXEC
-    RO -->|"--read-write flag set"| SB
-
-    style BLOCK fill:#E74C3C,color:#fff
-    style SKIP fill:#E67E22,color:#fff
-    style EXEC fill:#27AE60,color:#fff
+    RO -->|"--read-write"| SB
 ```
 
-- **Read-Only Mode** — default ON. Enable writes with `--read-write` or `READ_ONLY_MODE=false`
-- **Sandbox Mode** — default ON. Disable with `--no-sandbox` or `SANDBOX_ENABLED=false`
-- **Email Recipient Lock** — `DEFAULT_RECIPIENT_EMAIL` forces all outbound emails to one address regardless of what the LLM generates
-- **Model Registry** — raises `ValueError` at startup if the configured model is not on the tool-calling allowlist in `model_registry.py`
+- **Read-Only Mode**: Default ON to prevent accidental data modification.
+- **Sandbox Mode**: Executes Python code in an isolated environment.
+- **Recipient Lock**: `DEFAULT_RECIPIENT_EMAIL` forces all emails to a safe address.
 
 ---
 
-## Testing
+## 🧪 Quality Assurance
 
 ```bash
-# Full test suite
+# Run unit tests
 python -m pytest
+
+# Run with coverage
+python -m pytest --cov=gws_assistant
 ```
 
-```bash
-# Drive metadata and placeholder contract tests only
-python -m pytest -m "drive" -v
-```
-
-```bash
-# With coverage report
-python -m pytest --cov=gws_assistant --cov-report=term-missing
-```
-
-```bash
-# Integration tests (requires live Google credentials)
-python -m pytest -m "not skip_integration" -v
-```
-
-| Test File | Coverage |
-|---|---|
-| `tests/test_placeholder_contracts.py` | Canonical and legacy placeholder resolution |
-| `tests/test_drive_metadata.py` | Drive file summarizer helper |
-| `tests/test_resolver.py` | Full resolver logic including LEGACY_MAP |
-
----
-
-## Statistics
-
-Detailed repository statistics including commit history, contributors, and project metrics are available in [STATS.md](STATS.md).
-
----
-
-## Releases
-See the [CHANGELOG.md](CHANGELOG.md) for details on all versions.
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Branch from `develop`: `git checkout -b feature/your-feature develop`
-3. Make changes with tests
-4. Ensure all tests pass: `python -m pytest`
-5. Open a Pull Request targeting **`develop`** — never target `master` directly
+| Test Type | Directory / File | Description |
+| :--- | :--- | :--- |
+| **🧪 Unit Tests** | `tests/test_unit_*.py` | Fully mocked tests for individual components. No GWS binary or credentials required. |
+| **⚙️ Integration** | `tests/test_integration.py` | Validates the LangGraph state machine with mocked GWS tools. |
+| **⚡ Live Integration** | `tests/test_live_integration.py` | End-to-end tests using real Google Workspace credentials and the GWS binary. |
+| **🛡️ Hardening** | `tests/test_hardening_*.py` | Security and safety policy verification (Regex ReDoS, Sandbox isolation). |
+| **🛠️ Manual** | `tests/manual/` | One-off scripts for manual feature verification and debugging. |
 
 ---
 
@@ -460,5 +344,7 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 > **decisions**, and **system design** are **original**.
 
 <p align="center">
-  Built with ❤️ by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a>
+  <img src="https://img.shields.io/badge/Built%20with-%E2%9D%A4-red?style=for-the-badge" alt="Built with Love">
+  <br>
+  <b>Developed by <a href="https://github.com/haseeb-heaven">Haseeb Mir</a></b>
 </p>

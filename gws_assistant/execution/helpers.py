@@ -261,10 +261,19 @@ class HelpersMixin:
             injected_vars = _normalize_injected_vars(injected_vars)
 
             # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
+            # Only attempt auto-fetch for short strings that look like spreadsheet names/IDs
+            # Skip long text content (like email bodies) to avoid false positives
             fetched_vars = []
             for var in injected_vars:
                 logger.info("Processing injected_vars item: type=%s", type(var))
                 if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
+                    # Only attempt auto-fetch if the string is reasonably short (likely a name/ID)
+                    # Skip long text content (>200 chars) which is likely email body or other content
+                    if len(var) > 200:
+                        logger.info("Skipping auto-fetch for long content (%d chars): %s...", len(var), var[:50])
+                        fetched_vars.append(var)
+                        continue
+
                     # Try to fetch spreadsheet data by name from drive
                     logger.info("Auto-fetching spreadsheet data for: %s", var)
                     try:

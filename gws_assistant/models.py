@@ -68,7 +68,7 @@ class AppConfigModel:
 
     # Verification Engine Configuration
     verification_exact_placeholders: set[str] = field(default_factory=lambda: {
-        "none", "null", "n/a", "na", "undefined",
+        "none", "null", "undefined",
         "todo", "fixme", "placeholder", "example", "sample", "dummy",
         "your_value", "insert_here", "replace_me", "changeme", "default",
         "fake", "mock", "temporary", "tbd", "missing"
