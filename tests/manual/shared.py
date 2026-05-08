@@ -35,14 +35,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
     try:
         if service == "drive" and action in ("create_folder", "create"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "drive",
-                    "files",
-                    "get",
-                    "--params",
-                    json.dumps({"fileId": resource_id, "fields": "id,name"}),
-                ],
+                [str(binary_path), "drive", "files", "get", "--params", json.dumps({"fileId": resource_id, "fields": "id,name"})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -50,14 +43,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
             return result.returncode == 0
         elif service == "docs" and action in ("create_document", "create"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "docs",
-                    "documents",
-                    "get",
-                    "--params",
-                    json.dumps({"documentId": resource_id}),
-                ],
+                [str(binary_path), "docs", "documents", "get", "--params", json.dumps({"documentId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -65,14 +51,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
             return result.returncode == 0
         elif service == "sheets" and action in ("create_spreadsheet", "create", "append"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "sheets",
-                    "spreadsheets",
-                    "get",
-                    "--params",
-                    json.dumps({"spreadsheetId": resource_id}),
-                ],
+                [str(binary_path), "sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -80,15 +59,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
             return result.returncode == 0
         elif service == "gmail" and action in ("send_message", "send"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "gmail",
-                    "users",
-                    "messages",
-                    "get",
-                    "--params",
-                    json.dumps({"userId": "me", "id": resource_id}),
-                ],
+                [str(binary_path), "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -96,14 +67,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
             return result.returncode == 0
         elif service == "calendar" and action in ("create_event", "create"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "calendar",
-                    "events",
-                    "get",
-                    "--params",
-                    json.dumps({"calendarId": "primary", "eventId": resource_id}),
-                ],
+                [str(binary_path), "calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -111,14 +75,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
             return result.returncode == 0
         elif service == "slides" and action in ("create_presentation", "create"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "slides",
-                    "presentations",
-                    "get",
-                    "--params",
-                    json.dumps({"presentationId": resource_id}),
-                ],
+                [str(binary_path), "slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -126,74 +83,7 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
             return result.returncode == 0
         elif service == "keep" and action in ("create_note", "create"):
             result = subprocess.run(
-                [
-                    str(binary_path),
-                    "keep",
-                    "notes",
-                    "get",
-                    "--params",
-                    json.dumps({"name": resource_id}),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "forms" and action in ("create_form", "create"):
-            result = subprocess.run(
-                [
-                    str(binary_path),
-                    "forms",
-                    "forms",
-                    "get",
-                    "--params",
-                    json.dumps({"formId": resource_id}),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "tasks" and action in ("create_task", "create"):
-            result = subprocess.run(
-                [
-                    str(binary_path),
-                    "tasks",
-                    "tasks",
-                    "get",
-                    "--params",
-                    json.dumps({"tasklist": "@default", "task": resource_id}),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "contacts" and action in ("create_contact", "create"):
-            result = subprocess.run(
-                [
-                    str(binary_path),
-                    "people",
-                    "people",
-                    "get",
-                    "--params",
-                    json.dumps({"resourceName": resource_id, "personFields": "names"}),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.returncode == 0
-        elif service == "chat" and action in ("send_message", "create_message", "create"):
-            result = subprocess.run(
-                [
-                    str(binary_path),
-                    "chat",
-                    "spaces.messages",
-                    "get",
-                    "--params",
-                    json.dumps({"name": resource_id}),
-                ],
+                [str(binary_path), "keep", "notes", "get", "--params", json.dumps({"name": resource_id})],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -390,11 +280,6 @@ def run_task(
                 "drive": {"create", "upload", "copy"},
                 "slides": {"create", "append"},
                 "forms": {"create"},
-                "contacts": {"create", "add"},
-                "tasks": {"create", "add"},
-                "chat": {"send", "create"},
-                "calendar": {"create", "add"},
-                "keep": {"create", "add"},
             }
 
             # Check if the task is primarily about creating the service being verified

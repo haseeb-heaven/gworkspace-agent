@@ -4,11 +4,11 @@
 
 # LangChain / LangGraph stack
 # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
-# but the current constraint langchain-openai>=1.1.10,<1.2.2 excludes 1.1.14, so the CVE remains unpatched.
+# but the current constraint langchain-openai>=1.1.10,<1.1.11 excludes 1.1.14, so the CVE remains unpatched.
 # Upgrade is deferred due to litellm 1.83.7 pinning openai==2.30.0 (conflicts with openai>=2.26.0 needed by patched langchain-openai).
 # This is tracked and will be upgraded when litellm supports the required openai version.
 langchain-core>=0.3.84
-langchain-openai>=1.1.10,<1.2.2
+langchain-openai>=1.1.10,<1.1.11
 langgraph>=0.3.34
 langchain-community>=0.3.31
 langchain-tavily>=0.2.0
@@ -24,8 +24,8 @@ openai==2.30.0
 
 # Config / CLI / GUI
 # python-dotenv is pinned to 1.0.1 — the exact version litellm 1.83.7 hard-requires.
-# litellm 1.83.7 depends on python-dotenv==1.2.2; using 1.2.x causes ResolutionImpossible.
-python-dotenv==1.2.2
+# litellm 1.83.7 depends on python-dotenv==1.0.1; using 1.2.x causes ResolutionImpossible.
+python-dotenv==1.0.1
 typer>=0.12.0
 rich>=14.3.3
 questionary>=2.1.1

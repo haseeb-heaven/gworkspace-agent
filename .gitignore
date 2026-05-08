@@ -80,15 +80,12 @@ conductor/
 
 # Files
 *.exe
-*.tar.gz
-*.app
 *.txt
 *.pdf
 *.docx
 *.xlsx
 *.pptx
 *.html
-binaries/*
 
 # Trash/Temp scripts
 read_mem0.py
@@ -102,5 +99,3 @@ ISSUES.md
 !tests/
 *.orig
 !requirements.txt
-gws-agent.spec
-TAGS

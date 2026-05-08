@@ -18,13 +18,13 @@ def mock_load_dotenv(monkeypatch):
     monkeypatch.delenv("CI", raising=False)
 
 
-def test_config_accepts_empty_recipient_email_if_missing(monkeypatch):
-    """Test that config defaults to empty string if DEFAULT_RECIPIENT_EMAIL is missing."""
+def test_config_raises_value_error_if_recipient_email_missing(monkeypatch):
+    """Test that ValueError is raised if DEFAULT_RECIPIENT_EMAIL is missing."""
     monkeypatch.setenv("GWS_BINARY_PATH", "gws")
     monkeypatch.delenv("DEFAULT_RECIPIENT_EMAIL", raising=False)
     # Ensure other required env vars are present if any (let's assume only this one for now)
-    config = AppConfig.from_env()
-    assert config.default_recipient_email == ""
+    with pytest.raises(ValueError, match="DEFAULT_RECIPIENT_EMAIL must be set in .env"):
+        AppConfig.from_env()
 
 
 def test_config_accepts_recipient_email_if_present(monkeypatch):

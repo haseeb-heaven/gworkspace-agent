@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-from pydantic import BaseModel
-
 
 @dataclass(slots=True)
 class AppConfigModel:
@@ -70,7 +68,7 @@ class AppConfigModel:
 
     # Verification Engine Configuration
     verification_exact_placeholders: set[str] = field(default_factory=lambda: {
-        "none", "null", "undefined",
+        "none", "null", "n/a", "na", "undefined",
         "todo", "fixme", "placeholder", "example", "sample", "dummy",
         "your_value", "insert_here", "replace_me", "changeme", "default",
         "fake", "mock", "temporary", "tbd", "missing"
@@ -364,10 +362,3 @@ class CodeExecutionResult:
     return_value: Any = None
     success: bool = False
     error: str | None = None
-
-
-class CodeExecutionOutput(BaseModel):
-    """Container for inter-agent data passing from code execution."""
-
-    parsed_value: Any | None = None
-    code_output: Any | None = None
