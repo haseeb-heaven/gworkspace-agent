@@ -101,11 +101,8 @@ def _sanitize_llm_code(code: str) -> tuple[str, dict[str, Any]]:
             # error messages, but neutralise the import.
             cleaned_lines.append("# [sandbox-stripped] " + line)
         else:
-            # Fix common LLM mistake: pd.read_csv('injected_vars[X]') -> proper DataFrame construction
-            # Sheets data is passed as list of lists with headers in first row
-            line = re.sub(r"pd\.read_csv\(['\"]injected_vars\[(\d+)\]['\"]\)", r"pd.DataFrame(injected_vars[\1][1:], columns=injected_vars[\1][0])", line)
-            # Strip open() calls since data is pre-injected
-            line = re.sub(r"\bopen\s*\([^)]+\)", "# [sandbox-stripped] open() call", line)
+            # We no longer manipulate pd.read_csv or strip open() here.
+            # We provide a safe mock open() via sandbox globals.
             cleaned_lines.append(line)
     return "\n".join(cleaned_lines), aliases
 
@@ -258,18 +255,7 @@ def _run_in_thread_sandbox(
         # Strip import statements before compilation — the sandbox forbids them
         # but pre-injects the most common modules (math, re, json) as globals.
         sanitized, aliases = _sanitize_llm_code(code)
-        # Fix LLM code that tries to use csv.DictReader on files - use injected DataFrame instead
-        # Pattern: with open('', 'r') as f: ... csv.DictReader(f)
-        sanitized = re.sub(
-            r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as f:\s+reader = csv\.DictReader\(f\)",
-            "df = injected_vars[0] if injected_vars else None",
-            sanitized
-        )
-        # Pattern: for row in reader: -> for row in df.itertuples(): or for idx, row in df.iterrows():
-        sanitized = re.sub(r"for row in reader:", "for idx, row in df.iterrows():", sanitized)
-        # Pattern: row['category'] -> row['Category'] (case-insensitive match)
-        sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
-        sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
+        sanitized, aliases = _sanitize_llm_code(code)
         # Use RestrictedPython's compile_restricted to transform print calls to _print_
         # Runtime guards in get_safe_globals() still enforce security
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
@@ -282,6 +268,35 @@ def _run_in_thread_sandbox(
             # Don't auto-convert to DataFrame - let LLM handle it
             # This prevents column mismatch errors
             sandbox_globals.update(extra_globals)
+
+        # Provide a mock open() that returns injected_vars[0] as a CSV file-like object
+        class SafeMockOpen:
+            def __init__(self, filename, mode='r', *args, **kwargs):
+                self.filename = filename
+                self.mode = mode
+                self.content = io.StringIO()
+                if 'injected_vars' in sandbox_globals and sandbox_globals['injected_vars']:
+                    data = sandbox_globals['injected_vars'][0]
+                    if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
+                        import csv
+                        writer = csv.writer(self.content)
+                        writer.writerows(data)
+                        self.content.seek(0)
+            def __enter__(self):
+                return self.content
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                self.content.close()
+            def read(self, *args, **kwargs):
+                return self.content.read(*args, **kwargs)
+            def readlines(self, *args, **kwargs):
+                return self.content.readlines(*args, **kwargs)
+            def close(self):
+                self.content.close()
+            def __iter__(self):
+                return iter(self.content)
+
+        if "__builtins__" in sandbox_globals and isinstance(sandbox_globals["__builtins__"], dict):
+            sandbox_globals["__builtins__"]["open"] = SafeMockOpen
 
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
@@ -388,20 +403,10 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
-    # Replace with open(...) as f: blocks with code that uses injected data
-    # Pattern: with open(...) as file: ... use injected_vars instead
-    code = re.sub(
-        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
-        r"\1 = injected_vars[0] if injected_vars else []\nif isinstance(\1, list) and \1 and isinstance(\1[0], list):\n    # Convert list of lists to list of dicts\n    headers = \1[0]\n    \1 = [dict(zip(headers, row)) for row in \1[1:]]\n    # Add case-insensitive column access helper\n    class CaseInsensitiveDict(dict):\n        def __getitem__(self, key):\n            for k in self:\n                if k.lower() == key.lower():\n                    return super().__getitem__(k)\n            raise KeyError(key)\n    \1 = [CaseInsensitiveDict(row) for row in \1]",
-        code,
-        flags=re.DOTALL
-    )
-    # Replace csv.DictReader(file) with direct iteration over the list of dicts
-    code = re.sub(r"reader = csv\.DictReader\(\w+\)", "reader = file", code)
-    code = re.sub(r"for row in reader:", "for row in reader:", code)
-    # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
-    code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
-    code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
+    # We no longer manipulate `with open` or `csv.DictReader` here via regex.
+    # LLM-generated code will now use the mock `open` provided via `sandbox_globals`,
+    # which will automatically return the injected CSV data as a file-like object.
+
     # Remove return statements since code runs at module level
     code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
