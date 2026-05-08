@@ -17,7 +17,7 @@ from .models import AppConfigModel, ExecutionResult
 # trigger WinError 206 ("The filename or extension is too long").  We use a
 # conservative threshold so the total command stays well below that ceiling.
 _WIN_ARG_SAFE_BYTES = 8_000
-_SAFE_POSITIONAL_TOKEN_RE = r"^[A-Za-z0-9_.+:\-]+$"
+_SAFE_POSITIONAL_TOKEN_RE = r"^[A-Za-z0-9_.+:\-]+$"  # nosec B105 — regex pattern, not a credential
 
 
 def _args_too_long(args: list[str]) -> bool:
@@ -177,7 +177,7 @@ class GWSRunner:
             self.logger.warning("Oversized CLI arg detected (WinError 206 risk); rewriting large args to temp files.")
             command, tmp_files, stdin_input = _rewrite_large_args_via_tempfile(command)
 
-        self.logger.info("Executing command: %s", " ".join(a[:80] if len(a) > 80 else a for a in command))
+        self.logger.info("Executing command: %s", args[0] if args else "unknown")
         try:
             proc_kwargs: dict[str, Any] = dict(
                 capture_output=True,

@@ -229,7 +229,7 @@ class VerificationEngine:
 
         # CHECK 1: Parameter Validation (STRICT, ERROR severity)
         try:
-            cls._check_1_parameter_validation(tool_name, params)
+            cls._check_1_parameter_validation(tool_name, params, pre_execution=False)
             logger.info("[CHECK 1] PASSED - Parameter Validation")
         except VerificationError as e:
             if e.severity == VerificationSeverity.WARNING:
@@ -286,7 +286,7 @@ class VerificationEngine:
     # =========================================================================
 
     @classmethod
-    def _check_1_parameter_validation(cls, tool_name: str, params: dict) -> None:
+    def _check_1_parameter_validation(cls, tool_name: str, params: dict, pre_execution: bool = True) -> None:
         """
         CHECK 1: Parameter Validation
         Validates all input parameters for correctness and completeness.
@@ -300,6 +300,7 @@ class VerificationEngine:
                 params,
                 location="params",
                 block_empty_strings=False,
+                pre_execution=pre_execution,
             )
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
@@ -1250,6 +1251,7 @@ class VerificationEngine:
                     values,
                     location="values",
                     block_empty_strings=not ("sheets" in tool_name and "append" in tool_name),
+                    pre_execution=True,
                 )
 
     # =========================================================================
@@ -1263,6 +1265,7 @@ class VerificationEngine:
         payload: Any,
         location: str,
         block_empty_strings: bool = True,
+        pre_execution: bool = False,
     ) -> None:
         """Recursively block placeholders, empty generated content, and invalid sentinel values."""
         for path, value in cls._iter_payload_leaf_values(payload, location):
@@ -1285,6 +1288,8 @@ class VerificationEngine:
                     value,
                     block_empty=block_empty_strings,
                     block_generic_placeholders=block_generic,
+                    location=location,
+                    pre_execution=pre_execution,
                 ):
                     raise VerificationError(
                         tool_name,
@@ -1313,8 +1318,8 @@ class VerificationEngine:
         else:
             yield path, payload
 
-    @staticmethod
-    def _is_ignored_validation_path(path: str) -> bool:
+    @classmethod
+    def _is_ignored_validation_path(cls, path: str) -> bool:
         ignored_suffixes = (
             ".id",
             ".name",
@@ -1406,6 +1411,8 @@ class VerificationEngine:
         value: str,
         block_empty: bool = True,
         block_generic_placeholders: bool = True,
+        location: str = "unknown",
+        pre_execution: bool = False,
     ) -> bool:
         val_str = str(value).strip()
         if block_empty and not val_str:
@@ -1418,8 +1425,12 @@ class VerificationEngine:
             return True
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
 
-        if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
-            return True
+        # Block legacy placeholders in params during pre-execution (they should be resolved before execution)
+        # Allow legacy placeholders in params during regular verification (they should have been resolved by executor)
+        # Always block legacy placeholders in results if block_generic_placeholders is True
+        if (pre_execution and location == "params") or (location == "result" and block_generic_placeholders):
+            if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
+                return True
         if cls._has_unresolved_templates(val_str):
             return True
         if block_generic_placeholders and cls._is_placeholder(val_str):
@@ -1529,9 +1540,9 @@ class VerificationEngine:
             return True
         return False
 
-    @staticmethod
+    @classmethod
     def _validate_content_not_empty(
-        tool_name: str, params: dict, field: str, min_length: int = 1, block_placeholders: bool = True
+        cls, tool_name: str, params: dict, field: str, min_length: int = 1, block_placeholders: bool = True, pre_execution: bool = False
     ) -> None:
         """Validate that content field is not empty and has no placeholders."""
         value = params.get(field)
@@ -1566,18 +1577,13 @@ class VerificationEngine:
             )
 
         # Check for placeholders if enabled
-        # Skip placeholder detection for long content strings (>100 chars) that are
-        # clearly resolved real data (e.g. email summaries containing $, %, etc.)
-        if block_placeholders and len(val_str) <= 100:
-            if VerificationEngine._is_placeholder(val_str):
-                raise VerificationError(
-                    tool_name,
-                    f"Field '{field}' contains placeholder value '{val_str[:50]}...' - template variable was not resolved",
-                    severity=VerificationSeverity.ERROR,
-                    field=field
-                )
-
-            if VerificationEngine._has_unresolved_templates(val_str):
+        # Always check for unresolved template patterns regardless of length,
+        # as these indicate actual template syntax that should never appear in resolved output.
+        # Only skip simple placeholder checks for very long strings to avoid false positives
+        # on legitimate content (e.g. email summaries containing $, %, etc.)
+        if block_placeholders:
+            # Always check for unresolved template patterns (critical security check)
+            if cls._has_unresolved_templates(val_str):
                 raise VerificationError(
                     tool_name,
                     f"Field '{field}' contains unresolved template variable - value was not properly substituted",
@@ -1585,11 +1591,32 @@ class VerificationEngine:
                     field=field
                 )
 
+            # Always catch known placeholder tokens even in long content
+            # But allow them in email body field which has special placeholder resolution
+            # Block them in other content fields to prevent placeholder leakage
+            from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+            if field != "body" and any(ph in val_str for ph in LEGACY_PLACEHOLDER_MAP):
+                raise VerificationError(
+                    tool_name,
+                    f"Field '{field}' contains unresolved placeholder token",
+                    severity=VerificationSeverity.ERROR,
+                    field=field
+                )
+
+            # Keep broad placeholder heuristics length-gated to limit false positives
+            if len(val_str) <= 100 and cls._is_placeholder(val_str):
+                raise VerificationError(
+                    tool_name,
+                    f"Field '{field}' contains placeholder value '{val_str[:50]}...' - template variable was not resolved",
+                    severity=VerificationSeverity.ERROR,
+                    field=field
+                )
+
         # Check for suspicious content patterns (repeated special chars, etc.)
-        if VerificationEngine.SPECIAL_CHARS_ONLY.match(val_str):
+        if cls.SPECIAL_CHARS_ONLY.match(val_str):
             raise VerificationError(
                 tool_name,
-                f"Field '{field}' consists only of special characters - invalid content detected",
+                f"Field '{field}' contains only special characters - content appears invalid",
                 severity=VerificationSeverity.ERROR,
                 field=field
             )

@@ -12,16 +12,15 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from gws_assistant.tools.telegram import redact_sensitive  # noqa: E402
-
-# Try to import dotenv, fallback gracefully
-try:
-    from dotenv import dotenv_values
-except ImportError:
-    def dotenv_values(path): return {}
+# Lazy import placeholder for dotenv_values (imported in send_telegram_message to avoid hard startup-time dependency)
+dotenv_values = None
 
 
 def _safe_stderr(message: object) -> None:
+    try:
+        from gws_assistant.tools.telegram import redact_sensitive
+    except ImportError:
+        def redact_sensitive(msg): return str(msg)
     print(redact_sensitive(message), file=sys.stderr)
 
 
@@ -47,7 +46,14 @@ def send_telegram_message(message: str, max_retries: int = 3):
     # Determine the root directory and find the .env file
     root_dir = Path(__file__).resolve().parents[1]
     env_path = root_dir / ".env"
-    # Load .env variables
+    # Load .env variables - import dotenv lazily to avoid hard startup-time dependency
+    global dotenv_values
+    if dotenv_values is None:
+        try:
+            from dotenv import dotenv_values as _dotenv_values
+            dotenv_values = _dotenv_values
+        except ImportError:
+            def dotenv_values(path): return {}
     env = dotenv_values(env_path)
 
     # Use value from .env or fallback to system environment variables
@@ -64,7 +70,8 @@ def send_telegram_message(message: str, max_retries: int = 3):
     last_error: Exception | None = None
     for attempt in range(max_retries):
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            # URL is the literal Telegram bot API endpoint; no user scheme.
+            with urllib.request.urlopen(req, timeout=20) as response:  # nosec B310
                 result = json.loads(response.read().decode())
                 if result.get("ok"):
                     print("Telegram message sent successfully.")

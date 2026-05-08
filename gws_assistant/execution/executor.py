@@ -3,8 +3,10 @@ import json
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from gws_assistant.exceptions import SafetyBlockedError, ValidationError
@@ -244,10 +246,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         )
                         if isinstance(data, ExecutionResult):
                             return data
+                        parents = None
                         if isinstance(data, dict):
                             parents = data.get("parents")
-                            if parents and isinstance(parents, list):
-                                context["fetch_parents"] = ",".join(parents)
+                        if parents and isinstance(parents, list):
+                            context["fetch_parents"] = ",".join(parents)
                         else:
                             return ExecutionResult(
                                 success=False,
@@ -313,13 +316,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
 
                 # Special Case: gmail.list_messages — auto-enrich messages with snippet/headers
                 if task.service == "gmail" and task.action == "list_messages":
-                    if not isinstance(data, dict):
-                        return ExecutionResult(
-                            success=False,
-                            command=task.to_command(),
-                            error=f"Expected dict result for gmail.list_messages, got {type(data).__name__}",
-                        )
-                    msgs = data.get("messages", [])
+                    msgs = data.get("messages", []) if isinstance(data, dict) else []
                     # Skip enrichment if messages already carry snippets or payload headers
                     needs_enrich = isinstance(msgs, list) and msgs and not any(
                         (isinstance(m, dict) and (m.get("snippet") or m.get("payload", {}).get("headers")))
@@ -349,7 +346,8 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                             enriched.append(m)
                         # Keep any remaining un-enriched messages
                         enriched.extend(msgs[max_enrich:])
-                        data["messages"] = enriched
+                        if isinstance(data, dict):
+                            data["messages"] = enriched
                         self.logger.info("Auto-enriched %d/%d messages with metadata", max_enrich, len(msgs))
 
                 # Special Case: docs.create_document with initial content
@@ -360,28 +358,22 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 #     ... (auto-insert logic commented out)
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
-                    if not isinstance(data, dict):
-                        return ExecutionResult(
-                            success=False,
-                            command=task.to_command(),
-                            error=f"Expected dict result for drive.export_file/get_file, got {type(data).__name__}",
-                        )
-                    saved_file = data.get("saved_file")
+                    saved_file = data.get("saved_file") if isinstance(data, dict) else None
                     if saved_file:
                         # Try to determine if it is readable as text
-                        mime_type = str(task.parameters.get("mime_type") or data.get("mimeType") or "").lower()
+                        mime_type = str(task.parameters.get("mime_type") or (data.get("mimeType") if isinstance(data, dict) else None) or "").lower()
                         is_text = any(x in mime_type for x in ("text/", "csv", "json", "javascript", "xml"))
                         if not is_text:
                             ext = os.path.splitext(saved_file)[1].lower()
                             is_text = ext in (".txt", ".csv", ".json", ".md", ".py", ".js", ".html")
 
-                        file_content: str | None = None
+                        file_content = None
                         if is_text:
                             try:
                                 if not is_within_allowed_dir(saved_file):
                                     result.success = False
                                     result.error = (
-                                        f"Path traversal blocked while reading exported file: {saved_file}"
+                                        f"Path traversal blocked while reading exported file: {os.path.basename(saved_file)}"
                                     )
                                     result.stdout = json.dumps({"error": result.error})
                                     return result
@@ -389,20 +381,17 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                                 with open(saved_file, "r", encoding="utf-8", errors="replace") as f:
                                     file_content = f.read().lstrip("\ufeff")
                             except Exception as e:
-                                logger.warning("Failed to read exported file %s: %s", saved_file, e)
+                                logger.warning("Failed to read exported file %s: %s", os.path.basename(saved_file), e)
 
                         # Always set content, fallback to path if binary or read failed
-                        final_content = file_content if file_content is not None else f"[File: {saved_file}]"
+                        final_content = file_content if file_content is not None else f"[File: {os.path.basename(saved_file)}]"
 
-                        self.logger.info(
-                            "Exported file content for %s. Size: %s",
-                            saved_file,
-                            len(final_content) if file_content is not None else "N/A (Binary/Path only)",
-                        )
+                        self.logger.info("Exported file (content details omitted for security)")
 
-                        data["content"] = final_content
-                        data["drive_export_content"] = final_content
-                        data["drive_export_path"] = saved_file
+                        if isinstance(data, dict):
+                            data["content"] = final_content
+                            data["drive_export_content"] = final_content
+                            data["drive_export_path"] = saved_file
                 result.output = data
             except Exception as exc:
                 self.logger.exception("Failed to enrich parsed result for %s.%s", task.service, task.action)
@@ -525,11 +514,15 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             attachment_paths = [str(a).strip() for a in attachments if str(a).strip()]
 
         resolved_attachment_paths: list[str] = []
+        drive_export_tempdirs: set[str] = set()
         for path in attachment_paths:
             if self._looks_like_drive_file_id(path):
                 local_path = self.planner._export_drive_file_to_temp(path)
                 if local_path:
                     resolved_attachment_paths.append(local_path)
+                    parent = str(Path(local_path).resolve().parent)
+                    if Path(parent).name.startswith("gws_attach_"):
+                        drive_export_tempdirs.add(parent)
                     continue
                 drive_link = f"https://drive.google.com/file/d/{path}/view"
                 body = (
@@ -571,23 +564,37 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             "--json",
             json.dumps({"raw": raw_email}, ensure_ascii=True),
         ]
-        result = self.runner.run(args)
-        if result.success and result.stdout:
-            try:
-                data = self._parse_json_result(
-                    result,
-                    "gmail",
-                    "send_message",
-                    require_mapping=True,
-                    context_message="gmail send result",
-                )
-                if not isinstance(data, ExecutionResult):
-                    result.output = data
-                    # Add verification call for gmail.send_message
-                    VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
-            except Exception as e:
-                logger.warning(f"Failed to parse or verify Gmail send result: {e}")
-        return result
+        try:
+            result = self.runner.run(args)
+            if result.success and result.stdout:
+                try:
+                    data = self._parse_json_result(
+                        result,
+                        "gmail",
+                        "send_message",
+                        require_mapping=True,
+                        context_message="gmail send result",
+                    )
+                    if not isinstance(data, ExecutionResult):
+                        result.output = data
+                        # Add verification call for gmail.send_message
+                        VerificationEngine.verify("gmail_send_message", task.parameters, result.output)
+                except VerificationError as e:
+                    logger.error("Verification engine failed for gmail.send_message: %s", e)
+                    return ExecutionResult(
+                        success=False,
+                        command=args,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        return_code=result.return_code,
+                        error=f"Verification failed for gmail.send_message: {e}",
+                    )
+                except Exception as e:
+                    logger.warning("Failed to parse Gmail send result: %s", e)
+            return result
+        finally:
+            for tempdir in drive_export_tempdirs:
+                shutil.rmtree(tempdir, ignore_errors=True)
 
     @staticmethod
     def _looks_like_drive_file_id(value: str) -> bool:

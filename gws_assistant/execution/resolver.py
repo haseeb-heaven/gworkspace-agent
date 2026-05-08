@@ -22,8 +22,6 @@ LEGACY_PLACEHOLDER_MAP = {
     "$gmail_message_id": "gmail_message_id",
     "$gmail_message_ids":       "gmail_message_ids",
     "$gmail_details_values":    "gmail_details_values",
-    "$gmail_messages":          "gmail_messages",
-    "$gmail_details":           "gmail_messages",
     "$calendar_events":         "calendar_events",
     "$calendar_items":          "calendar_events",
     "$drive_file_ids":          "drive_file_ids",
@@ -90,10 +88,9 @@ class ResolverMixin:
         """Expand a single task into a list of executable tasks.
         Example: gmail.get_message with message_id=['id1', 'id2']
         """
-        import copy
-        task = copy.deepcopy(task)  # Harden: prevent side-effects on original task
-
         # Resolve placeholders in parameters FIRST to see if we have a list
+        import copy
+
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
 
         if task.service == "gmail" and task.action == "get_message":
@@ -179,26 +176,6 @@ class ResolverMixin:
                     new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["event_id"] = e_id
                     expanded.append(new_task)
-                return expanded
-
-        if task.service == "tasks" and task.action == "create_task":
-            titles = resolved_params.get("title")
-            if isinstance(titles, list) and titles:
-                expanded = []
-                for i, title in enumerate(titles):
-                    if not title or not isinstance(title, str) or title == _UNRESOLVED_MARKER:
-                        continue
-                    new_task = copy.deepcopy(task)
-                    new_task.id = f"{task.id}-{i + 1}"
-                    new_task.parameters["title"] = title
-                    expanded.append(new_task)
-
-                if not expanded:
-                    # If we had a list but all items were filtered out, it's a resolution failure.
-                    # We return a list with a special sentinel task that will fail validation.
-                    error_task = copy.deepcopy(task)
-                    error_task.parameters["title"] = f"{_UNRESOLVED_MARKER} (All titles in list were invalid or empty)"
-                    return [error_task]
                 return expanded
 
         return [task]
@@ -315,54 +292,40 @@ class ResolverMixin:
 
         return task
 
-    def _resolve_placeholders(
-        self,
-        val: Any,
-        context: dict,
-        use_repr_for_complex: bool = False,
-        depth: int = 0,
-        _cache: dict[int, Any] | None = None,
-    ) -> Any:
+    def _resolve_placeholders(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0) -> Any:
         """Recursively resolve $placeholder and {task-N} tokens from context.
 
         The depth guard prevents infinite recursion when resolved values themselves
         contain brace/dollar characters (e.g. JSON tool output, base64 content).
         Depth is incremented only when descending into dict/list structures, NOT
         when substituting a value from context — that substitution is always final.
-
-        The _cache parameter is a local dict threaded through recursion to detect
-        circular references without using fragile instance attributes.
         """
         if depth > 15:
             # Depth exceeded — return as-is to prevent stack overflow.
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
 
-        if _cache is None:
-            _cache = {}
-
-        # Circular reference detection for dicts and lists
-        if isinstance(val, (dict, list)):
+        # Additional safety: check for circular references in context
+        if isinstance(val, dict) or isinstance(val, list):
+            # Use id() to detect if we've seen this object before
+            if not hasattr(self, '_resolve_cache'):
+                self._resolve_cache: dict[int, Any] = {}
             obj_id = id(val)
-            if obj_id in _cache:
-                self.logger.warning(
-                    "_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone",
-                    obj_id,
-                )
-                return _cache[obj_id]
-
+            if obj_id in self._resolve_cache:
+                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
+                return self._resolve_cache[obj_id]
             # Create an empty clone and store it in the cache before recursion
             clone: Any = {} if isinstance(val, dict) else []
-            _cache[obj_id] = clone
-
-            result = self._resolve_placeholders_impl(
-                val, context, use_repr_for_complex, depth, clone=clone, _cache=_cache,
-            )
-            return result
+            self._resolve_cache[obj_id] = clone
+            try:
+                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
+                return result
+            finally:
+                del self._resolve_cache[obj_id]
         else:
-            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, _cache=_cache)
+            return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
 
-    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None, _cache: dict[int, Any] | None = None) -> Any:
+    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None) -> Any:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
@@ -377,6 +340,8 @@ class ResolverMixin:
                 res = context[LEGACY_PLACEHOLDER_MAP[val]]
                 if res is None:
                     return ""
+                # If we are in code context, we might want repr, but for expansion we want the raw list.
+                # Usually expansion happens before final resolution.
                 if use_repr_for_complex and isinstance(res, (dict, list)):
                     return repr(res)
                 return res
@@ -387,10 +352,12 @@ class ResolverMixin:
             if stripped.startswith("{{") and stripped.endswith("}}"):
                 path = stripped[2:-2].strip()
             elif stripped.startswith("{") and stripped.endswith("}"):
+                # Single braces: only resolve if it looks like a task path (e.g. {task-1} or {create_doc})
                 potential_path = stripped[1:-1].strip()
                 if "task-" in potential_path.lower() or potential_path in results_map or potential_path.startswith(":"):
                     path = potential_path
                 elif potential_path in context:
+                    # Also resolve plain context keys like {last_code_result}
                     path = potential_path
             elif stripped.startswith("$task-"):
                 path = stripped[1:].strip()
@@ -398,11 +365,14 @@ class ResolverMixin:
             def resolve_shorthand(shorthand_path):
                 shorthand_tokens = [t for t in re.split(r"[._]", shorthand_path.lower()) if t]
                 for key, val_item in reversed(list(results_map.items())):
+                    # Skip numeric keys and task-N keys for shorthand matching to avoid noise
                     if re.match(r"^task-\d+$|^\d+$", str(key)):
                         continue
+
                     key_tokens = [t for t in re.split(r"[._]", str(key).lower()) if t]
                     matches = 0
                     for st in shorthand_tokens:
+                        # Check exact, plural, or synonyms
                         is_match = any(
                             st == kt
                             or st + "s" == kt
@@ -415,15 +385,20 @@ class ResolverMixin:
                         )
                         if is_match:
                             matches += 1
+
                     if matches > 0 and matches >= len(shorthand_tokens):
+                        # If we have a perfect or better match, take it.
+                        # Since we are reversed, this is the most recent one.
                         return val_item
                 return None
 
             if path:
+                logger.debug("DEBUG: Found placeholder path (redacted), length=%d", len(path))
                 if path in context:
                     res = context[path]
                     if res is not None:
                         return res
+                # Allow nested lookups like contacts_summary_rows[0][0] against the global context
                 context_path_value = self._get_value_by_path(context, path)
                 if context_path_value is not None:
                     return context_path_value
@@ -433,6 +408,9 @@ class ResolverMixin:
                     resolved = resolve_shorthand(path[1:])
                 else:
                     resolved = self._get_value_by_path(results_map, path)
+
+                    # Fallback: if {{task-N.key}} failed, try to find 'key' in ANY task.
+                    # This handles LLM off-by-one errors in task indexing.
                     if resolved is None and "." in path:
                         parts = path.split(".")
                         if parts[0].startswith("task-") or parts[0].isdigit():
@@ -440,13 +418,37 @@ class ResolverMixin:
                             self.logger.info(f"RESOLVER: '{path}' failed. Trying fallback for '{key_to_find}'...")
                             resolved = resolve_shorthand(key_to_find)
 
+                    if resolved is None:
+                         keys_summary = {k: type(v).__name__ for k, v in results_map.items()}
+                         self.logger.warning(f"RESOLVER: Failed to resolve '{val}'. Path: '{path}'. Available keys/types: {keys_summary}")
+
+                # Smart unwrap:
+                # 1. If the resolved value is a dict with 'content', promote the content.
                 if isinstance(resolved, dict) and "content" in resolved:
                     resolved = resolved["content"]
 
-                singular_suffixes = [".id", ".name", ".url", ".title", ".email", ".spreadsheet_id", ".document_id", ".spreadsheetId", ".documentId"]
+                # 2. If we resolved to a list, but we are a single-token placeholder
+                # (e.g. {{task-1.id}}), pick the first item.
+                singular_suffixes = [
+                    ".id",
+                    ".name",
+                    ".url",
+                    ".title",
+                    ".email",
+                    ".spreadsheet_id",
+                    ".document_id",
+                    ".spreadsheetId",
+                    ".documentId",
+                ]
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
+                    self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
+                    # We have a list. Check if we need to do the folder heuristic.
+                    # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
+                    # we can't easily check mime types unless we look at the original objects.
+                    # Let's get the original objects using a parent path.
                     parent_path = path.rsplit('.', 1)[0]
                     parent_objects = self._get_value_by_path(results_map, parent_path)
+
                     picked = resolved[0]
                     if isinstance(parent_objects, list) and len(parent_objects) == len(resolved):
                         for i, obj in enumerate(parent_objects):
@@ -457,65 +459,14 @@ class ResolverMixin:
 
                 if resolved is not None:
                     return resolved
+
+                self.logger.warning(
+                    f"Placeholder '{path}' resolved to None in context. "
+                    f"Available context keys: {list(context.keys())}"
+                )
                 return _UNRESOLVED_MARKER
 
-            # 3. Large Artifact / Complexity Guard
-            val_len = len(val)
-            if val_len > 10000:
-                if "{{" not in val and "$task-" not in val:
-                    self.logger.debug("Skipping heavy resolution for massive string (len=%d) without explicit tokens", val_len)
-                    return val
-                if val_len > 100000:
-                    self.logger.warning("Refusing to run regex resolution on oversized string (len=%d) to prevent ReDoS", val_len)
-                    return val
-
-            # 4. Partial string replacement with separate passes
-            def replace_match(match):
-                p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
-                if p.startswith("$"):
-                    p = p[1:]
-
-                res = context.get(p)
-                if res is None:
-                    if p.startswith(":"):
-                        res = resolve_shorthand(p[1:])
-                    else:
-                        res = self._get_value_by_path(context, p)
-                        if res is None:
-                            res = self._get_value_by_path(results_map, p)
-
-                if p in context and context[p] is None:
-                    return ""
-
-                if res is not None:
-                    if isinstance(res, dict) and "content" in res:
-                        res = res["content"]
-
-                    if use_repr_for_complex:
-                        if "injected_vars" not in context:
-                            context["injected_vars"] = []
-                        idx = len(context["injected_vars"])
-                        from .context_updater import _normalize_entry, _unwrap
-                        inject_val = _unwrap(res)
-
-                        # Auto-fetch logic (simplified for regex pass to avoid too much logic here)
-                        # The real robust auto-fetch is now in helpers.py _handle_code_execution_task
-
-                        if isinstance(inject_val, list):
-                            inject_val = [_normalize_entry(e) if isinstance(e, dict) else e for e in inject_val]
-                        context["injected_vars"].append(inject_val)
-                        return f"injected_vars[{idx}]"
-                    elif isinstance(res, (dict, list)):
-                        return json.dumps(res)
-                    return str(res)
-
-                is_explicit = bool(match.group(1) or match.group(3))
-                is_task_token = bool(p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":")))
-                if is_explicit or is_task_token:
-                    return _UNRESOLVED_MARKER
-                return match.group(0)
-
-            # Pass A: Legacy $ placeholders
+            # 3. Partial string replacement
             if "$" in val:
                 for placeholder, ctx_key in LEGACY_PLACEHOLDER_MAP.items():
                     if placeholder in val and ctx_key in context:
@@ -527,28 +478,158 @@ class ResolverMixin:
                         else:
                             val = val.replace(placeholder, str(res))
 
-            # Pass B: {{...}} Double Braces
-            val = re.sub(r"\{\{([\w\-\.\[\]:]+?)\}\}", replace_match, val)
+            def replace_match(match):
+                # match.group(1) is {{...}}, group(2) is {...}, group(3) is $task-...
+                p = (match.group(1) or match.group(2) or match.group(3) or "").strip()
+                if p.startswith("$"):
+                    p = p[1:]  # strip $ from $task-N
 
-            # Pass C: $task-N tokens
-            val = re.sub(r"(\$task-\d+(?:\.[\w\-\[\]]+)*)", replace_match, val)
+                res = context.get(p)
+                if res is None:
+                    # Semantic/Shorthand resolution: if it starts with a colon like :get_message
+                    if p.startswith(":"):
+                        shorthand = p[1:].lower().replace("_", "")
+                        # Try to find a match in results_map keys
+                        for key, val_item in results_map.items():
+                            norm_key = str(key).lower().replace("_", "")
+                            # Direct match or containment
+                            if shorthand == norm_key or norm_key in shorthand or shorthand in norm_key:
+                                res = val_item
+                                break
+                    else:
+                        # Try nested lookups in the global context before falling back to task results
+                        res = self._get_value_by_path(context, p)
+                        if res is None:
+                            res = self._get_value_by_path(results_map, p)
 
-            # Pass D: {...} Single Braces (Selective)
-            if val_len < 5000:
-                def single_brace_replace(m):
-                    p = m.group(1).strip()
-                    if "task-" in p.lower() or p in results_map or p.startswith(":"):
-                        return replace_match(m)
-                    return m.group(0)
-                val = re.sub(r"\{([\w\-\.\[\]:]+?)\}", single_brace_replace, val)
+                if p in context and context[p] is None:
+                    return ""
 
+                if res is not None:
+                    # Smart unwrap: if the resolved value is a dict with 'content',
+                    # promote the content.
+                    if isinstance(res, dict) and "content" in res:
+                        res = res["content"]
+
+                    if use_repr_for_complex:
+                        if "injected_vars" not in context:
+                            context["injected_vars"] = []
+                        idx = len(context["injected_vars"])
+                        # Unwrap common API response wrappers so generated code can iterate directly
+                        inject_val = res
+                        if isinstance(res, dict):
+                            for key in ("messages", "items", "files", "events", "tasks", "notes", "spaces", "connections", "people", "activities"):
+                                if key in res and isinstance(res[key], list):
+                                    inject_val = res[key]
+                                    break
+
+                        # Auto-fetch spreadsheet data if inject_val is a string reference
+                        if isinstance(inject_val, str) and (".csv" in inject_val.lower() or "sheet" in inject_val.lower()):
+                            # Try to fetch actual spreadsheet data
+                            try:
+                                # Find spreadsheet in drive results
+                                drive_results = results_map.get("drive", {})
+                                files = drive_results.get("files", [])
+                                if not files:
+                                    # Check all task results for files
+                                    for k, v in results_map.items():
+                                        if isinstance(v, dict) and "files" in v:
+                                            files = v.get("files", [])
+                                            break
+                                for file_info in files:
+                                    if isinstance(file_info, dict):
+                                        file_name = file_info.get("name", "")
+                                        if inject_val.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
+                                            file_id = file_info.get("id")
+                                            if file_id:
+                                                # Fetch the actual data using the runner - use empty range to get first sheet
+                                                # First try to get spreadsheet metadata to find sheet name
+                                                meta_args = ["sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": file_id, "fields": "sheets.properties.title"})]
+                                                meta_res = self.runner.run(meta_args)
+                                                sheet_name = "Sheet1"  # default
+                                                if meta_res.success and meta_res.stdout:
+                                                    try:
+                                                        meta_parsed = json.loads(meta_res.stdout)
+                                                        if isinstance(meta_parsed, dict) and "sheets" in meta_parsed and meta_parsed["sheets"]:
+                                                            sheet_name = meta_parsed["sheets"][0].get("properties", {}).get("title", "Sheet1")
+                                                    except json.JSONDecodeError:
+                                                        pass
+                                                get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": f"{sheet_name}"})]
+                                                get_res = self.runner.run(get_args)
+                                                if get_res.success and get_res.stdout:
+                                                    try:
+                                                        parsed = json.loads(get_res.stdout)
+                                                        if isinstance(parsed, dict) and "values" in parsed:
+                                                            inject_val = parsed["values"]
+                                                            break
+                                                    except json.JSONDecodeError:
+                                                        pass
+                            except Exception as e:
+                                self.logger.debug(f"RESOLVER: Failed to fetch spreadsheet data: {e}")
+                        if isinstance(inject_val, list):
+                            for entry in inject_val:
+                                if isinstance(entry, dict):
+                                    # Extract headers from payload if present (auto-enriched messages)
+                                    payload = entry.get("payload", {})
+                                    if isinstance(payload, dict):
+                                        for hdr in payload.get("headers", []):
+                                            if isinstance(hdr, dict):
+                                                hname = str(hdr.get("name", "")).lower()
+                                                hval = hdr.get("value", "")
+                                                if hname == "from" and "from" not in entry:
+                                                    entry["from"] = hval
+                                                elif hname == "subject" and "subject" not in entry:
+                                                    entry["subject"] = hval
+                                                elif hname == "date" and "date" not in entry:
+                                                    entry["date"] = hval
+                                    snippet = entry.get("snippet")
+                                    if not snippet:
+                                        subj = entry.get("subject") or "No Subject"
+                                        sender = entry.get("from") or entry.get("sender") or "Unknown"
+                                        entry["snippet"] = f"{subj} (from {sender})"
+                                    # Normalize for LLM code generation: create from_ object with address
+                                    if "from" in entry and "from_" not in entry:
+                                        entry["from_"] = {"address": entry["from"]}
+                        context["injected_vars"].append(inject_val)
+                        return f"injected_vars[{idx}]"
+                    elif isinstance(res, (dict, list)):
+                        return json.dumps(res)
+                    return str(res)
+
+                # Safety: Only return _UNRESOLVED_MARKER for tokens that are obviously intended as placeholders
+                # (double-braces, $task-N, or tokens containing 'task-' or known result keys).
+                # This prevents accidental corruption of JSON payloads containing single braces.
+                is_explicit = bool(match.group(1) or match.group(3))
+                is_task_token = bool(
+                    p and ("task-" in p.lower() or any(k in p for k in results_map) or p.startswith(":"))
+                )
+
+                if is_explicit or is_task_token:
+                    return _UNRESOLVED_MARKER
+                return match.group(0)
+
+            # 3. Large Artifact Guard (Issue 14)
+            # If the string is very long, skip regex scanning if it lacks placeholder indicators.
+            if len(val) > 5000:
+                if not ("{{" in val or "$task-" in val or "{task-" in val or "{:" in val):
+                    self.logger.debug(f"DEBUG: Skipping regex scan for large string (len={len(val)})")
+                    return val
+
+            # 4. Partial string replacement with regex
+            # Supports {{...}}, {task-...}, {semantic_task...}, or $task-N
+            # Added ':' to support shorthand like {{:get_message}}
+            val = re.sub(
+                r"\{\{([\w\-\.\[\]:]+)\}\}|\{([\w\-\.\[\]:]+)\}|(\$task-\d+(?:\.[\w\-]+(?:\[\d+\])?)*)",
+                replace_match,
+                val,
+            )
             return val
 
         elif isinstance(val, list):
             # If the list contains a single placeholder string, and that placeholder
             # resolves to a list, return the resolved list directly to avoid double-wrapping.
             if len(val) == 1 and isinstance(val[0], str) and ("{" in val[0] or "$" in val[0]):
-                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex, depth + 1, _cache=_cache)
+                resolved_item = self._resolve_placeholders(val[0], context, use_repr_for_complex, depth + 1)
                 if isinstance(resolved_item, list):
                     self.logger.debug(f"DEBUG: Flattening single-item list placeholder from {val} to {resolved_item}")
                     return resolved_item
@@ -556,27 +637,20 @@ class ResolverMixin:
             if clone is not None:
                 # Use the memoized clone for circular reference handling
                 for i, item in enumerate(val):
-                    clone.append(self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1, _cache=_cache))
+                    clone.append(self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1))
                 return clone
-            return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1, _cache=_cache) for item in val]
+            return [self._resolve_placeholders(item, context, use_repr_for_complex, depth + 1) for item in val]
         elif isinstance(val, dict):
             if clone is not None:
                 # Use the memoized clone for circular reference handling
                 for k, v in val.items():
-                    clone[k] = self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1, _cache=_cache)
+                    clone[k] = self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1)
                 return clone
-            return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1, _cache=_cache) for k, v in val.items()}
+            return {k: self._resolve_placeholders(v, context, use_repr_for_complex, depth + 1) for k, v in val.items()}
         return val
 
-    def _get_value_by_path(self, data: dict, path: str, max_unwrap_depth: int = 3) -> Any:
+    def _get_value_by_path(self, data: dict, path: str) -> Any:
         """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
-        if data is None:
-            self.logger.warning(
-                "Cannot resolve path: results data is None (path_len=%d)",
-                len(str(path)) if path is not None else 0,
-            )
-            return None
-
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first
@@ -589,16 +663,14 @@ class ResolverMixin:
             return None
 
         curr: Any = data
-        unwrap_count = 0
         for i, token in enumerate(tokens):
             if token.startswith("["):
                 index = int(token[1:-1])
                 # Auto-unwrap if dict contains a known list key
-                if isinstance(curr, dict) and unwrap_count < max_unwrap_depth:
+                if isinstance(curr, dict):
                     for list_key in ["files", "messages", "items", "events", "values", "threads"]:
                         if list_key in curr and isinstance(curr[list_key], list):
                             curr = curr[list_key]
-                            unwrap_count += 1
                             break
                 if isinstance(curr, list) and 0 <= index < len(curr):
                     curr = curr[index]
@@ -613,14 +685,12 @@ class ResolverMixin:
                         # Auto-unwrap: if current level is a dict and we have a list inside,
                         # and the token exists in the list elements, we can auto-unwrap.
                         unwrapped = False
-                        if unwrap_count < max_unwrap_depth:
-                            for list_key in ["files", "messages", "items", "events", "values", "threads"]:
-                                if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
-                                    if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
-                                        curr = [item.get(token) for item in curr[list_key]]
-                                        unwrapped = True
-                                        unwrap_count += 1
-                                        break
+                        for list_key in ["files", "messages", "items", "events", "values", "threads"]:
+                            if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
+                                if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
+                                    curr = [item.get(token) for item in curr[list_key]]
+                                    unwrapped = True
+                                    break
                         if not unwrapped:
                             curr = None
                 elif isinstance(curr, list):

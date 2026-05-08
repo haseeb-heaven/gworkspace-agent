@@ -109,7 +109,8 @@ def pytest_collection_modifyitems(config, items):
     # Check if any test is from test_gws_binary.py
     is_gws_binary = any("test_gws_binary.py" in str(item.fspath).replace("\\", "/") for item in items)
     if is_gws_binary:
-        print("\nGWS_BINARY TESTS: Filtering by enabled services (gmail,docs,sheets,drive,calendar,tasks,keep,slides)\n")
+        enabled_services = os.environ.get("GWS_ENABLED_SERVICES", "gmail,docs,sheets,drive,calendar,tasks,keep,slides")
+        print(f"\nGWS_BINARY TESTS: Filtering by enabled services ({enabled_services})\n")
 
     for item in items:
         # Get path relative to tests directory

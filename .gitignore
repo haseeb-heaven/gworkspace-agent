@@ -36,6 +36,15 @@ logs/
 .env.test*
 .env.production*
 secrets*.json
+credentials*.json
+api_keys*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+token*.json
 !.env.example
 
 # IDEs

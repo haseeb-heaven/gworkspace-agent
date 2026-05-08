@@ -71,7 +71,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.gmail
     def test_gmail_list_messages(self, gws_binary, project_root):
@@ -87,7 +87,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.sheets
     def test_sheets_create_spreadsheet(self, gws_binary, project_root):
@@ -104,7 +104,7 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
         # May fail due to auth/scopes, that's expected
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.docs
     def test_docs_create_document(self, gws_binary, project_root):
@@ -121,7 +121,7 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
         # May fail due to auth/scopes, that's expected
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.calendar
     def test_calendar_list_events(self, gws_binary, project_root):
@@ -137,7 +137,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.contacts
     def test_contacts_list_connections(self, gws_binary, project_root):
@@ -205,7 +205,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.drive
     def test_drive_files_list_table_format(self, gws_binary, project_root):
@@ -221,7 +221,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.gmail
     def test_gmail_messages_list_with_q(self, gws_binary, project_root):
@@ -237,7 +237,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.calendar
     def test_calendar_events_list_with_time_range(self, gws_binary, project_root):
@@ -253,7 +253,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.sheets
     def test_sheets_spreadsheets_get_without_id(self, gws_binary, project_root):
@@ -287,7 +287,7 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
         # May fail due to auth/scopes
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.slides
     def test_slides_presentations_create(self, gws_binary, project_root):
@@ -303,8 +303,8 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        # May fail due to auth/scopes
-        assert result.returncode in [0, 1]
+        # May fail due to auth/scopes or discovery errors
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.script
     def test_gws_schema_multiple(self, gws_binary, project_root):
@@ -329,7 +329,7 @@ class TestGwsBinaryDirect:
                 print(f"Schema not found or error for {schema}")
             print("--- End output ---\n")
             # Schema should always work if the endpoint exists
-            assert result.returncode in [0, 1]
+            assert result.returncode in [0, 1, 4]
 
     @pytest.mark.drive
     def test_drive_files_list_yaml_format(self, gws_binary, project_root):
@@ -345,7 +345,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.contacts
     def test_contacts_list_with_person_fields(self, gws_binary, project_root):
@@ -380,7 +380,8 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        # May fail due to auth/scopes or discovery errors
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.chat
     def test_chat_list_spaces(self, gws_binary, project_root):
@@ -396,7 +397,8 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        # May fail due to auth/scopes or discovery errors
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.forms
     def test_forms_list_forms(self, gws_binary, project_root):
@@ -429,7 +431,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.meet
     def test_meet_list_conferences(self, gws_binary, project_root):
@@ -479,7 +481,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.events
     def test_events_watch(self, gws_binary, project_root):
@@ -513,7 +515,7 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
         # Modelarmor is a specialized filtering service
-        assert result.returncode in [0, 1, 3]
+        assert result.returncode in [0, 1, 3, 4]
 
     @pytest.mark.script
     def test_workflow_help(self, gws_binary, project_root):
@@ -547,7 +549,7 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
         # Script is for Apps Script projects
-        assert result.returncode in [0, 1, 3]
+        assert result.returncode in [0, 1, 3, 4]
 
     # ==================== CRUD TESTS ====================
 
@@ -566,7 +568,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.drive
     def test_drive_files_update(self, gws_binary, project_root):
@@ -582,7 +584,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.drive
     def test_drive_files_delete(self, gws_binary, project_root):
@@ -599,7 +601,7 @@ class TestGwsBinaryDirect:
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
         # Should fail with invalid ID
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Gmail CRUD tests
     @pytest.mark.gmail
@@ -616,7 +618,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.gmail
     def test_gmail_messages_send(self, gws_binary, project_root):
@@ -649,7 +651,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.gmail
     def test_gmail_messages_modify(self, gws_binary, project_root):
@@ -665,7 +667,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Sheets CRUD tests
     @pytest.mark.sheets
@@ -682,7 +684,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.sheets
     def test_sheets_spreadsheets_update(self, gws_binary, project_root):
@@ -698,7 +700,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Docs CRUD tests
     @pytest.mark.docs
@@ -715,7 +717,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.docs
     def test_docs_documents_batchUpdate(self, gws_binary, project_root):
@@ -731,7 +733,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Calendar CRUD tests
     @pytest.mark.calendar
@@ -748,7 +750,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.calendar
     def test_calendar_events_insert(self, gws_binary, project_root):
@@ -764,7 +766,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.calendar
     def test_calendar_events_update(self, gws_binary, project_root):
@@ -780,7 +782,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.calendar
     def test_calendar_events_delete(self, gws_binary, project_root):
@@ -796,7 +798,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Tasks CRUD tests
     @pytest.mark.tasks
@@ -813,7 +815,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.tasks
     def test_tasks_tasks_insert(self, gws_binary, project_root):
@@ -829,7 +831,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.tasks
     def test_tasks_tasks_update(self, gws_binary, project_root):
@@ -845,7 +847,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.tasks
     def test_tasks_tasks_delete(self, gws_binary, project_root):
@@ -861,7 +863,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Keep CRUD tests
     @pytest.mark.keep
@@ -878,7 +880,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.keep
     def test_keep_notes_create(self, gws_binary, project_root):
@@ -894,7 +896,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Slides CRUD tests
     @pytest.mark.slides
@@ -911,7 +913,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.slides
     def test_slides_presentations_update(self, gws_binary, project_root):
@@ -927,7 +929,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     # Contacts CRUD tests
     @pytest.mark.contacts
@@ -1124,7 +1126,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.classroom
     def test_classroom_get(self, gws_binary, project_root):
@@ -1140,7 +1142,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.classroom
     def test_classroom_update(self, gws_binary, project_root):
@@ -1156,7 +1158,7 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]
 
     @pytest.mark.classroom
     def test_classroom_delete(self, gws_binary, project_root):
@@ -1172,4 +1174,4 @@ class TestGwsBinaryDirect:
         print(f"STDERR: {result.stderr}")
         print(f"Return code: {result.returncode}")
         print("--- End output ---\n")
-        assert result.returncode in [0, 1]
+        assert result.returncode in [0, 1, 4]

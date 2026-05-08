@@ -227,15 +227,6 @@ def handle_auth_code(client_config_json: str, auth_code: str) -> tuple[str, str]
         return "", f"Error exchanging auth code: {error_msg}"
 
 
-def cleanup_credentials(credentials_file: str | None) -> None:
-    """Clean up temporary credentials file."""
-    if credentials_file and os.path.exists(credentials_file):
-        try:
-            os.remove(credentials_file)
-        except Exception:
-            pass
-
-
 def create_interface() -> gr.Blocks:
     config = AppConfig.from_env()
     logger = setup_logging(config)
@@ -389,10 +380,6 @@ def create_interface() -> gr.Blocks:
                     gr.update(value=status, visible=True)
                 )
 
-        def on_session_end(credentials_file):
-            cleanup_credentials(credentials_file)
-            return None
-
         credentials_upload.upload(
             fn=on_credentials_upload,
             inputs=[credentials_upload],
@@ -444,16 +431,13 @@ def create_interface() -> gr.Blocks:
             outputs=[request, output, plan_preview]
         )
 
-        # Register cleanup handler for session/app shutdown
-        demo.unload(
-            fn=on_session_end,
-            inputs=[credentials_file_state],
-            outputs=[credentials_file_state]
-        )
-
     return demo
 
 
-def main(host: str = "0.0.0.0", port: int = int(os.environ.get("PORT", 8080)), share: bool = False) -> None:
+def main(
+    host: str = "0.0.0.0",  # nosec B104 — binding to 0.0.0.0 is intentional for container deploy
+    port: int = int(os.environ.get("PORT", 8080)),
+    share: bool = False,
+) -> None:
     interface = create_interface()
     interface.launch(server_name=host, server_port=port, share=share)

@@ -76,7 +76,9 @@ def send_telegram(message, context=None):
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=20) as response:
+        # URL is constructed from the constant Telegram API host plus a
+        # validated bot token; no user-supplied scheme can leak through.
+        with urllib.request.urlopen(request, timeout=20) as response:  # nosec B310
             response.read()
         print("Telegram message sent.")
         return True
