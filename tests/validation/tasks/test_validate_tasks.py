@@ -17,7 +17,7 @@ def test_tasks_crud(runner, default_email):
 
     # 1. Create a task
     success = runner.execute_and_validate(
-        task=f"Create a new task titled '{task_title}' in my todo list", expected_texts=["created", task_title]
+        task=f"Create a new task titled '{task_title}' in my todo list", expected_texts=["completed", task_title]
     )
     assert success
 

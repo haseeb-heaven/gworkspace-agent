@@ -259,18 +259,6 @@ def _run_in_thread_sandbox(
         # Strip import statements before compilation — the sandbox forbids them
         # but pre-injects the most common modules (math, re, json) as globals.
         sanitized, aliases = _sanitize_llm_code(code)
-        # Fix LLM code that tries to use csv.DictReader on files - use injected DataFrame instead
-        # Pattern: with open('', 'r') as f: ... csv.DictReader(f)
-        sanitized = re.sub(
-            r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as f:\s+reader = csv\.DictReader\(f\)",
-            "df = injected_vars[0] if injected_vars else None",
-            sanitized
-        )
-        # Pattern: for row in reader: -> for row in df.itertuples(): or for idx, row in df.iterrows():
-        sanitized = re.sub(r"for row in reader:", "for idx, row in df.iterrows():", sanitized)
-        # Pattern: row['category'] -> row['Category'] (case-insensitive match)
-        sanitized = re.sub(r"row\['category'\]", "row['Category']", sanitized)
-        sanitized = re.sub(r"row\['revenue'\]", "row['Total Revenue']", sanitized)
         # Use RestrictedPython's compile_restricted to transform print calls to _print_
         # Runtime guards in get_safe_globals() still enforce security
         byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
@@ -412,6 +400,7 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+<<<<<<< HEAD
     # Replace with open(...) as f: blocks with code that uses injected data
     # Pattern: with open(...) as file: ... use injected_vars instead
     code = re.sub(
@@ -426,6 +415,17 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
     # Fix column name mismatches: 'Revenue' -> 'Total Revenue'
     code = re.sub(r"\['Revenue'\]", "['Total Revenue']", code)
     code = re.sub(r"\['revenue'\]", "['Total Revenue']", code)
+=======
+    # Replace `with open(...) as VAR:` with a safe single-line assignment.
+    # Multi-line replacements break indentation and cause RestrictedPython to
+    # compile invalid code where identifiers resolve to None.
+    code = re.sub(
+        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
+        r"\1 = injected_vars[0] if injected_vars else []",
+        code,
+        flags=re.DOTALL,
+    )
+>>>>>>> develop
     # Remove return statements since code runs at module level
     code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)

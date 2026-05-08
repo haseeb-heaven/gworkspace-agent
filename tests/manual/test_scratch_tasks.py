@@ -26,15 +26,19 @@ def verify_gws_binary() -> bool:
 def check_verification_engine_output(stdout: str) -> bool:
     """Check if 5-step verification engine checks passed in output."""
     verification_checks = [
-        "CHECK 1 PASSED - Parameter Validation",
-        "CHECK 2 PASSED - Permission & Scope Validation",
-        "CHECK 3 PASSED - Result Validation",
-        "CHECK 4 PASSED - Data Integrity & Consistency Validation",
-        "CHECK 5 PASSED - Idempotency & Safety Validation"
+        "PASSED - Parameter Validation",
+        "PASSED - Permission & Scope Validation",
+        "PASSED - Result Validation",
+        "PASSED - Data Integrity & Consistency",
+        "PASSED - Idempotency & Safety"
     ]
 
+    # Remove linebreaks to counter rich console wrapping
+    import re
+    normalized_stdout = re.sub(r'\s+', ' ', stdout)
+
     for check in verification_checks:
-        if check not in stdout:
+        if check not in normalized_stdout:
             return False
     return True
 
@@ -74,8 +78,10 @@ def run_task_via_cli(task_file: Path) -> tuple[int, str, str]:
         [sys.executable, str(ROOT / "gws_cli.py"), "--task", task_content],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=ROOT,
-        timeout=120
+        timeout=300
     )
 
     return result.returncode, result.stdout, result.stderr

@@ -1270,15 +1270,22 @@ class VerificationEngine:
     ) -> None:
         """Recursively block placeholders, empty generated content, and invalid sentinel values."""
         for path, value in cls._iter_payload_leaf_values(payload, location):
-            # Always block unresolved placeholders in RESULT data (before ignored check)
-            # Params may contain unresolved placeholders that will be resolved by executor
-            if location == "result" and isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
+            # Always block unresolved placeholders in PARAMS (they indicate a resolution failure before execution)
+            # In RESULTS, we are more lenient if the path is ignored (e.g. snippet)
+            if isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
+                is_ignored = cls._is_ignored_validation_path(path)
+                # We are only lenient with the marker in non-critical ignored fields like snippets
+                if location == "result" and is_ignored and path.endswith(".snippet"):
+                    logger.warning(f"Field {path} contains unresolved marker but is a snippet. Skipping strict block.")
+                    continue
+
                 raise VerificationError(
                     tool_name,
                     f"{location} contains unresolved placeholder data at {path}",
                     severity=VerificationSeverity.ERROR,
                     field=path,
                 )
+
             if cls._is_ignored_validation_path(path):
                 continue
             if isinstance(value, str):
@@ -1420,9 +1427,8 @@ class VerificationEngine:
             return True
         if not block_empty and not val_str:
             return False
-        # Only block unresolved placeholders if block_generic_placeholders is True
-        # This allows params to have placeholders that will be resolved by executor
-        if block_generic_placeholders and "___UNRESOLVED_PLACEHOLDER___" in val_str:
+        # Always block system unresolved markers (they indicate a resolution failure)
+        if "___UNRESOLVED_PLACEHOLDER___" in val_str:
             return True
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
 
@@ -1485,6 +1491,11 @@ class VerificationEngine:
         for domain in cls.email_placeholder_domains():
             if val_lower.endswith(domain):
                 return True
+
+        # Explicitly block system unresolved markers
+        if "___UNRESOLVED_PLACEHOLDER___" in val_str:
+            return True
+
         # Check for placeholder patterns anywhere in the string (not just exact match)
         # BUT allow known resolvable placeholders from LEGACY_PLACEHOLDER_MAP
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
@@ -1517,6 +1528,10 @@ class VerificationEngine:
         # Import known resolvable placeholders
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
         known_placeholders = set(LEGACY_PLACEHOLDER_MAP.keys())
+
+        # Explicitly block system unresolved markers
+        if "___UNRESOLVED_PLACEHOLDER___" in value:
+            return True
 
         for pattern in cls.UNRESOLVED_TEMPLATE_PATTERNS:
             match = pattern.search(value)
