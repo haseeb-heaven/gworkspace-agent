@@ -259,11 +259,10 @@ def test_5_check_system_check_4_data_integrity():
     result = {"id": "doc-123"}
     with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
         VerificationEngine.verify("create_document", params, result)
-    # The service-prefixed variant ("docs_create_document") downgrades empty
-    # content to WARNING because content is optional for create_document —
-    # the doc can be created with title only and populated via batch_update.
-    # So this should NOT raise.
-    VerificationEngine.verify("docs_create_document", params, result)
+    # Also verify the service-prefixed variant ("docs_create_document") trips
+    # CHECK 4 — naming convention must not bypass data-integrity validation.
+    with pytest.raises(VerificationError, match=r"\[CHECK 4\]"):
+        VerificationEngine.verify("docs_create_document", params, result)
 
 
 def test_5_check_system_check_5_idempotency_safety_critical():
