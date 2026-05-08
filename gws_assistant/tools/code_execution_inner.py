@@ -21,7 +21,7 @@ import csv
 import math
 import random
 
-from RestrictedPython import safe_builtins, safe_globals, utility_builtins, compile_restricted
+from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
 from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_getattr
 from RestrictedPython.PrintCollector import PrintCollector
 

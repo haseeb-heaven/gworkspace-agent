@@ -29,7 +29,7 @@ def _coerce_structured_value(raw: Any) -> Any:
     if isinstance(raw, str):
         trimmed = raw.strip()
         if not trimmed:
-            return None
+            return ""
 
         try:
             parsed = json.loads(trimmed)
@@ -53,9 +53,7 @@ def _coerce_structured_value(raw: Any) -> Any:
 
 
 def _normalize_injected_vars(values: list[Any]) -> list[Any]:
-    normalized = [_coerce_structured_value(item) for item in values]
-    # Convert None to empty list for injected vars context
-    return [item if item is not None else [] for item in normalized]
+    return [_coerce_structured_value(item) for item in values]
 
 
 class HelpersMixin:

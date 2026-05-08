@@ -314,7 +314,15 @@ jobs:
         run: bandit -c .bandit -r gws_assistant/ -ll -q 2>&1 | tee /tmp/security_errors.txt
 
       - name: Safety -- dependency vulnerabilities
-        run: safety check --full-report 2>&1 | tee -a /tmp/security_errors.txt
+        # NOTE: safety check was deprecated in v3.x, replaced by safety scan
+        # safety scan requires authentication via SAFETY_API_KEY env var
+        # If SAFETY_API_KEY is not set, this step will be skipped
+        run: |
+          if [ -n "${SAFETY_API_KEY:-}" ]; then
+            safety scan --full-report 2>&1 | tee -a /tmp/security_errors.txt
+          else
+            echo "SAFETY_API_KEY not set, skipping safety scan"
+          fi
 
       - name: pip-audit -- CVE scan
         run: pip-audit --skip-editable 2>&1 | tee -a /tmp/security_errors.txt

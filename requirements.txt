@@ -4,7 +4,7 @@
 
 # LangChain / LangGraph stack
 # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
-# but requires langchain-core>=1.2.22 and langchain-openai==1.1.9 with langchain-core==1.2.11.
+# but the current constraint langchain-openai>=1.1.10,<1.1.11 excludes 1.1.14, so the CVE remains unpatched.
 # Upgrade is deferred due to litellm 1.83.14 pinning openai==2.24.0 (conflicts with openai>=2.26.0).
 # This is tracked and will be upgraded when litellm supports the required openai version.
 langchain-core>=0.3.84
@@ -18,7 +18,7 @@ RestrictedPython>=8.1
 
 # HTTP / OpenAI (openai is pinned at the litellm-1.83.14 floor)
 httpx>=0.28.1
-openai>=2.24.0,<3.0.0
+openai==2.24.0
 
 # Config / CLI / GUI
 python-dotenv==1.2.2
@@ -26,7 +26,7 @@ typer>=0.12.0
 rich>=14.3.3
 questionary>=2.1.1
 customtkinter>=5.2.2
-gradio>=6.6.0
+gradio>=6.7.0
 
 # Test tooling
 pytest>=9.0.3
@@ -40,7 +40,10 @@ duckduckgo-search>=6.0.0
 # Memory + sandbox + LLM router
 e2b-code-interpreter>=1.0.0
 mem0ai>=2.0.0
-litellm>=1.83.14
+# NOTE: litellm 1.83.14 has a critical Arbitrary Code Injection vulnerability via /guardrails/test_custom_code endpoint.
+# Pinned to 1.83.7 which patches SQL Injection and Template Injection vulnerabilities but is before the code injection issue.
+# Monitor for security patches beyond 1.83.14 before upgrading.
+litellm>=1.83.7,<1.83.14
 
 # Telegram polling bot
 python-telegram-bot>=22.7

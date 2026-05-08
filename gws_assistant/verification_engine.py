@@ -1542,7 +1542,7 @@ class VerificationEngine:
 
     @classmethod
     def _validate_content_not_empty(
-        cls, tool_name: str, params: dict, field: str, min_length: int = 1, block_placeholders: bool = True
+        cls, tool_name: str, params: dict, field: str, min_length: int = 1, block_placeholders: bool = True, pre_execution: bool = False
     ) -> None:
         """Validate that content field is not empty and has no placeholders."""
         value = params.get(field)
@@ -1591,8 +1591,19 @@ class VerificationEngine:
                     field=field
                 )
 
-            # Check for placeholders - use length limit to avoid false positives on legitimate content
-            # but also check for unresolved template patterns which should never appear regardless of length
+            # Always catch known placeholder tokens even in long content
+            # But allow them in email body field which has special placeholder resolution
+            # Block them in other content fields to prevent placeholder leakage
+            from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+            if field != "body" and any(ph in val_str for ph in LEGACY_PLACEHOLDER_MAP):
+                raise VerificationError(
+                    tool_name,
+                    f"Field '{field}' contains unresolved placeholder token",
+                    severity=VerificationSeverity.ERROR,
+                    field=field
+                )
+
+            # Keep broad placeholder heuristics length-gated to limit false positives
             if len(val_str) <= 100 and cls._is_placeholder(val_str):
                 raise VerificationError(
                     tool_name,

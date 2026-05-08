@@ -404,7 +404,7 @@ def test_coerce_structured_value_handles_calendar_logs():
 def test_normalize_injected_vars_returns_sanitized_elements():
     raw_values = [None, "[{\"id\": \"evt-1\"}]", "Found 0 calendar events."]
     normalized = _normalize_injected_vars(raw_values)
-    assert normalized[0] == []
+    assert normalized[0] is None
     assert isinstance(normalized[1], list)
     assert normalized[2] == []
 
@@ -581,11 +581,11 @@ def test_execute_single_task_rejects_unsafe_local_attachment_path():
 
 # Security tests for PII logging prevention and input validation
 
-def test_coerce_structured_value_preserves_none():
+def test_coerce_structured_value_preserves_none() -> None:
     """Test that _coerce_structured_value preserves None values instead of converting to empty list."""
     assert _coerce_structured_value(None) is None
-    assert _coerce_structured_value("") is None
-    assert _coerce_structured_value("   ") is None
+    assert _coerce_structured_value("") == ""
+    assert _coerce_structured_value("   ") == ""
     assert _coerce_structured_value("[]") == []
     assert _coerce_structured_value("{}") == {}
     assert _coerce_structured_value("test") == "test"

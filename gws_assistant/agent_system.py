@@ -1804,9 +1804,30 @@ def _gmail_query_from_text(text: str) -> str:
     quoted = RE_GMAIL_QUERY_QUOTED.search(text)
     if quoted:
         q = quoted.group(1).strip()
+        # Extract any Gmail operators/filters from the original text outside the quotes
+        # Common Gmail operators: from:, to:, subject:, cc:, bcc:, in:, is:, has:, label:, filename:, after:, before:
+        # Also keywords: unread, read, starred, important, snoozed, sent, draft, category:, etc.
+        filters = []
+        # Look for common Gmail operators in the text
+        for operator in ["from:", "to:", "subject:", "cc:", "bcc:", "in:", "is:", "has:", "label:", "filename:", "after:", "before:"]:
+            if operator.lower() in text.lower():
+                # Extract the operator and its value
+                operator_pattern = re.compile(rf"{operator}\S+", re.IGNORECASE)
+                operator_match = operator_pattern.search(text)
+                if operator_match:
+                    filters.append(operator_match.group(0))
+        # Look for common Gmail keywords
+        for keyword in ["unread", "read", "starred", "important", "snoozed", "sent", "draft", "inbox", "spam", "trash"]:
+            keyword_pattern = re.compile(rf"\b{keyword}\b", re.IGNORECASE)
+            if keyword_pattern.search(text) and keyword_pattern.search(text) not in q.lower():
+                filters.append(keyword)
         # If the user says "subject:...", keep it. Otherwise, just use the keywords.
         if "subject:" in q.lower() or "from:" in q.lower() or "to:" in q.lower():
+            # q already contains the operator, return as-is
             return q
+        # Merge quoted term with filters
+        if filters:
+            return f"{q} {' '.join(filters)}"
         return q
     match = RE_GMAIL_QUERY_MATCH.search(text)
     if match:
