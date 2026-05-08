@@ -78,13 +78,32 @@ class GradioAssistant:
         return output, "Plan tracking handled by LangGraph workflow."
 
 
+def _validate_uploaded_credentials_path(file_path: str) -> str:
+    """Validate that uploaded credentials path is a real JSON file under temp storage."""
+    if not file_path:
+        raise ValueError("Missing uploaded file path")
+
+    temp_root = os.path.realpath(tempfile.gettempdir())
+    resolved_path = os.path.realpath(file_path)
+
+    if os.path.commonpath([temp_root, resolved_path]) != temp_root:
+        raise ValueError("Invalid upload path")
+    if not os.path.isfile(resolved_path):
+        raise ValueError("Uploaded path is not a file")
+    if not resolved_path.lower().endswith(".json"):
+        raise ValueError("Uploaded file must be a JSON file")
+
+    return resolved_path
+
+
 def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
     """Handle credentials.json upload and generate OAuth URL."""
     if file_path is None:
         return "", "No file uploaded", "🔴 Not authenticated"
 
     try:
-        with open(file_path, "r") as f:
+        validated_file_path = _validate_uploaded_credentials_path(file_path)
+        with open(validated_file_path, "r") as f:
             credentials_info = json.load(f)
 
         # Check if it's a service account (not supported for OAuth flow)
