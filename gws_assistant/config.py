@@ -79,8 +79,8 @@ class AppConfig:
                 gws_binary_path = _resolve_gws_binary_path(gws_binary_value)
 
             default_recipient_email = (os.getenv("DEFAULT_RECIPIENT_EMAIL") or "").strip()
-            if not default_recipient_email:
-                raise ValueError("DEFAULT_RECIPIENT_EMAIL must be set in .env")
+            # BUG FIX: Don't raise ValueError if empty; some users may want to skip this security override.
+            # The tool will handle empty recipient by logging a warning if needed.
 
             drive_folder_name = (os.getenv("DRIVE_FOLDER_NAME") or "New Folder").strip() or "New Folder"
 

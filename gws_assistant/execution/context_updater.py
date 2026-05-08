@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime, timezone
 import logging
 import re
 from typing import Any
@@ -281,16 +282,18 @@ class ContextUpdaterMixin:
 
                     # Sort by start date (most recent first)
                     try:
-                        from datetime import datetime
-                        def get_event_date(evt):
+                        def get_event_date(evt: dict[str, Any]) -> datetime:
                             start_data = evt.get("start", {})
                             date_str = start_data.get("dateTime", start_data.get("date", ""))
                             if date_str:
                                 try:
-                                    return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                                except Exception:
-                                    return datetime.min
-                            return datetime.min
+                                    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                    if dt.tzinfo is None:
+                                        dt = dt.replace(tzinfo=timezone.utc)
+                                    return dt
+                                except (ValueError, AttributeError):
+                                    return datetime(1, 1, 1, tzinfo=timezone.utc)
+                            return datetime(1, 1, 1, tzinfo=timezone.utc)
 
                         events.sort(key=get_event_date, reverse=True)
                     except Exception:

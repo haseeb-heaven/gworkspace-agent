@@ -11,6 +11,8 @@ from typing import List
 
 import pytest
 
+from tests.manual.shared import verify_with_gws
+
 ROOT = Path(__file__).parent.parent.parent
 TASKS_DIR = ROOT / "scratch" / "tasks"
 GWS_BINARY = ROOT / "gws.exe"
@@ -19,9 +21,6 @@ GWS_BINARY = ROOT / "gws.exe"
 def verify_gws_binary() -> bool:
     """Verify gws.exe binary exists in root directory."""
     return GWS_BINARY.exists()
-
-
-from tests.manual.shared import verify_with_gws
 
 
 def check_verification_engine_output(stdout: str) -> bool:
@@ -92,7 +91,10 @@ def test_task_execution(task_file: Path):
     returncode, stdout, stderr = run_task_via_cli(task_file)
 
     # Tasks should complete with exit code 0
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
 
     # Output should not be empty
     assert len(stdout) > 0, "Task produced no output"
@@ -121,7 +123,8 @@ def test_task_execution(task_file: Path):
         if task_path in action_map:
             service, action = action_map[task_path]
             gws_verify = verify_with_gws(service, action, resource_id, GWS_BINARY)
-            assert gws_verify, f"GWS_Verification with gws.exe failed for {service}.{action} with ID {resource_id}"
+            msg = f"GWS_Verification with gws.exe failed for {service}.{action} with ID {resource_id}"
+            assert gws_verify, msg
 
 
 @pytest.mark.manual
@@ -133,12 +136,16 @@ def test_google_drive_folder_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("drive", "create_folder", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("drive", "create_folder", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -150,12 +157,16 @@ def test_google_docs_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("docs", "create_document", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("docs", "create_document", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -167,12 +178,16 @@ def test_google_sheets_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("sheets", "create_spreadsheet", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("sheets", "create_spreadsheet", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -184,12 +199,16 @@ def test_google_slides_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("slides", "create_presentation", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("slides", "create_presentation", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -201,12 +220,16 @@ def test_google_gmail_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("gmail", "send_message", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("gmail", "send_message", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -218,12 +241,16 @@ def test_google_calendar_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("calendar", "create_event", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("calendar", "create_event", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"
 
 
 @pytest.mark.manual
@@ -235,9 +262,13 @@ def test_cross_service_task():
     assert task_file.exists(), f"Task file not found: {task_file}"
 
     returncode, stdout, stderr = run_task_via_cli(task_file)
-    assert returncode == 0, f"Task failed with exit code {returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    assert returncode == 0, (
+        f"Task failed with exit code {returncode}\n"
+        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+    )
     assert check_verification_engine_output(stdout), "5-step verification checks failed"
 
     resource_id = extract_resource_id_from_output(stdout)
     if resource_id:
-        assert verify_with_gws("sheets", "create_spreadsheet", resource_id, GWS_BINARY), "GWS_Verification failed"
+        gws_verify = verify_with_gws("sheets", "create_spreadsheet", resource_id, GWS_BINARY)
+        assert gws_verify, "GWS_Verification failed"

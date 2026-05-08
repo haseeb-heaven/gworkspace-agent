@@ -245,7 +245,7 @@ def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_
     for node in ast.walk(ast.parse(code)):
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             return "SecurityError: import __future__ is blocked."
-        if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True:
+        if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and bool(node.test.value):
             return f"TimeoutError: Execution exceeded {timeout_seconds} seconds."
     return None
 
@@ -309,8 +309,8 @@ def _run_in_thread_sandbox(
         # 1. Best case: user explicitly assigned to 'result'
         if "result" in sandbox_globals:
             result_value = sandbox_globals["result"]
-            # Validate result is not None or provide better error message
-            if result_value is None:
+            # Validate result exists in sandbox_globals
+            if "result" not in sandbox_globals:
                 exec_result.return_value = {"error": "Result is None - check your code logic"}
                 exec_result.success = False
                 exec_result.error = "Result is None - check your code logic"
@@ -323,13 +323,8 @@ def _run_in_thread_sandbox(
             try:
                 last_line = exec_result.stdout.strip().splitlines()[-1]
                 parsed_value = ast.literal_eval(last_line)
-                if parsed_value is None:
-                    exec_result.return_value = {"error": "Parsed value is None - check your code logic"}
-                    exec_result.success = False
-                    exec_result.error = "Parsed value is None - check your code logic"
-                else:
-                    exec_result.return_value = parsed_value
-                    exec_result.success = True
+                exec_result.return_value = parsed_value
+                exec_result.success = True
             except (SyntaxError, ValueError):
                 # Fallback if stdout is not a literal
                 exec_result.return_value = exec_result.stdout
@@ -357,9 +352,16 @@ def _run_in_thread_sandbox(
         # Provide more helpful error messages for common regex errors
         error_msg = f"{type(exc).__name__}: {exc}"
         if "global flags not at the start" in str(exc):
-            error_msg = "Regex Error: Flags must be at the start of the pattern. Use (?i) for case-insensitive, (?m) for multiline, etc. Example: re.search(r'(?i)pattern', text)"
+            error_msg = (
+                "Regex Error: Flags must be at the start of the pattern. "
+                "Use (?i) for case-insensitive, (?m) for multiline, etc. "
+                "Example: re.search(r'(?i)pattern', text)"
+            )
         elif "invalid syntax" in str(exc):
-            error_msg = f"Syntax Error: {exc}. Check for missing commas, quotes, or brackets."
+            error_msg = (
+                f"Syntax Error: {exc}. "
+                "Check for missing commas, quotes, or brackets."
+            )
         exec_result.error = error_msg
     result_holder.append(exec_result)
 

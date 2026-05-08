@@ -305,23 +305,26 @@ class ResolverMixin:
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
 
-        # Additional safety: check for circular references in context
-        if isinstance(val, dict) or isinstance(val, list):
-            # Use id() to detect if we've seen this object before
-            if not hasattr(self, '_resolve_cache'):
-                self._resolve_cache: dict[int, Any] = {}
+        # BUG FIX: Use threading.local to make _resolve_cache thread-safe.
+        if not hasattr(self, "_local_storage"):
+            import threading
+            self._local_storage = threading.local()
+
+        if not hasattr(self._local_storage, "resolve_cache"):
+            self._local_storage.resolve_cache = {}
+
+        if isinstance(val, (dict, list)):
             obj_id = id(val)
-            if obj_id in self._resolve_cache:
-                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
-                return self._resolve_cache[obj_id]
-            # Create an empty clone and store it in the cache before recursion
+            if obj_id in self._local_storage.resolve_cache:
+                self.logger.warning("_resolve_placeholders: circular reference detected, returning memoized clone")
+                return self._local_storage.resolve_cache[obj_id]
+
             clone: Any = {} if isinstance(val, dict) else []
-            self._resolve_cache[obj_id] = clone
+            self._local_storage.resolve_cache[obj_id] = clone
             try:
-                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
-                return result
+                return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
             finally:
-                del self._resolve_cache[obj_id]
+                del self._local_storage.resolve_cache[obj_id]
         else:
             return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
 

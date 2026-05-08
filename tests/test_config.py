@@ -14,7 +14,7 @@ def clear_config_cache():
     AppConfig.clear_cache()
 
 
-def _required(monkeypatch):
+def _required(monkeypatch) -> None:
     monkeypatch.setenv("DEFAULT_RECIPIENT_EMAIL", "EMAIL_ADDRESS")
     monkeypatch.setenv("GWS_BINARY_PATH", "GWS_BINARY_PATH")
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
