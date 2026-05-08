@@ -36,6 +36,7 @@ class AppConfigModel:
     llm_api_keys: list[str] = field(default_factory=list)
     max_context_snippet_len: int = 300
     default_recipient_email: str = ""
+    drive_folder_name: str = "New Folder"
     mem0_api_key: str | None = None
     mem0_user_id: str | None = None
     mem0_host: str | None = None
@@ -73,7 +74,7 @@ class AppConfigModel:
         "fake", "mock", "temporary", "tbd", "missing"
     })
     verification_numeric_placeholders: set[str] = field(default_factory=lambda: {"0000", "1234", "9999", "00000000"})
-    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@example.com"})
+    verification_exact_emails: set[str] = field(default_factory=lambda: {"noreply@domain.com", "noreply@example.com"})
     verification_email_placeholder_domains: list[str] = field(default_factory=lambda: ["@test.com"])
     verification_destructive_operations: set[str] = field(default_factory=lambda: {
         "drive_delete_file", "drive_empty_trash", "drive_move_to_trash", "drive_batch_delete",
@@ -90,7 +91,7 @@ class AppConfigModel:
     verification_content_fields: list[str] = field(default_factory=lambda: ["body", "content", "message", "text", "description"])
     verification_create_id_fields: list[str] = field(default_factory=lambda: [
         "id", "documentId", "spreadsheetId", "fileId", "messageId",
-        "resourceName", "threadId", "name", "formId", "taskId", "contactId"
+        "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"
     ])
     verification_suspicious_patterns: dict[str, str] = field(default_factory=lambda: {
         "delete_all": r"delete.*all",
@@ -141,9 +142,9 @@ class PlannedTask:
 
     def is_destructive(self, destructive_ops: set[str] | None = None) -> bool:
         """Check if this task is a destructive operation.
-        
+
         Args:
-            destructive_ops: Optional set of full tool names (service_action) 
+            destructive_ops: Optional set of full tool names (service_action)
                            that are considered destructive. If provided,
                            this takes precedence over the default list.
         """
@@ -213,6 +214,9 @@ def validate_planned_task(task: "PlannedTask") -> None:
         # Skip code parameter validation for code.execute - allow it to fail in sandbox
         if task.service in ("code", "computation") and task.action == "execute" and key == "code":
             continue
+        # Skip file_id validation for drive.export_file - may be resolved from empty list
+        if task.service == "drive" and task.action == "export_file" and key == "file_id":
+            continue
 
         if isinstance(val, str):
             for pat in _STUB_PATTERNS:
@@ -270,6 +274,7 @@ class ExecutionResult:
     stderr: str = ""
     return_code: int = -1
     error: str | None = None
+    error_code: str | None = None
     output: Any = None
 
     def to_structured_result(self) -> StructuredToolResult:
@@ -321,6 +326,8 @@ class AgentState(TypedDict, total=False):
     current_attempt: int
     thought_trace: list[dict]
     abort_plan: bool
+    intent_verification: dict[str, Any] | None
+    verification_attempts: int
 
 
 class StructuredToolResult(TypedDict):

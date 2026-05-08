@@ -7,6 +7,7 @@ To add a new model: append its LiteLLM model string to TOOL_CAPABLE_MODELS.
 
 TOOL_CAPABLE_MODELS: list[str] = [
     # ── OpenAI (agentic tool-calling confirmed) ────────────────────
+    "gpt-4.1-mini",
     "openai/gpt-4.1",
     "openai/gpt-4o",
     "openai/gpt-5-mini",
@@ -23,6 +24,8 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "xai/grok-4-1-fast-non-reasoning",
     "xai/grok-4",
     "xai/grok-4-20",
+    # ── OpenRouter (tool-calling) ──────────────────────────────────
+    "openrouter/free",
     # ── Google Gemini (tool support) ────────────────────────────────
     "google/gemini-2.0-flash",
     "google/gemini-2.0-pro-exp-02-05",
@@ -56,6 +59,9 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/meta-llama/llama-3.1-70b-instruct:free",
     "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "openrouter/google/gemini-2.0-flash-lite-preview-02-05:free",
+    "openrouter/gemini/gemini-2.0-flash",
+    "openrouter/gemini/gemini-2.5-flash",
+    "openrouter/gemini/gemini-2.5-pro",
     "openrouter/qwen/qwen-2.5-72b-instruct:free",
     "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
     "openrouter/deepseek/deepseek-chat:free",
@@ -67,7 +73,6 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/groq/llama-3.1-8b-instant:free",
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
-    "groq/llama-3.1-70b-versatile",
     "groq/llama-3.1-8b-instant",
     # ── Cerebras (fast inference, tool-calling confirmed) ───────────
     "cerebras/llama3.1-70b",
@@ -88,12 +93,6 @@ def validate_tool_model(model: str, env_var: str = "LLM_MODEL") -> None:
     Called at startup to catch misconfiguration before any API call is made.
     """
     model_norm = model.strip()
-    # Explicitly allow mock models used in tests
-    if model_norm in (
-        "gpt-4.1-mini",
-        "openrouter/free",
-    ):
-        return
 
     if model_norm not in TOOL_CAPABLE_MODELS:
         allowed = "\n  ".join(TOOL_CAPABLE_MODELS)

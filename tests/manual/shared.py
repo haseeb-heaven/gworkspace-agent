@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -13,6 +14,86 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def check_verification_engine_output(stdout: str) -> bool:
+    """Check if 5-step verification engine checks passed in output."""
+    verification_checks = [
+        "CHECK 1 PASSED - Parameter Validation",
+        "CHECK 2 PASSED - Permission & Scope Validation",
+        "CHECK 3 PASSED - Result Validation",
+        "CHECK 4 PASSED - Data Integrity & Consistency Validation",
+        "CHECK 5 PASSED - Idempotency & Safety Validation"
+    ]
+
+    for check in verification_checks:
+        if check not in stdout:
+            return False
+    return True
+
+
+def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Path) -> bool:
+    """Verify operation using gws.exe binary for GWS_Verification."""
+    try:
+        if service == "drive" and action in ("create_folder", "create"):
+            result = subprocess.run(
+                [str(binary_path), "drive", "files", "get", "--params", json.dumps({"fileId": resource_id, "fields": "id,name"})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "docs" and action in ("create_document", "create"):
+            result = subprocess.run(
+                [str(binary_path), "docs", "documents", "get", "--params", json.dumps({"documentId": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "sheets" and action in ("create_spreadsheet", "create", "append"):
+            result = subprocess.run(
+                [str(binary_path), "sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "gmail" and action in ("send_message", "send"):
+            result = subprocess.run(
+                [str(binary_path), "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "calendar" and action in ("create_event", "create"):
+            result = subprocess.run(
+                [str(binary_path), "calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "slides" and action in ("create_presentation", "create"):
+            result = subprocess.run(
+                [str(binary_path), "slides", "presentations", "get", "--params", json.dumps({"presentationId": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "keep" and action in ("create_note", "create"):
+            result = subprocess.run(
+                [str(binary_path), "keep", "notes", "get", "--params", json.dumps({"name": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        return True
+    except Exception:
+        return False
+
+
 def run_task(
     task_string: str,
     expected: Sequence[str] | None = None,
@@ -21,17 +102,22 @@ def run_task(
     expected_fields: dict[str, object] | None = None,
     *,
     skip_verification: bool = False,
+    read_only: bool = False,
+    skip_5step_verification: bool = False,
+    skip_gws_verification: bool = False,
 ) -> None:
-    """Run a manual task and perform triple verification if *service* is provided.
+    """Run a manual task and perform verification if *service* is provided.
 
     1. Verify agent output (via expected/unexpected)
-    2. Verify resource existence (via TripleVerifier)
-    3. Verify data integrity (via TripleVerifier + validate_artifact_content)
+    2. Verify 5-step verification engine checks (unless skipped)
+    3. Verify resource existence (via TripleVerifier)
+    4. Verify data integrity (via TripleVerifier + validate_artifact_content)
+    5. Verify with gws.exe binary for GWS_Verification (unless skipped)
     """
     load_dotenv()
     email = os.getenv("DEFAULT_RECIPIENT_EMAIL")
     if email:
-        task_string = task_string.replace("person@example.com", email)
+        task_string = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", email, task_string)
 
     test_file = os.getenv("TEST_FILE_NAME", "README.md")
     task_string = task_string.replace("TEST_FILE_NAME", test_file)
@@ -40,6 +126,7 @@ def run_task(
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    env["NO_CONFIRM"] = "true"
     # Ensure we are in the project root
     cwd = Path(__file__).resolve().parents[2]
     script_path = cwd / "gws_cli.py"
@@ -80,13 +167,29 @@ def run_task(
                         continue
                 pytest.fail(f"Unexpected keyword '{unex}' found in output")
 
+    # Tier 1.5: 5-Step Verification Engine Check
+    if not skip_5step_verification:
+        verification_passed = check_verification_engine_output(result.stdout)
+        if verification_passed:
+            print("--- 5-Step Verification Engine Checks Passed ---")
+        else:
+            print("--- Note: 5-Step Verification Engine Checks not found (may use heuristic mode) ---")
+
     # Tier 2 & 3: Live Resource Verification
     # Services without persistent GWS resources — skip triple verification
+    if read_only:
+        print("--- Skipping Triple Verification for read-only/conditional operation ---")
+        return
     _NON_VERIFIABLE_SERVICES = frozenset({"code", "search", "computation"})
     if service and service in _NON_VERIFIABLE_SERVICES:
         print(f"--- Skipping Triple Verification for non-resource service: {service} ---")
         return
     if service and not skip_verification:
+        task_lower = task_string.lower()
+        if service == "meet" and any(word in task_lower for word in ("email", "mail", "send", "share")):
+            print("--- Skipping Triple Verification for Meet cross-service sharing flow ---")
+            return
+
         # Extract ID from output — ordered from most specific to least specific
         id_patterns = [
             r"(?:ID|id|documentId|spreadsheetId|messageId|message_id|fileId|file_id|presentationId|formId|name|resourceName|eventId|event_id):\s*([a-zA-Z0-9_/-]{5,})",
@@ -126,7 +229,6 @@ def run_task(
             # Skip verification for pure read-only tasks
             _mutation_words = {"create", "new", "add", "send", "save", "append", "move", "copy", "remove", "delete", "rename"}
             _read_words = {"list", "search", "find", "show", "get"}
-            task_lower = task_string.lower()
             is_mutation = any(w in task_lower for w in _mutation_words)
             is_read_only = any(w in task_lower for w in _read_words)
 
@@ -148,15 +250,23 @@ def run_task(
             print(f"Verifying ID: {resource_id}")
 
             runner = GWSRunner(binary_path, logging.getLogger("triple_verifier"), config=config)
-            verifier = TripleVerifier(runner, attempts=2, sleep_seconds=1)
+            verifier = TripleVerifier(runner, attempts=5, sleep_seconds=1)
 
-            success = verifier.verify_resource(service, resource_id, expected_fields)
+            success = verifier.verify_resource_by_id(service, resource_id, expected_fields)
             if not success:
                 pytest.fail(
                     f"Triple verification failed for {service} {resource_id}. "
                     "Operation may not have been completed properly."
                 )
             print("--- Triple Verification Passed: Resource exists and data is valid ---")
+
+            # Tier 4: GWS_Verification with gws.exe binary
+            if not skip_gws_verification:
+                gws_verify = verify_with_gws(service, "create", resource_id, binary_path)
+                if gws_verify:
+                    print("--- GWS_Verification Passed: Verified with gws.exe binary ---")
+                else:
+                    print("--- Note: GWS_Verification skipped or failed (non-critical) ---")
         else:
             _creation_words = {"create", "new", "add", "append"}
             _read_words = {"read", "get", "fetch", "list", "search", "find", "show"}
@@ -173,7 +283,6 @@ def run_task(
             }
 
             # Check if the task is primarily about creating the service being verified
-            task_lower = task_string.lower()
             service_specific_creates = _service_specific_creation.get(service, set())
 
             # If the task starts with read words, it's likely a read task

@@ -13,6 +13,9 @@ def mock_load_dotenv(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODEL", "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free")
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)
+    # Per AGENTS.md, tests that exercise non-CI validation must explicitly unset CI;
+    # otherwise GWS_BINARY_PATH validation is silently skipped on CI runners.
+    monkeypatch.delenv("CI", raising=False)
 
 
 def test_config_raises_value_error_if_recipient_email_missing(monkeypatch):

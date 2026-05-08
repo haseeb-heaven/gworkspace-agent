@@ -186,8 +186,8 @@ class GWSRunner:
                 errors="replace",
                 timeout=timeout,
             )
-            if stdin_input:
-                proc_kwargs["input"] = stdin_input
+            if stdin_input is not None:
+                proc_kwargs["input"] = stdin_input if stdin_input.endswith("\n") else f"{stdin_input}\n"
 
             result = subprocess.run(command, **proc_kwargs)
 

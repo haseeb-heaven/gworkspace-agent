@@ -27,13 +27,23 @@ env/
 # Logs and Environment
 logs/
 *.log
+# Environment files
 .env
 .env.local
 .env.backup*
+.env.*.local
+.env.development*
+.env.test*
+.env.production*
+secrets*.json
+!.env.example
 
 # IDEs
 .idea/
 .vscode/
+.windsurf/
+.antigravity/
+.cursor/
 
 # System
 .DS_Store
@@ -43,15 +53,16 @@ google-cloud-sdk
 .gemini
 gcloud
 .agent/
-scratch/
 artifacts/
 .skill
 *.skill
 skills/
+!skills/*/SKILL.md
 .gemini
 $params
 .git
 docs/
+scratch/
 
 # Planning and Local Extensions
 .planning/phases/
@@ -65,13 +76,11 @@ conductor/
 *.docx
 *.xlsx
 *.pptx
+*.html
 
 # Trash/Temp scripts
-run_tasks_*.py
-run_8_to_15.py
 read_mem0.py
 *.scratchpad
-download.html
 .planning
 ISSUES.md
 
@@ -81,6 +90,3 @@ ISSUES.md
 !tests/
 *.orig
 !requirements.txt
-
-# PowerShell
-*.ps1

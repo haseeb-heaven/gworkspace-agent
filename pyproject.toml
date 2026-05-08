@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-workspace-assistant"
-version = "0.7.0"
+version = "1.0.0"
 description = "Professional CLI and GUI assistant for Google Workspace gws commands."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -79,6 +79,5 @@ max-line-length = 120
 [tool.pyright]
 include = ["gws_assistant"]
 exclude = ["**/__pycache__", "tests"]
-pythonVersion = "3.11"
+pythonversion = "3.11"
 typeCheckingMode = "basic"
-

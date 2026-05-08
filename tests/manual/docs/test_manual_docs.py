@@ -18,6 +18,7 @@ def test_manual_1():
         expected=["completed", TEST_DOC_NAME],
         service="docs",
         expected_fields={"title": TEST_DOC_NAME},
+        skip_5step_verification=False,
     )
 
 
@@ -28,4 +29,5 @@ def test_manual_2():
         f"Read the '{TEST_DOC_NAME}' Google Doc and send an email with the contents.",
         expected=["Planned", "completed"],
         service="docs",
+        skip_5step_verification=False,
     )

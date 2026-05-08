@@ -239,8 +239,14 @@ class CommandPlanner:
             }
             if raw_query:
                 # If the query looks like a document search, prioritize Google Docs mimeType.
+                # But skip if the query has a file extension (e.g. .pdf, .docx) since that's a specific file.
                 lowered = raw_query.lower()
-                if any(kw in lowered for kw in ("document", "doc", "12th", "class")) and "mimetype" not in lowered:
+                has_extension = bool(re.search(r"\.[a-z]{2,5}\b", lowered))
+                if (
+                    not has_extension
+                    and any(kw in lowered for kw in ("document", "doc", "12th", "class"))
+                    and "mimetype" not in lowered
+                ):
                     request_params["q"] = (
                         f"({sanitize_drive_query(raw_query)}) and mimeType='application/vnd.google-apps.document'"
                     )
@@ -265,6 +271,24 @@ class CommandPlanner:
             if not os.path.exists(file_path):
                 raise ValidationError(f"File not found: {file_path}")
             name = str(params.get("name") or os.path.basename(file_path)).strip()
+            folder_id = str(params.get("folder_id") or "").strip()
+
+            # Reject unresolved placeholder folder ids - if the planner is asked to
+            # upload to a folder produced by a previous task and that task failed to
+            # resolve, fail loudly rather than silently uploading to Drive root.
+            if folder_id and (
+                folder_id.startswith("{{")
+                or folder_id.startswith("<")
+                or folder_id.lower() in {"none", "null"}
+            ):
+                raise ValidationError(
+                    f"Unresolved placeholder folder_id '{folder_id}' - upstream task did not produce a folder id"
+                )
+
+            payload: dict[str, Any] = {"name": name}
+            if folder_id:
+                payload["parents"] = [folder_id]
+
             cmd = [
                 "drive",
                 "files",
@@ -280,7 +304,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps({"name": name}, ensure_ascii=True),
+                json.dumps(payload, ensure_ascii=True),
             ])
             return cmd
 
@@ -299,9 +323,9 @@ class CommandPlanner:
             mime_type = str(params.get("mime_type") or "application/vnd.google-apps.document").strip()
             folder_id = str(params.get("folder_id") or "").strip()
 
-            payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
+            file_payload: dict[str, Any] = {"name": name, "mimeType": mime_type}
             if folder_id:
-                payload["parents"] = [folder_id]
+                file_payload["parents"] = [folder_id]
 
             return [
                 "drive",
@@ -310,7 +334,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"fields": "id,name,mimeType,webViewLink"}),
                 "--json",
-                json.dumps(payload, ensure_ascii=True),
+                json.dumps(file_payload, ensure_ascii=True),
             ]
 
         if action == "export_file":
@@ -521,7 +545,7 @@ class CommandPlanner:
             request_params: dict[str, Any] = {
                 "userId": "me",
                 "maxResults": max_results,
-                "fields": "messages(id,threadId),nextPageToken,resultSizeEstimate",
+                "fields": "messages(id,threadId,snippet),nextPageToken,resultSizeEstimate",
             }
             if raw_query:
                 # Fix #8 — sanitize Gmail query just like we sanitize Drive queries.
@@ -529,8 +553,8 @@ class CommandPlanner:
             return ["gmail", "users", "messages", "list", "--params", json.dumps(request_params, ensure_ascii=True)]
 
         if action == "get_message":
-            # Allow message_id to be missing or a placeholder during planning
-            message_id = params.get("message_id") or "{{message_id}}"
+            # Allow message_id or id parameter for flexibility
+            message_id = params.get("message_id") or params.get("id") or "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": message_id})]
 
         if action == "trash_message":
@@ -584,12 +608,16 @@ class CommandPlanner:
     def _build_calendar_command(self, action: str, params: dict[str, Any]) -> list[str]:
         if action == "list_events":
             calendar_id = str(params.get("calendar_id") or "primary").strip()
+            list_params: dict[str, Any] = {"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}
+            query = str(params.get("q") or "").strip()
+            if query:
+                list_params["q"] = query
             return [
                 "calendar",
                 "events",
                 "list",
                 "--params",
-                json.dumps({"calendarId": calendar_id, "singleEvents": True, "orderBy": "startTime", "maxResults": 20}),
+                json.dumps(list_params),
             ]
 
         if action == "create_event":
@@ -765,6 +793,9 @@ class CommandPlanner:
                 location = {"endOfSegmentLocation": {"segmentId": ""}}
 
             requests_payload = [{"insertText": {**location, "text": text}}]
+            json_body = json.dumps({"requests": requests_payload}, ensure_ascii=True)
+            if not json_body or json_body.strip() == "":
+                raise ValidationError("batch_update JSON body is empty - check text parameter")
             return [
                 "docs",
                 "documents",
@@ -772,7 +803,7 @@ class CommandPlanner:
                 "--params",
                 json.dumps({"documentId": document_id}),
                 "--json",
-                json.dumps({"requests": requests_payload}, ensure_ascii=True),
+                json_body,
             ]
 
         raise ValidationError(f"Unsupported docs action: {action}")

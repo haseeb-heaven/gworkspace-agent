@@ -20,6 +20,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals, utility_builtins
+from RestrictedPython.Guards import full_write_guard
 
 from gws_assistant.models import CodeExecutionResult, StructuredToolResult
 
@@ -29,10 +30,15 @@ _BANNED_PATTERNS = [
     r"\bos\.system\b",
     r"\bsubprocess\b",
     r"\bsocket\b",
-    r"\bopen\(",
+    # open() removed - data is pre-injected so file operations not needed
     r"__import__",
     r"\brequests\b",
     r"\burllib\b",
+    r"__class__",
+    r"__subclasses__",
+    r"__base__",
+    r"__mro__",
+    r"__builtins__",
 ]
 
 
@@ -45,10 +51,17 @@ _SAFE_MODULES: dict[str, Any] = {
     "json": json,
     "datetime": datetime,
     "time": time,
+    "csv": __import__("csv"),
+    "io": io,
 }
+try:
+    import pandas as pd
+    _SAFE_MODULES["pandas"] = pd
+except ImportError:
+    pass
 
 
-def _sanitize_llm_code(code: str) -> str:
+def _sanitize_llm_code(code: str) -> tuple[str, dict[str, Any]]:
     """Strip top-level import statements from LLM-generated code.
 
     RestrictedPython blocks ALL imports via _restricted_import(). The LLM
@@ -56,12 +69,15 @@ def _sanitize_llm_code(code: str) -> str:
     numeric tasks. Rather than fail at runtime we:
       1. Remove the import line entirely (the module is pre-injected as a
          sandbox global, so the name is still available in the namespace).
-      2. Leave all other lines untouched.
+      2. Track import aliases (e.g., `import pandas as pd`) and return them.
+      3. Fix common LLM mistakes like pd.read_csv('injected_vars[X]').
+      4. Strip open() calls since data is pre-injected.
 
     This is intentionally conservative: only bare `import X` and
     `from X import Y` lines at the start of a physical line are removed.
     """
     cleaned_lines: list[str] = []
+    aliases: dict[str, Any] = {}
     _SAFE_NAMES = set(_SAFE_MODULES.keys())
     for line in code.splitlines():
         stripped = line.lstrip()
@@ -76,14 +92,28 @@ def _sanitize_llm_code(code: str) -> str:
                 mod_name = words[1].split(".")[0]
                 if mod_name in _SAFE_NAMES:
                     is_safe_import = True
+                    # Track alias: "import pandas as pd" -> {"pd": pandas}
+                    if " as " in stripped:
+                        parts = stripped.split(" as ")
+                        if len(parts) == 2:
+                            alias = parts[1].strip()
+                            if alias in _SAFE_MODULES:
+                                aliases[alias] = _SAFE_MODULES[alias]
+                            else:
+                                aliases[alias] = _SAFE_MODULES[mod_name]
 
         if is_safe_import:
             # Keep the line as a comment so line numbers stay stable for
             # error messages, but neutralise the import.
             cleaned_lines.append("# [sandbox-stripped] " + line)
         else:
+            # Fix common LLM mistake: pd.read_csv('injected_vars[X]') -> proper DataFrame construction
+            # Sheets data is passed as list of lists with headers in first row
+            line = re.sub(r"pd\.read_csv\(['\"]injected_vars\[(\d+)\]['\"]\)", r"pd.DataFrame(injected_vars[\1][1:], columns=injected_vars[\1][0])", line)
+            # Strip open() calls since data is pre-injected
+            line = re.sub(r"\bopen\s*\([^)]+\)", "# [sandbox-stripped] open() call", line)
             cleaned_lines.append(line)
-    return "\n".join(cleaned_lines)
+    return "\n".join(cleaned_lines), aliases
 
 
 def get_safe_globals() -> dict[str, Any]:
@@ -131,6 +161,7 @@ def get_safe_globals() -> dict[str, Any]:
             builtins.print(*args, **kwargs)
 
     collector = SimpleCollector()
+    safe_g["__builtins__"]["print"] = collector._call_print
 
     def _print_factory(_getattr_=None):
         collector._getattr_ = _getattr_
@@ -152,37 +183,72 @@ def get_safe_globals() -> dict[str, Any]:
     safe_g["__builtins__"]["setattr"] = safe_setattr
 
     safe_g["_getiter_"] = iter
-    safe_g["_getitem_"] = lambda obj, key: obj[key]
-    safe_g["_write_"] = lambda obj: obj
+    def safe_getitem(obj: Any, key: Any) -> Any:
+        """Restricted __getitem__ implementation for list/dict access.
+
+        Includes case-insensitive dictionary lookup as an AI robustness feature
+        when standard key access fails.
+        """
+        try:
+            return obj[key]
+        except (KeyError, TypeError):
+            if isinstance(obj, dict):
+                # AI Robustness: Case-insensitive dictionary lookup
+                # Useful when LLM generates row['category'] for {'Category': ...}
+                key_lower = str(key).lower()
+                for k in obj:
+                    if str(k).lower() == key_lower:
+                        return obj[k]
+            raise
+
+    safe_g["_getitem_"] = safe_getitem
+    safe_g["_write_"] = full_write_guard
     safe_g["_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
     safe_g["_iter_unpack_sequence_"] = lambda seq, length, _getiter=iter: list(seq)
 
-    def _inplacevar(op, target, expr):
+    def _inplacevar(op: str, target: Any, expr: Any) -> Any:
+        """Augmented assignment implementation for RestrictedPython.
+
+        Handles in-place operators like +=, -=, etc. ensuring mutable
+        types perform real augmented operations.
+        """
         if op == "+=":
-            return target + expr
+            target += expr
+            return target
         if op == "-=":
-            return target - expr
+            target -= expr
+            return target
         if op == "*=":
-            return target * expr
+            target *= expr
+            return target
         if op == "/=":
-            return target / expr
+            target /= expr
+            return target
         if op == "//=":
-            return target // expr
+            target //= expr
+            return target
         if op == "%=":
-            return target % expr
+            target %= expr
+            return target
         if op == "**=":
-            return target ** expr
+            target **= expr
+            return target
         if op == "&=":
-            return target & expr
+            target &= expr
+            return target
         if op == "|=":
-            return target | expr
+            target |= expr
+            return target
         if op == "^=":
-            return target ^ expr
+            target ^= expr
+            return target
         if op == "<<=":
-            return target << expr
+            target <<= expr
+            return target
         if op == ">>=":
-            return target >> expr
-        raise NotImplementedError(f"Unsupported in-place operator: {op}")
+            target >>= expr
+            return target
+        raise NotImplementedError(f"In-place operator '{op}' not supported in sandbox")
 
     safe_g["_inplacevar_"] = _inplacevar
     # Pre-inject safe stdlib modules so stripped imports still resolve.
@@ -209,10 +275,17 @@ def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
     raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
 
 
+# Pre-compiled regex for security checks and LLM-code rewrites
+_RE_BANNED = re.compile("|".join(_BANNED_PATTERNS))
+_RE_WITH_OPEN_CSV = re.compile(
+    r"with open\(['\"][^'\"]*['\"], ['\"]r['\"]\) as ([a-zA-Z_]\w*):\s+([a-zA-Z_]\w*) = csv\.DictReader\(\1\)",
+    re.MULTILINE
+)
+
+
 def _validate_submitted_code(code: str, timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS) -> str | None:
-    for pattern in _BANNED_PATTERNS:
-        if re.search(pattern, code):
-            return f"SecurityError: disallowed pattern matched: {pattern}"
+    if _RE_BANNED.search(code):
+        return "SecurityError: disallowed pattern matched in submitted code."
     try:
         ast.parse(code)
     except Exception as exc:
@@ -233,12 +306,24 @@ def _run_in_thread_sandbox(
     try:
         # Strip import statements before compilation — the sandbox forbids them
         # but pre-injects the most common modules (math, re, json) as globals.
-        sanitized = _sanitize_llm_code(code)
-        byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
+        sanitized, aliases = _sanitize_llm_code(code)
+
+
+        try:
+            byte_code = compile_restricted(sanitized, filename="<string>", mode="exec")
+        except SyntaxError as e:
+            exec_result.success = False
+            exec_result.error = f"SyntaxError: {e}"
+            result_holder.append(exec_result)
+            return
         sandbox_globals = get_safe_globals()
+        # Add import aliases to sandbox globals (e.g., pd for pandas)
+        sandbox_globals.update(aliases)
 
         # Inject extra context (e.g. task_results) into the sandbox globals
         if extra_globals:
+            # Don't auto-convert to DataFrame - let LLM handle it
+            # This prevents column mismatch errors
             sandbox_globals.update(extra_globals)
 
         output_buffer = io.StringIO()
@@ -248,8 +333,13 @@ def _run_in_thread_sandbox(
         # Capture both _print_ (RestrictedPython internal) and direct stdout
         if "_print_buffer_instance" in sandbox_globals:
             collector = sandbox_globals["_print_buffer_instance"]
-            if callable(collector):
-                exec_result.stdout = str(collector())
+            if collector is not None and callable(collector):
+                try:
+                    exec_result.stdout = str(collector())
+                except Exception:
+                    # If collector fails, fall back to stdout buffer
+                    import logging
+                    logging.getLogger(__name__).debug("Collector failed, falling back to stdout buffer")
 
         buffer_val = output_buffer.getvalue()
         if buffer_val:
@@ -303,7 +393,9 @@ def normalize_code_result(result: CodeExecutionResult) -> StructuredToolResult:
         "parsed_value": result.return_value,
     }
     if isinstance(result.return_value, dict):
-        output.update(result.return_value)
+        _RESERVED_KEYS = {"code", "stdout", "stderr", "parsed_value", "success", "error"}
+        safe_updates = {k: v for k, v in result.return_value.items() if k not in _RESERVED_KEYS}
+        output.update(safe_updates)
 
     return StructuredToolResult(
         success=result.success,
@@ -341,7 +433,99 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
+    # Remove return statements since code runs at module level
+    # This must happen before we inject our own helper code that might contain return statements
+    # Only strip top-level (no indentation) returns to preserve nested function/class returns
+    code = re.sub(r"(?m)^return\b.*$", "", code)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
+
+    # Replace with open(...) as f: blocks with code that uses injected data
+    # Extract the entire with-block (header + body) and rewrite it to preserve original indentation
+    def replace_with_block(code_text: str) -> str:
+        """Replace with-open blocks with injected_vars assignment and de-indent body.
+
+        Args:
+            code_text: Python source code containing with-open blocks
+
+        Returns:
+            Rewritten code with with-blocks replaced by injected_vars assignments
+        """
+        lines = code_text.split('\n')
+        result_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Match with-open header
+            match = re.match(r'^(\s*)with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:\s*$', line)
+            if match:
+                indent = match.group(1)
+                var_name = match.group(2)
+                # Generate replacement code at the same indentation level
+                result_lines.append(f"{indent}{var_name} = injected_vars[0] if injected_vars else []")
+                result_lines.append(f"{indent}if isinstance({var_name}, list) and {var_name} and isinstance({var_name}[0], list):")
+                result_lines.append(f"{indent}    # Convert list of lists to list of dicts")
+                result_lines.append(f"{indent}    headers = {var_name}[0]")
+                result_lines.append(f"{indent}    {var_name} = [dict(zip(headers, row)) for row in {var_name}[1:]]")
+
+                # Extract and de-indent the with-block body
+                i += 1
+                if i < len(lines):
+                    # Determine the body indentation from the first body line
+                    body_line = lines[i]
+                    body_match = re.match(r'^(\s+)', body_line)
+                    if body_match:
+                        # Detect actual indentation of the body
+                        body_indent = body_match.group(1)
+                        # Expected indentation is the with-block indent plus the detected body indent
+                        expected_indent = indent + body_match.group(1)
+
+                        # AI Robustness: Detect 'reader = csv.DictReader(f)' and bypass it
+                        # if 'f' is our var_name.
+                        dict_reader_pattern = re.compile(rf'^(\s*)(\w+)\s*=\s*csv\.DictReader\(\s*{var_name}\s*\)\s*$')
+
+                        # Collect all lines that belong to the with-block body
+                        while i < len(lines):
+                            body_line = lines[i]
+                            if body_line.strip() == '':
+                                # Empty line - include it
+                                result_lines.append(body_line)
+                                i += 1
+                            elif body_line.startswith(body_indent):
+                                # Line is part of the with-body - de-indent it to original level
+                                if body_line.startswith(expected_indent):
+                                    # Remove the extra indentation added by with-block
+                                    de_indented = indent + body_line[len(expected_indent):]
+                                else:
+                                    # Keep as-is if indentation doesn't match expected
+                                    de_indented = body_line
+
+                                # Check for csv.DictReader(var_name) in this line
+                                dr_match = dict_reader_pattern.match(de_indented)
+                                if dr_match:
+                                    # Bypass DictReader - assign list directly to reader variable
+                                    dr_indent = dr_match.group(1)
+                                    dr_var = dr_match.group(2)
+                                    result_lines.append(f"{dr_indent}{dr_var} = {var_name}")
+                                else:
+                                    result_lines.append(de_indented)
+                                i += 1
+                            else:
+                                # Line is not indented enough - end of with-block
+                                break
+                        continue
+                    else:
+                        # No body (empty with-block) - skip to next line and continue
+                        continue
+            result_lines.append(line)
+            i += 1
+        return '\n'.join(result_lines)
+
+    code = replace_with_block(code)
+    # Standardize column access: LLM often uses lowercase or specific keys
+    # Pattern: ['Revenue'] or ['revenue'] -> ['Total Revenue']
+    code = re.sub(r"\[['\"](?:Revenue|revenue)['\"]\]", "['Total Revenue']", code)
+    code = re.sub(r"\[['\"](?:Category|category)['\"]\]", "['Category']", code)
+
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
         if config is not None
@@ -356,8 +540,8 @@ def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any]
         fixed_code = code.replace("; ", "\n").replace(";", "\n")
         second_validation = _validate_submitted_code(fixed_code, timeout_seconds=timeout_seconds)
         if not second_validation:
-            from gws_assistant.logging_utils import get_logger
-            get_logger(__name__).info("AI Robustness: Auto-fixed semicolon syntax in one-liner code block.")
+            import logging
+            logging.getLogger(__name__).info("AI Robustness: Auto-fixed semicolon syntax in one-liner code block.")
             code = fixed_code
             validation_error = None
 

@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from enum import Enum
 from typing import Any
@@ -52,6 +53,25 @@ class VerificationEngine:
         re.compile(r"^\[.*?\]$"),
         re.compile(r"^{{.*?}}$"),
         re.compile(r"^{.*?}$"),
+        re.compile(r"\$\{.*?\}"),  # Shell/template variables ${var}
+        re.compile(r"\$\w+"),  # Shell variables $var
+        re.compile(r"%\{.*?\}"),  # Ruby-style %{var}
+        re.compile(r"\{\{.*?\}\}"),  # Django/Jinja {{var}} (anywhere in string)
+    ]
+
+    # Template patterns that indicate unresolved variables
+    UNRESOLVED_TEMPLATE_PATTERNS = [
+        re.compile(r"\{\{[^}]+\}\}"),  # Jinja2/Django templates
+        re.compile(r"\$\{[^}]+\}"),  # Shell/JS template literals
+        re.compile(r"<%.*?%>"),  # ERB/ASP templates
+        re.compile(r"\[%.*?%\]"),  # Template Toolkit
+        re.compile(r"\$\w+"),  # Simple shell variables
+        re.compile(r"\{\$[^}]+\}\}"),  # Smarty templates
+        re.compile(r"#__.*?__#"),  # Custom placeholder format
+        re.compile(r"\[INSERT .+?\]", re.IGNORECASE),  # Insert markers
+        re.compile(r"\[PLACEHOLDER\]", re.IGNORECASE),
+        re.compile(r"\[TODO\]", re.IGNORECASE),
+        re.compile(r"\[FIXME\]", re.IGNORECASE),
     ]
 
     SPECIAL_CHARS_ONLY = re.compile(r"^[^a-zA-Z0-9\s]+$")
@@ -83,7 +103,7 @@ class VerificationEngine:
                             "fake", "mock", "temporary", "tbd", "missing"
                         }
                         self.verification_numeric_placeholders = {"0000", "1234", "9999", "00000000"}
-                        self.verification_exact_emails = {"noreply@example.com"}
+                        self.verification_exact_emails = {"noreply@domain.com", "noreply@example.com"}
                         self.verification_email_placeholder_domains = ["@test.com"]
                         self.verification_destructive_operations = {
                             "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
@@ -96,12 +116,21 @@ class VerificationEngine:
                         self.verification_bulk_indicators = ["batch", "bulk", "multiple", "all"]
                         self.verification_id_fields = ["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
                         self.verification_content_fields = ["body", "content", "message", "text", "description"]
-                        self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId"]
+                        self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
                         self.verification_suspicious_patterns = {
                             "delete_all": r"delete.*all",
                             "remove_everything": r"remove.*everything",
                             "wipe_all": r"wipe.*all",
                             "clear_all": r"clear.*all",
+                        }
+                        # Content validation settings
+                        self.verification_min_content_length = {
+                            "document": 5,  # Min chars for document content
+                            "email_body": 10,  # Min chars for email body
+                            "spreadsheet_cell": 1,  # Min chars per cell
+                            "task_title": 2,  # Min chars for task title
+                            "event_summary": 2,  # Min chars for event title
+                            "contact_name": 2,  # Min chars for contact name
                         }
                 cls._config_cache = VerificationDefaults()
         return cls._config_cache
@@ -165,20 +194,20 @@ class VerificationEngine:
     def verify_pre_execution(cls, tool_name: str, params: dict) -> None:
         """
         Perform pre-execution safety and parameter validation checks.
-        
+
         Args:
             tool_name: Name of the tool in service_action format.
             params: Parameters being passed to the tool.
-            
+
         Raises:
             VerificationError: If any pre-execution check fails.
         """
         # CHECK 1: Parameter Validation (must happen pre-exec)
         cls._check_1_parameter_validation(tool_name, params)
-        
+
         # CHECK 2: Permission & Scope Validation (must happen pre-exec)
         cls._check_2_permission_scope_validation(tool_name, params)
-        
+
         # CHECK 5: Safety & Idempotency (Safety parts must happen pre-exec)
         # We call the full check but it won't have a result yet
         cls._check_5_idempotency_safety_validation(tool_name, params, result=None)
@@ -266,6 +295,12 @@ class VerificationEngine:
         # Use the existing verification logic but with ERROR severity
         try:
             cls.verify_params(tool_name, params)
+            cls._validate_no_invalid_payload_data(
+                tool_name,
+                params,
+                location="params",
+                block_empty_strings=False,
+            )
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
             if e.severity == VerificationSeverity.WARNING:
@@ -320,11 +355,11 @@ class VerificationEngine:
         # Filter out internal meta-keys before building params_str (Bug 6)
         filtered_params = {k: v for k, v in params.items() if not k.startswith("_")}
         params_str = str(filtered_params).lower()
-        
+
         # Combine bulk keywords from multiple sources
         all_bulk_keywords = set(BULK_KEYWORDS)
         all_bulk_keywords.update(config.verification_bulk_indicators)
-        
+
         # Use word-boundary regex for detection (Bug 7)
         bulk_keywords_detected = []
         for kw in all_bulk_keywords:
@@ -363,6 +398,7 @@ class VerificationEngine:
             "calendar": ["https://www.googleapis.com/auth/calendar"],
             "sheets": ["https://www.googleapis.com/auth/spreadsheets"],
             "docs": ["https://www.googleapis.com/auth/documents"],
+            "contacts": ["https://www.googleapis.com/auth/contacts"],
         }
 
         if service in required_scopes_by_service:
@@ -405,6 +441,12 @@ class VerificationEngine:
         # Use the existing verification logic but with ERROR severity
         try:
             cls.verify_result(tool_name, params, result)
+            cls._validate_no_invalid_payload_data(
+                tool_name,
+                result,
+                location="result",
+                block_empty_strings=False,
+            )
         except VerificationError as e:
             # Re-raise with check_number and ensure ERROR severity
             if e.severity == VerificationSeverity.WARNING:
@@ -539,11 +581,11 @@ class VerificationEngine:
         # Check 5.1: Destructive operation safety validation
         config = cls._get_config()
         is_destructive = False
-        
+
         # Check against SafetyGuard list
         if service in DESTRUCTIVE_ACTIONS and action in DESTRUCTIVE_ACTIONS[service]:
             is_destructive = True
-            
+
         # Check against config list (full tool name)
         if tool_name in config.verification_destructive_operations:
             is_destructive = True
@@ -566,11 +608,11 @@ class VerificationEngine:
         # Filter out internal meta-keys before building params_str (Bug 6)
         filtered_params = {k: v for k, v in params.items() if not k.startswith("_")}
         params_str = str(filtered_params).lower()
-        
+
         # Combine bulk keywords from multiple sources
         all_bulk_keywords = set(BULK_KEYWORDS)
         all_bulk_keywords.update(config.verification_bulk_indicators)
-        
+
         # Use word-boundary regex for detection (Bug 7)
         has_bulk_keywords = False
         for kw in all_bulk_keywords:
@@ -579,10 +621,10 @@ class VerificationEngine:
                 break
 
         is_bulk_tool = any(kw in tool_name.lower() for kw in ["batch", "bulk"])
-        
+
         # Special case: query: "*" often means "all"
         has_star_query = params.get("query") == "*" or params.get("q") == "*"
-        
+
         if has_bulk_keywords or is_bulk_tool or has_star_query:
             if not params.get("_bulk_confirmed"):
                 raise VerificationError(
@@ -594,18 +636,20 @@ class VerificationEngine:
                 )
 
         # Check 5.3: Verify idempotency for create operations
+        # Skip for slides since GWS binary may not return presentationId consistently
         if "create" in tool_name or "insert" in tool_name:
-            # Create operations should return a unique ID
-            if isinstance(result, dict):
-                has_id = any(k in result for k in cls.create_id_fields())
-                if not has_id:
-                    raise VerificationError(
-                        tool_name,
-                        "Create operation must return a unique ID for idempotency tracking",
-                        check_number=5,
-                        severity=VerificationSeverity.ERROR,
-                        field="id",
-                    )
+            if not tool_name.startswith("slides_"):
+                # Create operations should return a unique ID
+                if isinstance(result, dict):
+                    has_id = any(k in result for k in cls.create_id_fields())
+                    if not has_id:
+                        raise VerificationError(
+                            tool_name,
+                            "Create operation must return a unique ID for idempotency tracking",
+                            check_number=5,
+                            severity=VerificationSeverity.ERROR,
+                            field="id",
+                        )
 
     # Note: Echo detection is handled in CHECK 3 via legacy verify_result method
     # No need to duplicate it here
@@ -625,7 +669,12 @@ class VerificationEngine:
             action = tool_name
 
         # CATEGORY 2 - GMAIL
-        if service == "gmail" or "message" in action or "email" in action or "send" in action:
+        if (
+            service == "gmail"
+            or "email" in action
+            or tool_name in ("send_message", "reply_message", "forward_message")
+            or ("send" in action and service == "gmail")
+        ):
             if "send" in tool_name or "reply" in tool_name or "forward" in tool_name:
                 to = params.get("to") or params.get("to_email")
                 if to is None or to == [] or cls._is_placeholder(str(to)) or not cls._is_valid_email(str(to)):
@@ -642,21 +691,31 @@ class VerificationEngine:
                             if not cls._is_valid_email(val):
                                 raise VerificationError(tool_name, f"Invalid {field} email address", severity=VerificationSeverity.ERROR, field=field)
 
-                subject = params.get("subject")
+                # STRICT subject validation - block empty/placeholder subjects
                 if "reply" not in tool_name and "forward" not in tool_name:  # Reply/Forward might not need subject
-                    if not subject or cls._is_placeholder(str(subject)) or len(str(subject).strip()) < 2:
-                        raise VerificationError(
-                            tool_name, "Subject must not be empty or placeholder, min 2 chars", severity=VerificationSeverity.ERROR, field="subject"
-                        )
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="subject", min_length=3, block_placeholders=True
+                    )
 
-                body = params.get("body")
-                if not body or cls._is_placeholder(str(body)) or len(str(body).strip()) < 5:
-                    raise VerificationError(tool_name, "Body must not be empty or placeholder, min 5 chars", severity=VerificationSeverity.ERROR, field="body")
+                # STRICT body validation - block empty/placeholder content. The
+                # minimum length is intentionally low (covers "ok" but allows
+                # short but legitimate bodies like "Payload" used for transient
+                # alerts); placeholder detection still blocks empty templates.
+                cls._validate_content_not_empty(
+                    tool_name, params, field="body", min_length=5, block_placeholders=True
+                )
 
             attachments = params.get("attachments")
-            if attachments:
+            if attachments is not None:
                 if not isinstance(attachments, list):
                     attachments = [attachments]
+                if len(attachments) == 0:
+                    raise VerificationError(
+                        tool_name,
+                        "Attachments list cannot be empty when attachments are requested",
+                        severity=VerificationSeverity.ERROR,
+                        field="attachments",
+                    )
                 for att in attachments:
                     if isinstance(att, dict):
                         file_id = att.get("file_id")
@@ -675,6 +734,14 @@ class VerificationEngine:
                         mime_type = att.get("mime_type")
                         if not mime_type or not str(mime_type).strip():
                             raise VerificationError(tool_name, "Attachment must have mime_type", severity=VerificationSeverity.ERROR, field="attachments")
+                        cls._validate_attachment_file(tool_name, att)
+                    elif not att or cls._is_placeholder(str(att)):
+                        raise VerificationError(
+                            tool_name,
+                            "Attachment reference must be a non-empty resolved value",
+                            severity=VerificationSeverity.WARNING,
+                            field="attachments",
+                        )
 
             if "reply" in tool_name:
                 thread_id = params.get("thread_id")
@@ -689,15 +756,63 @@ class VerificationEngine:
         # CATEGORY 3 - GOOGLE DRIVE / DOCUMENT
         if service in ("drive", "docs") or "document" in action or "file" in action or "drive" in action:
             if "create" in tool_name or "copy" in tool_name:
-                title = params.get("title") or params.get("name") or params.get("folder_name")
-                if not title or cls._is_placeholder(str(title)) or len(str(title).strip()) < 1:
-                    logger.debug(f"Document title required failed for tool '{tool_name}' with params: {params}")
-                    raise VerificationError(tool_name, "Document title required", severity=VerificationSeverity.ERROR, field="title")
-
+                # Special handling for create_document to provide specific error message
+                if tool_name == "create_document" or action == "create_document":
+                    title = params.get("title")
+                    if not title or not str(title).strip():
+                        raise VerificationError(
+                            tool_name,
+                            "Document title required",
+                            severity=VerificationSeverity.ERROR,
+                            field="title"
+                        )
+                    # STRICT validation for create operations - block empty/placeholder titles
+                    cls._validate_content_not_empty(
+                        tool_name, params,
+                        field="title",
+                        min_length=2,
+                        block_placeholders=True
+                    )
+                else:
+                    title = params.get("title") or params.get("name") or params.get("folder_name")
+                    # Determine the actual field that holds the value being checked so error
+                    # messages and validation reference the correct parameter name (e.g. copy_file
+                    # uses "name", not "title").
+                    field_name = (
+                        "title" if params.get("title")
+                        else "name" if params.get("name")
+                        else "folder_name" if params.get("folder_name")
+                        else "title"
+                    )
+                    if not title or not str(title).strip():
+                        raise VerificationError(
+                            tool_name,
+                            f"{field_name} required",
+                            severity=VerificationSeverity.ERROR,
+                            field=field_name,
+                        )
+                    # STRICT validation for create operations - block empty/placeholder titles
+                    cls._validate_content_not_empty(
+                        tool_name, params,
+                        field=field_name,
+                        min_length=2,
+                        block_placeholders=True,
+                    )
+            # NOTE: empty/short ``content`` for document creates is intentionally
+            # NOT enforced here. CHECK 1 already covers placeholder/template
+            # leakage on the *title*; emptiness of ``content`` is data-integrity
+            # territory and is asserted by CHECK 4 (``verify_document_not_empty``).
+            # Enforcing it here too would mask CHECK 4 coverage — see PR #76
+            # round 2 review (``test_5_check_system_check_4_data_integrity``).
             content = params.get("content")
-            if content is not None:
-                if str(content).strip() == "":
-                    raise VerificationError(tool_name, "Document created empty", severity=VerificationSeverity.WARNING, field="content")
+            if content is not None and "create" in tool_name and str(content).strip():
+                # Only validate non-empty content for placeholder leakage; do
+                # not raise on emptiness (left to CHECK 4).
+                # Disable placeholder blocking for content — resolved content
+                # (e.g. email summaries) may legitimately contain $, %, etc.
+                cls._validate_content_not_empty(
+                    tool_name, params, field="content", min_length=1, block_placeholders=False
+                )
 
             for id_field in ["file_id", "document_id", "spreadsheet_id"]:
                 file_id = params.get(id_field)
@@ -743,16 +858,21 @@ class VerificationEngine:
                 if values is None or values == [] or values == [[]]:
                     # Allow empty values for clear/delete/get
                     if all(x not in tool_name for x in ("clear", "delete", "get")):
-                        raise VerificationError(tool_name, "Values cannot be empty", severity=VerificationSeverity.ERROR, field="values")
+                        raise VerificationError(tool_name, "Values cannot be empty", severity=VerificationSeverity.WARNING, field="values")
 
                 # Check for placeholder in cells
                 if isinstance(values, list):
                     for row in values:
                         if isinstance(row, list):
                             for cell in row:
-                                if cell is not None and str(cell).strip() and cls._is_placeholder(str(cell)):
-                                    logger.debug(f"Placeholder found in values: '{cell}', full params: {params}")
-                                    raise VerificationError(tool_name, f"Placeholder found in values: {cell}", severity=VerificationSeverity.ERROR, field="values")
+                                if cell is not None and str(cell).strip():
+                                    cell_str = str(cell)
+                                    # Skip binary/non-printable data — not a placeholder
+                                    if any(ord(c) > 127 or (ord(c) < 32 and ord(c) not in (9, 10, 13)) for c in cell_str[:20]):
+                                        continue
+                                    if cls._is_placeholder(cell_str):
+                                        logger.debug(f"Placeholder found in values: '{cell}', full params: {params}")
+                                        raise VerificationError(tool_name, f"Placeholder found in values: {cell}", severity=VerificationSeverity.ERROR, field="values")
 
             sheet_name = params.get("sheet_name") or params.get("tab_name")
             if sheet_name is not None:
@@ -762,9 +882,17 @@ class VerificationEngine:
         # CATEGORY 5 - GOOGLE CALENDAR
         if service == "calendar" or "event" in tool_name:
             if "create" in tool_name or "insert" in tool_name:
-                summary = params.get("summary")
-                if not summary or cls._is_placeholder(str(summary)) or len(str(summary).strip()) < 2:
-                    raise VerificationError(tool_name, "Event summary required and min 2 chars", severity=VerificationSeverity.ERROR, field="summary")
+                # STRICT event summary validation
+                cls._validate_content_not_empty(
+                    tool_name, params, field="summary", min_length=3, block_placeholders=True
+                )
+
+                # STRICT description validation if provided
+                description = params.get("description")
+                if description is not None:
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="description", min_length=5, block_placeholders=True
+                    )
 
                 # Heuristic often provides start_date and start_time separately
                 start = params.get("start") or params.get("start_date") or params.get("start_datetime")
@@ -807,15 +935,44 @@ class VerificationEngine:
 
             event_id = params.get("event_id")
             if event_id is not None:
-                if cls._is_placeholder(str(event_id)):
+                # Allow $ placeholders for bulk operations (e.g., $calendar_events)
+                event_id_str = str(event_id)
+                if cls._is_placeholder(event_id_str) and not event_id_str.startswith("$"):
                     raise VerificationError(tool_name, "Invalid event_id", severity=VerificationSeverity.ERROR, field="event_id")
 
         # CATEGORY 6 - GOOGLE TASKS
         if service == "tasks" or "task" in tool_name:
             if "create" in tool_name or "insert" in tool_name:
+                # STRICT task title validation
                 title = params.get("title")
-                if not title or cls._is_placeholder(str(title)):
-                    raise VerificationError(tool_name, "Task title required", severity=VerificationSeverity.ERROR, field="title")
+                if not title or not str(title).strip():
+                    raise VerificationError(
+                        tool_name,
+                        "Task title required",
+                        severity=VerificationSeverity.ERROR,
+                        field="title"
+                    )
+                # Detect placeholder titles (e.g. ``[Replace me]``) and raise a
+                # task-specific message so the caller knows *what* needs to be
+                # supplied, rather than a generic "placeholder value" error.
+                title_str = str(title).strip()
+                if cls._is_placeholder(title_str) or cls._has_unresolved_templates(title_str):
+                    raise VerificationError(
+                        tool_name,
+                        "Task title required - placeholder/template value detected",
+                        severity=VerificationSeverity.ERROR,
+                        field="title",
+                    )
+                cls._validate_content_not_empty(
+                    tool_name, params, field="title", min_length=2, block_placeholders=True
+                )
+
+                # STRICT notes validation if provided
+                notes = params.get("notes")
+                if notes is not None:
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="notes", min_length=5, block_placeholders=True
+                    )
 
             due = params.get("due")
             if due is not None:
@@ -835,14 +992,27 @@ class VerificationEngine:
         # CATEGORY 7 - GOOGLE CONTACTS
         if service == "contacts" or "contact" in tool_name:
             if "create" in tool_name:
+                # STRICT contact name validation
                 first_name = params.get("first_name")
                 display_name = params.get("display_name")
+
                 if not first_name and not display_name:
-                    raise VerificationError(tool_name, "first_name or display_name required", severity=VerificationSeverity.ERROR, field="first_name")
-                if first_name and cls._is_placeholder(str(first_name)):
-                    raise VerificationError(tool_name, "Placeholder in first_name", severity=VerificationSeverity.ERROR, field="first_name")
-                if display_name and cls._is_placeholder(str(display_name)):
-                    raise VerificationError(tool_name, "Placeholder in display_name", severity=VerificationSeverity.ERROR, field="display_name")
+                    raise VerificationError(
+                        tool_name,
+                        "first_name or display_name required - cannot create contact with no name",
+                        severity=VerificationSeverity.ERROR,
+                        field="first_name"
+                    )
+
+                if first_name:
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="first_name", min_length=2, block_placeholders=True
+                    )
+
+                if display_name:
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="display_name", min_length=2, block_placeholders=True
+                    )
 
             email = params.get("email")
             if email is not None:
@@ -859,6 +1029,28 @@ class VerificationEngine:
             if contact_id is not None:
                 if cls._is_placeholder(str(contact_id)):
                     raise VerificationError(tool_name, "Invalid contact_id", severity=VerificationSeverity.ERROR, field="contact_id")
+
+        # CATEGORY 8 - GOOGLE KEEP
+        if service == "keep" or "note" in tool_name:
+            if "create" in tool_name or "insert" in tool_name:
+                # STRICT note title validation
+                title = params.get("title")
+                if title is not None:
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="title", min_length=2, block_placeholders=True
+                    )
+
+                # STRICT note body/text validation
+                body = params.get("body") or params.get("text") or params.get("content")
+                if body is not None:
+                    cls._validate_content_not_empty(
+                        tool_name, params, field="body", min_length=5, block_placeholders=True
+                    )
+
+            note_id = params.get("note_id")
+            if note_id is not None:
+                if cls._is_placeholder(str(note_id)):
+                    raise VerificationError(tool_name, "Invalid note_id", severity=VerificationSeverity.ERROR, field="note_id")
 
     @classmethod
     def verify_result(cls, tool_name: str, params: dict, result: Any) -> None:
@@ -914,6 +1106,7 @@ class VerificationEngine:
                         "threadId",
                         "name",
                         "formId",
+                        "presentationId",
                     ]
                 )
                 if not has_id:
@@ -1000,6 +1193,11 @@ class VerificationEngine:
             if not isinstance(attachments, list):
                 attachments = [attachments]
             if len(attachments) > 0:
+                expected_names = {
+                    str(att.get("filename", "")).strip()
+                    for att in attachments
+                    if isinstance(att, dict) and str(att.get("filename", "")).strip()
+                }
                 # Basic check: result should have something indicating attachments were handled
                 payload = result.get("payload", {})
                 parts = payload.get("parts", []) if isinstance(payload, dict) else []
@@ -1011,11 +1209,23 @@ class VerificationEngine:
                     raise VerificationError(
                         "verify_attachment", "Attachment declared in params but not confirmed in result", severity=VerificationSeverity.WARNING
                     )
+                if expected_names:
+                    confirmed_names = {
+                        str(part.get("filename", "")).strip()
+                        for part in parts
+                        if isinstance(part, dict) and str(part.get("filename", "")).strip()
+                    }
+                    missing_names = expected_names - confirmed_names
+                    if missing_names:
+                        raise VerificationError(
+                            "verify_attachment",
+                            f"Attachment filenames not confirmed in result: {sorted(missing_names)}",
+                            severity=VerificationSeverity.WARNING,
+                        )
 
     @classmethod
     def verify_document_not_empty(cls, tool_name: str, params: dict, result: Any) -> None:
         """Legacy method: Verify document not empty. Used by CHECK 4."""
-        # Normalize tool_name by stripping service prefix (e.g., "docs_create_document" -> "create_document")
         # Normalize tool_name by stripping service prefix (e.g., "docs_create_document" -> "create_document")
         # Check both the original and the stripped name to handle both prefixed and unprefixed callers
         if "_" in tool_name:
@@ -1029,17 +1239,225 @@ class VerificationEngine:
         if normalized_name in target_actions or tool_name in target_actions:
             content = params.get("content")
             values = params.get("values")
-            if content is not None and str(content).strip() == "":
+            if content is not None and cls._contains_invalid_content(str(content)):
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
             if values is not None and (values == [] or values == [[]]):
-                raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="values")
+                severity = VerificationSeverity.WARNING if ("sheets" in tool_name and "append" in tool_name) else VerificationSeverity.ERROR
+                raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=severity, field="values")
+            if values is not None:
+                cls._validate_no_invalid_payload_data(
+                    tool_name,
+                    values,
+                    location="values",
+                    block_empty_strings=not ("sheets" in tool_name and "append" in tool_name),
+                )
 
     # =========================================================================
     # HELPER METHODS
     # =========================================================================
 
     @classmethod
+    def _validate_no_invalid_payload_data(
+        cls,
+        tool_name: str,
+        payload: Any,
+        location: str,
+        block_empty_strings: bool = True,
+    ) -> None:
+        """Recursively block placeholders, empty generated content, and invalid sentinel values."""
+        for path, value in cls._iter_payload_leaf_values(payload, location):
+            # Always block unresolved placeholders in RESULT data (before ignored check)
+            # Params may contain unresolved placeholders that will be resolved by executor
+            if location == "result" and isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
+                raise VerificationError(
+                    tool_name,
+                    f"{location} contains unresolved placeholder data at {path}",
+                    severity=VerificationSeverity.ERROR,
+                    field=path,
+                )
+            if cls._is_ignored_validation_path(path):
+                continue
+            if isinstance(value, str):
+                # For params, don't block generic placeholders - they will be resolved by executor
+                # For results, block generic placeholders only if it's a user content path
+                block_generic = location == "result" and cls._is_user_content_path(path)
+                if cls._contains_invalid_content(
+                    value,
+                    block_empty=block_empty_strings,
+                    block_generic_placeholders=block_generic,
+                ):
+                    raise VerificationError(
+                        tool_name,
+                        f"{location} contains invalid, empty, or unresolved placeholder data at {path}",
+                        severity=VerificationSeverity.ERROR,
+                        field=path,
+                    )
+            elif value is None and cls._is_required_data_path(path):
+                raise VerificationError(
+                    tool_name,
+                    f"{location} contains required field with None value at {path}",
+                    severity=VerificationSeverity.ERROR,
+                    field=path,
+                )
+
+    @classmethod
+    def _iter_payload_leaf_values(cls, payload: Any, path: str):
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if str(key).startswith("_"):
+                    continue
+                yield from cls._iter_payload_leaf_values(value, f"{path}.{key}")
+        elif isinstance(payload, list):
+            for index, item in enumerate(payload):
+                yield from cls._iter_payload_leaf_values(item, f"{path}[{index}]")
+        else:
+            yield path, payload
+
+    @staticmethod
+    def _is_ignored_validation_path(path: str) -> bool:
+        ignored_suffixes = (
+            ".id",
+            ".name",
+            ".title",
+            ".snippet",
+            ".content",
+            ".text",
+            ".mimeType",
+            ".query",
+            ".q",
+            ".size",
+            ".sizeBytes",
+            ".drive_export_content",
+            ".drive_export_path",
+            ".drive_export_file",
+        )
+        ignored_fragments = (
+            ".headers[",
+            ".labelIds[",
+        )
+        # Allow $calendar_events placeholder for bulk deletion pattern
+        if path == "params.event_id":
+            return True
+        if path == "params.code":
+            return True
+        if path.startswith("result.") and path.endswith(".name"):
+            return True
+        return path.endswith(ignored_suffixes) or any(fragment in path for fragment in ignored_fragments)
+
+    @classmethod
+    def _is_required_data_path(cls, path: str) -> bool:
+        required_tokens = (
+            "body",
+            "content",
+            "description",
+            "documentId",
+            "email",
+            "event_id",
+            "file_id",
+            "filename",
+            "formId",
+            "id",
+            "message",
+            "messageId",
+            "name",
+            "spreadsheetId",
+            "subject",
+            "summary",
+            "task_id",
+            "text",
+            "title",
+        )
+        path_lower = path.lower()
+        return any(token.lower() in path_lower for token in required_tokens)
+
+    @classmethod
+    def _is_user_content_path(cls, path: str) -> bool:
+        content_tokens = (
+            "body",
+            "content",
+            "description",
+            "message",
+            "notes",
+            "snippet",
+            "subject",
+            "summary",
+            "text",
+            "title",
+        )
+        path_lower = path.lower()
+        ignored_content_fragments = (
+            "autotext.content",
+            "bulletstyle.",
+            "bodyplaceholderlistentity",
+            "paragraphmarker.bullet",
+            "sectionbreak.sectionstyle",
+            ".style.",
+            "textstyle.",
+            "textrun.style",
+        )
+        if any(fragment in path_lower for fragment in ignored_content_fragments):
+            return False
+        path_segments = {segment.lower() for segment in re.split(r"[^A-Za-z0-9_]+", path) if segment}
+        return any(token in path_segments for token in content_tokens)
+
+    @classmethod
+    def _contains_invalid_content(
+        cls,
+        value: str,
+        block_empty: bool = True,
+        block_generic_placeholders: bool = True,
+    ) -> bool:
+        val_str = str(value).strip()
+        if block_empty and not val_str:
+            return True
+        if not block_empty and not val_str:
+            return False
+        # Only block unresolved placeholders if block_generic_placeholders is True
+        # This allows params to have placeholders that will be resolved by executor
+        if block_generic_placeholders and "___UNRESOLVED_PLACEHOLDER___" in val_str:
+            return True
+        from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+
+        if any(placeholder in val_str for placeholder in LEGACY_PLACEHOLDER_MAP):
+            return True
+        if cls._has_unresolved_templates(val_str):
+            return True
+        if block_generic_placeholders and cls._is_placeholder(val_str):
+            return True
+        invalid_literals = {"none", "null", "undefined", "nan", "invalid data", "no data"}
+        return block_generic_placeholders and val_str.lower() in invalid_literals
+
+    @classmethod
+    def _validate_attachment_file(cls, tool_name: str, attachment: dict) -> None:
+        file_path = attachment.get("file_path")
+        if not file_path:
+            return
+        path_str = str(file_path).strip()
+        if cls._contains_invalid_content(path_str):
+            raise VerificationError(
+                tool_name,
+                "Attachment file_path contains invalid or unresolved data",
+                severity=VerificationSeverity.ERROR,
+                field="attachments",
+            )
+        if not os.path.isfile(path_str):
+            raise VerificationError(
+                tool_name,
+                f"Attachment file does not exist: {path_str}",
+                severity=VerificationSeverity.ERROR,
+                field="attachments",
+            )
+        if os.path.getsize(path_str) <= 0:
+            raise VerificationError(
+                tool_name,
+                f"Attachment file is empty: {path_str}",
+                severity=VerificationSeverity.ERROR,
+                field="attachments",
+            )
+
+    @classmethod
     def _is_placeholder(cls, value: str) -> bool:
+        """Check if value is a placeholder or contains unresolved template variables."""
         if value is None:
             return False
         val_str = str(value).strip()
@@ -1055,12 +1473,126 @@ class VerificationEngine:
         for domain in cls.email_placeholder_domains():
             if val_lower.endswith(domain):
                 return True
+        # Check for placeholder patterns anywhere in the string (not just exact match)
+        # BUT allow known resolvable placeholders from LEGACY_PLACEHOLDER_MAP
+        from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+        known_placeholders = set(LEGACY_PLACEHOLDER_MAP.keys())
+
         for pattern in cls.PLACEHOLDER_REGEXES:
-            if pattern.match(val_str):
+            match = pattern.search(val_str)
+            if match:
+                # Check if this is a known resolvable placeholder
+                matched_text = match.group(0)
+                if matched_text in known_placeholders:
+                    continue  # Allow known resolvable placeholders
                 return True
         if cls.SPECIAL_CHARS_ONLY.match(val_str):
             return True
+        # Check for unresolved template patterns (excluding known placeholders)
+        if cls._has_unresolved_templates(val_str):
+            # Double-check that it's not just a known placeholder
+            for ph in known_placeholders:
+                if ph in val_str:
+                    return False
+            return True
         return False
+
+    @classmethod
+    def _has_unresolved_templates(cls, value: str) -> bool:
+        """Detect if string contains unresolved template variables."""
+        if not value:
+            return False
+        # Import known resolvable placeholders
+        from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
+        known_placeholders = set(LEGACY_PLACEHOLDER_MAP.keys())
+
+        for pattern in cls.UNRESOLVED_TEMPLATE_PATTERNS:
+            match = pattern.search(value)
+            if match:
+                # Check if this matched text is a known resolvable placeholder
+                matched_text = match.group(0)
+                if matched_text in known_placeholders:
+                    continue  # Allow known resolvable placeholders
+                return True
+        return False
+
+    @classmethod
+    def _is_empty_or_whitespace_only(cls, value: Any) -> bool:
+        """Check if value is empty, None, or contains only whitespace/special chars."""
+        if value is None:
+            return True
+        val_str = str(value).strip()
+        if not val_str:
+            return True
+        # Check if only whitespace or special characters
+        if cls.SPECIAL_CHARS_ONLY.match(val_str):
+            return True
+        return False
+
+    @staticmethod
+    def _validate_content_not_empty(
+        tool_name: str, params: dict, field: str, min_length: int = 1, block_placeholders: bool = True
+    ) -> None:
+        """Validate that content field is not empty and has no placeholders."""
+        value = params.get(field)
+
+        # Check for None or empty
+        if value is None:
+            raise VerificationError(
+                tool_name,
+                f"Required field '{field}' is None/missing - cannot create document with empty data",
+                severity=VerificationSeverity.ERROR,
+                field=field
+            )
+
+        val_str = str(value).strip()
+
+        # Check for empty/whitespace only
+        if not val_str:
+            raise VerificationError(
+                tool_name,
+                f"Field '{field}' is empty or whitespace-only - cannot create document with no content",
+                severity=VerificationSeverity.ERROR,
+                field=field
+            )
+
+        # Check minimum length
+        if len(val_str) < min_length:
+            raise VerificationError(
+                tool_name,
+                f"Field '{field}' content too short ({len(val_str)} chars, min {min_length}) - content appears incomplete",
+                severity=VerificationSeverity.ERROR,
+                field=field
+            )
+
+        # Check for placeholders if enabled
+        # Skip placeholder detection for long content strings (>100 chars) that are
+        # clearly resolved real data (e.g. email summaries containing $, %, etc.)
+        if block_placeholders and len(val_str) <= 100:
+            if VerificationEngine._is_placeholder(val_str):
+                raise VerificationError(
+                    tool_name,
+                    f"Field '{field}' contains placeholder value '{val_str[:50]}...' - template variable was not resolved",
+                    severity=VerificationSeverity.ERROR,
+                    field=field
+                )
+
+            if VerificationEngine._has_unresolved_templates(val_str):
+                raise VerificationError(
+                    tool_name,
+                    f"Field '{field}' contains unresolved template variable - value was not properly substituted",
+                    severity=VerificationSeverity.ERROR,
+                    field=field
+                )
+
+        # Check for suspicious content patterns (repeated special chars, etc.)
+        if VerificationEngine.SPECIAL_CHARS_ONLY.match(val_str):
+            raise VerificationError(
+                tool_name,
+                f"Field '{field}' consists only of special characters - invalid content detected",
+                severity=VerificationSeverity.ERROR,
+                field=field
+            )
 
     @classmethod
     def _is_valid_email(cls, value: str) -> bool:
@@ -1087,8 +1619,9 @@ class VerificationEngine:
         # Allow internal placeholders and specific recognized prefixes
         if any(val_str.startswith(prefix) for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{"]):
             return len(val_str) > 2
-        # Regular Drive IDs are long (25-60 chars). Min 2 is a safe threshold for test IDs.
-        return bool(re.match(r"^[a-zA-Z0-9_-]{2,128}$", val_str))
+        # Regular Drive IDs are URL-safe base64 encoded (25-60 chars).
+        # Allow: alphanumeric, hyphen, underscore, period, and equals padding.
+        return bool(re.match(r"^[a-zA-Z0-9_\-.=]{2,128}$", val_str))
 
     @classmethod
     def _end_is_after_start(cls, start: Any, end: Any) -> bool:

@@ -24,12 +24,13 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 - [Configuration](#configuration)
 - [Safety & Security](#safety--security)
 - [Testing](#testing)
+- [Statistics](#statistics)
 - [Contributing](#contributing)
 
 ---
 
 ## Version
-Latest: **v0.8.0**  
+Latest: **v1.0.1**
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ---
@@ -83,9 +84,6 @@ Detailed snapshots of the available user interfaces.
 The agent uses a **three-layer architecture**: an LLM Planner that reasons about intent, a LangGraph Workflow that manages stateful execution, and a GWS Executor that calls real Google APIs.
 
 ```mermaid
----
-id: 381d8783-6e2b-46fa-b5fa-879171ca0dbf
----
 flowchart TD
     USER["👤 User Request"] --> AGENT
 
@@ -112,7 +110,7 @@ flowchart TD
 
     subgraph SUP["🛡️ Support"]
         direction LR
-        MEM["Memory\nMem0"] --- SG["Safety\nGuard"] --- MR["Model\nRegistry"]
+        MEM["Memory<br/>Mem0"] --- SG["Safety<br/>Guard"] --- MR["Model<br/>Registry"]
     end
 
     style AGENT fill:#1a1a2e,color:#fff,stroke:#4A90D9
@@ -130,22 +128,22 @@ The agent's execution graph is a **stateful directed acyclic graph** with four c
 flowchart TD
     START(["▶ START"]) --> GP
 
-    GP["🧠 generate_plan\nLLM generates TaskPlan\nwith typed task list\nand service/action pairs"]
+    GP["🧠 generate_plan<br/>LLM generates TaskPlan<br/>with typed task list<br/>and service/action pairs"]
 
     GP --> ET
 
-    ET["⚡ execute_task\n① Resolver expands $placeholders\n② Executor calls GWS API\n③ ContextUpdater writes outputs\n④ Verifier checks integrity"]
+    ET["⚡ execute_task<br/>① Resolver expands $placeholders<br/>② Executor calls GWS API<br/>③ ContextUpdater writes outputs<br/>④ Verifier checks integrity"]
 
     ET --> RN
 
-    RN{"🔍 reflect_node\nAll tasks done?\nAny errors?"}
+    RN{"🔍 reflect_node<br/>All tasks done?<br/>Any errors?"}
 
     RN -->|"more tasks remaining"| ET
     RN -->|"transient error → retry"| GP
     RN -->|"AUTH / NOT_FOUND → skip"| FO
     RN -->|"all tasks complete"| FO
 
-    FO["📋 format_output\nApply output_formatter\nBuild final response string"]
+    FO["📋 format_output<br/>Apply output_formatter<br/>Build final response string"]
 
     FO --> END(["⏹ END"])
 
@@ -233,8 +231,109 @@ To get the agent running on your local machine, please follow the comprehensive 
 2. **Configure Credentials:** Follow the [Google Cloud Setup](SETUP.md#%EF%B8%8F-step-3-google-cloud--credentials-setup) instructions.
 3. **Run the Agent:**
    ```bash
-   python gws_cli.py --task "List my drive files"
+   # Using Python (all platforms)
+   gws_cli --task "List my drive files"
+
+   # Or use the executable scripts
+   # Linux/macOS: ./gws_cli --task "List my drive files"
+   # Windows: .\gws_cli.bat --task "List my drive files"
    ```
+
+### Examples
+
+Here are high-impact, realistic examples that showcase the full power of your agent — multi-service chaining, NLP complexity, and things no dumb CLI can do:
+
+***
+
+## 📧 Gmail Workflows
+
+```bash
+gws_cli --task "Find all emails from my boss this week, mark them as read, and reply to any that have a question mark in the subject"
+```
+
+```bash
+gws_cli --task "Search for all invoices received in April, download their attachments to Drive folder 'Invoices/April', and create a Sheets log with sender, date, and amount"
+```
+
+```bash
+gws_cli --task "Find emails with subject containing 'approval needed', summarize each one, and forward the summaries to manager@company.com"
+```
+
+***
+
+## 📅 Calendar Workflows
+
+```bash
+gws_cli --task "List all my meetings tomorrow, create a Google Doc agenda for each one with the title and attendees, and send the doc link to all attendees via email"
+```
+
+```bash
+gws_cli --task "Find all meetings I have next week that are longer than 1 hour and add a 15-minute prep reminder before each one"
+```
+
+***
+
+## 📂 Drive + Docs Workflows
+
+```bash
+gws_cli --task "Find all Google Docs modified in the last 7 days, create a summary of each, and compile everything into a single 'Weekly Report' Doc"
+```
+
+```bash
+gws_cli --task "Search Drive for files shared with me that I haven't opened in 30 days and list them in a Sheets file called 'Stale Shares'"
+```
+
+***
+
+## 📊 Sheets Workflows
+
+```bash
+gws_cli --task "Open the spreadsheet 'Sales Q1', calculate total revenue per region, and email a summary report to the sales team"
+```
+
+```bash
+gws_cli --task "Read the 'Team Tasks' sheet, find all rows where status is 'overdue', and send a reminder email to the person in the assignee column"
+```
+
+***
+
+## 🔗 Complex Multi-Service Chains
+
+```bash
+gws_cli --task "Read my unread emails, extract all action items mentioned, add them as Google Tasks, create a Calendar block tomorrow morning called 'Action Items Review', and send me a summary on Telegram"
+```
+
+```bash
+gws_cli --task "Get all attendees from my 'Quarterly Review' calendar event, create a shared Google Doc called 'Q2 Review Notes', and send each attendee an email with the doc link"
+```
+
+```bash
+gws_cli --task "Search my emails for any job applications I sent last month, list them in a Sheets tracker with company name, role, and date, then set a weekly Calendar reminder to follow up"
+```
+
+***
+
+## 🐍 Code Execution (E2B Sandbox)
+
+```bash
+gws_cli --task "Download the 'Revenue.csv' file from my Drive, run a Python script to calculate month-over-month growth, and write the results back to a new sheet called 'Growth Analysis'"
+```
+
+```bash
+gws_cli --task "Read the JSON config file from Drive folder 'Configs', validate it with Python, and email me the validation errors if any are found"
+```
+
+***
+
+## 🛡️ Safety Mode Examples
+
+```bash
+# Read-only audit — no writes, safe to run anytime
+gws_cli --task "List all files in my Drive shared publicly and show their owners"
+
+# Explicit write permission required
+gws_cli --read-write --task "Delete all emails in Trash older than 30 days and empty the spam folder"
+```
 
 ---
 
@@ -242,7 +341,7 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 | Interface | Command | Description |
 |---|---|---|
-| **💻 CLI** | `python gws_cli.py` | Rich terminal UI with streaming output, tables, and interactive prompts |
+| **💻 CLI** | `gws_cli` or `./gws_cli` (Unix) or `.\gws_cli.bat` (Windows) | Rich terminal UI with streaming output, tables, and interactive prompts |
 | **🖥️ Desktop GUI** | `python gws_gui.py` | Native app with visual task logs and manual controls |
 | **🌐 Web UI** | `python gws_gui_web.py` | Gradio chat interface accessible from any browser |
 | **🤖 Telegram Bot** | `python gws_telegram.py` | Secure mobile access via whitelisted Telegram Bot API |
@@ -251,7 +350,7 @@ To get the agent running on your local machine, please follow the comprehensive 
 
 ## Configuration
 
-All system configuration (API keys, security modes, and service endpoints) is managed via the `.env` file. 
+All system configuration (API keys, security modes, and service endpoints) is managed via the `.env` file.
 
 > [!IMPORTANT]
 > Detailed configuration steps and a full environment variable reference can be found in the **[Configuration Section of SETUP.md](SETUP.md#%EF%B8%8F-step-5-agent-configuration)**.
@@ -262,10 +361,10 @@ All system configuration (API keys, security modes, and service endpoints) is ma
 
 ```mermaid
 flowchart TD
-    REQ["Incoming Task"] --> RO{"Read-Only Mode\nON by default"}
-    RO -->|"write / delete / send action"| BLOCK["🚫 Blocked\nAction rejected immediately"]
-    RO -->|"read-only action"| SB{"Sandbox Mode\nON by default"}
-    SB -->|"state-changing action"| CONF{"User Confirmation\nY / N prompt"}
+    REQ["Incoming Task"] --> RO{"Read-Only Mode<br/>ON by default"}
+    RO -->|"write / delete / send action"| BLOCK["🚫 Blocked<br/>Action rejected immediately"]
+    RO -->|"read-only action"| SB{"Sandbox Mode<br/>ON by default"}
+    SB -->|"state-changing action"| CONF{"User Confirmation<br/>Y / N prompt"}
     CONF -->|"N"| SKIP["⏭ Skipped"]
     CONF -->|"Y"| EXEC["✅ Execute"]
     SB -->|"safe read action"| EXEC
@@ -313,6 +412,17 @@ python -m pytest -m "not skip_integration" -v
 
 ---
 
+## Statistics
+
+Detailed repository statistics including commit history, contributors, and project metrics are available in [STATS.md](STATS.md).
+
+---
+
+## Releases
+See the [CHANGELOG.md](CHANGELOG.md) for details on all versions.
+
+---
+
 ## Contributing
 
 1. Fork the repository
@@ -326,6 +436,18 @@ python -m pytest -m "not skip_integration" -v
 ## License
 
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=haseeb-heaven%2Fgworkspace-agent&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=haseeb-heaven/gworkspace-agent&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ---
 

@@ -81,15 +81,15 @@ class TestTripleVerifier:
 
     def test_unknown_service_returns_false(self):
         v = self._make_verifier()
-        assert v.verify_resource("unknown_service", "id123") is False
+        assert v.verify_resource_by_id("unknown_service", "id123") is False
 
     def test_empty_resource_id_returns_false(self):
         v = self._make_verifier()
-        assert v.verify_resource("sheets", "") is False
+        assert v.verify_resource_by_id("sheets", "") is False
 
     def test_whitespace_resource_id_returns_false(self):
         v = self._make_verifier()
-        assert v.verify_resource("sheets", "   ") is False
+        assert v.verify_resource_by_id("sheets", "   ") is False
 
     def test_successful_verification(self):
         runner = MagicMock()
@@ -97,14 +97,14 @@ class TestTripleVerifier:
             success=True, stdout='{"spreadsheetId": "abc123", "sheets": [{"data": {}}]}', output=None
         )
         v = self._make_verifier(runner=runner, attempts=2)
-        assert v.verify_resource("sheets", "abc123") is True
+        assert v.verify_resource_by_id("sheets", "abc123") is True
         assert runner.run.call_count == 2
 
     def test_failed_run_returns_false(self):
         runner = MagicMock()
         runner.run.return_value = MagicMock(success=False, error="Not found", stderr="404")
         v = self._make_verifier(runner=runner, attempts=1)
-        assert v.verify_resource("sheets", "abc123") is False
+        assert v.verify_resource_by_id("sheets", "abc123") is False
 
     def test_field_validation_fails(self):
         runner = MagicMock()
@@ -112,7 +112,7 @@ class TestTripleVerifier:
             success=True, stdout='{"title": "wrong"}', output=None
         )
         v = self._make_verifier(runner=runner, attempts=1)
-        assert v.verify_resource("sheets", "abc123", {"title": "expected"}) is False
+        assert v.verify_resource_by_id("sheets", "abc123", {"title": "expected"}) is False
 
     def test_field_validation_passes(self):
         runner = MagicMock()
@@ -120,7 +120,7 @@ class TestTripleVerifier:
             success=True, stdout='{"title": "correct", "sheets": [{"data": {}}]}', output=None
         )
         v = self._make_verifier(runner=runner, attempts=1)
-        assert v.verify_resource("sheets", "abc123", {"title": "correct"}) is True
+        assert v.verify_resource_by_id("sheets", "abc123", {"title": "correct"}) is True
 
     def test_uses_planner_build_command(self):
         runner = MagicMock()
@@ -128,7 +128,7 @@ class TestTripleVerifier:
         planner = MagicMock()
         planner.build_command.return_value = ["sheets", "spreadsheets", "get"]
         v = self._make_verifier(runner=runner, planner=planner, attempts=1)
-        v.verify_resource("sheets", "abc123")
+        v.verify_resource_by_id("sheets", "abc123")
         planner.build_command.assert_called_once()
 
     def test_build_command_without_planner_all_services(self):

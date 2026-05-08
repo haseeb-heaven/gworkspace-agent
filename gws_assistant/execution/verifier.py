@@ -68,7 +68,7 @@ class TripleVerifier:
         self.attempts = attempts
         self.sleep_seconds = sleep_seconds
 
-    def verify_resource(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
+    def verify_resource_by_id(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
         if service not in self._RESOURCE_MAP:
             self.logger.warning("No verification mapping for service: %s", service)
             return False
@@ -218,7 +218,7 @@ class VerifierMixin:
 
     def verify_resource(self, service: str, resource_id: str, expected_fields: dict[str, Any] | None = None) -> bool:
         verifier = TripleVerifier(self.runner, self.planner, self.logger)
-        return verifier.verify_resource(service, resource_id, expected_fields)
+        return verifier.verify_resource_by_id(service, resource_id, expected_fields)
 
     def _verify_artifact_content(self, value: Any, source_name: str = "artifact") -> None:
         validate_artifact_content(value, source_name)

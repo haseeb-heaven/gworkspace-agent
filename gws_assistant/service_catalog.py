@@ -36,6 +36,7 @@ SERVICES: dict[str, ServiceSpec] = {
                 parameters=(
                     ParameterSpec("file_path", "Local path to the file to upload", "README.md"),
                     ParameterSpec("name", "Optional: name for the file on Drive", "Uploaded File", required=False),
+                    ParameterSpec("folder_id", "Optional: ID of the folder to upload the file into", "", required=False),
                 ),
             ),
             "get_file": ActionSpec(
@@ -189,29 +190,29 @@ SERVICES: dict[str, ServiceSpec] = {
         key="gmail",
         label="Gmail",
         aliases=("gmail", "mail", "email", "emails", "inbox", "messages", "message"),
-        description="Read and send Gmail messages. Always call list_messages first to get message IDs, then get_message for full content.",
+        description="Read and send Gmail messages. For bulk operations (summarize, count, report), use list_messages with snippet data. For reading a specific message, use get_message.",
         actions={
             "list_messages": ActionSpec(
                 key="list_messages",
                 label="List messages",
-                description="Search the Gmail inbox and return a list of message stubs. Returns: [{id, threadId}]. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com'). Must call get_message next to read content.",
-                keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
+                description="Search the Gmail inbox and return message stubs with snippet preview. Returns: [{id, threadId, snippet, subject}]. For bulk summaries, the snippet data is sufficient - do NOT fetch each message individually. Only use get_message for reading a specific single message in detail. Pass 'q' using Gmail search syntax (e.g. 'is:unread', 'subject:\"receipt\"', 'from:stripe.com').",
+                keywords=("list", "show", "find", "search", "messages", "emails", "inbox", "summarize", "count", "report"),
                 negative_keywords=("send", "compose", "mail to", "write email", "email to"),
                 parameters=(
-                    ParameterSpec("max_results", "How many emails should I show?", "10", required=False),
+                    ParameterSpec("max_results", "How many emails should I show? (Use 5-10 for summaries, avoid 100+)", "10", required=False),
                     ParameterSpec("q", "What Gmail search query should I use?", "ticket", required=False),
                 ),
             ),
             "get_message": ActionSpec(
                 key="get_message",
                 label="Get message details",
-                description="Fetch the full content of a Gmail message. Returns a dictionary: {id, subject, from, to, date, snippet, body}. NOTE: If this task was expanded (e.g. following list_messages), the placeholder resolves to a flat LIST of these dictionaries. Use 'for msg in messages:' to iterate, NOT 'messages['messages']'.",
+                description="Fetch the full content of ONE specific Gmail message by ID. Returns: {id, subject, from, to, date, snippet, body}. For bulk operations, use list_messages snippet data instead of calling this repeatedly.",
                 keywords=("get", "open", "message", "email"),
-                negative_keywords=("send", "list", "search"),
+                negative_keywords=("send", "list", "search", "summarize", "all", "bulk"),
                 parameters=(
                     ParameterSpec(
                         "message_id",
-                        "Enter message ID (or omit — auto-resolved from list_messages)",
+                        "Enter message ID",
                         "18c5a4fbe123",
                         required=False,
                     ),
@@ -238,10 +239,10 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("send", "compose", "mail", "email", "share"),
                 negative_keywords=("list", "show", "find", "search", "messages", "emails", "inbox"),
                 parameters=(
-                    ParameterSpec("to_email", "Recipient email address", "person@example.com"),
+                    ParameterSpec("to_email", "Recipient email address", "recipient@example.com"),
                     ParameterSpec("subject", "Email subject", "Requested data"),
                     ParameterSpec("body", "Email body or $placeholder", "$sheet_summary_table"),
-                    ParameterSpec("attachments", "Optional local attachment paths", "scratch/exports/report.pdf", required=False),
+                    ParameterSpec("attachments", "Optional local attachment paths", "path/to/file.pdf", required=False),
                 ),
             ),
         },
@@ -255,18 +256,21 @@ SERVICES: dict[str, ServiceSpec] = {
             "list_events": ActionSpec(
                 key="list_events",
                 label="List events",
-                description="List or search calendar events. Returns: [{id, summary, start, end, location}].",
+                description="List or search calendar events. If no date range is specified, recurring events (birthdays, etc.) from the past may be returned. Returns: [{id, summary, start, end, location}].",
                 keywords=("list", "show", "events", "meetings", "search"),
                 parameters=(
                     ParameterSpec("calendar_id", "Which calendar ID should I use?", "primary", required=False),
                     ParameterSpec("q", "Free-text search query (e.g. 'Sync')", "", required=False),
+                    ParameterSpec("start_date", "Optional: Start date (YYYY-MM-DD) to filter events", "", required=False),
+                    ParameterSpec("end_date", "Optional: End date (YYYY-MM-DD) to filter events", "", required=False),
                 ),
             ),
             "create_event": ActionSpec(
                 key="create_event",
                 label="Create event",
-                description="Create an all-day or timed event on the primary calendar. Returns: {id, summary, htmlLink}.",
+                description="Create an all-day or timed event on the primary calendar. You do NOT need to list events first. Just provide the summary, start_date, and optional start_time/end_time. Returns: {id, summary, htmlLink}.",
                 keywords=("create", "event", "schedule", "meeting"),
+                negative_keywords=("update", "edit", "modify", "change"),
                 parameters=(
                     ParameterSpec("summary", "Event summary", "Weekly Sync"),
                     ParameterSpec("start_date", "Start date (YYYY-MM-DD)", "2026-04-15"),
@@ -277,7 +281,6 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("end_datetime", "Optional: Full end ISO datetime", "2026-04-15T11:00:00", required=False),
                     ParameterSpec("time_zone", "Optional: Timezone (default: UTC)", "UTC", required=False),
                     ParameterSpec("description", "Optional: Event description", "Discuss project status", required=False),
-                    ParameterSpec("event_id", "Optional: Specific ID to use for the event", "evt_123", required=False),
                 ),
             ),
             "get_event": ActionSpec(

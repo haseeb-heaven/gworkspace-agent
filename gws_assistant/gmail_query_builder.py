@@ -59,7 +59,7 @@ def sanitize_gmail_query(raw: str) -> str:
     """Normalise an LLM-generated Gmail search query.
 
     Handles:
-      from=user@example.com           -> from:user@example.com
+      from=user@domain.com           -> from:user@domain.com
       subject='foo bar'               -> subject:foo bar
       "some topic"                    -> subject:\"some topic\" OR body:\"some topic\"
       foo bar (bare text, no op)      -> foo bar  (Gmail accepts bare text natively)

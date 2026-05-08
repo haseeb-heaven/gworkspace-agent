@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from gws_assistant.exceptions import SafetyBlockedError
+from gws_assistant.exceptions import SafetyBlockedError, ValidationError
 from gws_assistant.models import ExecutionResult
-from gws_assistant.verification_engine import VerificationEngine, VerificationError
+from gws_assistant.verification_engine import VerificationEngine, VerificationError, VerificationSeverity
 
 from .context_updater import ContextUpdaterMixin
 from .helpers import HelpersMixin
@@ -165,21 +165,21 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
             all_bulk_keywords = set(BULK_KEYWORDS)
             if hasattr(self, "config") and self.config:
                 all_bulk_keywords.update(self.config.verification_bulk_indicators)
-            
+
             # Use same filtering logic as CHECK 5 (Bug 6)
             filtered_params = {k: v for k, v in task.parameters.items() if not k.startswith("_")}
             params_str = str(filtered_params).lower()
-            
+
             # Use word-boundary regex (Bug 7)
             has_bulk_keywords = False
             for kw in all_bulk_keywords:
                 if re.search(r"\b" + re.escape(kw) + r"\b", params_str):
                     has_bulk_keywords = True
                     break
-                    
+
             is_bulk_tool = any(kw in (task.action or "").lower() for kw in ["batch", "bulk"])
             has_star_query = task.parameters.get("query") == "*" or task.parameters.get("q") == "*"
-            
+
             if has_bulk_keywords or is_bulk_tool or has_star_query:
                 task.parameters["_bulk_confirmed"] = True
 
@@ -190,9 +190,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 try:
                     VerificationEngine.verify_pre_execution(f"{task.service}_{task.action}", task.parameters)
                 except VerificationError as e:
-                    from gws_assistant.exceptions import VerificationError as ExistingVerificationError
-                    self.logger.error(f"Pre-execution verification failed: {e}")
-                    raise ExistingVerificationError(str(e))
+                    if e.severity == VerificationSeverity.WARNING:
+                        self.logger.warning(f"Pre-execution verification warning (continuing): {e}")
+                    else:
+                        self.logger.error(f"Pre-execution verification failed: {e}")
+                        raise
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 
@@ -242,9 +244,10 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         )
                         if isinstance(data, ExecutionResult):
                             return data
-                        parents = data.get("parents")
-                        if parents and isinstance(parents, list):
-                            context["fetch_parents"] = ",".join(parents)
+                        if isinstance(data, dict):
+                            parents = data.get("parents")
+                            if parents and isinstance(parents, list):
+                                context["fetch_parents"] = ",".join(parents)
                         else:
                             return ExecutionResult(
                                 success=False,
@@ -274,7 +277,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         # 2. Build the command using already-resolved parameters
         try:
             args = self.planner.build_command(task.service, task.action, task.parameters)
-        except ValueError as exc:
+        except (ValueError, ValidationError) as exc:
             return ExecutionResult(success=False, command=[], error=str(exc))
         except Exception as exc:
             self.logger.exception("Unexpected build_command failure for %s.%s", task.service, task.action)
@@ -308,22 +311,61 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 if isinstance(data, ExecutionResult):
                     return data
 
-                # Special Case: docs.create_document with initial content
-                if task.service == "docs" and task.action == "create_document":
-                    content = task.parameters.get("content")
-                    if content and "documentId" in data:
-                        update_args = self.planner.build_command(
-                            "docs", "batch_update", {"document_id": data["documentId"], "text": content}
+                # Special Case: gmail.list_messages — auto-enrich messages with snippet/headers
+                if task.service == "gmail" and task.action == "list_messages":
+                    if not isinstance(data, dict):
+                        return ExecutionResult(
+                            success=False,
+                            command=task.to_command(),
+                            error=f"Expected dict result for gmail.list_messages, got {type(data).__name__}",
                         )
-                        update_res = self.runner.run(update_args)
-                        if not update_res.success:
-                            self.logger.warning(
-                                f"Failed to add initial content to doc {data['documentId']}: {update_res.error}"
-                            )
-                        else:
-                            self.logger.info(f"Successfully added initial content to doc {data['documentId']}")
+                    msgs = data.get("messages", [])
+                    # Skip enrichment if messages already carry snippets or payload headers
+                    needs_enrich = isinstance(msgs, list) and msgs and not any(
+                        (isinstance(m, dict) and (m.get("snippet") or m.get("payload", {}).get("headers")))
+                        for m in msgs[:3]
+                    )
+                    if needs_enrich:
+                        max_enrich = min(len(msgs), 20)  # Cap to avoid excessive API calls
+                        enriched = []
+                        for m in msgs[:max_enrich]:
+                            mid = m.get("id")
+                            if not mid:
+                                enriched.append(m)
+                                continue
+                            try:
+                                get_params = {"userId": "me", "id": mid, "format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]}
+                                get_args = ["gmail", "users", "messages", "get", "--params", json.dumps(get_params)]
+                                get_res = self.runner.run(get_args)
+                                if get_res.success and get_res.stdout:
+                                    full_msg = self._parse_json_result(get_res, "gmail", "get_message", require_mapping=True, context_message="auto-enrich")
+                                    if isinstance(full_msg, dict):
+                                        # Preserve original id to ensure code execution can reference it
+                                        full_msg["id"] = mid
+                                        enriched.append(full_msg)
+                                        continue
+                            except Exception as e:
+                                self.logger.debug("Auto-enrich failed for %s: %s", mid, e)
+                            enriched.append(m)
+                        # Keep any remaining un-enriched messages
+                        enriched.extend(msgs[max_enrich:])
+                        data["messages"] = enriched
+                        self.logger.info("Auto-enriched %d/%d messages with metadata", max_enrich, len(msgs))
+
+                # Special Case: docs.create_document with initial content
+                # DISABLED: Auto-insert is causing batch_update JSON body errors.
+                # Let separate batch_update task handle content insertion.
+                # if task.service == "docs" and task.action == "create_document":
+                #     content = task.parameters.get("content")
+                #     ... (auto-insert logic commented out)
 
                 if task.service == "drive" and task.action in ("export_file", "get_file"):
+                    if not isinstance(data, dict):
+                        return ExecutionResult(
+                            success=False,
+                            command=task.to_command(),
+                            error=f"Expected dict result for drive.export_file/get_file, got {type(data).__name__}",
+                        )
                     saved_file = data.get("saved_file")
                     if saved_file:
                         # Try to determine if it is readable as text
@@ -333,7 +375,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                             ext = os.path.splitext(saved_file)[1].lower()
                             is_text = ext in (".txt", ".csv", ".json", ".md", ".py", ".js", ".html")
 
-                        file_content = None
+                        file_content: str | None = None
                         if is_text:
                             try:
                                 if not is_within_allowed_dir(saved_file):
@@ -380,8 +422,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     # Use service_action format for verification engine
                     VerificationEngine.verify(f"{task.service}_{task.action}", task.parameters, result.output)
                 except VerificationError as e:
-                    from gws_assistant.verification_engine import VerificationSeverity
-
                     if e.severity == VerificationSeverity.ERROR or e.severity == VerificationSeverity.CRITICAL:
                         from gws_assistant.exceptions import VerificationError as ExistingVerificationError
 
@@ -470,8 +510,14 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         body = body.replace("\r\n", "\n")
         body = body.replace("\r", "\n")
         body = body.replace("[File: ", "[See attached document: ")
-
         attachments = task.parameters.get("attachments")
+        max_gmail_body_chars = 4000
+        if len(body) > max_gmail_body_chars and not attachments:
+            body = (
+                body[:max_gmail_body_chars].rstrip()
+                + "\n\n[Output truncated to keep Gmail send payload within CLI limits.]"
+            )
+
         attachment_paths: list[str] = []
         if isinstance(attachments, str) and attachments.strip():
             attachment_paths = [attachments.strip()]
