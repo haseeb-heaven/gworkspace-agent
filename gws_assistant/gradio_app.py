@@ -88,16 +88,18 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         import tempfile
         import shutil
 
-        if not os.path.exists(file_path):
-            return "", "Uploaded file does not exist", "🔴 Not authenticated"
-
         # Gradio actually provides temp files, but CodeQL doesn't know that.
         # We must restrict paths using path normalization and ensuring it doesn't traverse up.
         from gws_assistant.execution.path_safety import _canonicalise
         canonical_path = _canonicalise(file_path)
 
-        if not canonical_path.startswith(tempfile.gettempdir()):
+        # Allow reading only from the temp directory where Gradio places uploads
+        allowed_dir = _canonicalise(tempfile.gettempdir())
+        if not canonical_path.startswith(allowed_dir + os.sep) and canonical_path != allowed_dir:
              return "", "Invalid file path detected.", "🔴 Not authenticated"
+
+        if not os.path.exists(canonical_path):
+            return "", "Uploaded file does not exist", "🔴 Not authenticated"
 
         with open(canonical_path, "r") as f:
             credentials_info = json.load(f)
