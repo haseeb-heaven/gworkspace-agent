@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
+from pydantic import BaseModel
+
 
 @dataclass(slots=True)
 class AppConfigModel:
@@ -362,3 +364,10 @@ class CodeExecutionResult:
     return_value: Any = None
     success: bool = False
     error: str | None = None
+
+
+class CodeExecutionOutput(BaseModel):
+    """Container for inter-agent data passing from code execution."""
+
+    parsed_value: Any | None = None
+    code_output: Any | None = None
