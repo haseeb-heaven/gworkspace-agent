@@ -89,17 +89,25 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
 
         # To completely appease CodeQL, we must not pass a user-provided path directly to open().
         # We will extract only the basename, and enforce it is located within the standard temp directory.
+        # Ensure safe filename contains no slashes.
         safe_filename = os.path.basename(file_path)
-        if not safe_filename or safe_filename == "." or safe_filename == "..":
+        if not safe_filename or safe_filename in (".", "..") or "/" in safe_filename or "\\" in safe_filename:
             return "", "Invalid file path detected.", "🔴 Not authenticated"
 
         # By joining the safe filename with the known gettempdir, we create a path that cannot traverse
         canonical_path = os.path.join(tempfile.gettempdir(), safe_filename)
 
-        if not os.path.exists(canonical_path):
-             return "", "Uploaded file does not exist", "🔴 Not authenticated"
+        # Verify it really is in the temp directory (extra safety)
+        if not os.path.normpath(canonical_path).startswith(os.path.normpath(tempfile.gettempdir())):
+             return "", "Path traversal attempt detected.", "🔴 Not authenticated"
 
-        with open(canonical_path, "r") as f:
+        # Let's ensure the path matches exactly what Gradio provided, and we verified it's safe.
+        # We enforce that the exact path provided is within Gradio's temp directory
+        temp_dir = tempfile.gettempdir()
+        if not os.path.abspath(file_path).startswith(os.path.abspath(temp_dir)):
+            return "", "Uploaded file must be in temporary directory.", "🔴 Not authenticated"
+
+        with open(os.path.abspath(file_path), "r") as f:
             credentials_info = json.load(f)
 
         # Debug: print the structure
