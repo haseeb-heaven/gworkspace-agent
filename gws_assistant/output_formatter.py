@@ -233,7 +233,6 @@ def _format_forms(payload: dict[str, Any]) -> str:
 def _format_calendar_items(payload: dict[str, Any]) -> str:
     i_obj = payload.get("items")
     items = i_obj if isinstance(i_obj, list) else []
-
     header = f"Found {len(items)} calendar event{'s' if len(items) != 1 else ''}."
     if not items:
         return header
