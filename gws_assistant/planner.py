@@ -637,7 +637,6 @@ class CommandPlanner:
 
             # If no date range specified, add default range to avoid returning all historical events
             if not start_date and not end_date:
-                from datetime import datetime
                 now = datetime.utcnow()
                 past_30_days = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 future_30_days = (now + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
