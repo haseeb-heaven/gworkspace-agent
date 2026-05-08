@@ -32,7 +32,7 @@ def check_verification_engine_output(stdout: str) -> bool:
         "PASSED - Data Integrity & Consistency",
         "PASSED - Idempotency & Safety"
     ]
-    
+
     # Remove linebreaks to counter rich console wrapping
     import re
     normalized_stdout = re.sub(r'\s+', ' ', stdout)
