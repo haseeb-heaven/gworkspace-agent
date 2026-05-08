@@ -1,3 +1,11 @@
+## [v1.0.4] - 2026-05-09
+### Added/Changed/Fixed
+- Minor updates and stability fixes
+
+## [v1.0.3] - 2026-05-09
+### Added/Changed/Fixed
+- feat: add env_manager module for thread-safe .env file mutations and API key rotation - feat: add env_manager for atomic, file-locked .env configuration updates and rotation - fix(runtime): fix subprocess encoding and timeout issues for parallel test execution - fix(locking): implement safe concurrent .env mutation and fallback - fix(code_execution): replace multi-line indentation-breaking regex with single-line assignment to fix TypeError NoneType not callable - fix(ci): bundle tiktoken encodings in PyInstaller build to fix cl100k_base error - fix(ci): explicitly bundle litellm JSON data files in PyInstaller build to fix FileNotFoundError - chore(deps): bump python-dotenv in the pip group across 1 directory (#110) - ci: restrict binary builds to tags and releases only - chore: ignore tar.gz and app archives and the binaries directory in .gitignore - fix(security): eliminate path traversal risk by using binary upload for credentials - fix(ci): collect litellm and langchain data files in pyinstaller build - fix(security): address CodeQL alerts for path traversal, secret logging, and workflow permissions - docs: update README with v1.0.2 features and binary support info
+
 ## [v1.0.2] - 2026-05-08
 ### Added/Changed/Fixed
 - chore(version): sync pyproject.toml version to v1.0.2
@@ -335,3 +343,4 @@ All notable changes to this project will be documented in this file.
 - Initial Google Workspace assistant functionality
 - Basic Drive, Gmail, Calendar, and Sheets integration
 - CLI and GUI interfaces
+
