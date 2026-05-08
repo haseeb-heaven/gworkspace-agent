@@ -81,7 +81,7 @@ def write_env_safe(mutations: dict[str, str]) -> None:
                 f.writelines(new_lines)
 
             _safe_replace(temp_path, ENV_PATH)
-            logger.info(f"Safely mutated .env with keys: {list(mutations.keys())}")
+            logger.info(f"Safely mutated .env; {len(mutations)} keys updated")
 
     except Timeout:
         logger.error("Could not acquire lock to mutate .env")
@@ -112,7 +112,10 @@ def rotate_api_key_in_env(failed_key: str):
             if failed_key not in key_map.values():
                 return
 
-            sorted_keys = sorted(key_map.keys(), key=lambda x: int(x.replace("LLM_API_KEY", "") or 1))
+            def _llm_key_index(k: str) -> int:
+                return int(k.replace("LLM_API_KEY", "") or 1)
+
+            sorted_keys = sorted(key_map.keys(), key=_llm_key_index)
             values = [key_map[k] for k in sorted_keys]
 
             if values[0] == failed_key:
@@ -168,7 +171,11 @@ def rotate_model_in_env(failed_model: str):
                 return
 
             fallback_keys = [k for k in key_map.keys() if k.startswith("LLM_FALLBACK_MODEL")]
-            sorted_fallbacks = sorted(fallback_keys, key=lambda x: int(x.replace("LLM_FALLBACK_MODEL", "") or 1))
+
+            def parse_fallback_index(k: str) -> int:
+                return int(k.replace("LLM_FALLBACK_MODEL", "") or 1)
+
+            sorted_fallbacks = sorted(fallback_keys, key=parse_fallback_index)
 
             if not sorted_fallbacks:
                 return
@@ -196,7 +203,7 @@ def rotate_model_in_env(failed_model: str):
                 f.writelines(new_lines)
 
             _safe_replace(temp_path, ENV_PATH)
-            logger.info(f"Successfully rotated model to {new_model} in .env")
+            logger.info("Successfully rotated model in .env")
 
     except Timeout:
         logger.error("Could not acquire lock to rotate model in .env")
