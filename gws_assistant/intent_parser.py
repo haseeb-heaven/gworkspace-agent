@@ -166,12 +166,16 @@ class IntentParser:
             if len(workspace_services) == 1:
                 service = workspace_services[0]
             else:
-                needs_clarification = True
-                service_names = ", ".join(sorted(services))
-                reason = (
-                    f"Multiple services detected ({service_names}). "
-                    "Heuristic parsing only supports one service at a time. Please clarify your request."
-                )
+                # When multiple workspace services are detected, prefer the most specific one
+                # Priority: docs > drive (docs is more specific for documents)
+                # Priority: calendar > events (calendar is more specific for calendar events)
+                if "docs" in workspace_services and "drive" in workspace_services:
+                    service = "docs"
+                elif "calendar" in workspace_services and "events" in workspace_services:
+                    service = "calendar"
+                else:
+                    # Fallback: use the first detected service
+                    service = workspace_services[0]
         else:
             service = services[0]
 
