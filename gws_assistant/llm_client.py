@@ -21,6 +21,8 @@ from litellm.exceptions import (
     RateLimitError,
 )
 
+from gws_assistant.env_manager import rotate_api_key_in_env, rotate_model_in_env
+
 logger = logging.getLogger(__name__)
 
 # Silence litellm's verbose default logging
@@ -135,6 +137,10 @@ def call_llm(
                     f"[LLM] {'Quota' if is_quota else 'RateLimit'} error on model={model}. {retry_msg}"
                 )
                 last_error = e
+                if api_key and not is_last_key:
+                    rotate_api_key_in_env(api_key)
+                elif is_last_key:
+                    rotate_model_in_env(model)
                 continue
 
             except AuthenticationError as e:
@@ -143,6 +149,10 @@ def call_llm(
                 retry_msg = "Trying next key." if not is_last_key else "Trying next model."
                 logger.error(f"[LLM] AuthenticationError on model={model}. {retry_msg}")
                 last_error = e
+                if api_key and not is_last_key:
+                    rotate_api_key_in_env(api_key)
+                elif is_last_key:
+                    rotate_model_in_env(model)
                 continue  # Try next key in case this one is just invalid/expired
 
             except (APIConnectionError, BadRequestError) as e:

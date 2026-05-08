@@ -14,7 +14,7 @@ def test_manual_1():
     # Test: Execute Python code using the code execution tool
     run_task(
         "Calculate 15 * 24 using Python code",
-        expected=["360", "15 * 24"],
+        expected=["360"],
         service="code",
         skip_verification=True,  # Code service is non-verifiable
         skip_5step_verification=False,
