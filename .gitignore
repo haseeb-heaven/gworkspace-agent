@@ -99,3 +99,5 @@ ISSUES.md
 !tests/
 *.orig
 !requirements.txt
+gws-agent.spec
+TAGS
