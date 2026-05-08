@@ -53,7 +53,9 @@ def _is_safe_file_path(file_path: str) -> bool:
         return False
 
     # Check for absolute paths - only allow if within sandbox directories
-    if os.path.isabs(normalized):
+    # Handle Windows drive letters even on Linux (since the app can be used cross-platform or via API)
+    is_absolute = os.path.isabs(normalized) or re.match(r"^[a-zA-Z]:[\\/]", file_path)
+    if is_absolute:
         # Get sandbox directories from environment or use defaults
         sandbox_dirs = [
             os.environ.get('GWS_SANDBOX_DIR', ''),
