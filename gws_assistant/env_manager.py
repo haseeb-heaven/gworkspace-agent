@@ -65,7 +65,7 @@ def write_env_safe(mutations: dict[str, str]) -> None:
                 if "=" in line and not line.strip().startswith("#"):
                     key = line.split("=", 1)[0].strip()
                     if key in mutations:
-                        new_lines.append(f"{key}={mutations[key]}\\n")
+                        new_lines.append(f"{key}={mutations[key]}\n")
                         mutated_keys.add(key)
                     else:
                         new_lines.append(line)
@@ -74,7 +74,7 @@ def write_env_safe(mutations: dict[str, str]) -> None:
 
             for k, v in mutations.items():
                 if k not in mutated_keys:
-                    new_lines.append(f"{k}={v}\\n")
+                    new_lines.append(f"{k}={v}\n")
 
             temp_path = ENV_PATH.with_suffix(".env.tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
@@ -130,7 +130,7 @@ def rotate_api_key_in_env(failed_key: str):
                     if "=" in line and not line.strip().startswith("#"):
                         k = line.split("=", 1)[0].strip()
                         if k in mutations:
-                            new_lines.append(f"{k}={mutations[k]}\\n")
+                            new_lines.append(f"{k}={mutations[k]}\n")
                         else:
                             new_lines.append(line)
                     else:
@@ -192,7 +192,7 @@ def rotate_model_in_env(failed_model: str):
                 if "=" in line and not line.strip().startswith("#"):
                     k = line.split("=", 1)[0].strip()
                     if k in mutations:
-                        new_lines.append(f"{k}={mutations[k]}\\n")
+                        new_lines.append(f"{k}={mutations[k]}\n")
                     else:
                         new_lines.append(line)
                 else:
