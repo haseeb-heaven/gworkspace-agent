@@ -141,6 +141,8 @@ class AppConfig:
                 os.getenv("LLM_FALLBACK_MODEL") or "",
                 os.getenv("LLM_FALLBACK_MODEL2") or "",
                 os.getenv("LLM_FALLBACK_MODEL3") or "",
+                os.getenv("LLM_FALLBACK_MODEL4") or "",
+                os.getenv("LLM_FALLBACK_MODEL5") or "",
             ]
             llm_fallback_models = []
             for m in fallback_raw:
@@ -223,7 +225,7 @@ class AppConfig:
             verification_exact_placeholders = _to_set(
                 os.getenv("VERIFICATION_EXACT_PLACEHOLDERS"),
                 default={
-                    "none", "null", "n/a", "na", "undefined",
+                    "none", "null", "undefined",
                     "todo", "fixme", "placeholder", "example", "sample", "dummy",
                     "your_value", "insert_here", "replace_me", "changeme", "default",
                     "fake", "mock", "temporary", "tbd", "missing"

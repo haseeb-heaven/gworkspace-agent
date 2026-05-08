@@ -97,7 +97,7 @@ class VerificationEngine:
                 class VerificationDefaults:
                     def __init__(self):
                         self.verification_exact_placeholders = {
-                            "none", "null", "n/a", "na", "undefined",
+                            "none", "null", "undefined",
                             "todo", "fixme", "placeholder", "example", "sample", "dummy",
                             "your_value", "insert_here", "replace_me", "changeme", "default",
                             "fake", "mock", "temporary", "tbd", "missing"
@@ -968,11 +968,11 @@ class VerificationEngine:
                     tool_name, params, field="title", min_length=2, block_placeholders=True
                 )
 
-                # STRICT notes validation if provided
+                # Notes validation if provided (relaxed min_length for optional field)
                 notes = params.get("notes")
                 if notes is not None:
                     cls._validate_content_not_empty(
-                        tool_name, params, field="notes", min_length=5, block_placeholders=True
+                        tool_name, params, field="notes", min_length=1, block_placeholders=True
                     )
 
             due = params.get("due")

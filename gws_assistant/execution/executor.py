@@ -325,13 +325,19 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     if needs_enrich:
                         max_enrich = min(len(msgs), 20)  # Cap to avoid excessive API calls
                         enriched = []
-                        for m in msgs[:max_enrich]:
+                        for idx, m in enumerate(msgs[:max_enrich]):
                             mid = m.get("id")
                             if not mid:
                                 enriched.append(m)
                                 continue
                             try:
-                                get_params = {"userId": "me", "id": mid, "format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]}
+                                # Use 'full' format for the first 5 messages to enable high-quality extraction
+                                # Use 'metadata' for the rest to preserve performance
+                                fmt = "full" if idx < 5 else "metadata"
+                                get_params = {"userId": "me", "id": mid, "format": fmt}
+                                if fmt == "metadata":
+                                    get_params["metadataHeaders"] = ["From", "Subject", "Date"]
+
                                 get_args = ["gmail", "users", "messages", "get", "--params", json.dumps(get_params)]
                                 get_res = self.runner.run(get_args)
                                 if get_res.success and get_res.stdout:

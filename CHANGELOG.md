@@ -1,3 +1,38 @@
+## [v1.0.2] - 2026-05-08
+### Added/Changed/Fixed
+- chore(version): sync pyproject.toml version to v1.0.1
+- feat(resolver): enhance flattened key resolution and array indexing
+- ci: add binary build workflow for Windows, Linux, and macOS
+- docs: optimize README structure and add full presentation walkthrough
+- Updated README with Video Overview
+- fix(tests): properly unset API keys in config tests
+- fix(resolver): handle flattened keys with array indexing
+- feat: implement model registry to manage assistant model configurations
+- fix(verification): relax tasks notes validation min_length from 5 to 1
+- fix(tests): move gws binary tests to manual and fix intent parser heuristic
+- chore(scan): clean up lint, security config, and dependency hygiene (#108)
+- fix(intent_parser): handle multiple detected intents in heuristic parser
+- Feat/engine improments (#105)
+- ci: remove auto-merge job — PRs must never be automatically merged
+- fix(security): address Bandit 'Try, Except, Pass' warnings in resolver and code_execution
+- update README
+- fix: sync-open-prs must wait for CI before merging
+- fix: prevent pipeline skip caused by github-actions[bot] race condition
+- feat: engine improvemts
+- Revise README for gws_cli command and add examples
+- fix: update calendar action descriptions to prevent unnecessary list_events calls and old recurring events being returned
+- Replace python gws_cli.py with gws_cli executable in README
+- fix: remove event_id parameter from create_event to prevent reusing old event IDs
+- fix: prevent TypeError in code execution and simplify README examples
+- docs: add complex workflow examples to README
+- docs: move clickable links to Enable column
+- docs: embed enable URLs as clickable links in API names
+- docs: add API reference table with enable URLs for all Google services
+- docs: update README to document gws_cli executable scripts
+- feat: add executable CLI scripts (gws_cli for Unix, gws_cli.bat for Windows)
+- Potential fix for code scanning alert no. 1792: Clear-text logging of sensitive information
+- docs: add TAGS and RELEASES files for v1.0.1
+
 ## [v1.0.1] - 2026-05-05
 ### Added/Changed/Fixed
 - Add STATS.md with repository statistics in table format and reference in README
