@@ -979,4 +979,3 @@ def test_agent_upload_request_does_not_use_move_strategy(tmp_path):
 
     actions = [t.action for t in plan.tasks]
     assert "move_file" not in actions
-
