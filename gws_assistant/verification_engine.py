@@ -87,57 +87,58 @@ class VerificationEngine:
     @classmethod
     def _get_config(cls):
         """Get the current AppConfig instance with caching."""
-        if cls._config_cache is None:
-            try:
-                cls._config_cache = AppConfig.from_env()
-            except Exception as e:
-                logger.warning(f"Could not load AppConfig from environment: {e}. Using verification defaults.")
-                # Return a minimal verification-only defaults object that mirrors real config defaults
-                # Use instance-level __init__ to avoid shared mutable class-level state
-                class VerificationDefaults:
-                    def __init__(self):
-                        self.verification_exact_placeholders = {
-                            "none", "null", "undefined",
-                            "todo", "fixme", "placeholder", "example", "sample", "dummy",
-                            "your_value", "insert_here", "replace_me", "changeme", "default",
-                            "fake", "mock", "temporary", "tbd", "missing"
-                        }
-                        self.verification_numeric_placeholders = {"0000", "1234", "9999", "00000000"}
-                        self.verification_exact_emails = {"noreply@domain.com", "noreply@example.com"}
-                        self.verification_email_placeholder_domains = ["@test.com"]
-                        self.verification_destructive_operations = {
-                            "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
-                            "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
-                            "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
-                            "docs_delete_document",
-                            "calendar_delete_event", "calendar_delete_calendar",
-                            "contacts_delete_contact",
-                        }
-                        self.verification_bulk_indicators = ["batch", "bulk", "multiple", "all"]
-                        self.verification_id_fields = ["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
-                        self.verification_content_fields = ["body", "content", "message", "text", "description"]
-                        self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
-                        self.verification_suspicious_patterns = {
-                            "delete_all": r"delete.*all",
-                            "remove_everything": r"remove.*everything",
-                            "wipe_all": r"wipe.*all",
-                            "clear_all": r"clear.*all",
-                        }
-                        # Content validation settings
-                        self.verification_min_content_length = {
-                            "document": 5,  # Min chars for document content
-                            "email_body": 10,  # Min chars for email body
-                            "spreadsheet_cell": 1,  # Min chars per cell
-                            "task_title": 2,  # Min chars for task title
-                            "event_summary": 2,  # Min chars for event title
-                            "contact_name": 2,  # Min chars for contact name
-                        }
-                cls._config_cache = VerificationDefaults()
-        return cls._config_cache
+        # BUG FIX: Instead of a permanent local cache that gets stale when AppConfig is cleared,
+        # we try AppConfig.from_env() and only use a temporary fallback if it fails.
+        try:
+            return AppConfig.from_env()
+        except Exception as e:
+            logger.warning(f"Could not load AppConfig from environment: {e}. Using verification defaults.")
+
+            # Return a minimal verification-only defaults object
+            class VerificationDefaults:
+                def __init__(self):
+                    self.verification_exact_placeholders = {
+                        "none", "null", "undefined",
+                        "todo", "fixme", "placeholder", "example", "sample", "dummy",
+                        "your_value", "insert_here", "replace_me", "changeme", "default",
+                        "fake", "mock", "temporary", "tbd", "missing"
+                    }
+                    self.verification_numeric_placeholders = {"0000", "1234", "9999", "00000000"}
+                    self.verification_exact_emails = {"noreply@domain.com", "noreply@example.com"}
+                    self.verification_email_placeholder_domains = ["@test.com"]
+                    self.verification_destructive_operations = {
+                        "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
+                        "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
+                        "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
+                        "docs_delete_document",
+                        "calendar_delete_event", "calendar_delete_calendar",
+                        "contacts_delete_contact",
+                    }
+                    self.verification_bulk_indicators = ["batch", "bulk", "multiple", "all"]
+                    self.verification_id_fields = ["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
+                    self.verification_content_fields = ["body", "content", "message", "text", "description"]
+                    self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
+                    self.verification_suspicious_patterns = {
+                        "delete_all": r"delete.*all",
+                        "remove_everything": r"remove.*everything",
+                        "wipe_all": r"wipe.*all",
+                        "clear_all": r"clear.*all",
+                    }
+                    self.verification_min_content_length = {
+                        "document": 5,
+                        "email_body": 10,
+                        "spreadsheet_cell": 1,
+                        "task_title": 2,
+                        "event_summary": 2,
+                        "contact_name": 2,
+                    }
+
+            return VerificationDefaults()
 
     @classmethod
     def clear_config_cache(cls):
-        """Clear the config cache (useful for testing)."""
+        """Clear the config cache (delegates to AppConfig)."""
+        AppConfig.clear_cache()
         cls._config_cache = None
 
     @classmethod
