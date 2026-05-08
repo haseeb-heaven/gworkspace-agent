@@ -89,6 +89,38 @@ def verify_with_gws(service: str, action: str, resource_id: str, binary_path: Pa
                 timeout=30
             )
             return result.returncode == 0
+        elif service == "forms" and action in ("create_form", "create"):
+            result = subprocess.run(
+                [str(binary_path), "forms", "forms", "get", "--params", json.dumps({"formId": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "tasks" and action in ("create_task", "create"):
+            result = subprocess.run(
+                [str(binary_path), "tasks", "tasks", "get", "--params", json.dumps({"tasklist": "@default", "task": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "contacts" and action in ("create_contact", "create"):
+            result = subprocess.run(
+                [str(binary_path), "people", "people", "get", "--params", json.dumps({"resourceName": resource_id, "personFields": "names"})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
+        elif service == "chat" and action in ("send_message", "create_message", "create"):
+            result = subprocess.run(
+                [str(binary_path), "chat", "spaces.messages", "get", "--params", json.dumps({"name": resource_id})],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.returncode == 0
         return True
     except Exception:
         return False
@@ -280,6 +312,11 @@ def run_task(
                 "drive": {"create", "upload", "copy"},
                 "slides": {"create", "append"},
                 "forms": {"create"},
+                "contacts": {"create", "add"},
+                "tasks": {"create", "add"},
+                "chat": {"send", "create"},
+                "calendar": {"create", "add"},
+                "keep": {"create", "add"},
             }
 
             # Check if the task is primarily about creating the service being verified

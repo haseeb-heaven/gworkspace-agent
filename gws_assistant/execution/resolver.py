@@ -650,14 +650,106 @@ class ResolverMixin:
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
-        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
+        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'.
+        Also handles flattened keys like 'task-7.result[0]' where 'task-7.result' is a top-level key.
+        """
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first
         if path in data:
             return data[path]
 
-        # 2. Split path into tokens, handling dots and brackets
+        # 2. Handle flattened keys (e.g., 'task-7.result[0]', 'task-1.messages[0].id', or 'task-1.messages.id')
+        # Check if the path contains an array index like [0], [1], etc.
+        array_index_match = re.search(r'\[(\d+)\]', path)
+
+        # Find the longest matching flattened key prefix
+        # For 'task-1.messages[0].id', we try 'task-1.messages', then 'task-1', etc.
+        # For 'task-1.messages.id', we try 'task-1.messages', then 'task-1', etc.
+        if array_index_match:
+            base_path = path[:array_index_match.start()]
+            remaining_path = path[array_index_match.end():]
+        else:
+            # No array index, so the entire path up to the last dot might be a flattened key
+            # For 'task-1.messages.id', we try 'task-1.messages', then 'task-1'
+            last_dot = path.rfind('.')
+            if last_dot > 0:
+                base_path = path[:last_dot]
+                remaining_path = path[last_dot + 1:]
+            else:
+                base_path = path
+                remaining_path = ''
+
+        # Try to find the longest matching key in data
+        best_match = None
+        best_match_value = None
+
+        # Split by dots to try progressively shorter prefixes
+        parts = base_path.split('.')
+        for i in range(len(parts), 0, -1):
+            candidate = '.'.join(parts[:i])
+            if candidate in data:
+                best_match = candidate
+                best_match_value = data[candidate]
+                break
+
+        if best_match is not None:
+            curr = best_match_value
+
+            # If we have an array index, apply it
+            if array_index_match:
+                index = int(array_index_match.group(1))
+                if isinstance(curr, list) and 0 <= index < len(curr):
+                    curr = curr[index]
+                    # Apply remaining path after array index
+                    if remaining_path:
+                        remaining_tokens = re.findall(r"[^.\[\]]+|\[\d+\]", remaining_path)
+                        for token in remaining_tokens:
+                            if token.startswith("["):
+                                idx = int(token[1:-1])
+                                if isinstance(curr, list) and 0 <= idx < len(curr):
+                                    curr = curr[idx]
+                                else:
+                                    return None
+                            else:
+                                if isinstance(curr, dict) and token in curr:
+                                    curr = curr[token]
+                                else:
+                                    return None
+                    return curr
+                else:
+                    # Not a list or index out of range, fall through to step 3
+                    self.logger.debug(f"DEBUG: base path '{best_match}' exists but is not a list or index out of range, falling through to nested path handling")
+            elif isinstance(curr, list) and remaining_path:
+                # No array index, but we have a list and a remaining path
+                # This handles cases like 'task-1.messages.id' where we want to map 'id' across the list
+                # Tokenize the remaining path
+                remaining_tokens = re.findall(r"[^.\[\]]+|\[\d+\]", remaining_path)
+                for token in remaining_tokens:
+                    if token.startswith("["):
+                        # Array indexing on the list
+                        idx = int(token[1:-1])
+                        if isinstance(curr, list) and 0 <= idx < len(curr):
+                            curr = curr[idx]
+                        else:
+                            return None
+                    else:
+                        # Field access - map across the list
+                        if isinstance(curr, list):
+                            curr = [item.get(token) if isinstance(item, dict) else None for item in curr]
+                        elif isinstance(curr, dict) and token in curr:
+                            curr = curr[token]
+                        else:
+                            return None
+                return curr
+            elif isinstance(curr, list) and not remaining_path:
+                # Just a flattened list key with no further access
+                return curr
+            elif isinstance(curr, dict):
+                # Matched a dict, not a list - fall through to step 3 for nested handling
+                self.logger.debug(f"DEBUG: base path '{best_match}' is a dict, falling through to nested path handling")
+
+        # 3. Split path into tokens, handling dots and brackets
         tokens = re.findall(r"[^.\[\]]+|\[\d+\]", path)
         if not tokens:
             return None
