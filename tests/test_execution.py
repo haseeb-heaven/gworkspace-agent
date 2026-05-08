@@ -589,3 +589,43 @@ def test_coerce_structured_value_preserves_none() -> None:
     assert _coerce_structured_value("[]") == []
     assert _coerce_structured_value("{}") == {}
     assert _coerce_structured_value("test") == "test"
+
+
+def test_is_safe_file_path_blocks_path_traversal() -> None:
+    """Test that _is_safe_file_path blocks path traversal attempts."""
+    from gws_assistant.execution.helpers import _is_safe_file_path
+
+    # Test path traversal attempts
+    assert not _is_safe_file_path("../../../etc/passwd")
+    assert not _is_safe_file_path("..\\..\\..\\windows\\system32\\config")
+    assert not _is_safe_file_path("../../etc/passwd")
+
+    # Test null bytes
+    assert not _is_safe_file_path("test\x00file.txt")
+
+    # Test absolute paths outside sandbox (default sandbox dirs not set)
+    assert not _is_safe_file_path("/etc/passwd")
+    assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
+
+    # Test safe relative paths
+    assert _is_safe_file_path("test.txt")
+    assert _is_safe_file_path("subdir/test.txt")
+    assert _is_safe_file_path("./test.txt")
+
+    # Test safe absolute paths within sandbox (when env var set)
+    import os
+    import tempfile
+
+    original_scratch = os.environ.get("GWS_SCRATCH_DIR")
+    try:
+        # Use a temp directory for platform-independent testing
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["GWS_SCRATCH_DIR"] = tmpdir
+            # Construct a path within the sandbox
+            test_path = os.path.join(tmpdir, "test.txt")
+            assert _is_safe_file_path(test_path)
+    finally:
+        if original_scratch:
+            os.environ["GWS_SCRATCH_DIR"] = original_scratch
+        elif "GWS_SCRATCH_DIR" in os.environ:
+            del os.environ["GWS_SCRATCH_DIR"]

@@ -20,6 +20,61 @@ def _sanitize_file_path_patterns(value: Any) -> Any:
     return value
 
 
+def _is_safe_file_path(file_path: str) -> bool:
+    """Validate that a file path is safe and doesn't contain path traversal sequences.
+
+    Prevents path traversal attacks by checking for:
+    - .. (parent directory traversal)
+    - Absolute paths outside sandbox directories
+    - Null bytes
+    - Control characters
+
+    Args:
+        file_path: The file path to validate
+
+    Returns:
+        True if the path is safe, False otherwise
+    """
+    if not file_path or not isinstance(file_path, str):
+        return False
+
+    # Check for null bytes
+    if '\x00' in file_path:
+        return False
+
+    # Normalize the path to resolve any traversal attempts
+    try:
+        normalized = os.path.normpath(file_path)
+    except (ValueError, TypeError):
+        return False
+
+    # Check for path traversal sequences
+    if '..' in normalized:
+        return False
+
+    # Check for absolute paths - only allow if within sandbox directories
+    if os.path.isabs(normalized):
+        # Get sandbox directories from environment or use defaults
+        sandbox_dirs = [
+            os.environ.get('GWS_SANDBOX_DIR', ''),
+            os.environ.get('GWS_SCRATCH_DIR', 'scratch'),
+            os.environ.get('GWS_DOWNLOADS_DIR', 'downloads'),
+        ]
+        # Allow absolute paths only if they're within sandbox directories
+        is_in_sandbox = any(
+            normalized.startswith(sandbox_dir.rstrip(os.sep) + os.sep)
+            for sandbox_dir in sandbox_dirs if sandbox_dir
+        )
+        if not is_in_sandbox:
+            return False
+
+    # Check for suspicious control characters
+    if any(ord(c) < 32 for c in file_path if c not in '\t\n\r'):
+        return False
+
+    return True
+
+
 def _coerce_structured_value(raw: Any) -> Any:
     """Return list/dict if raw string represents structured data, otherwise keep value."""
     if raw is None:
@@ -306,14 +361,20 @@ class HelpersMixin:
             # and we have content in parsed_value or stdout, write it.
             target_file = task.parameters.get("file_path")
             if target_file and result.get("success"):
-                content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
-                if content_to_write:
-                    try:
-                        with open(target_file, "w", encoding="utf-8") as f:
-                            f.write(str(content_to_write))
-                        self.logger.info(f"Auto-wrote code output to {os.path.basename(target_file)}")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to auto-write code output to {os.path.basename(target_file)}: {e}")
+                # Security: Validate file path to prevent path traversal attacks
+                if not _is_safe_file_path(target_file):
+                    self.logger.warning(
+                        f"Auto-write blocked: unsafe file path detected: {os.path.basename(target_file) if target_file else 'None'}"
+                    )
+                else:
+                    content_to_write = output_data.get("parsed_value") or output_data.get("stdout")
+                    if content_to_write:
+                        try:
+                            with open(target_file, "w", encoding="utf-8") as f:
+                                f.write(str(content_to_write))
+                            self.logger.info(f"Auto-wrote code output to {os.path.basename(target_file)}")
+                        except Exception as e:
+                            self.logger.warning(f"Failed to auto-write code output to {os.path.basename(target_file)}: {e}")
 
             def _tableify(value: Any) -> str | None:
                 rows: list[list[str]] = []
