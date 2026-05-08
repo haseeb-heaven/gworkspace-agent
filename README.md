@@ -27,10 +27,12 @@ An autonomous AI agent for Google Workspace, built on a hybrid **LangChain ReAct
 
 - **5-Step Verification Engine** - Strict, non-bypassable verification system that validates parameters, permissions, results, data integrity, and idempotency.
 - **Hybrid ReAct + LangGraph Engine** — LLM-driven planner generates a typed DAG of tasks; LangGraph executes nodes with full state persistence.
+- **Model Registry & Fallbacks** — Managed model configurations with automatic fallback chains across OpenAI, Anthropic, and OpenRouter.
 - **Multi-Service Orchestration** — Chain Gmail, Drive, Sheets, Docs, Calendar, and Code execution in a single request.
 - **Long-Term Memory** — Powered by Mem0 to recall user preferences across sessions.
 - **Sandboxed Code Execution** — Python code runs inside a restricted E2B sandbox.
 - **Safety-by-Default** — Read-Only mode and manual confirmation for state-changing actions.
+- **Portable Binary CLI** — Pre-built executables (`gws_cli` / `gws_cli.bat`) for easy deployment without complex Python environments.
 - **Multi-Interface** — CLI, Desktop GUI, Web (Gradio), and Telegram Bot support.
 
 ---
