@@ -25,7 +25,9 @@ def _required(monkeypatch):
 
 def test_config_prefers_openrouter_when_openrouter_key_present(monkeypatch):
     _required(monkeypatch)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("LLM_PROVIDER", "")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
@@ -40,7 +42,9 @@ def test_config_generic_llm_env_overrides_provider_specific(monkeypatch):
     _required(monkeypatch)
     monkeypatch.setenv("LLM_MODEL", "openrouter/qwen/qwen3-next-80b-a3b-instruct:free")
     monkeypatch.setenv("LLM_API_KEY", "generic")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "generic")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("USE_HEURISTIC_FALLBACK", "true")
     with patch("gws_assistant.config.load_dotenv"):
