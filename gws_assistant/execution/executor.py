@@ -194,22 +194,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 except VerificationError as e:
                     if e.severity == VerificationSeverity.WARNING:
                         self.logger.warning(f"Pre-execution verification warning (continuing): {e}")
-                    elif task.is_destructive(destructive_ops=destructive_ops):
-                        # Destructive operations MUST halt on verification failure
-                        self.logger.error(f"Pre-execution verification failed (destructive op): {e}")
-                        raise
                     else:
-                        # Non-destructive operations: skip this step gracefully
-                        # (e.g. batch_update with unresolved text placeholder)
-                        self.logger.warning(
-                            f"Pre-execution verification failed for non-destructive "
-                            f"{task.service}.{task.action}: {e} — skipping step."
-                        )
-                        return ExecutionResult(
-                            success=False,
-                            command=["<skipped>"],
-                            error=f"Skipped {task.service}.{task.action}: {e}",
-                        )
+                        self.logger.error(f"Pre-execution verification failed: {e}")
+                        raise
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 
