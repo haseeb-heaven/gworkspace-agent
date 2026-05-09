@@ -126,6 +126,7 @@ def call_llm(
                 return response
 
             except RateLimitError as e:
+                import time
                 msg = str(e).lower()
                 is_quota = any(k in msg for k in ("quota", "billing", "insufficient_quota", "insufficient_quota_available", "out_of_quota"))
                 level = logging.ERROR if is_quota else logging.WARNING
@@ -141,6 +142,9 @@ def call_llm(
                     rotate_api_key_in_env(api_key)
                 elif is_last_key:
                     rotate_model_in_env(model)
+
+                # Small backoff before trying next key/model
+                time.sleep(1)
                 continue
 
             except AuthenticationError as e:

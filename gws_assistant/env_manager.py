@@ -1,8 +1,9 @@
-import os
 import logging
-import time
+import os
 import re
+import time
 from pathlib import Path
+
 from filelock import FileLock, Timeout
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ def read_env_safe() -> dict[str, str]:
     """Reads .env safely with retry for Windows locking issues."""
     if not ENV_PATH.exists():
         return {}
-    
+
     for attempt in range(3):
         try:
             env_vars = {}
@@ -39,7 +40,7 @@ def read_env_safe() -> dict[str, str]:
             if attempt == 2:
                 break
             time.sleep(0.1)
-    
+
     # Fallback to empty if all retries fail
     return {}
 
@@ -194,12 +195,12 @@ def rotate_model_in_env(failed_model: str) -> None:
                 return int(suffix) if suffix else 1
 
             sorted_fallbacks = sorted(fallback_keys, key=parse_fallback_index)
-            
+
             all_model_keys = []
             if "LLM_MODEL" in key_map:
                 all_model_keys.append("LLM_MODEL")
             all_model_keys.extend(sorted_fallbacks)
-            
+
             all_values = [key_map[k] for k in all_model_keys]
 
             if failed_model in all_values:

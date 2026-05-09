@@ -1247,8 +1247,8 @@ class VerificationEngine:
                 # Downgrade to WARNING so the pipeline doesn't halt.
                 if normalized_name == "create_document":
                     logger.warning(
-                        f"[CHECK 4] docs_create_document has empty/invalid content param — "
-                        f"document was created with title only. Content may be added via batch_update."
+                        "[CHECK 4] docs_create_document has empty/invalid content param — "
+                        "document was created with title only. Content may be added via batch_update."
                     )
                 else:
                     raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")

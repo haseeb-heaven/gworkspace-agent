@@ -112,7 +112,15 @@ class WorkflowNodes:
             plan = self.system.plan(state.get("user_text", ""))
             history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
             self._log_step("planner", {"user_text": state.get("user_text", "")}, {"tasks": len(plan.tasks), "source": plan.source})
-            return {"plan": plan, "error": None, "conversation_history": history}
+            return {
+                "plan": plan,
+                "error": None,
+                "conversation_history": history,
+                "current_task_index": 0,
+                "retry_count": 0,
+                "current_attempt": 0,
+                "abort_plan": False
+            }
         except Exception as exc:
             history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
             self._log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
@@ -259,10 +267,10 @@ class WorkflowNodes:
         idx = state.get("current_task_index", 0)
         plan = state.get("plan")
         current_task = plan.tasks[idx] if plan and idx < len(plan.tasks) else None
-        
+
         last_result = state.get("last_result")
         is_code_task = current_task and current_task.service in ("code", "computation")
-        
+
         is_code_error = (
             context.get("needs_code_fix", False)
             or (is_code_task and error and "code" in str(error).lower())
@@ -344,6 +352,7 @@ class WorkflowNodes:
 
     def format_output_node(self, state: AgentState) -> dict[str, Any]:
         """Format the final output using the formatter."""
+        print("--- Format Output Node ---")
         plan = state.get("plan")
         executions = state.get("executions", [])
         context = state.get("context", {})
@@ -384,7 +393,7 @@ class WorkflowNodes:
         missing = self._check_missing_requirements(final_output, requirements)
 
         if missing and verification_attempts < 2:
-            self.logger.warning(f"Intent verification failed: missing {missing}. Triggering replan.")
+            self.logger.info(f"Intent verification failed (attempt {verification_attempts + 1}/2): missing {missing}. Triggering replan.")
             return {
                 "intent_verification": {
                     "passed": False,
@@ -738,7 +747,8 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         return {"context": context, "error": None}
 
     def route_after_plan(state: AgentState) -> Literal["validate", "format_output", "web_search", "generate_code"]:
-        if state.get("error"):
+        error = state.get("error")
+        if error:
             return "format_output"
         plan = state.get("plan")
         text = state.get("user_text", "").lower()
@@ -804,9 +814,9 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 return "generate_code"
             return "execute_task"
         if decision.action == "replan":
-            # Prevent infinite replan loops - stop after 3 replans
+            # Prevent infinite replan loops
             retry_count = state.get("retry_count", 0)
-            if retry_count >= 3:
+            if retry_count >= config.max_replans + 2:  # Higher threshold for specific task failure replans
                 return "persist_memory"
             return "generate_plan"
         return "persist_memory"
@@ -883,7 +893,7 @@ def run_workflow(user_text: str, config: AppConfigModel, system, executor, logge
     )
     app = create_workflow(config, system, executor, logger)
     try:
-        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=500))
+        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=2000))
         return final_state.get("final_output", "Workflow returned no output.")
     except Exception as exc:
         logger.exception("Workflow failed.")

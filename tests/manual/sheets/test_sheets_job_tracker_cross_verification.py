@@ -1,5 +1,6 @@
 from tests.manual.shared import run_task
 
+
 def test_job_application_tracker_cross_verify() -> None:
     """Test job application tracker extraction and cross verify with gws.exe."""
     task_string = (

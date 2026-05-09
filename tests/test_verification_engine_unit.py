@@ -262,8 +262,8 @@ class TestVerifyAttachmentSent:
             )
 
     def test_empty_attachment_file_fails(self):
-        import tempfile
         import os
+        import tempfile
         with tempfile.NamedTemporaryFile(delete=False) as empty_file:
             empty_file.write(b"")
             empty_file_path = empty_file.name

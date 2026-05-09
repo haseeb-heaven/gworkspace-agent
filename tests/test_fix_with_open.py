@@ -1,6 +1,6 @@
 
-import pytest
 from gws_assistant.tools.code_execution import execute_generated_code
+
 
 def test_execute_with_open_replacement_multi_line():
     code = """
@@ -12,18 +12,18 @@ with open("test.txt") as f:
 """
     # We need to provide injected_vars in extra_globals
     extra_globals = {"injected_vars": ["mock_file_content"]}
-    
+
     res = execute_generated_code(code, extra_globals=extra_globals)
-    
+
     assert res["success"], f"Execution failed: {res['error']}"
     assert res["output"]["parsed_value"]["result"] == "success"
 
 def test_execute_with_open_one_liner():
     code = 'with open("test.txt") as f: result = "one-liner"'
     extra_globals = {"injected_vars": ["mock_file_content"]}
-    
+
     res = execute_generated_code(code, extra_globals=extra_globals)
-    
+
     assert res["success"], f"Execution failed: {res['error']}"
     assert res["output"]["parsed_value"]["result"] == "one-liner"
 
@@ -34,9 +34,9 @@ with open("test.txt") as f:
     return result
 """
     extra_globals = {"injected_vars": ["mock_file_content"]}
-    
+
     res = execute_generated_code(code, extra_globals=extra_globals)
-    
+
     assert res["success"], f"Execution failed: {res['error']}"
     assert res["output"]["parsed_value"]["result"] == "return-removed"
 

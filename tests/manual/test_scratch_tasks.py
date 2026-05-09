@@ -3,7 +3,6 @@ Manual tests for scratch/tasks TXT files.
 Tests each task by running it via gws_cli and verifying it executes successfully
 with 5-step verification engine checks and gws.exe binary verification.
 """
-import json
 import subprocess
 import sys
 from pathlib import Path

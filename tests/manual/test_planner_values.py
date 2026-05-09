@@ -1,7 +1,9 @@
 
 import json
-from gws_assistant.planner import CommandPlanner
+
 from gws_assistant.models import CodeExecutionOutput
+from gws_assistant.planner import CommandPlanner
+
 
 def test_append_values_with_model():
     planner = CommandPlanner()

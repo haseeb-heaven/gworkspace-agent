@@ -16,11 +16,11 @@ class WithOpenTransformer(ast.NodeTransformer):
         self.generic_visit(node)
         new_nodes = []
         for item in node.items:
-            if (isinstance(item.context_expr, ast.Call) and 
-                isinstance(item.context_expr.func, ast.Name) and 
-                item.context_expr.func.id == 'open' and 
+            if (isinstance(item.context_expr, ast.Call) and
+                isinstance(item.context_expr.func, ast.Name) and
+                item.context_expr.func.id == 'open' and
                 isinstance(item.optional_vars, ast.Name)):
-                
+
                 var_name = item.optional_vars.id
                 # var_name = injected_vars[0] if injected_vars else []
                 assignment = ast.Assign(
@@ -41,14 +41,14 @@ class WithOpenTransformer(ast.NodeTransformer):
                 # If it's not 'with open(...) as var:', we might want to keep it as a 'with' block
                 # but this complicates things if there are multiple items in one 'with'
                 pass
-        
+
         if new_nodes:
             # For simplicity, if we matched 'open', we just replace the whole 'with' block
             # with the assignments + the body.
             # If there were other items in the 'with' that were NOT 'open', they are lost here.
             # But the original regex also only handled 'with open(...) as var:'
             return new_nodes + node.body
-        
+
         return node
 
 tree = ast.parse(code_with_body)

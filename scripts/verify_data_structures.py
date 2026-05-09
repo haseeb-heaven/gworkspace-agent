@@ -2,10 +2,11 @@
 """Comprehensive verification script for GWS data structures."""
 
 import json
+import shlex
 import subprocess
 import sys
-import shlex
 from typing import Sequence
+
 
 def run_command(cmd: Sequence[str]) -> tuple[str, str, int]:
     """Run a shell command and return the output."""
@@ -26,10 +27,10 @@ def verify_gmail_triage() -> bool:
         return False
 
     if not stdout:
-        print(f"[FAILED] Gmail triage returned no output")
+        print("[FAILED] Gmail triage returned no output")
         return False
 
-    print(f"[PASSED] Gmail triage command succeeded")
+    print("[PASSED] Gmail triage command succeeded")
     print(f"Output length: {len(stdout)} characters")
     return True
 
@@ -42,7 +43,7 @@ def verify_gmail_read() -> bool:
     # First get a message ID from triage
     stdout, stderr, code = run_command(shlex.split("gws gmail +triage"))
     if code != 0 or not stdout:
-        print(f"[FAILED] Cannot get message ID from triage")
+        print("[FAILED] Cannot get message ID from triage")
         return False
 
     # Extract first message ID (more robust parsing)
@@ -63,7 +64,7 @@ def verify_gmail_read() -> bool:
                 break
 
     if not message_id:
-        print(f"[FAILED] Could not extract message ID from triage output")
+        print("[FAILED] Could not extract message ID from triage output")
         return False
 
     # Read the message with JSON format
@@ -86,7 +87,7 @@ def verify_gmail_read() -> bool:
             print(f"[FAILED] Missing required fields: {missing_fields}")
             return False
 
-        print(f"[PASSED] Gmail read returns valid JSON with all required fields")
+        print("[PASSED] Gmail read returns valid JSON with all required fields")
         print(f"Fields: {list(data.keys())}")
         return True
 
@@ -197,8 +198,9 @@ def verify_resolver_with_gmail_data() -> bool:
     print("=" * 60)
 
     try:
-        from gws_assistant.execution.resolver import ResolverMixin
         import logging
+
+        from gws_assistant.execution.resolver import ResolverMixin
 
         class MockResolver(ResolverMixin):
             def __init__(self):
@@ -253,8 +255,9 @@ def verify_resolver_with_docs_data() -> bool:
     print("=" * 60)
 
     try:
-        from gws_assistant.execution.resolver import ResolverMixin
         import logging
+
+        from gws_assistant.execution.resolver import ResolverMixin
 
         class MockResolver(ResolverMixin):
             def __init__(self):

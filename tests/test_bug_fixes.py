@@ -7,9 +7,7 @@ Run with:
 
 from __future__ import annotations
 
-import ast
 import threading
-import types
 import unittest
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -201,7 +199,6 @@ class TestVerificationEngineConfigCache(unittest.TestCase):
     def test_cache_is_cleared_when_app_config_cleared(self):
         """After AppConfig.clear_cache(), VerificationEngine._config_cache
         must also be None so the next _get_config() call re-reads the env."""
-        from gws_assistant.config import AppConfig
         from gws_assistant.verification_engine import VerificationEngine
 
         # Poison the VE cache with a dummy object

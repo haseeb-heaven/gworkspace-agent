@@ -209,6 +209,7 @@ class WorkspaceAgentSystem:
             return text
 
     def plan(self, user_text: str) -> RequestPlan:
+        print(f"DEBUG: agent_system.plan called with '{user_text[:50]}...'")
         from .memory import recall_similar
 
         # Local episodic memory

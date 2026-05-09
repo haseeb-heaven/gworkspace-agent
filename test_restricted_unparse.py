@@ -1,6 +1,7 @@
 
-from RestrictedPython import compile_restricted
 import ast
+
+from RestrictedPython import compile_restricted
 
 code = """
 def foo(x):

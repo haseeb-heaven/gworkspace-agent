@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 
+
 def print_dots() -> None:
     """Run an infinite loop writing dots to stdout.
     

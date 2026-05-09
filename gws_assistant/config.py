@@ -161,7 +161,12 @@ class AppConfig:
                     env_label = "LLM_FALLBACK_MODEL" if idx == 0 else f"LLM_FALLBACK_MODEL{idx + 1}"
                     validate_tool_model(fb_model, env_label)
 
-            base_url: str | None = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
+            base_url: str | None = None
+            if provider == "openrouter":
+                base_url = (os.getenv("OPENROUTER_BASE_URL") or OPENROUTER_DEFAULT_BASE_URL).strip()
+            elif provider == "ollama":
+                base_url = (os.getenv("OLLAMA_API_BASE") or "http://localhost:11434").strip()
+
 
             timeout_seconds = int((os.getenv("LLM_TIMEOUT_SECONDS") or "30").strip())
             max_tokens_val = (os.getenv("LLM_MAX_TOKENS") or "").strip()

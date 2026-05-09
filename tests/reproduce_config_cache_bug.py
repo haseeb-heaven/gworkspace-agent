@@ -1,10 +1,11 @@
 
 import os
 import unittest
-from unittest.mock import patch, MagicMock
+
 from gws_assistant.config import AppConfig
-from gws_assistant.verification_engine import VerificationEngine
 from gws_assistant.models import AppConfigModel
+from gws_assistant.verification_engine import VerificationEngine
+
 
 class TestConfigCacheBug(unittest.TestCase):
     def setUp(self):
