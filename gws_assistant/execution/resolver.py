@@ -416,6 +416,9 @@ class ResolverMixin:
                             or (st == "doc" and kt == "document")
                             or (st == "msg" and kt == "message")
                             or (st == "mail" and kt == "message")
+                            or (st == "fileid" and kt == "id")
+                            or (st == "id" and kt == "fileid")
+                            or (st in ("id", "fileid") and kt == "file_id")
                             for kt in key_tokens
                         )
                         if is_match:
@@ -474,6 +477,8 @@ class ResolverMixin:
                     ".document_id",
                     ".spreadsheetId",
                     ".documentId",
+                    ".fileId",
+                    ".file_id",
                 ]
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")

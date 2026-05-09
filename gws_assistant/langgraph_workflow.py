@@ -423,8 +423,16 @@ class WorkflowNodes:
             requirements.append("doc_action")
 
         # Drive-related requirements
-        if any(word in lowered for word in ["drive", "file", "files", "folder", "upload", "download"]):
-            requirements.append("drive_action")
+        # Refined regex to avoid false positives from titles (e.g. 'Drive CRUD Session')
+        drive_keywords = [r"\bdrive\b", r"\bfiles?\b", r"\bfolders?\b", r"\bupload\b", r"\bdownload\b"]
+        if any(re.search(kw, lowered) for kw in drive_keywords):
+            # Exception: if it's a calendar event and 'drive' is likely just in the title
+            is_calendar = any(word in lowered for word in ["calendar", "event", "meeting"])
+            if is_calendar and "drive" in lowered and not any(kw in lowered for kw in ["upload", "download", "file", "folder"]):
+                # If only 'drive' matches and it's a calendar task, don't require drive_action
+                pass
+            else:
+                requirements.append("drive_action")
 
         # Sheets-related requirements
         if any(word in lowered for word in ["sheet", "spreadsheet", "excel", "csv", "table"]):

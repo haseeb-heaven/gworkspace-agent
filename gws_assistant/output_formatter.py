@@ -96,6 +96,8 @@ class HumanReadableFormatter:
             return str(payload.get("stdout")).strip()
         if "summary" in payload and payload.get("summary"):
             return str(payload.get("summary")).strip()
+        if "meetingUri" in payload or "meetingCode" in payload:
+            return _format_meet(payload)
         return _compact_json_summary(payload)
 
 
@@ -349,3 +351,20 @@ def _gmail_headers(payload: dict[str, Any]) -> dict[str, str]:
             if name and value:
                 parsed[name] = value
     return parsed
+
+
+def _format_meet(payload: dict[str, Any]) -> str:
+    uri = payload.get("meetingUri") or ""
+    code = payload.get("meetingCode") or ""
+    name = payload.get("name") or "meeting"
+    config = payload.get("config") or {}
+    policy = config.get("accessPolicy") or ""
+
+    lines = [f"Meet Meeting: {name}"]
+    if uri:
+        lines.append(f"Link: {uri}")
+    if code:
+        lines.append(f"Code: {code}")
+    if policy:
+        lines.append(f"Access: {policy}")
+    return "\n".join(lines)

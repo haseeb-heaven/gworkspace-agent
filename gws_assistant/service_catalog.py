@@ -91,6 +91,13 @@ SERVICES: dict[str, ServiceSpec] = {
                 keywords=("trash", "move to trash", "bin", "soft delete"),
                 parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", ""),),
             ),
+            "untrash_file": ActionSpec(
+                key="untrash_file",
+                label="Restore file from trash",
+                description="Restore a file from the trash back to its original location.",
+                keywords=("restore", "untrash", "recover", "bring back"),
+                parameters=(ParameterSpec("file_id", "Enter the Google Drive file ID", ""),),
+            ),
             "update_file_metadata": ActionSpec(
                 key="update_file_metadata",
                 label="Update file metadata",
@@ -281,6 +288,8 @@ SERVICES: dict[str, ServiceSpec] = {
                     ParameterSpec("end_datetime", "Optional: Full end ISO datetime", "2026-04-15T11:00:00", required=False),
                     ParameterSpec("time_zone", "Optional: Timezone (default: UTC)", "UTC", required=False),
                     ParameterSpec("description", "Optional: Event description", "", required=False),
+                    ParameterSpec("attendees", "Optional: Comma-separated guest emails", "guest@example.com", required=False),
+                    ParameterSpec("meet", "Optional: Add a Google Meet link? (true/false)", "false", required=False),
                 ),
             ),
             "get_event": ActionSpec(

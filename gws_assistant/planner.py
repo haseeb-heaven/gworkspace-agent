@@ -445,6 +445,10 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "update", "--params", json.dumps({"fileId": file_id}), "--json", json.dumps({"trashed": True})]
 
+        if action == "untrash_file":
+            file_id = self._required_text(params, "file_id")
+            return ["drive", "files", "update", "--params", json.dumps({"fileId": file_id}), "--json", json.dumps({"trashed": False})]
+
         raise ValidationError(f"Unsupported drive action: {action}")
 
     # ------------------------------------------------------------------
@@ -711,13 +715,20 @@ class CommandPlanner:
                 "start": event_start,
                 "end": event_end,
             }
+            if params.get("attendees"):
+                attendees = params["attendees"]
+                if isinstance(attendees, str):
+                    attendees = [{"email": e.strip()} for e in attendees.split(",") if e.strip()]
+                elif isinstance(attendees, list):
+                    attendees = [{"email": str(e).strip()} for e in attendees if str(e).strip()]
+                event_body["attendees"] = attendees
             # Do not inject event_id for create_event as it leads to "identifier already exists"
             # if the LLM hallucinates the same ID on retries or across tasks.
 
             if description:
                 event_body["description"] = description
 
-            if params.get("with_meet") or params.get("add_meet"):
+            if params.get("with_meet") or params.get("add_meet") or params.get("meet"):
                 event_body["conferenceData"] = {
                     "createRequest": {
                         "requestId": f"meet-{int(datetime.now().timestamp())}",
