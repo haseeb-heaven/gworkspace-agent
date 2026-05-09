@@ -87,7 +87,6 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         import os
         import tempfile
         import re
-        import subprocess
         import json
 
         # 1. Provide a completely safe file read by bypassing `file_path` completely.
@@ -117,14 +116,12 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
              if not found:
                   return "", "Uploaded file not found.", "🔴 Not authenticated"
 
-        # Even with os.walk and os.path.join, if safe_basename is derived from file_path,
-        # CodeQL might complain if it traces it to open().
-        # To completely break the taint chain, we use subprocess to cat the file content
+        # Read the JSON credentials directly instead of invoking an external command.
+        # This avoids command execution on user-influenced input.
         import json
-        cmd = ["cat", safe_path] if os.name != "nt" else ["cmd.exe", "/c", "type", safe_path]
         try:
-             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-             credentials_info = json.loads(result.stdout)
+             with open(safe_path, "r", encoding="utf-8") as f:
+                  credentials_info = json.load(f)
         except Exception as e:
              return "", f"Failed to read credentials file: {e}", "🔴 Not authenticated"
 
