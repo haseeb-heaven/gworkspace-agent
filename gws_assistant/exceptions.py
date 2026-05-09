@@ -25,7 +25,10 @@ class APIErrorType(Enum):
 
 # Patterns mapped to error types.  Each tuple is (compiled_re, APIErrorType).
 _ERROR_PATTERNS: list[tuple[re.Pattern, APIErrorType]] = [
-    (re.compile(r"Invalid Value|invalid|bad request|malformed", re.IGNORECASE), APIErrorType.INVALID_QUERY),
+    (
+        re.compile(r"Invalid Value|invalid|bad request|malformed|Unable to parse range|Invalid document_id|Invalid spreadsheet_id|Invalid file_id|Skipped", re.IGNORECASE),
+        APIErrorType.INVALID_QUERY,
+    ),
     (re.compile(r"401|403|unauthorized|forbidden|invalid_grant|authError", re.IGNORECASE), APIErrorType.AUTH),
     (re.compile(r"429|rateLimitExceeded|userRateLimitExceeded|quota", re.IGNORECASE), APIErrorType.RATE_LIMIT),
     (re.compile(r"5\d\d|backendError|internalError|Service Unavailable", re.IGNORECASE), APIErrorType.SERVER),
