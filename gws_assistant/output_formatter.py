@@ -22,17 +22,11 @@ class HumanReadableFormatter:
         if report.plan.summary:
             lines.append(report.plan.summary)
             lines.append("")
-
-        # Group executions by their sequence_index (task index in plan)
-        # Each entry in report.executions is a TaskExecution(task, result)
-        for execution in report.executions:
+        for index, execution in enumerate(report.executions, start=1):
             task = execution.task
             result = execution.result
-            # Use task.sequence_index if available (from langgraph workflow),
-            # otherwise fall back to something sensible.
-            idx = getattr(task, "sequence_index", "?")
             status = "completed" if result.success else "failed"
-            lines.append(f"{idx}. {task.service}.{task.action} {status}.")
+            lines.append(f"{index}. {task.service}.{task.action} {status}.")
             detail = self.format_execution_result(result)
             if detail:
                 lines.append(detail)

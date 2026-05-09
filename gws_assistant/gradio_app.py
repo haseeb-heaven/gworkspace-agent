@@ -83,6 +83,9 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
     if file_path is None:
         return "", "No file uploaded", "🔴 Not authenticated"
 
+    if "\x00" in file_path or ".." in file_path or not os.path.isabs(file_path):
+        return "", "Invalid file path", "🔴 Not authenticated"
+
     try:
         with open(file_path, "r") as f:
             credentials_info = json.load(f)
@@ -123,8 +126,6 @@ def handle_credentials_upload(file_path: str | None) -> tuple[str, str, str]:
         else:
             # If no type specified, assume it's already in the right format
             client_secrets = client_config
-
-        print(f"DEBUG: Client secrets structure: {list(client_secrets.keys())}")
 
         # Create OAuth flow with out-of-band redirect
         flow = Flow.from_client_config(
