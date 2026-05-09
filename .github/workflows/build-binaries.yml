@@ -20,13 +20,10 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: gws-agent-windows.exe
-            pyinstaller_args: "--onefile --name gws-agent --collect-all litellm --collect-all langchain"
           - os: ubuntu-latest
             artifact_name: gws-agent-linux
-            pyinstaller_args: "--onefile --name gws-agent --collect-all litellm --collect-all langchain"
           - os: macos-latest
             artifact_name: gws-agent-macos
-            pyinstaller_args: "--onefile --name gws-agent --collect-all litellm --collect-all langchain"
 
     steps:
       - name: Checkout Code
@@ -45,8 +42,50 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
+        shell: python
         run: |
-          pyinstaller ${{ matrix.pyinstaller_args }} gws_cli.py
+          import os
+          import subprocess
+          import sys
+          import importlib.util
+
+          sep = ";" if sys.platform == "win32" else ":"
+
+          # Locate litellm package directory
+          spec = importlib.util.find_spec("litellm")
+          litellm_dir = os.path.dirname(spec.origin)
+
+          # Collect all data files litellm needs at runtime
+          # (JSON files, py.typed marker, etc.)
+          add_data_args = []
+          for root, dirs, files in os.walk(litellm_dir):
+              for fname in files:
+                  if fname.endswith((".json", ".typed", "py.typed")):
+                      src = os.path.join(root, fname)
+                      # destination inside the bundle mirrors the package structure
+                      rel = os.path.relpath(root, os.path.dirname(litellm_dir))
+                      add_data_args += ["--add-data", f"{src}{sep}{rel}"]
+
+          cmd = [
+              sys.executable, "-m", "PyInstaller",
+              "--onefile",
+              "--name", "gws-agent",
+              "--collect-all", "litellm",
+              "--collect-all", "langchain",
+              "--collect-all", "langchain_core",
+              "--collect-all", "langchain_community",
+              "--collect-all", "langchain_openai",
+              "--collect-all", "langgraph",
+              "--collect-all", "tiktoken",
+              "--collect-all", "tiktoken_ext",
+              "--hidden-import", "tiktoken_ext",
+              "--hidden-import", "tiktoken_ext.openai_public",
+              *add_data_args,
+              "gws_cli.py",
+          ]
+          print("Running:", " ".join(cmd))
+          result = subprocess.run(cmd)
+          sys.exit(result.returncode)
 
       - name: Rename Binary (Linux/macOS)
         if: matrix.os != 'windows-latest'

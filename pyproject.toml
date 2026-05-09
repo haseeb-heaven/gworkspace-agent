@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-workspace-assistant"
-version = "1.0.2"
+version = "1.0.4"
+
 description = "Professional CLI and GUI assistant for Google Workspace gws commands."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +21,7 @@ dependencies = [
     "duckduckgo-search>=6.0.0",
     "RestrictedPython>=8.1",
     "httpx>=0.28.1",
+    "filelock>=3.12.0",
     # openai 2.30.0 is the exact version required by litellm 1.83.7.
     # Changing this will cause a ResolutionImpossible error in pip.
     "openai==2.30.0",
@@ -92,3 +94,4 @@ include = ["gws_assistant"]
 exclude = ["**/__pycache__", "tests"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+

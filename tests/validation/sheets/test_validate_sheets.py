@@ -18,9 +18,10 @@ def test_sheets_creation_and_append(runner):
 
 
 @pytest.mark.live_integration
-def test_sheets_to_email(runner, default_email):
+def test_sheets_to_email(runner, default_email, monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
     success = runner.execute_and_validate(
-        task=f"Read data from 'Auto Validation Test' Sheet and send it in an email to {default_email}",
+        task=f"Read 'Auto Validation Test' and email its content to {default_email}.",
         expected_texts=["completed"],
     )
     assert success
