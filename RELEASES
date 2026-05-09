@@ -1,5 +1,12 @@
 # Releases
 
+## v1.0.6 - 2026-05-09
+
+### Changes
+- fix(deps): resolve python-dotenv conflict with litellm
+
+---
+
 ## v1.0.5 - 2026-05-09
 
 ### Changes
@@ -116,4 +123,5 @@
 - docs: update changelog history and add release reference to README
 
 ---
+
 
