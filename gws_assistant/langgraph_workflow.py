@@ -261,18 +261,50 @@ class WorkflowNodes:
             or (last_result and not last_result.get("success") and state.get("context", {}).get("generated_code"))
         )
 
-        if is_code_error and attempts < self.config.max_retries:
-            # Force retry to generate_code for LLM to fix the code
-            decision = ReflectionDecision(
-                action="retry",
-                reason=f"Code execution failed: {error}. Regenerating code with LLM to fix error."
+        if is_code_error:
+            # Check if we already have usable content from a prior successful code step.
+            # If so, and we've either exhausted retries or want to skip failing formatting code,
+            # continue to the next task — the resolver's batch_update fallback will use the existing content.
+            has_prior_content = any(
+                context.get(k) for k in (
+                    "last_code_result", "last_code_result_table",
+                    "code_stdout", "last_code_stdout", "code_output",
+                )
             )
-            updates["reflection"] = decision
-            updates["conversation_history"] = _append_history(
-                state, AIMessage(content=decision.reason)
-            )
-            self._log_step("reflection", {"error": error, "attempt": attempts, "code_fix": True}, decision)
-            return updates
+            plan = state.get("plan")
+            idx = state.get("current_task_index", 0)
+            has_more_tasks = plan and idx + 1 < len(plan.tasks)
+
+            # Option A: Retry if we haven't reached max retries
+            if attempts < self.config.max_retries:
+                decision = ReflectionDecision(
+                    action="retry",
+                    reason=f"Code execution failed: {error}. Regenerating code with LLM to fix error."
+                )
+                updates["reflection"] = decision
+                updates["conversation_history"] = _append_history(
+                    state, AIMessage(content=decision.reason)
+                )
+                self._log_step("reflection", {"error": error, "attempt": attempts, "code_fix": True}, decision)
+                return updates
+
+            # Option B: Skip if we have prior content and more tasks
+            if has_prior_content and has_more_tasks:
+                self.logger.info(
+                    "Code execution retries exhausted but content exists from prior step — "
+                    "skipping to next task."
+                )
+                decision = ReflectionDecision(
+                    action="continue",
+                    reason="Code step failed after retries but prior content available. Continuing with remaining tasks."
+                )
+                updates["reflection"] = decision
+                updates["error"] = None  # Clear error so workflow continues
+                updates["conversation_history"] = _append_history(
+                    state, AIMessage(content=decision.reason)
+                )
+                self._log_step("reflection", {"error": error, "attempt": attempts, "code_skip": True}, decision)
+                return updates
 
         decision, abort = self.executor.reflect_on_error(error, attempts, self.config.max_retries)
         if abort:
