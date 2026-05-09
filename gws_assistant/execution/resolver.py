@@ -104,7 +104,7 @@ class ResolverMixin:
         # Identify if we should try generic expansion
         should_generic_expand = (
             task.action in generic_expandable_actions
-            and task.service not in ("gmail", "drive", "calendar") # Special cases handled below
+            and task.service not in ("gmail", "drive", "calendar", "sheets") # Special cases handled below or tools that handle lists
         )
 
         # Calendar specialized expansion for non-delete actions
@@ -184,6 +184,12 @@ class ResolverMixin:
                 for i, f_id in enumerate(file_ids):
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
                         continue
+
+                    # CRITICAL FIX: Don't move a folder into itself (Scenario 5 fix)
+                    if f_id == resolved_params.get("folder_id"):
+                        self.logger.info(f"Skipping move_file for ID {f_id} as it is the destination folder.")
+                        continue
+
                     new_task = copy.deepcopy(task)
                     new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["file_id"] = f_id

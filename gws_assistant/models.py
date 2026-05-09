@@ -56,6 +56,7 @@ class AppConfigModel:
     google_api_key: str | None = None
     anthropic_api_key: str | None = None
     mistral_api_key: str | None = None
+    cerebras_api_key: str | None = None
     ollama_api_base: str | None = None
     dry_run: bool = False
     no_confirm: bool = False
@@ -67,6 +68,38 @@ class AppConfigModel:
     # rotate_api_key() to always read index 0 and always jump to index 1.
     current_key_idx: int = 0
     rotation_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    # Test Fixtures Configuration
+    test_file_name: str = ""
+    test_doc_name: str = ""
+    test_sheet_name: str = ""
+    test_folder_name: str = ""
+    test_renamed_folder_name: str = ""
+    test_doc_query: str = ""
+    test_doc_keyword: str = ""
+    test_drive_search_query: str = ""
+    test_web_search_query: str = ""
+    test_gmail_search_query: str = ""
+    test_gmail_urgent_query: str = ""
+    test_gmail_label_name: str = ""
+    test_gmail_label_sender: str = ""
+    test_contact_email: str = ""
+    test_note_title: str = ""
+    test_note_body: str = ""
+    test_event_name: str = ""
+    test_event_description: str = ""
+    test_meeting_name: str = ""
+    test_presentation_title: str = ""
+    test_form_title: str = ""
+    test_chat_message: str = ""
+    test_tasklist_title: str = ""
+    test_task_title: str = ""
+    test_spreadsheet_id: str = ""
+    test_image_file_name: str = ""
+    scenario_project_name: str = ""
+    scenario_report_name: str = ""
+    scenario_stakeholder_email: str = ""
+    scenario_shared_drive_folder: str = ""
 
     # Verification Engine Configuration
     verification_exact_placeholders: set[str] = field(default_factory=lambda: {

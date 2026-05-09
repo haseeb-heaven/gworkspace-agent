@@ -27,24 +27,24 @@ logger = logging.getLogger("live_scenario_runner")
 
 def extract_ids(text: str) -> Dict[str, List[str]]:
     """Extract common Google Workspace IDs from text with strict filtering."""
-    # Stricter Drive/Doc/Sheet ID: 25-60 chars, alphanumeric and _-
-    # Stricter Gmail Message ID: exactly 16 hex chars
-    potential_drive_ids = re.findall(r"\b([a-zA-Z0-9_\-]{33,60})\b", text)
+    # Stricter Drive/Doc/Sheet ID: 33-44 chars, alphanumeric and _-
+    # Google IDs usually start with 1 (or 0)
+    potential_drive_ids = re.findall(r"\b([10][a-zA-Z0-9_\-]{32,43})\b", text)
     potential_gmail_ids = re.findall(r"\b([a-fA-F0-9]{16})\b", text)
-
-    # Filter out known false positives (like model names or headers)
-    ignore_patterns = ["llama", "groq", "gpt", "openai", "meta", "scout", "instruct"]
 
     def is_valid_id(s):
         s_lower = s.lower()
         # Filter out known log noise and model names
-        if any(p in s_lower for p in ["llama", "groq", "gpt", "openai", "meta", "scout", "instruct", "config", "key", "litellm"]):
+        noise = ["llama", "groq", "gpt", "openai", "meta", "scout", "instruct", "config", "key", "litellm", "http", "view"]
+        if any(p in s_lower for p in noise):
             return False
         # Google IDs usually have at least one digit and one letter
         if not (any(c.isdigit() for c in s) and any(c.isalpha() for c in s)):
             return False
+        # Avoid base64-like strings that are just uppercase/lowercase without enough variety
+        if len(s) > 40 and (s.isupper() or s.islower()):
+            return False
         return True
-
 
     ids = {
         "file_id": [i for i in potential_drive_ids if is_valid_id(i)],
@@ -159,7 +159,7 @@ def run_task_live(scenario: Dict[str, Any]) -> Dict[str, Any]:
 def main():
     active_scenarios = SCENARIOS # Run ALL scenarios
 
-    max_workers = 5 # Increase parallel workers to 5
+    max_workers = 8 # Parallel execution with 8 workers
     logger.info(f"Launching {len(active_scenarios)} verified live scenarios with {max_workers} workers...")
 
     results = []

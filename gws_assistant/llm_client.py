@@ -55,6 +55,9 @@ def _build_api_kwargs(model: str, config: Any) -> dict:
     elif model.startswith("mistral/"):
         kwargs["api_key"] = config.mistral_api_key
 
+    elif model.startswith("cerebras/"):
+        kwargs["api_key"] = config.cerebras_api_key
+
     elif model.startswith("ollama/"):
         base = config.ollama_api_base or "http://localhost:11434"
         kwargs["api_base"] = base
@@ -119,7 +122,9 @@ def call_llm(
 
                 if tools:
                     call_kwargs["tools"] = tools
-                    call_kwargs["tool_choice"] = tool_choice
+                    # Cerebras tool_choice "auto" often causes validation errors in LiteLLM/Cerebras bridge
+                    if not model.startswith("cerebras/") or tool_choice != "auto":
+                        call_kwargs["tool_choice"] = tool_choice
 
                 response = completion(**call_kwargs)
                 logger.debug(f"[LLM] Success: model={model}")

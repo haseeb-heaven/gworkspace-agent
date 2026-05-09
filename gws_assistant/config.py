@@ -116,6 +116,8 @@ class AppConfig:
                     provider_specific_key = os.getenv("ANTHROPIC_API_KEY")
                 elif provider == "mistral":
                     provider_specific_key = os.getenv("MISTRAL_API_KEY")
+                elif provider == "cerebras":
+                    provider_specific_key = os.getenv("CEREBRAS_API_KEY")
 
                 if provider_specific_key:
                     llm_api_keys.append(provider_specific_key.strip())
@@ -185,6 +187,7 @@ class AppConfig:
             google_api_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip() or api_key
             anthropic_api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip() or api_key
             mistral_api_key = (os.getenv("MISTRAL_API_KEY") or "").strip() or api_key
+            cerebras_api_key = (os.getenv("CEREBRAS_API_KEY") or "").strip() or api_key
             ollama_api_base = (os.getenv("OLLAMA_API_BASE") or "").strip() or None
             memory_type = (os.getenv("MEMORY_TYPE") or "local").strip().lower()
             setup_complete = env_file_path.exists() and (ci_mode or (gws_binary_path.exists() and gws_binary_path.is_file()))
@@ -330,6 +333,7 @@ class AppConfig:
                 google_api_key=google_api_key,
                 anthropic_api_key=anthropic_api_key,
                 mistral_api_key=mistral_api_key,
+                cerebras_api_key=cerebras_api_key,
                 ollama_api_base=ollama_api_base,
                 memory_type=memory_type,
                 verification_exact_placeholders=verification_exact_placeholders,
@@ -342,6 +346,36 @@ class AppConfig:
                 verification_content_fields=verification_content_fields,
                 verification_create_id_fields=verification_create_id_fields,
                 verification_suspicious_patterns=verification_suspicious_patterns,
+                test_file_name=(os.getenv("TEST_FILE_NAME") or "").strip(),
+                test_doc_name=(os.getenv("TEST_DOC_NAME") or "").strip(),
+                test_sheet_name=(os.getenv("TEST_SHEET_NAME") or "").strip(),
+                test_folder_name=(os.getenv("TEST_FOLDER_NAME") or "").strip(),
+                test_renamed_folder_name=(os.getenv("TEST_RENAMED_FOLDER_NAME") or "").strip(),
+                test_doc_query=(os.getenv("TEST_DOC_QUERY") or "").strip(),
+                test_doc_keyword=(os.getenv("TEST_DOC_KEYWORD") or "").strip(),
+                test_drive_search_query=(os.getenv("TEST_DRIVE_SEARCH_QUERY") or "").strip(),
+                test_web_search_query=(os.getenv("TEST_WEB_SEARCH_QUERY") or "").strip(),
+                test_gmail_search_query=(os.getenv("TEST_GMAIL_SEARCH_QUERY") or "").strip(),
+                test_gmail_urgent_query=(os.getenv("TEST_GMAIL_URGENT_QUERY") or "").strip(),
+                test_gmail_label_name=(os.getenv("TEST_GMAIL_LABEL_NAME") or "").strip(),
+                test_gmail_label_sender=(os.getenv("TEST_GMAIL_LABEL_SENDER") or "").strip(),
+                test_contact_email=(os.getenv("TEST_CONTACT_EMAIL") or "").strip(),
+                test_note_title=(os.getenv("TEST_NOTE_TITLE") or "").strip(),
+                test_note_body=(os.getenv("TEST_NOTE_BODY") or "").strip(),
+                test_event_name=(os.getenv("TEST_EVENT_NAME") or "").strip(),
+                test_event_description=(os.getenv("TEST_EVENT_DESCRIPTION") or "").strip(),
+                test_meeting_name=(os.getenv("TEST_MEETING_NAME") or "").strip(),
+                test_presentation_title=(os.getenv("TEST_PRESENTATION_TITLE") or "").strip(),
+                test_form_title=(os.getenv("TEST_FORM_TITLE") or "").strip(),
+                test_chat_message=(os.getenv("TEST_CHAT_MESSAGE") or "").strip(),
+                test_tasklist_title=(os.getenv("TEST_TASKLIST_TITLE") or "").strip(),
+                test_task_title=(os.getenv("TEST_TASK_TITLE") or "").strip(),
+                test_spreadsheet_id=(os.getenv("TEST_SPREADSHEET_ID") or "").strip(),
+                test_image_file_name=(os.getenv("TEST_IMAGE_FILE_NAME") or "").strip(),
+                scenario_project_name=(os.getenv("SCENARIO_PROJECT_NAME") or "").strip(),
+                scenario_report_name=(os.getenv("SCENARIO_REPORT_NAME") or "").strip(),
+                scenario_stakeholder_email=(os.getenv("SCENARIO_STAKEHOLDER_EMAIL") or "").strip(),
+                scenario_shared_drive_folder=(os.getenv("SCENARIO_SHARED_DRIVE_FOLDER") or "").strip(),
             )
             return cls._cached_config
 
