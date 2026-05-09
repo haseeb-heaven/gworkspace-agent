@@ -598,7 +598,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         }
 
     def code_execution_node(state: AgentState) -> dict[str, Any]:
-        if not config.code_execution_enabled:
+        if not nodes.config.code_execution_enabled:
             msg = "Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false)."
             return {
                 "error": msg,
@@ -632,12 +632,12 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         # CRITICAL: Resolve placeholders before execution!
         # The generate_code node may produce code with {{task-N}} or $placeholder tokens
         # which must be materialized using the current execution context.
-        resolved_code = executor._resolve_placeholders(
+        resolved_code = nodes.executor._resolve_placeholders(
             str(code), context, use_repr_for_complex=True
         )
-        logger.info(f"Executing generated code (resolved length: {len(resolved_code)})")
+        nodes.logger.info(f"Executing generated code (resolved length: {len(resolved_code)})")
 
-        result = execute_generated_code(str(resolved_code), config=config)
+        result = execute_generated_code(str(resolved_code), config=nodes.config)
         nodes._log_step("sandbox_execute", {"code": resolved_code}, result)
 
         results_map = context.setdefault("task_results", {})
@@ -693,14 +693,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             context["needs_code_fix"] = False
         else:
             prompt = base_prompt + f"User request:\n{state.get('user_text', '')}"
-        model = create_agent(config, logger)
+        model = create_agent(nodes.config, nodes.logger)
         lowered = state.get("user_text", "").lower()
         is_computation = any(
             kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers")
         )
 
         if not model:
-            if not config.use_heuristic_fallback or not is_computation:
+            if not nodes.config.use_heuristic_fallback or not is_computation:
                 msg = "Unable to generate code because no LLM is configured" if not model else "LLM failed"
                 return {
                     "error": f"{msg} and request is not a simple computation.",
@@ -719,7 +719,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         try:
             llm_response = model.invoke(prompt)
         except Exception as exc:
-            logger.warning("LLM code generation failed: %s. Falling back to heuristics.", exc)
+            nodes.logger.warning("LLM code generation failed: %s. Falling back to heuristics.", exc)
             if not is_computation:
                 return {
                     "error": f"LLM code generation failed and request is not a simple computation: {exc}",
@@ -754,7 +754,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         # Guard: if the LLM refused or returned non-code, don't pass it to the sandbox.
         if _is_llm_refusal(generated_code):
-            logger.warning("generate_code_node: LLM returned a refusal, not executable code.")
+            nodes.logger.warning("generate_code_node: LLM returned a refusal, not executable code.")
             return {
                 "error": "LLM declined to generate code for this request. Try rephrasing as a computation task.",
                 "last_result": StructuredToolResult(

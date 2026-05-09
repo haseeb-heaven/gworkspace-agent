@@ -835,16 +835,17 @@ class ResolverMixin:
                 best_match_value = data[candidate]
                 # Fix: recalculate remaining_path accurately based on the matched prefix
                 if array_index_match:
-                    # original path was something like 'task-1.messages[0].id'
-                    # candidate is 'task-1'
-                    # we want remaining_path to be '.messages[0].id' -> strip dot -> 'messages[0].id'
-                    remaining_path = path[len(candidate):]
-                    if remaining_path.startswith('.'):
-                        remaining_path = remaining_path[1:]
+                    # If we matched the prefix up to the index, remaining_path is what follows the index
+                    if candidate == base_path:
+                        remaining_path = path[array_index_match.end():]
+                    else:
+                        # We matched a shorter prefix, so include the rest of the path including index
+                        remaining_path = path[len(candidate):]
                 else:
                     remaining_path = path[len(candidate):]
-                    if remaining_path.startswith('.'):
-                        remaining_path = remaining_path[1:]
+
+                if remaining_path.startswith('.'):
+                    remaining_path = remaining_path[1:]
                 break
 
         if best_match is not None:
