@@ -21,7 +21,7 @@ def test_manual_1():
     """Create tasklist verification - Create operation."""
     run_task(
         f"Create a new task list named '{TEST_TASKLIST_TITLE}'.",
-        expected=["completed"],
+        expected=["completed", TEST_TASKLIST_TITLE],
         service="tasks",
         expected_fields={"title": TEST_TASKLIST_TITLE},
         skip_5step_verification=False,
@@ -49,7 +49,6 @@ def test_manual_3():
         f"Create a new task titled '{TEST_TASK_TITLE}' in the task list '{TEST_TASKLIST_TITLE}'.",
         expected=["completed", TEST_TASK_TITLE],
         service="tasks",
-        skip_verification=True,
         skip_5step_verification=False,
     )
 

@@ -24,15 +24,24 @@ from gws_assistant.models import AppConfigModel
 
 
 def _config(tmp_path: Path) -> AppConfigModel:
-    from gws_assistant.config import AppConfig
-    # Use the real loader but override paths for isolation
-    cfg = AppConfig.from_env()
-    cfg.gws_binary_path = tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")
-    cfg.log_file_path = tmp_path / "assistant.log"
-    cfg.env_file_path = tmp_path / ".env"
-    cfg.api_key = None
-    cfg.setup_complete = True
-    return cfg
+    return AppConfigModel(
+        provider="openai",
+        model="gpt-4.1-mini",
+        api_key=None,
+        llm_fallback_models=[],
+        base_url=None,
+        timeout_seconds=30,
+        gws_binary_path=tmp_path / os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"),
+        log_file_path=tmp_path / "assistant.log",
+        log_level="INFO",
+        verbose=True,
+        env_file_path=tmp_path / ".env",
+        setup_complete=True,
+        max_retries=3,
+        langchain_enabled=True,
+        use_heuristic_fallback=True,
+        default_recipient_email=os.getenv("DEFAULT_RECIPIENT_EMAIL"),
+    )
 
 
 @pytest.mark.gmail
@@ -47,12 +56,11 @@ def test_agent_plans_gmail_search(tmp_path):
 
 @pytest.mark.sheets
 def test_agent_plans_sheet_get(tmp_path):
-    cfg = _config(tmp_path)
-    agent = WorkspaceAgentSystem(config=cfg, logger=logging.getLogger("test"))
-    plan = agent.plan(f"Search Google Sheets with ID: {cfg.test_spreadsheet_id}")
+    agent = WorkspaceAgentSystem(config=_config(tmp_path), logger=logging.getLogger("test"))
+    plan = agent.plan("Search Google Sheets with ID: 1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo")
     assert plan.tasks[0].service == "sheets"
     assert plan.tasks[0].action == "get_values"
-    assert plan.tasks[0].parameters["spreadsheet_id"] == cfg.test_spreadsheet_id
+    assert plan.tasks[0].parameters["spreadsheet_id"] == "1bZbV_Wf9EqMKD4QSVaON3UT2l_orD7BEsvHCXGe4lBo"
 
 
 @pytest.mark.gmail
@@ -230,7 +238,7 @@ class TestExplicitWebSearchIntent:
     @pytest.mark.parametrize(
         "text",
         [
-            "Search Drive for all .doc files",
+            "Search Drive for all .qvm files",
             "Search Gmail for invoices",
             "search my drive folder for backups",
             "Find my tickets in Gmail",
@@ -269,12 +277,10 @@ class TestServiceDetectionWithWebSearch:
         ``drive`` so the planner doesn't try to look up an existing Drive
         artefact for the Doc the user wants to *create*.
         """
-        from gws_assistant.config import AppConfig
-        cfg = AppConfig.from_env()
         text = (
             "Search the web for changelogs of C++ 17 and save that "
             "information to a document called 'cpp_17_changelogs' and "
-            f"send that document via email to {cfg.default_recipient_email}"
+            f"send that document via email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         )
         services = _detect_services_in_order(text)
         assert "search" in services
@@ -287,12 +293,10 @@ class TestGmailToSheetsHeuristicGuard:
     """``_is_gmail_to_sheets_request`` must not capture web-search or Drive/document search prompts."""
 
     def test_web_search_with_save_and_email_is_rejected(self):
-        from gws_assistant.config import AppConfig
-        cfg = AppConfig.from_env()
         text = (
             "Search the web for the top 3 Software Engineering AI Agents, "
             "extract name and pricing, save to a new Google Sheet named "
-            f"'AI Agents Pricing', then send detailed email to {cfg.default_recipient_email}"
+            "'AI Agents Pricing', then send detailed email to test@example.com"
         ).lower()
         assert _is_gmail_to_sheets_request(text) is False
 
@@ -320,28 +324,23 @@ class TestDriveToEmailHeuristicGuard:
     """``_is_drive_to_email_request`` must not capture web-search prompts."""
 
     def test_web_search_to_doc_to_email_is_rejected(self):
-        from gws_assistant.config import AppConfig
-        cfg = AppConfig.from_env()
         text = (
             "Search the web for changelogs of C++ 17 and save that "
-            f"information to a document and send email to {cfg.default_recipient_email}"
+            f"information to a document and send email to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         )
         assert _is_drive_to_email_request(text) is False
 
     def test_genuine_drive_to_email_prompt_still_matches(self):
-        from gws_assistant.config import AppConfig
-        cfg = AppConfig.from_env()
-        text = f"Find my passport photo in Drive and email it to {cfg.default_recipient_email}"
+        text = f"Find my passport photo in Drive and email it to {os.getenv('DEFAULT_RECIPIENT_EMAIL')}"
         assert _is_drive_to_email_request(text) is True
 
     def test_drive_image_attachment_skips_export(self, tmp_path):
         """Test that image attachment requests skip export_file and use Drive links."""
-        cfg = _config(tmp_path)
         agent = WorkspaceAgentSystem(
-            config=cfg, logger=logging.getLogger("test")
+            config=_config(tmp_path), logger=logging.getLogger("test")
         )
         plan = agent.plan(
-            f"Find drive about file '{cfg.test_image_file_name}' and attach that image to my email"
+            "Find drive about file 'passport_size_studio_large' and attach that image to my email"
         )
 
         services = [t.service for t in plan.tasks]
@@ -366,9 +365,7 @@ class TestDriveToSheetsToEmailHeuristic:
     """``_is_drive_to_sheets_to_email_request`` detects Drive → Sheets → Gmail workflows."""
 
     def test_drive_to_sheets_to_email_is_detected(self):
-        from gws_assistant.config import AppConfig
-        cfg = AppConfig.from_env()
-        text = f"Search document '{cfg.test_doc_name}' and convert that to table format in Sheets and then send me {cfg.default_recipient_email}"
+        text = "Search document '12th Class' and convert that to table format in Sheets and then send me haseebmir.hm@gmail.com"
         assert _is_drive_to_sheets_to_email_request(text) is True
 
     def test_drive_to_sheets_to_email_with_find(self):
@@ -403,14 +400,13 @@ class TestDriveToSheetsToEmailHeuristic:
 
     def test_drive_pattern_takes_priority_over_gmail_pattern(self, tmp_path):
         """When both Drive and Gmail could match, Drive pattern should win."""
-        cfg = _config(tmp_path)
         agent = WorkspaceAgentSystem(
-            config=cfg, logger=logging.getLogger("test")
+            config=_config(tmp_path), logger=logging.getLogger("test")
         )
         # This request has both "document" (Drive) and "email" (Gmail) keywords
         # It should route to Drive → Sheets → Gmail, not Gmail → Sheets
         plan = agent.plan(
-            f"Search document '{cfg.test_doc_name}' and convert that to table format in Sheets and then show me total percentage and send that sheets link and append that to email"
+            "Search document '12th Class' and convert that to table format in Sheets and then show me total percentage and send that sheets link and append that to email"
         )
         assert plan.no_service_detected is False
         # First task should be Drive, not Gmail
@@ -453,15 +449,14 @@ class TestWebSearchPlanRouting:
     """End-to-end heuristic routing for web-search-driven workflows."""
 
     def test_web_search_to_sheets_with_code_and_email(self, tmp_path):
-        cfg = _config(tmp_path)
         agent = WorkspaceAgentSystem(
-            config=cfg, logger=logging.getLogger("test")
+            config=_config(tmp_path), logger=logging.getLogger("test")
         )
         plan = agent.plan(
             "Search the web for the top 3 Software Engineering AI Agents, "
             "extract name and pricing, use code executor to sort them from "
             "cheapest to most expensive, save to a new Google Sheet named "
-            f"'AI Agents Pricing', then send detailed email to {cfg.default_recipient_email}"
+            "'AI Agents Pricing', then send detailed email to user@example.com"
         )
 
         services = [t.service for t in plan.tasks]
@@ -502,14 +497,13 @@ class TestWebSearchPlanRouting:
         assert "list_messages" not in actions
 
     def test_web_search_to_doc_to_email(self, tmp_path):
-        cfg = _config(tmp_path)
         agent = WorkspaceAgentSystem(
-            config=cfg, logger=logging.getLogger("test")
+            config=_config(tmp_path), logger=logging.getLogger("test")
         )
         plan = agent.plan(
             "Search web for changelogs of C++ 17 and save that information "
-            f"to a document called 'cpp_17_changelogs' and send that "
-            f"document information to email {cfg.default_recipient_email}"
+            "to a document called 'cpp_17_changelogs' and send that "
+            "document information to email user@example.com"
         )
 
         services = [t.service for t in plan.tasks]
@@ -526,14 +520,13 @@ class TestWebSearchPlanRouting:
 
     def test_web_search_to_doc_to_email_with_call_that_syntax(self, tmp_path):
         """Test 'call that' syntax for doc title extraction."""
-        cfg = _config(tmp_path)
         agent = WorkspaceAgentSystem(
-            config=cfg, logger=logging.getLogger("test")
+            config=_config(tmp_path), logger=logging.getLogger("test")
         )
         plan = agent.plan(
             "Search web for changelogs of C++ 17 and save that information "
             "to a document call that 'cpp_17_changelogs' and send that "
-            f"document information to email {cfg.default_recipient_email}"
+            "document information to email user@example.com"
         )
 
         services = [t.service for t in plan.tasks]
@@ -557,13 +550,12 @@ class TestWebSearchPlanRouting:
 
     def test_drive_search_for_named_file_is_unchanged(self, tmp_path):
         """Genuine Drive lookups must still route through drive.list_files."""
-        cfg = _config(tmp_path)
         agent = WorkspaceAgentSystem(
-            config=cfg, logger=logging.getLogger("test")
+            config=_config(tmp_path), logger=logging.getLogger("test")
         )
         plan = agent.plan(
-            f"Search Google drive for '{cfg.test_image_file_name}' and send email "
-            f"to {cfg.default_recipient_email}"
+            "Search Google drive for 'Passport size photo' and send email "
+            "to user@example.com"
         )
         services = [t.service for t in plan.tasks]
         actions = [t.action for t in plan.tasks]

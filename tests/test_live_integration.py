@@ -88,4 +88,3 @@ def test_live_workspace_sheet_and_email_flow():
     # Since there's no native 'delete_spreadsheet' in planner, we delete via drive
     delete_sheet_cmd = planner.build_command("drive", "delete_file", {"file_id": spreadsheet_id})
     runner.run(delete_sheet_cmd, timeout_seconds=30)
-

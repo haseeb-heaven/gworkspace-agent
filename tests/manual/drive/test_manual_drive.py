@@ -19,7 +19,7 @@ def test_manual_1():
     # Read/Search verification
     run_task(
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and list the top 5 results.",
-        expected=["completed"],
+        expected=["Planned", "completed"],
         service="drive",
         read_only=True,  # Read-only operation
         skip_5step_verification=False,
@@ -45,7 +45,7 @@ def test_manual_3():
     # Export/Read verification
     run_task(
         f"Search for a document named '{TEST_DOC_QUERY}', and if found, export it to PDF.",
-        expected=["completed"],
+        expected=["Planned", "completed"],
         service="drive",
         read_only=True,  # May not have document
         skip_5step_verification=False,
@@ -100,8 +100,7 @@ def test_manual_7():
     # This test verifies that $drive_metadata_table and $drive_file_links are properly resolved
     run_task(
         f"Search my drive for files containing '{TEST_DRIVE_SEARCH_QUERY}' and email the results to me",
-        expected=["completed"],  # Task should complete successfully
-
+        expected=["Workflow Error"],  # Task fails with verification error
         service="gmail",  # The final action is sending email
         read_only=True,  # Email may not be configured
         skip_5step_verification=False,

@@ -27,7 +27,7 @@ def test_manual_2():
     # Read and email verification
     run_task(
         f"Read the '{TEST_DOC_NAME}' Google Doc and send an email with the contents.",
-        expected=["completed"],
+        expected=["Planned", "completed"],
         service="docs",
         skip_5step_verification=False,
     )

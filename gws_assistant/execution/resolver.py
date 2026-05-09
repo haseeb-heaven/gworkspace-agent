@@ -88,60 +88,13 @@ class ResolverMixin:
         """Expand a single task into a list of executable tasks.
         Example: gmail.get_message with message_id=['id1', 'id2']
         """
-        # 1. Resolve placeholders in parameters FIRST to see if we have a list
+        # Resolve placeholders in parameters FIRST to see if we have a list
         import copy
 
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
-        self.logger.info(f"EXPAND_TASK: {task.service}.{task.action} parameters={task.parameters} resolved={resolved_params}")
 
-        # Check for any parameter that resolved to a list (Generic Expansion)
-        # We skip services that have specialized expansion logic below.
-        generic_expandable_actions = (
-            "create_document", "send_message", "create_event", "create_task", "create_spreadsheet",
-            "append_values", "batch_update", "update_event", "update_task"
-        )
-
-        # Identify if we should try generic expansion
-        should_generic_expand = (
-            task.action in generic_expandable_actions
-            and task.service not in ("gmail", "drive", "calendar", "sheets") # Special cases handled below or tools that handle lists
-        )
-
-        # Calendar specialized expansion for non-delete actions
-        if task.service == "calendar" and task.action != "delete_event":
-             should_generic_expand = True
-
-        if should_generic_expand:
-            # Find the first parameter that is a list
-            expand_param = None
-            expand_list = None
-            for p_name, p_val in resolved_params.items():
-                if isinstance(p_val, list) and len(p_val) > 0:
-                    expand_param = p_name
-                    expand_list = p_val
-                    break
-
-            if expand_list:
-                self.logger.info(f"Generic expansion triggered for {task.service}.{task.action} on parameter '{expand_param}' ({len(expand_list)} items)")
-                expanded = []
-                for i, item in enumerate(expand_list):
-                    new_task = copy.deepcopy(task)
-                    new_task.id = f"{task.id}-{i + 1}"
-
-                    # For each parameter in the task, if it's a list of the same length,
-                    # use the item at the current index. Otherwise, keep original.
-                    for p_name, p_val in resolved_params.items():
-                        if isinstance(p_val, list) and len(p_val) == len(expand_list):
-                            new_task.parameters[p_name] = p_val[i]
-                        else:
-                            # Keep the original parameter (will be resolved again in execute_single_task)
-                            pass
-                    expanded.append(new_task)
-                return expanded
-
-        if task.service == "gmail" and task.action in ("get_message", "batch_modify_messages"):
-            msg_ids = resolved_params.get("message_id") or resolved_params.get("message_ids") or resolved_params.get("id")
-            self.logger.info(f"EXPAND_TASK: gmail.{task.action} msg_ids={msg_ids} type={type(msg_ids)}")
+        if task.service == "gmail" and task.action == "get_message":
+            msg_ids = resolved_params.get("message_id")
             # If no message_id provided, but we have legacy $gmail_message_ids in context, use them!
             if (
                 not msg_ids or msg_ids == "{{message_id}}" or msg_ids == _UNRESOLVED_MARKER
@@ -149,22 +102,7 @@ class ResolverMixin:
                 msg_ids = context["gmail_message_ids"]
                 self.logger.info(f"Auto-injected {len(msg_ids)} IDs from context for expansion.")
 
-            if isinstance(msg_ids, list):
-                if not msg_ids:
-                    self.logger.info(f"EXPAND_TASK: gmail.{task.action} msg_ids is empty list, returning []")
-                    return []
-
-                # For batch_modify_messages, we might NOT want to expand into multiple tasks
-                # because gws.exe supports batch. But for consistency with get_message,
-                # if we have multiple, we could.
-                # Actually, the user task might expect a single batch action.
-                if task.action == "batch_modify_messages":
-                    # Just return the task as is, but with resolved parameters
-                    # Wait, if we return [task], it will execute.
-                    # But we want to ensure it has the resolved list.
-                    # Actually, PlanExecutor.execute will call _resolve_task later.
-                    return [task]
-
+            if isinstance(msg_ids, list) and msg_ids:
                 expanded = []
                 for i, m_id in enumerate(msg_ids):
                     if not m_id or not isinstance(m_id, str) or m_id == _UNRESOLVED_MARKER:
@@ -176,20 +114,12 @@ class ResolverMixin:
                 return expanded if expanded else [task]
 
         if task.service == "drive" and task.action == "move_file":
-            file_ids = resolved_params.get("file_id") or resolved_params.get("id")
-            if isinstance(file_ids, list):
-                if not file_ids:
-                    return []
+            file_ids = resolved_params.get("file_id")
+            if isinstance(file_ids, list) and file_ids:
                 expanded = []
                 for i, f_id in enumerate(file_ids):
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
                         continue
-
-                    # CRITICAL FIX: Don't move a folder into itself (Scenario 5 fix)
-                    if f_id == resolved_params.get("folder_id"):
-                        self.logger.info(f"Skipping move_file for ID {f_id} as it is the destination folder.")
-                        continue
-
                     new_task = copy.deepcopy(task)
                     new_task.id = f"{task.id}-{i + 1}"
                     new_task.parameters["file_id"] = f_id
@@ -197,7 +127,7 @@ class ResolverMixin:
                 return expanded if expanded else [task]
 
         if task.service == "drive" and task.action == "delete_file":
-            file_ids = resolved_params.get("file_id") or resolved_params.get("id")
+            file_ids = resolved_params.get("file_id")
             # If no file_id provided, but we have legacy $drive_file_ids in context, use them!
             if (
                 not file_ids or file_ids == "$placeholder" or file_ids == _UNRESOLVED_MARKER
@@ -205,9 +135,7 @@ class ResolverMixin:
                 file_ids = context["drive_file_ids"]
                 self.logger.info(f"Auto-injected {len(file_ids)} Drive IDs from context for deletion expansion.")
 
-            if isinstance(file_ids, list):
-                if not file_ids:
-                    return []
+            if isinstance(file_ids, list) and file_ids:
                 expanded = []
                 for i, f_id in enumerate(file_ids):
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
@@ -219,7 +147,7 @@ class ResolverMixin:
                 return expanded if expanded else [task]
 
         if task.service == "calendar" and task.action == "delete_event":
-            event_ids = resolved_params.get("event_id") or resolved_params.get("id")
+            event_ids = resolved_params.get("event_id")
             # If no event_id provided, but we have $calendar_events in context, use it!
             if (
                 not event_ids or event_ids == "$placeholder" or event_ids == _UNRESOLVED_MARKER or event_ids == "$calendar_events"
@@ -233,8 +161,6 @@ class ResolverMixin:
 
             concrete_event_ids: list[str] = []
             if isinstance(event_ids, list):
-                if not event_ids:
-                    return []
                 for entry in event_ids:
                     if isinstance(entry, str) and entry and entry != _UNRESOLVED_MARKER:
                         concrete_event_ids.append(entry)
@@ -320,38 +246,6 @@ class ResolverMixin:
             if (not d_id or d_id.startswith("{{") or d_id == _UNRESOLVED_MARKER) and context.get("last_document_id"):
                 task.parameters["document_id"] = context["last_document_id"]
 
-            # Last-resort text fallback for batch_update:
-            # If text is None/empty/unresolved after placeholder resolution, try to
-            # pull content from the most recent code execution output or document summary.
-            if task.action == "batch_update":
-                text_val = task.parameters.get("text")
-                text_str = str(text_val or "")
-                if not text_val or not text_str.strip() or text_str == _UNRESOLVED_MARKER or text_str.startswith("{{"):
-                    # Priority: last_code_result (structured) > code_stdout (raw) > code_output
-                    fallback_text = None
-                    for key in ("last_code_result", "last_code_result_table", "code_stdout",
-                                "last_code_stdout", "code_output", "code_parsed_value"):
-                        candidate = context.get(key)
-                        if candidate is not None:
-                            if isinstance(candidate, (list, dict)):
-                                fallback_text = json.dumps(candidate, indent=2, default=str)
-                            else:
-                                fallback_text = str(candidate)
-                            if fallback_text.strip():
-                                self.logger.info(
-                                    f"batch_update text fallback: resolved from context['{key}'] "
-                                    f"({len(fallback_text)} chars)"
-                                )
-                                break
-                            fallback_text = None
-
-                    if fallback_text:
-                        task.parameters["text"] = fallback_text
-                    else:
-                        self.logger.warning(
-                            "batch_update text is unresolved and no code output found in context."
-                        )
-
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
             if not f_id or f_id.startswith("{{") or f_id == _UNRESOLVED_MARKER:
@@ -411,26 +305,23 @@ class ResolverMixin:
             self.logger.warning("_resolve_placeholders: max depth reached for val=%r", repr(val)[:200])
             return val
 
-        # BUG FIX: Use threading.local to make _resolve_cache thread-safe.
-        if not hasattr(self, "_local_storage"):
-            import threading
-            self._local_storage = threading.local()
-
-        if not hasattr(self._local_storage, "resolve_cache"):
-            self._local_storage.resolve_cache = {}
-
-        if isinstance(val, (dict, list)):
+        # Additional safety: check for circular references in context
+        if isinstance(val, dict) or isinstance(val, list):
+            # Use id() to detect if we've seen this object before
+            if not hasattr(self, '_resolve_cache'):
+                self._resolve_cache: dict[int, Any] = {}
             obj_id = id(val)
-            if obj_id in self._local_storage.resolve_cache:
-                self.logger.warning("_resolve_placeholders: circular reference detected, returning memoized clone")
-                return self._local_storage.resolve_cache[obj_id]
-
+            if obj_id in self._resolve_cache:
+                self.logger.warning("_resolve_placeholders: circular reference detected for obj_id=%d, returning memoized clone", obj_id)
+                return self._resolve_cache[obj_id]
+            # Create an empty clone and store it in the cache before recursion
             clone: Any = {} if isinstance(val, dict) else []
-            self._local_storage.resolve_cache[obj_id] = clone
+            self._resolve_cache[obj_id] = clone
             try:
-                return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
+                result = self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth, clone=clone)
+                return result
             finally:
-                del self._local_storage.resolve_cache[obj_id]
+                del self._resolve_cache[obj_id]
         else:
             return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
 
@@ -472,34 +363,10 @@ class ResolverMixin:
                 path = stripped[1:].strip()
 
             def resolve_shorthand(shorthand_path):
-                # 0. LOOP VARIABLE HANDLING: Support {{item.field}} or {{it.field}} by mapping over the most recent list
-                if shorthand_path.startswith("item.") or shorthand_path.startswith("it."):
-                    field = shorthand_path.split(".", 1)[1]
-                    for key, val_item in reversed(list(results_map.items())):
-                        if isinstance(val_item, list) and val_item:
-                            # Avoid matching strings or other non-dict lists unless it's a simple list and field is index-like?
-                            # For now, only handle list of dicts.
-                            if isinstance(val_item[0], dict) and field in val_item[0]:
-                                self.logger.info(f"RESOLVER: Loop shorthand '{shorthand_path}' resolved to list mapping from '{key}'")
-                                return [i.get(field) for i in val_item]
-
-                # 1. SMART RESOLUTION: Try to find the exact key inside ANY task result first (Rule 25)
-                # This handles cases like {{ :summary }} or {{ :documentId }}
-                for key, val_item in reversed(list(results_map.items())):
-                    # Look inside numeric or task-N results
-                    if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
-                        if isinstance(val_item, dict) and shorthand_path in val_item:
-                            return val_item[shorthand_path]
-                        if isinstance(val_item, list) and val_item:
-                            # If it's a list, try to map the shorthand_path across all items
-                            if isinstance(val_item[0], dict) and shorthand_path in val_item[0]:
-                                return [item.get(shorthand_path) for item in val_item]
-
-                # 2. TOKENS MATCHING: Try to match the shorthand tokens against task name tokens
                 shorthand_tokens = [t for t in re.split(r"[._]", shorthand_path.lower()) if t]
                 for key, val_item in reversed(list(results_map.items())):
                     # Skip numeric keys and task-N keys for shorthand matching to avoid noise
-                    if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
+                    if re.match(r"^task-\d+$|^\d+$", str(key)):
                         continue
 
                     key_tokens = [t for t in re.split(r"[._]", str(key).lower()) if t]
@@ -514,9 +381,6 @@ class ResolverMixin:
                             or (st == "doc" and kt == "document")
                             or (st == "msg" and kt == "message")
                             or (st == "mail" and kt == "message")
-                            or (st == "fileid" and kt == "id")
-                            or (st == "id" and kt == "fileid")
-                            or (st in ("id", "fileid") and kt == "file_id")
                             for kt in key_tokens
                         )
                         if is_match:
@@ -524,18 +388,8 @@ class ResolverMixin:
 
                     if matches > 0 and matches >= len(shorthand_tokens):
                         # If we have a perfect or better match, take it.
+                        # Since we are reversed, this is the most recent one.
                         return val_item
-
-                # 3. LOOSE KEY MATCHING: If nothing matched, try matching ANY token in ANY task result
-                # This handles {{ :event_summary }} matching an event's 'summary' field
-                for key, val_item in reversed(list(results_map.items())):
-                     if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
-                        for token in shorthand_tokens:
-                            if isinstance(val_item, dict) and token in val_item:
-                                return val_item[token]
-                            if isinstance(val_item, list) and val_item and isinstance(val_item[0], dict) and token in val_item[0]:
-                                return [item.get(token) for item in val_item]
-
                 return None
 
             if path:
@@ -585,8 +439,6 @@ class ResolverMixin:
                     ".document_id",
                     ".spreadsheetId",
                     ".documentId",
-                    ".fileId",
-                    ".file_id",
                 ]
                 if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
@@ -798,119 +650,14 @@ class ResolverMixin:
         return val
 
     def _get_value_by_path(self, data: dict, path: str) -> Any:
-        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'.
-        Also handles flattened keys like 'task-7.result[0]' where 'task-7.result' is a top-level key.
-        """
+        """Evaluate a path like 'task-1[0].id' or 'drive.list_files[0].id'."""
         self.logger.debug(f"DEBUG: evaluating path '{path}' against results keys: {list(data.keys())}")
 
         # 1. Try exact match first
         if path in data:
             return data[path]
 
-        # 2. Handle flattened keys (e.g., 'task-7.result[0]', 'task-1.messages[0].id', or 'task-1.messages.id')
-        # Check if the path contains an array index like [0], [1], etc.
-        array_index_match = re.search(r'\[(\d+)\]', path)
-
-        # Find the longest matching flattened key prefix
-        # For 'task-1.messages[0].id', we try 'task-1.messages', then 'task-1', etc.
-        # For 'task-1.messages.id', we try 'task-1.messages', then 'task-1', etc.
-        if array_index_match:
-            base_path = path[:array_index_match.start()]
-            remaining_path = path[array_index_match.end():]
-        else:
-            # No array index, so the entire path up to the last dot might be a flattened key
-            # For 'task-1.messages.id', we try 'task-1.messages', then 'task-1'
-            last_dot = path.rfind('.')
-            if last_dot > 0:
-                base_path = path[:last_dot]
-                remaining_path = path[last_dot + 1:]
-            else:
-                base_path = path
-                remaining_path = ''
-
-        # Try to find the longest matching key in data
-        best_match = None
-        best_match_value = None
-
-        # Split by dots to try progressively shorter prefixes
-        parts = base_path.split('.')
-        for i in range(len(parts), 0, -1):
-            candidate = '.'.join(parts[:i])
-            if candidate in data:
-                best_match = candidate
-                best_match_value = data[candidate]
-                # Fix: recalculate remaining_path accurately based on the matched prefix
-                if array_index_match:
-                    # If we matched the prefix up to the index, remaining_path is what follows the index
-                    if candidate == base_path:
-                        remaining_path = path[array_index_match.end():]
-                    else:
-                        # We matched a shorter prefix, so include the rest of the path including index
-                        remaining_path = path[len(candidate):]
-                else:
-                    remaining_path = path[len(candidate):]
-
-                if remaining_path.startswith('.'):
-                    remaining_path = remaining_path[1:]
-                break
-
-        if best_match is not None:
-            curr = best_match_value
-
-            # If we have an array index, apply it
-            if array_index_match:
-                index = int(array_index_match.group(1))
-                if isinstance(curr, list) and 0 <= index < len(curr):
-                    curr = curr[index]
-                    # Apply remaining path after array index
-                    if remaining_path:
-                        remaining_tokens = re.findall(r"[^.\[\]]+|\[\d+\]", remaining_path)
-                        for token in remaining_tokens:
-                            if token.startswith("["):
-                                idx = int(token[1:-1])
-                                if isinstance(curr, list) and 0 <= idx < len(curr):
-                                    curr = curr[idx]
-                                else:
-                                    return None
-                            else:
-                                if isinstance(curr, dict) and token in curr:
-                                    curr = curr[token]
-                                else:
-                                    return None
-                    return curr
-                else:
-                    # Not a list or index out of range, fall through to step 3
-                    self.logger.debug(f"DEBUG: base path '{best_match}' exists but is not a list or index out of range, falling through to nested path handling")
-            elif isinstance(curr, list) and remaining_path:
-                # No array index, but we have a list and a remaining path
-                # This handles cases like 'task-1.messages.id' where we want to map 'id' across the list
-                # Tokenize the remaining path
-                remaining_tokens = re.findall(r"[^.\[\]]+|\[\d+\]", remaining_path)
-                for token in remaining_tokens:
-                    if token.startswith("["):
-                        # Array indexing on the list
-                        idx = int(token[1:-1])
-                        if isinstance(curr, list) and 0 <= idx < len(curr):
-                            curr = curr[idx]
-                        else:
-                            return None
-                    else:
-                        # Field access - map across the list
-                        if isinstance(curr, list):
-                            curr = [item.get(token) if isinstance(item, dict) else None for item in curr]
-                        elif isinstance(curr, dict) and token in curr:
-                            curr = curr[token]
-                        else:
-                            return None
-                return curr
-            elif isinstance(curr, list) and not remaining_path:
-                # Just a flattened list key with no further access
-                return curr
-            elif isinstance(curr, dict):
-                # Matched a dict, not a list - fall through to step 3 for nested handling
-                self.logger.debug(f"DEBUG: base path '{best_match}' is a dict, falling through to nested path handling")
-
-        # 3. Split path into tokens, handling dots and brackets
+        # 2. Split path into tokens, handling dots and brackets
         tokens = re.findall(r"[^.\[\]]+|\[\d+\]", path)
         if not tokens:
             return None
@@ -939,20 +686,13 @@ class ResolverMixin:
                         # and the token exists in the list elements, we can auto-unwrap.
                         unwrapped = False
                         for list_key in ["files", "messages", "items", "events", "values", "threads"]:
-                            if list_key in curr and isinstance(curr[list_key], list):
-                                if not curr[list_key]:
-                                    curr = []
-                                    unwrapped = True
-                                    break
-                                elif isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
+                            if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
+                                if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
                                     curr = [item.get(token) for item in curr[list_key]]
                                     unwrapped = True
                                     break
                         if not unwrapped:
-                            if token in ["files", "messages", "items", "events", "values", "threads"]:
-                                curr = []
-                            else:
-                                curr = None
+                            curr = None
                 elif isinstance(curr, list):
                     # Map the token across the list elements
                     curr = [item.get(token) if isinstance(item, dict) else None for item in curr]

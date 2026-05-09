@@ -12,7 +12,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from gws_assistant.config import AppConfig
 from gws_assistant.execution import PlanExecutor
 from gws_assistant.execution.helpers import _coerce_structured_value, _normalize_injected_vars
 from gws_assistant.gws_runner import GWSRunner
@@ -22,8 +21,6 @@ from gws_assistant.planner import CommandPlanner
 
 class FakeRunner(GWSRunner):
     def __init__(self) -> None:
-        from gws_assistant.config import AppConfig
-        self.cfg = AppConfig.from_env()
         super().__init__(
             Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test")
         )
@@ -121,59 +118,25 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "files": [
-                        {
-                            "id": "d1",
-                            "name": self.cfg.test_doc_name,
-                            "mimeType": "application/vnd.google-apps.document",
-                            "webViewLink": "https://docs.google.com/document/d/test123/edit"
-                        },
-                        {
-                            "id": "d2",
-                            "name": "weapon_244.qvm",
-                            "mimeType": "application/octet-stream",
-                            "webViewLink": "https://drive.google.com/file/d/xxx"
-                        }
-                    ]
-                }),
+                stdout='{"files":[{"id":"d1","name":"Agentic AI - Builders","mimeType":"application/vnd.google-apps.document","webViewLink":"https://docs.google.com/document/d/test123/edit"},{"id":"d2","name":"weapon_244.qvm","mimeType":"application/octet-stream","webViewLink":"https://drive.google.com/file/d/xxx"}]}',
             )
         if args[:3] == ["drive", "files", "create"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "id": "folder-1",
-                    "name": self.cfg.test_folder_name,
-                    "mimeType": "application/vnd.google-apps.folder",
-                    "kind": "drive#file"
-                }),
+                stdout='{"id":"folder-1","name":"Test Folder","mimeType":"application/vnd.google-apps.folder","kind":"drive#file"}',
             )
         if args[:3] == ["calendar", "events", "insert"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "id": "evt-1",
-                    "created": "2026-04-11",
-                    "summary": self.cfg.test_event_name,
-                    "htmlLink": "https://calendar.google.com/event?id=evt-1"
-                }),
+                stdout='{"id":"evt-1","created":"2026-04-11","summary":"Test Event","htmlLink":"https://calendar.google.com/event?id=evt-1"}',
             )
         if args[:3] == ["calendar", "events", "list"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "items": [
-                        {
-                            "id": "evt-1",
-                            "summary": self.cfg.test_event_name,
-                            "start": {"date": "2026-04-15"},
-                            "end": {"date": "2026-04-15"}
-                        }
-                    ]
-                }),
+                stdout='{"items":[{"id":"evt-1","summary":"Review Data","start":{"date":"2026-04-15"},"end":{"date":"2026-04-15"}}]}',
             )
         return ExecutionResult(
             success=True,
@@ -263,7 +226,6 @@ def test_executor_expands_gmail_message_placeholder_before_get_message():
 def test_executor_builds_email_body_from_sheet_values():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
-    cfg = AppConfig.from_env()
     plan = RequestPlan(
         raw_text="send sheet by email",
         tasks=[
@@ -271,14 +233,14 @@ def test_executor_builds_email_body_from_sheet_values():
                 id="task-1",
                 service="sheets",
                 action="get_values",
-                parameters={"spreadsheet_id": cfg.test_spreadsheet_id, "range": "Sheet1!A1:B2"},
+                parameters={"spreadsheet_id": "sheet-123", "range": "Sheet1!A1:B2"},
             ),
             PlannedTask(
                 id="task-2",
                 service="gmail",
                 action="send_message",
                 parameters={
-                    "to_email": cfg.default_recipient_email,
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
                     "subject": "Sheet data",
                     "body": "$sheet_email_body",
                 },
@@ -361,15 +323,14 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
         ),
     )
 
-    cfg = AppConfig.from_env()
     plan = RequestPlan(
-        raw_text=f"Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to {cfg.default_recipient_email}",
+        raw_text="Find top 3 Agentic AI frameworks, save the data to Google Docs and Google Sheets, and send an email to user@example.com",
         tasks=[
             PlannedTask(
                 id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}
             ),
             PlannedTask(
-                id="task-2", service="docs", action="create_document", parameters={"title": cfg.test_doc_name}
+                id="task-2", service="docs", action="create_document", parameters={"title": "Agentic Ai Frameworks"}
             ),
             PlannedTask(
                 id="task-3",
@@ -381,7 +342,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 id="task-4",
                 service="sheets",
                 action="create_spreadsheet",
-                parameters={"title": cfg.test_sheet_name},
+                parameters={"title": "Agentic Ai Frameworks"},
             ),
             PlannedTask(
                 id="task-5",
@@ -398,8 +359,8 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
                 service="gmail",
                 action="send_message",
                 parameters={
-                    "to_email": cfg.default_recipient_email,
-                    "subject": f"{cfg.test_doc_name} summary",
+                    "to_email": os.getenv("DEFAULT_RECIPIENT_EMAIL") or "test@example.com",
+                    "subject": "Agentic Ai Frameworks summary",
                     "body": "The requested research has been saved to the generated Google Doc and Google Sheet. Please share the links.",
                 },
             ),
@@ -472,7 +433,7 @@ def test_gmail_details_accumulation():
                 parameters={
                     "spreadsheet_id": "s1",
                     "range": "Sheet1!A1",
-                    "values": "$gmail_details_values",
+                    "values": "$gmail_summary_rows",
                 },
             ),
         ],
@@ -498,12 +459,11 @@ def test_code_output_resolution():
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
 
     # Fake runner for code execute doesn't natively exist, we can stub it or test logic via direct handle.
-    cfg = AppConfig.from_env()
     plan = RequestPlan(
         raw_text="run code and send",
         tasks=[
             PlannedTask(id="task-1", service="code", action="execute", parameters={"code": "print('hello world')"}),
-            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": cfg.default_recipient_email, "subject": "Code", "body": "Result: $code_output"}),
+            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": "test@example.com", "subject": "Code", "body": "Result: $code_output"}),
         ]
     )
 
@@ -603,13 +563,12 @@ def test_execute_single_task_fails_on_non_mapping_json_stdout():
 def test_execute_single_task_rejects_unsafe_local_attachment_path():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
-    cfg = AppConfig.from_env()
     task = PlannedTask(
         id="1",
         service="gmail",
         action="send_message",
         parameters={
-            "to_email": cfg.default_recipient_email,
+            "to_email": "test@example.com",
             "subject": "Unsafe",
             "body": "Test",
             "attachments": ["/etc/passwd"],

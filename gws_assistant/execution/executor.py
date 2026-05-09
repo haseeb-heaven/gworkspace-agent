@@ -194,22 +194,9 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                 except VerificationError as e:
                     if e.severity == VerificationSeverity.WARNING:
                         self.logger.warning(f"Pre-execution verification warning (continuing): {e}")
-                    elif task.is_destructive(destructive_ops=destructive_ops):
-                        # Destructive operations MUST halt on verification failure
-                        self.logger.error(f"Pre-execution verification failed (destructive op): {e}")
-                        raise
                     else:
-                        # Non-destructive operations: skip this step gracefully
-                        # (e.g. batch_update with unresolved text placeholder)
-                        self.logger.warning(
-                            f"Pre-execution verification failed for non-destructive "
-                            f"{task.service}.{task.action}: {e} — skipping step."
-                        )
-                        return ExecutionResult(
-                            success=False,
-                            command=["<skipped>"],
-                            error=f"Skipped {task.service}.{task.action}: {e}",
-                        )
+                        self.logger.error(f"Pre-execution verification failed: {e}")
+                        raise
 
         self.logger.debug(f"Proceeding to execute {task.service}.{task.action}")
 
@@ -239,42 +226,6 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         # Intercept move_file to perform parent lookup safely in the executor
         if task.service == "drive" and task.action == "move_file":
             file_id = task.parameters.get("file_id")
-            folder_id = task.parameters.get("folder_id")
-
-            # 1. Resolve folder_id if it's a query (heuristic planner fallback)
-            if folder_id and "name contains" in str(folder_id):
-                try:
-                    self.logger.info(f"Resolving folder_id query: {folder_id}")
-                    lookup_args = [
-                        "drive",
-                        "files",
-                        "list",
-                        "--params",
-                        json.dumps({"q": f"({folder_id}) and mimeType='application/vnd.google-apps.folder'", "pageSize": 1}),
-                    ]
-                    lookup_result = self.runner.run(lookup_args)
-                    if lookup_result.success and lookup_result.stdout:
-                        data = json.loads(lookup_result.stdout)
-                        files = data.get("files", [])
-                        if files:
-                            resolved_folder_id = files[0]["id"]
-                            task.parameters["folder_id"] = resolved_folder_id
-                            self.logger.info(f"Resolved folder_id query to: {resolved_folder_id}")
-                        else:
-                            return ExecutionResult(
-                                success=False,
-                                command=["drive", "files", "list"],
-                                error=f"Failed to resolve folder query '{folder_id}': No folders found.",
-                            )
-                except Exception as e:
-                    self.logger.exception("Unexpected folder_id lookup failure")
-                    return ExecutionResult(
-                        success=False,
-                        command=["drive", "files", "list"],
-                        error=f"Failed to resolve folder query: {e}",
-                    )
-
-            # 2. Perform parent lookup for removeParents
             if file_id:
                 try:
                     lookup_args = [
@@ -301,7 +252,11 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         if parents and isinstance(parents, list):
                             context["fetch_parents"] = ",".join(parents)
                         else:
-                            context["fetch_parents"] = ""  # Root or no parents
+                            return ExecutionResult(
+                                success=False,
+                                command=["drive", "files", "update"],
+                                error="Failed to lookup current file parents: No parents returned.",
+                            )
                     else:
                         return ExecutionResult(
                             success=False,
@@ -370,19 +325,13 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                     if needs_enrich:
                         max_enrich = min(len(msgs), 20)  # Cap to avoid excessive API calls
                         enriched = []
-                        for idx, m in enumerate(msgs[:max_enrich]):
+                        for m in msgs[:max_enrich]:
                             mid = m.get("id")
                             if not mid:
                                 enriched.append(m)
                                 continue
                             try:
-                                # Use 'full' format for the first 5 messages to enable high-quality extraction
-                                # Use 'metadata' for the rest to preserve performance
-                                fmt = "full" if idx < 5 else "metadata"
-                                get_params = {"userId": "me", "id": mid, "format": fmt}
-                                if fmt == "metadata":
-                                    get_params["metadataHeaders"] = ["From", "Subject", "Date"]
-
+                                get_params = {"userId": "me", "id": mid, "format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]}
                                 get_args = ["gmail", "users", "messages", "get", "--params", json.dumps(get_params)]
                                 get_res = self.runner.run(get_args)
                                 if get_res.success and get_res.stdout:

@@ -120,16 +120,16 @@ HEAD_SHA=$(gh pr view <PR_NUMBER> --json headRefOid -q .headRefOid)
 while true; do
   GREPTILE_CHECK=$(gh api "repos/{owner}/{repo}/commits/$HEAD_SHA/check-runs" \
     --jq '.check_runs[] | select(.name | test("greptile"; "i"))' 2>/dev/null)
-  
+
   if [ -z "$GREPTILE_CHECK" ]; then
     echo "Waiting for Greptile check to appear..."
     sleep 5
     continue
   fi
-  
+
   STATUS=$(echo "$GREPTILE_CHECK" | jq -r '.status // "completed"')
   CONCLUSION=$(echo "$GREPTILE_CHECK" | jq -r '.conclusion // "pending"')
-  
+
   if [ "$STATUS" = "completed" ]; then
     if [ "$CONCLUSION" = "success" ]; then
       echo "Greptile check passed!"
@@ -138,7 +138,7 @@ while true; do
     fi
     break
   fi
-  
+
   echo "Waiting for Greptile... (status: $STATUS)"
   sleep 10
 done

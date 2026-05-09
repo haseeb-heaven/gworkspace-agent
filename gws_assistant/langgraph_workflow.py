@@ -108,22 +108,11 @@ class WorkflowNodes:
         self.formatter = HumanReadableFormatter()
 
     def plan_node(self, state: AgentState) -> dict[str, Any]:
-        """Node for generating or refining an execution plan."""
-        # BUG FIX: Reset current_task_index when generating a new plan
-        # If we are replanning, we should start from the first task of the new plan.
         try:
             plan = self.system.plan(state.get("user_text", ""))
             history = _append_history(state, AIMessage(content=f"Planned {len(plan.tasks)} tasks."))
             self._log_step("planner", {"user_text": state.get("user_text", "")}, {"tasks": len(plan.tasks), "source": plan.source})
-            return {
-                "plan": plan,
-                "error": None,
-                "conversation_history": history,
-                "current_task_index": 0,
-                "retry_count": 0,
-                "current_attempt": 0,
-                "abort_plan": False
-            }
+            return {"plan": plan, "error": None, "conversation_history": history}
         except Exception as exc:
             history = _append_history(state, AIMessage(content=f"Planning failed: {exc}"))
             self._log_step("planner", {"user_text": state.get("user_text", "")}, {"error": str(exc)})
@@ -155,10 +144,9 @@ class WorkflowNodes:
         task = plan.tasks[idx]
         expanded = self.executor._expand_task(task, context)
         if not expanded:
-            self.logger.info(f"Task {task.id} expanded to no executable tasks. Skipping.")
             return {
-                "error": None,
-                "last_result": StructuredToolResult(success=True, output={"skipped": True, "message": "No items to process"}, error=None),
+                "error": f"Task {task.id} expanded to no executable tasks.",
+                "last_result": StructuredToolResult(success=False, output={}, error="Empty expansion"),
                 "executions": executions,
                 "context": context,
             }
@@ -271,60 +259,28 @@ class WorkflowNodes:
         idx = state.get("current_task_index", 0)
         plan = state.get("plan")
         current_task = plan.tasks[idx] if plan and idx < len(plan.tasks) else None
-
+        
         last_result = state.get("last_result")
         is_code_task = current_task and current_task.service in ("code", "computation")
-
+        
         is_code_error = (
             context.get("needs_code_fix", False)
             or (is_code_task and error and "code" in str(error).lower())
             or (is_code_task and last_result and not last_result.get("success") and state.get("context", {}).get("generated_code"))
         )
 
-        if is_code_error:
-            # Check if we already have usable content from a prior successful code step.
-            # If so, and we've either exhausted retries or want to skip failing formatting code,
-            # continue to the next task — the resolver's batch_update fallback will use the existing content.
-            has_prior_content = any(
-                context.get(k) for k in (
-                    "last_code_result", "last_code_result_table",
-                    "code_stdout", "last_code_stdout", "code_output",
-                )
+        if is_code_error and attempts < self.config.max_retries:
+            # Force retry to generate_code for LLM to fix the code
+            decision = ReflectionDecision(
+                action="retry",
+                reason=f"Code execution failed: {error}. Regenerating code with LLM to fix error."
             )
-            plan = state.get("plan")
-            idx = state.get("current_task_index", 0)
-            has_more_tasks = plan and idx + 1 < len(plan.tasks)
-
-            # Option A: Retry if we haven't reached max retries
-            if attempts < self.config.max_retries:
-                decision = ReflectionDecision(
-                    action="retry",
-                    reason=f"Code execution failed: {error}. Regenerating code with LLM to fix error."
-                )
-                updates["reflection"] = decision
-                updates["conversation_history"] = _append_history(
-                    state, AIMessage(content=decision.reason)
-                )
-                self._log_step("reflection", {"error": error, "attempt": attempts, "code_fix": True}, decision)
-                return updates
-
-            # Option B: Skip if we have prior content and more tasks
-            if has_prior_content and has_more_tasks:
-                self.logger.info(
-                    "Code execution retries exhausted but content exists from prior step — "
-                    "skipping to next task."
-                )
-                decision = ReflectionDecision(
-                    action="continue",
-                    reason="Code step failed after retries but prior content available. Continuing with remaining tasks."
-                )
-                updates["reflection"] = decision
-                updates["error"] = None  # Clear error so workflow continues
-                updates["conversation_history"] = _append_history(
-                    state, AIMessage(content=decision.reason)
-                )
-                self._log_step("reflection", {"error": error, "attempt": attempts, "code_skip": True}, decision)
-                return updates
+            updates["reflection"] = decision
+            updates["conversation_history"] = _append_history(
+                state, AIMessage(content=decision.reason)
+            )
+            self._log_step("reflection", {"error": error, "attempt": attempts, "code_fix": True}, decision)
+            return updates
 
         decision, abort = self.executor.reflect_on_error(error, attempts, self.config.max_retries)
         if abort:
@@ -336,7 +292,6 @@ class WorkflowNodes:
                 updates["context"] = context
                 updates["current_attempt"] = 0
                 updates["current_task_index"] = 0
-                updates["retry_count"] = state.get("retry_count", 0) + 1
                 updates["error"] = None
                 decision.reason = "Retries exhausted, requesting new plan."
             else:
@@ -346,17 +301,10 @@ class WorkflowNodes:
         self._log_step("reflection", {"error": error, "attempt": attempts}, decision)
         updates["reflection"] = decision
         updates["conversation_history"] = _append_history(state, AIMessage(content=decision.reason))
-
-        if decision.action == "replan":
-            # BUG FIX: retry_count must be incremented and returned in updates
-            # so that route_after_reflection can stop infinite replan loops.
-            updates["retry_count"] = state.get("retry_count", 0) + 1
-
         return updates
 
     def format_output_node(self, state: AgentState) -> dict[str, Any]:
         """Format the final output using the formatter."""
-        print("--- Format Output Node ---")
         plan = state.get("plan")
         executions = state.get("executions", [])
         context = state.get("context", {})
@@ -389,16 +337,15 @@ class WorkflowNodes:
         user_text = state.get("user_text", "")
         final_output = state.get("final_output", "")
         verification_attempts = state.get("verification_attempts", 0)
-        executions = state.get("executions", [])
 
         # Extract key requirements from user request
         requirements = self._extract_requirements(user_text)
 
         # Check if output satisfies requirements
-        missing = self._check_missing_requirements(final_output, requirements, executions)
+        missing = self._check_missing_requirements(final_output, requirements)
 
         if missing and verification_attempts < 2:
-            self.logger.info(f"Intent verification failed (attempt {verification_attempts + 1}/2): missing {missing}. Triggering replan.")
+            self.logger.warning(f"Intent verification failed: missing {missing}. Triggering replan.")
             return {
                 "intent_verification": {
                     "passed": False,
@@ -407,7 +354,6 @@ class WorkflowNodes:
                 },
                 "verification_attempts": verification_attempts + 1,
                 "error": f"Intent verification failed: {', '.join(missing)}",
-                "current_task_index": 0,
             }
 
         return {
@@ -438,16 +384,8 @@ class WorkflowNodes:
             requirements.append("doc_action")
 
         # Drive-related requirements
-        # Refined regex to avoid false positives from titles (e.g. 'Drive CRUD Session')
-        drive_keywords = [r"\bdrive\b", r"\bfiles?\b", r"\bfolders?\b", r"\bupload\b", r"\bdownload\b"]
-        if any(re.search(kw, lowered) for kw in drive_keywords):
-            # Exception: if it's a calendar event and 'drive' is likely just in the title
-            is_calendar = any(word in lowered for word in ["calendar", "event", "meeting"])
-            if is_calendar and "drive" in lowered and not any(kw in lowered for kw in ["upload", "download", "file", "folder"]):
-                # If only 'drive' matches and it's a calendar task, don't require drive_action
-                pass
-            else:
-                requirements.append("drive_action")
+        if any(word in lowered for word in ["drive", "file", "files", "folder", "upload", "download"]):
+            requirements.append("drive_action")
 
         # Sheets-related requirements
         if any(word in lowered for word in ["sheet", "spreadsheet", "excel", "csv", "table"]):
@@ -459,45 +397,26 @@ class WorkflowNodes:
 
         return requirements
 
-    def _check_missing_requirements(self, output: str, requirements: list[str], executions: list[TaskExecution]) -> list[str]:
+    def _check_missing_requirements(self, output: str, requirements: list[str]) -> list[str]:
         """Check if output satisfies all requirements."""
         missing = []
         lowered = output.lower()
-        executed_services = {e.task.service for e in executions}
 
         for req in requirements:
-            if req == "calendar_action":
-                if "calendar" in executed_services:
-                    continue
-                if not any(word in lowered for word in ["calendar", "event", "meeting", "schedule", "reminder"]):
-                    missing.append("calendar_action")
+            if req == "calendar_action" and not any(word in lowered for word in ["calendar", "event", "meeting", "schedule", "reminder"]):
+                missing.append("calendar_action")
             elif req == "future_date" and "tomorrow" in lowered and not any(word in lowered for word in ["2026-05-06", "may 6", "6th", "tomorrow"]):
                 missing.append("future_date")
-            elif req == "email_action":
-                if "gmail" in executed_services:
-                    continue
-                if not any(word in lowered for word in ["email", "gmail", "message", "inbox", "sent", "mail"]):
-                    missing.append("email_action")
-            elif req == "doc_action":
-                if "docs" in executed_services:
-                    continue
-                if not any(word in lowered for word in ["doc", "document", "created"]):
-                    missing.append("doc_action")
-            elif req == "drive_action":
-                if "drive" in executed_services:
-                    continue
-                if not any(word in lowered for word in ["drive", "file", "folder"]):
-                    missing.append("drive_action")
-            elif req == "sheets_action":
-                if "sheets" in executed_services:
-                    continue
-                if not any(word in lowered for word in ["sheet", "spreadsheet"]):
-                    missing.append("sheets_action")
-            elif req == "tasks_action":
-                if "tasks" in executed_services:
-                    continue
-                if not any(word in lowered for word in ["task", "todo"]):
-                    missing.append("tasks_action")
+            elif req == "email_action" and not any(word in lowered for word in ["email", "gmail", "message", "inbox", "sent", "mail"]):
+                missing.append("email_action")
+            elif req == "doc_action" and not any(word in lowered for word in ["doc", "document", "created"]):
+                missing.append("doc_action")
+            elif req == "drive_action" and not any(word in lowered for word in ["drive", "file", "folder"]):
+                missing.append("drive_action")
+            elif req == "sheets_action" and not any(word in lowered for word in ["sheet", "spreadsheet"]):
+                missing.append("sheets_action")
+            elif req == "tasks_action" and not any(word in lowered for word in ["task", "todo"]):
+                missing.append("tasks_action")
 
         return missing
 
@@ -607,7 +526,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         }
 
     def code_execution_node(state: AgentState) -> dict[str, Any]:
-        if not nodes.config.code_execution_enabled:
+        if not config.code_execution_enabled:
             msg = "Code execution is disabled by configuration (CODE_EXECUTION_ENABLED=false)."
             return {
                 "error": msg,
@@ -638,16 +557,8 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 "last_result": StructuredToolResult(success=False, output={}, error="Missing code"),
                 "current_attempt": state.get("current_attempt", 0) + 1,
             }
-        # CRITICAL: Resolve placeholders before execution!
-        # The generate_code node may produce code with {{task-N}} or $placeholder tokens
-        # which must be materialized using the current execution context.
-        resolved_code = nodes.executor._resolve_placeholders(
-            str(code), context, use_repr_for_complex=True
-        )
-        nodes.logger.info(f"Executing generated code (resolved length: {len(resolved_code)})")
-
-        result = execute_generated_code(str(resolved_code), config=nodes.config)
-        nodes._log_step("sandbox_execute", {"code": resolved_code}, result)
+        result = execute_generated_code(str(code), config=config)
+        nodes._log_step("sandbox_execute", {"code": code}, result)
 
         results_map = context.setdefault("task_results", {})
         results_map["code"] = result.get("output", {})
@@ -682,8 +593,8 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         base_prompt = (
             "Generate Python code ONLY. The code must store its final answer in a variable named `result` "
             "and may print intermediate details. NO markdown formatting, just raw code.\n\n"
-            "CRITICAL: You may use standard modules like math, re, json, datetime, statistics, and pandas. "
-            "They are pre-imported for you. Avoid other non-standard libraries.\n\n"
+            "CRITICAL: Do NOT use ANY 'import' statements. All standard libraries are unavailable. "
+            "Use only built-in functions and basic logic.\n\n"
         )
 
         if needs_fix and failed_code and code_error:
@@ -702,14 +613,14 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
             context["needs_code_fix"] = False
         else:
             prompt = base_prompt + f"User request:\n{state.get('user_text', '')}"
-        model = create_agent(nodes.config, nodes.logger)
+        model = create_agent(config, logger)
         lowered = state.get("user_text", "").lower()
         is_computation = any(
             kw in lowered for kw in ("calculate", "sum", "average", "compute", "sort", "reverse", "math", "numbers")
         )
 
         if not model:
-            if not nodes.config.use_heuristic_fallback or not is_computation:
+            if not config.use_heuristic_fallback or not is_computation:
                 msg = "Unable to generate code because no LLM is configured" if not model else "LLM failed"
                 return {
                     "error": f"{msg} and request is not a simple computation.",
@@ -728,7 +639,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         try:
             llm_response = model.invoke(prompt)
         except Exception as exc:
-            nodes.logger.warning("LLM code generation failed: %s. Falling back to heuristics.", exc)
+            logger.warning("LLM code generation failed: %s. Falling back to heuristics.", exc)
             if not is_computation:
                 return {
                     "error": f"LLM code generation failed and request is not a simple computation: {exc}",
@@ -763,7 +674,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
 
         # Guard: if the LLM refused or returned non-code, don't pass it to the sandbox.
         if _is_llm_refusal(generated_code):
-            nodes.logger.warning("generate_code_node: LLM returned a refusal, not executable code.")
+            logger.warning("generate_code_node: LLM returned a refusal, not executable code.")
             return {
                 "error": "LLM declined to generate code for this request. Try rephrasing as a computation task.",
                 "last_result": StructuredToolResult(
@@ -780,8 +691,7 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
         return {"context": context, "error": None}
 
     def route_after_plan(state: AgentState) -> Literal["validate", "format_output", "web_search", "generate_code"]:
-        error = state.get("error")
-        if error:
+        if state.get("error"):
             return "format_output"
         plan = state.get("plan")
         text = state.get("user_text", "").lower()
@@ -847,9 +757,9 @@ def create_workflow(config: AppConfigModel, system, executor, logger: logging.Lo
                 return "generate_code"
             return "execute_task"
         if decision.action == "replan":
-            # Prevent infinite replan loops
+            # Prevent infinite replan loops - stop after 3 replans
             retry_count = state.get("retry_count", 0)
-            if retry_count >= config.max_replans + 2:  # Higher threshold for specific task failure replans
+            if retry_count >= 3:
                 return "persist_memory"
             return "generate_plan"
         return "persist_memory"
@@ -926,7 +836,7 @@ def run_workflow(user_text: str, config: AppConfigModel, system, executor, logge
     )
     app = create_workflow(config, system, executor, logger)
     try:
-        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=2000))
+        final_state = app.invoke(initial_state, config=RunnableConfig(recursion_limit=500))
         return final_state.get("final_output", "Workflow returned no output.")
     except Exception as exc:
         logger.exception("Workflow failed.")

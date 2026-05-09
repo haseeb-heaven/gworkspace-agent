@@ -59,9 +59,6 @@ TOOL_CAPABLE_MODELS: list[str] = [
     "openrouter/qwen/qwen-2.5-72b-instruct:free",
     "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
     "openrouter/deepseek/deepseek-chat:free",
-    "openrouter/deepseek/deepseek-r1:free",
-    "openrouter/openai/gpt-oss-120b:free",
-    "openrouter/mistralai/mistral-small-24b-instruct-2501:free",
     "openrouter/nvidia/nemotron-super-49b-v1:free",
     "openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free",
     "openrouter/groq/llama-3.3-70b-versatile",
@@ -71,10 +68,6 @@ TOOL_CAPABLE_MODELS: list[str] = [
     # ── Groq (fast inference, tool-calling confirmed) ───────────────
     "groq/llama-3.3-70b-versatile",
     "groq/llama-3.1-8b-instant",
-    "groq/meta-llama/llama-4-scout-17b-16e-instruct",
-    "groq/compound",
-    "groq/openai/gpt-oss-120b",
-    "groq/qwen/qwen3-32b",
     # ── Cerebras (fast inference, tool-calling confirmed) ───────────
     "cerebras/llama3.1-70b",
     "cerebras/llama3.1-8b",

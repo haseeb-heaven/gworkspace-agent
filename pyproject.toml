@@ -4,8 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-workspace-assistant"
-version = "1.0.6"
-
+version = "1.0.0"
 description = "Professional CLI and GUI assistant for Google Workspace gws commands."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,19 +13,18 @@ dependencies = [
     # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
     # but requires openai>=2.26.0 which conflicts with litellm 1.83.7 pinning openai==2.30.0.
     # Upgrade is deferred until a litellm release ships that allows a newer openai.
-    "langchain-openai>=1.1.10,<1.2.2",
+    "langchain-openai>=1.1.10,<1.1.11",
     "langgraph>=0.3.34",
     "langchain-community>=0.3.31",
     "langchain-tavily>=0.2.0",
     "duckduckgo-search>=6.0.0",
     "RestrictedPython>=8.1",
     "httpx>=0.28.1",
-    "filelock>=3.12.0",
     # openai 2.30.0 is the exact version required by litellm 1.83.7.
     # Changing this will cause a ResolutionImpossible error in pip.
     "openai==2.30.0",
     # python-dotenv 1.0.1 is the exact version required by litellm 1.83.7.
-    # litellm 1.83.7 depends on python-dotenv==1.0.1; using other versions causes ResolutionImpossible.
+    # litellm 1.83.7 hard-pins python-dotenv==1.0.1; using 1.2.x causes ResolutionImpossible.
     "python-dotenv==1.0.1",
     "typer>=0.12.0",
     "rich>=14.3.3",
@@ -92,8 +90,5 @@ max-line-length = 120
 [tool.pyright]
 include = ["gws_assistant"]
 exclude = ["**/__pycache__", "tests"]
-pythonversion = "1.0.6"
+pythonVersion = "3.11"
 typeCheckingMode = "basic"
-
-
-

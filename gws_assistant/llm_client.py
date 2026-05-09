@@ -21,8 +21,6 @@ from litellm.exceptions import (
     RateLimitError,
 )
 
-from gws_assistant.env_manager import rotate_api_key_in_env, rotate_model_in_env
-
 logger = logging.getLogger(__name__)
 
 # Silence litellm's verbose default logging
@@ -54,9 +52,6 @@ def _build_api_kwargs(model: str, config: Any) -> dict:
 
     elif model.startswith("mistral/"):
         kwargs["api_key"] = config.mistral_api_key
-
-    elif model.startswith("cerebras/"):
-        kwargs["api_key"] = config.cerebras_api_key
 
     elif model.startswith("ollama/"):
         base = config.ollama_api_base or "http://localhost:11434"
@@ -122,16 +117,13 @@ def call_llm(
 
                 if tools:
                     call_kwargs["tools"] = tools
-                    # Cerebras tool_choice "auto" often causes validation errors in LiteLLM/Cerebras bridge
-                    if not model.startswith("cerebras/") or tool_choice != "auto":
-                        call_kwargs["tool_choice"] = tool_choice
+                    call_kwargs["tool_choice"] = tool_choice
 
                 response = completion(**call_kwargs)
                 logger.debug(f"[LLM] Success: model={model}")
                 return response
 
             except RateLimitError as e:
-                import time
                 msg = str(e).lower()
                 is_quota = any(k in msg for k in ("quota", "billing", "insufficient_quota", "insufficient_quota_available", "out_of_quota"))
                 level = logging.ERROR if is_quota else logging.WARNING
@@ -143,13 +135,6 @@ def call_llm(
                     f"[LLM] {'Quota' if is_quota else 'RateLimit'} error on model={model}. {retry_msg}"
                 )
                 last_error = e
-                if api_key and not is_last_key:
-                    rotate_api_key_in_env(api_key)
-                elif is_last_key:
-                    rotate_model_in_env(model)
-
-                # Small backoff before trying next key/model
-                time.sleep(1)
                 continue
 
             except AuthenticationError as e:
@@ -158,10 +143,6 @@ def call_llm(
                 retry_msg = "Trying next key." if not is_last_key else "Trying next model."
                 logger.error(f"[LLM] AuthenticationError on model={model}. {retry_msg}")
                 last_error = e
-                if api_key and not is_last_key:
-                    rotate_api_key_in_env(api_key)
-                elif is_last_key:
-                    rotate_model_in_env(model)
                 continue  # Try next key in case this one is just invalid/expired
 
             except (APIConnectionError, BadRequestError) as e:

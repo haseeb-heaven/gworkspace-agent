@@ -14,14 +14,14 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .drive_query_builder import sanitize_drive_query
 from .exceptions import UnsupportedServiceError, ValidationError
 from .file_types import default_export_mime, guess_mime_type, supported_export_formats
 from .gmail_query_builder import sanitize_gmail_query
-from .models import ActionSpec, CodeExecutionOutput, ParameterSpec
+from .models import ActionSpec, ParameterSpec
 from .service_catalog import SERVICES, normalize_service, supported_services
 
 _UNSUPPORTED_STUB_SERVICES = frozenset({"analytics", "bigquery"})
@@ -445,10 +445,6 @@ class CommandPlanner:
             file_id = self._required_text(params, "file_id")
             return ["drive", "files", "update", "--params", json.dumps({"fileId": file_id}), "--json", json.dumps({"trashed": True})]
 
-        if action == "untrash_file":
-            file_id = self._required_text(params, "file_id")
-            return ["drive", "files", "update", "--params", json.dumps({"fileId": file_id}), "--json", json.dumps({"trashed": False})]
-
         raise ValidationError(f"Unsupported drive action: {action}")
 
     # ------------------------------------------------------------------
@@ -489,16 +485,6 @@ class CommandPlanner:
             range_name = self._format_range(str(params.get("range") or "A1"))
 
             values = params.get("values")
-
-            # Extract values if the input is from code.execute (model or dict)
-            if isinstance(values, CodeExecutionOutput):
-                values = values.parsed_value if values.parsed_value is not None else values.code_output
-            elif isinstance(values, dict):
-                if "parsed_value" in values and values["parsed_value"] is not None:
-                    values = values["parsed_value"]
-                elif "code_output" in values and values["code_output"] is not None:
-                    values = values["code_output"]
-
             # Ensure 'values' is a list of lists, even if it's a single string or flat list
             if isinstance(values, str):
                 values = [[values]]  # e.g. "hello" -> [["hello"]]
@@ -507,7 +493,7 @@ class CommandPlanner:
                     values = [values]  # e.g. ['a', 'b'] -> [['a', 'b']]
                 elif not values:  # Handle empty list
                     values = [["No values supplied"]]
-            else:  # Handle non-string, non-list types (e.g., None, int, dict without parsed_value, etc.)
+            else:  # Handle non-string, non-list types (e.g., None, int, etc.)
                 val_str = "" if values is None else str(values)
                 values = [[val_str]]  # Wrap in list of lists
 
@@ -568,88 +554,8 @@ class CommandPlanner:
 
         if action == "get_message":
             # Allow message_id or id parameter for flexibility
-            message_id = params.get("message_id")
-            if message_id is None:
-                message_id = params.get("id")
-            if message_id is None:
-                message_id = "{{message_id}}"
+            message_id = params.get("message_id") or params.get("id") or "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": message_id})]
-
-        if action == "modify_message":
-            message_id = self._required_text(params, "message_id")
-            add_labels = [s.strip() for s in str(params.get("add_labels") or "").split(",") if s.strip()]
-            remove_labels = [s.strip() for s in str(params.get("remove_labels") or "").split(",") if s.strip()]
-
-            # Handle common 'mark as read' intent
-            if not remove_labels and any(kw in str(params).lower() for kw in ("read", "unread")):
-                remove_labels = ["UNREAD"]
-
-            payload: dict[str, list[str]] = {}
-            if add_labels:
-                payload["addLabelIds"] = add_labels
-            if remove_labels:
-                payload["removeLabelIds"] = remove_labels
-
-            return [
-                "gmail",
-                "users",
-                "messages",
-                "modify",
-                "--params",
-                json.dumps({"userId": "me", "id": message_id}),
-                "--json",
-                json.dumps(payload, ensure_ascii=True),
-            ]
-
-        if action == "batch_modify_messages":
-            message_ids_raw = params.get("message_ids") or params.get("ids")
-            if isinstance(message_ids_raw, str):
-                message_ids = [s.strip() for s in message_ids_raw.split(",") if s.strip()]
-            elif isinstance(message_ids_raw, list):
-                message_ids = [str(id).strip() for id in message_ids_raw]
-            else:
-                message_ids = []
-
-            if not message_ids:
-                message_ids = ["{{message_ids}}"]
-
-            add_labels = [s.strip() for s in str(params.get("add_labels") or "").split(",") if s.strip()]
-            remove_labels = [s.strip() for s in str(params.get("remove_labels") or "").split(",") if s.strip()]
-
-            if not remove_labels and any(kw in str(params).lower() for kw in ("read", "unread")):
-                remove_labels = ["UNREAD"]
-
-            payload = {"ids": message_ids}
-            if add_labels:
-                payload["addLabelIds"] = add_labels
-            if remove_labels:
-                payload["removeLabelIds"] = remove_labels
-
-            return [
-                "gmail",
-                "users",
-                "messages",
-                "batchModify",
-                "--params",
-                json.dumps({"userId": "me"}),
-                "--json",
-                json.dumps(payload, ensure_ascii=True),
-            ]
-
-        if action == "reply_message":
-            message_id = self._required_text(params, "message_id")
-            body = self._required_text(params, "body")
-
-            cmd = ["gmail", "+reply", "--message-id", message_id, "--body", body]
-
-            if params.get("to"):
-                cmd.extend(["--to", str(params["to"])])
-            if params.get("cc"):
-                cmd.extend(["--cc", str(params["cc"])])
-            if params.get("attach"):
-                cmd.extend(["--attach", str(params["attach"])])
-
-            return cmd
 
         if action == "trash_message":
             message_id = self._required_text(params, "message_id")
@@ -706,29 +612,6 @@ class CommandPlanner:
             query = str(params.get("q") or "").strip()
             if query:
                 list_params["q"] = query
-
-            # Handle start_date and end_date parameters
-            start_date = str(params.get("start_date") or "").strip()
-            end_date = str(params.get("end_date") or "").strip()
-
-            if start_date:
-                # Convert YYYY-MM-DD to ISO datetime format
-                time_min = f"{start_date}T00:00:00Z"
-                list_params["timeMin"] = time_min
-
-            if end_date:
-                # Convert YYYY-MM-DD to ISO datetime format
-                time_max = f"{end_date}T23:59:59Z"
-                list_params["timeMax"] = time_max
-
-            # If no date range specified, add default range to avoid returning all historical events
-            if not start_date and not end_date:
-                now = datetime.now(timezone.utc)
-                past_30_days = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
-                future_30_days = (now + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
-                list_params["timeMin"] = past_30_days
-                list_params["timeMax"] = future_30_days
-
             return [
                 "calendar",
                 "events",
@@ -795,20 +678,13 @@ class CommandPlanner:
                 "start": event_start,
                 "end": event_end,
             }
-            if params.get("attendees"):
-                attendees = params["attendees"]
-                if isinstance(attendees, str):
-                    attendees = [{"email": e.strip()} for e in attendees.split(",") if e.strip()]
-                elif isinstance(attendees, list):
-                    attendees = [{"email": str(e).strip()} for e in attendees if str(e).strip()]
-                event_body["attendees"] = attendees
-            # Do not inject event_id for create_event as it leads to "identifier already exists"
-            # if the LLM hallucinates the same ID on retries or across tasks.
+            if event_id:
+                event_body["id"] = event_id
 
             if description:
                 event_body["description"] = description
 
-            if params.get("with_meet") or params.get("add_meet") or params.get("meet"):
+            if params.get("with_meet") or params.get("add_meet"):
                 event_body["conferenceData"] = {
                     "createRequest": {
                         "requestId": f"meet-{int(datetime.now().timestamp())}",

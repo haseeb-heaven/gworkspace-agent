@@ -31,9 +31,8 @@ class HumanReadableFormatter:
             # Use task.sequence_index if available (from langgraph workflow),
             # otherwise fall back to something sensible.
             idx = getattr(task, "sequence_index", "?")
-            display_idx = idx + 1 if isinstance(idx, int) else idx
             status = "completed" if result.success else "failed"
-            lines.append(f"{display_idx}. {task.service}.{task.action} {status}.")
+            lines.append(f"{idx}. {task.service}.{task.action} {status}.")
             detail = self.format_execution_result(result)
             if detail:
                 lines.append(detail)
@@ -97,8 +96,6 @@ class HumanReadableFormatter:
             return str(payload.get("stdout")).strip()
         if "summary" in payload and payload.get("summary"):
             return str(payload.get("summary")).strip()
-        if "meetingUri" in payload or "meetingCode" in payload:
-            return _format_meet(payload)
         return _compact_json_summary(payload)
 
 
@@ -242,7 +239,6 @@ def _format_forms(payload: dict[str, Any]) -> str:
 def _format_calendar_items(payload: dict[str, Any]) -> str:
     i_obj = payload.get("items")
     items = i_obj if isinstance(i_obj, list) else []
-
     header = f"Found {len(items)} calendar event{'s' if len(items) != 1 else ''}."
     if not items:
         return header
@@ -352,20 +348,3 @@ def _gmail_headers(payload: dict[str, Any]) -> dict[str, str]:
             if name and value:
                 parsed[name] = value
     return parsed
-
-
-def _format_meet(payload: dict[str, Any]) -> str:
-    uri = payload.get("meetingUri") or ""
-    code = payload.get("meetingCode") or ""
-    name = payload.get("name") or "meeting"
-    config = payload.get("config") or {}
-    policy = config.get("accessPolicy") or ""
-
-    lines = [f"Meet Meeting: {name}"]
-    if uri:
-        lines.append(f"Link: {uri}")
-    if code:
-        lines.append(f"Code: {code}")
-    if policy:
-        lines.append(f"Access: {policy}")
-    return "\n".join(lines)

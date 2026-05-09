@@ -1,7 +1,6 @@
 import base64
 import logging
 import re
-from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -183,35 +182,24 @@ class ContextUpdaterMixin:
 
 
         if "documentId" in data:
+
             context["last_document_id"] = data["documentId"]
+
             if "documentUrl" not in data:
+
                 data["documentUrl"] = f"https://docs.google.com/document/d/{data['documentId']}/edit"
+
             context["last_document_url"] = data["documentUrl"]
 
+
+
             # Capture document title
+
             doc_title = data.get("title")
+
             if doc_title:
+
                 context["last_document_title"] = doc_title
-
-        # Drive: promote ID and metadata for specific GWS types from drive.get_file
-        if task and task.service == "drive" and task.action == "get_file":
-            mime_type = data.get("mimeType", "")
-            file_id = data.get("id")
-            name = data.get("name")
-
-            if file_id:
-                if mime_type == "application/vnd.google-apps.spreadsheet":
-                    context["last_spreadsheet_id"] = file_id
-                    if name:
-                        context["last_spreadsheet_title"] = name
-                elif mime_type == "application/vnd.google-apps.document":
-                    context["last_document_id"] = file_id
-                    if name:
-                        context["last_document_title"] = name
-                elif mime_type == "application/vnd.google-apps.presentation":
-                    context["last_presentation_id"] = file_id
-                    if name:
-                        context["last_presentation_title"] = name
 
 
 
@@ -290,26 +278,6 @@ class ContextUpdaterMixin:
                 events = data.get("items") or data.get("events") or []
 
                 if events and isinstance(events, list):
-
-                    # Sort by start date (most recent first)
-                    try:
-                        def get_event_date(evt: dict[str, Any]) -> datetime:
-                            start_data = evt.get("start", {})
-                            date_str = start_data.get("dateTime", start_data.get("date", ""))
-                            if date_str:
-                                try:
-                                    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                                    if dt.tzinfo is None:
-                                        dt = dt.replace(tzinfo=timezone.utc)
-                                    return dt
-                                except (ValueError, AttributeError):
-                                    return datetime(1, 1, 1, tzinfo=timezone.utc)
-                            return datetime(1, 1, 1, tzinfo=timezone.utc)
-
-                        events.sort(key=get_event_date, reverse=True)
-                    except Exception:
-                        # If sorting fails, keep original order
-                        pass
 
                     context["calendar_events"] = events
 
