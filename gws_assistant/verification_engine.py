@@ -1283,9 +1283,16 @@ class VerificationEngine:
             # In RESULTS, we are more lenient if the path is ignored (e.g. snippet)
             if isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
                 is_ignored = cls._is_ignored_validation_path(path)
-                # We are only lenient with the marker in non-critical ignored fields like snippets
+
+                # We are lenient with the marker in non-critical fields
+                # 1. Snippets in results (they are often truncated or messy)
                 if location == "result" and is_ignored and path.endswith(".snippet"):
                     logger.warning(f"Field {path} contains unresolved marker but is a snippet. Skipping strict block.")
+                    continue
+
+                # 2. Code blocks in params (they contain templates that are resolved at EXECUTION time, not pre-execution)
+                if location == "params" and is_ignored and path == "params.code":
+                    logger.debug(f"Field {path} contains unresolved marker but is code. Skipping strict block.")
                     continue
 
                 raise VerificationError(

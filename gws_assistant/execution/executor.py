@@ -239,6 +239,42 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
         # Intercept move_file to perform parent lookup safely in the executor
         if task.service == "drive" and task.action == "move_file":
             file_id = task.parameters.get("file_id")
+            folder_id = task.parameters.get("folder_id")
+
+            # 1. Resolve folder_id if it's a query (heuristic planner fallback)
+            if folder_id and "name contains" in str(folder_id):
+                try:
+                    self.logger.info(f"Resolving folder_id query: {folder_id}")
+                    lookup_args = [
+                        "drive",
+                        "files",
+                        "list",
+                        "--params",
+                        json.dumps({"q": f"({folder_id}) and mimeType='application/vnd.google-apps.folder'", "pageSize": 1}),
+                    ]
+                    lookup_result = self.runner.run(lookup_args)
+                    if lookup_result.success and lookup_result.stdout:
+                        data = json.loads(lookup_result.stdout)
+                        files = data.get("files", [])
+                        if files:
+                            resolved_folder_id = files[0]["id"]
+                            task.parameters["folder_id"] = resolved_folder_id
+                            self.logger.info(f"Resolved folder_id query to: {resolved_folder_id}")
+                        else:
+                            return ExecutionResult(
+                                success=False,
+                                command=["drive", "files", "list"],
+                                error=f"Failed to resolve folder query '{folder_id}': No folders found.",
+                            )
+                except Exception as e:
+                    self.logger.exception("Unexpected folder_id lookup failure")
+                    return ExecutionResult(
+                        success=False,
+                        command=["drive", "files", "list"],
+                        error=f"Failed to resolve folder query: {e}",
+                    )
+
+            # 2. Perform parent lookup for removeParents
             if file_id:
                 try:
                     lookup_args = [
@@ -265,11 +301,7 @@ class PlanExecutor(ResolverMixin, ContextUpdaterMixin, HelpersMixin, VerifierMix
                         if parents and isinstance(parents, list):
                             context["fetch_parents"] = ",".join(parents)
                         else:
-                            return ExecutionResult(
-                                success=False,
-                                command=["drive", "files", "update"],
-                                error="Failed to lookup current file parents: No parents returned.",
-                            )
+                            context["fetch_parents"] = ""  # Root or no parents
                     else:
                         return ExecutionResult(
                             success=False,

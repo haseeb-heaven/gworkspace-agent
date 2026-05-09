@@ -47,6 +47,7 @@ _SAFE_MODULES: dict[str, Any] = {
     "time": time,
     "csv": __import__("csv"),
     "io": io,
+    "statistics": __import__("statistics"),
 }
 try:
     import pandas as pd

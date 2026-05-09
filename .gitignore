@@ -104,3 +104,5 @@ ISSUES.md
 !requirements.txt
 gws-agent.spec
 TAGS
+
+.worktrees/

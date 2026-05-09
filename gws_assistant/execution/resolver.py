@@ -88,13 +88,60 @@ class ResolverMixin:
         """Expand a single task into a list of executable tasks.
         Example: gmail.get_message with message_id=['id1', 'id2']
         """
-        # Resolve placeholders in parameters FIRST to see if we have a list
+        # 1. Resolve placeholders in parameters FIRST to see if we have a list
         import copy
 
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
+        self.logger.info(f"EXPAND_TASK: {task.service}.{task.action} parameters={task.parameters} resolved={resolved_params}")
 
-        if task.service == "gmail" and task.action == "get_message":
-            msg_ids = resolved_params.get("message_id")
+        # Check for any parameter that resolved to a list (Generic Expansion)
+        # We skip services that have specialized expansion logic below.
+        generic_expandable_actions = (
+            "create_document", "send_message", "create_event", "create_task", "create_spreadsheet",
+            "append_values", "batch_update", "update_event", "update_task"
+        )
+
+        # Identify if we should try generic expansion
+        should_generic_expand = (
+            task.action in generic_expandable_actions
+            and task.service not in ("gmail", "drive", "calendar") # Special cases handled below
+        )
+
+        # Calendar specialized expansion for non-delete actions
+        if task.service == "calendar" and task.action != "delete_event":
+             should_generic_expand = True
+
+        if should_generic_expand:
+            # Find the first parameter that is a list
+            expand_param = None
+            expand_list = None
+            for p_name, p_val in resolved_params.items():
+                if isinstance(p_val, list) and len(p_val) > 0:
+                    expand_param = p_name
+                    expand_list = p_val
+                    break
+
+            if expand_list:
+                self.logger.info(f"Generic expansion triggered for {task.service}.{task.action} on parameter '{expand_param}' ({len(expand_list)} items)")
+                expanded = []
+                for i, item in enumerate(expand_list):
+                    new_task = copy.deepcopy(task)
+                    new_task.id = f"{task.id}-{i + 1}"
+
+                    # For each parameter in the task, if it's a list of the same length,
+                    # use the item at the current index. Otherwise, keep original.
+                    for p_name, p_val in resolved_params.items():
+                        if isinstance(p_val, list) and len(p_val) == len(expand_list):
+                            new_task.parameters[p_name] = p_val[i]
+                        else:
+                            # Keep the original parameter (will be resolved again in execute_single_task)
+                            pass
+                    expanded.append(new_task)
+                return expanded
+
+        if task.service == "gmail" and task.action in ("get_message", "batch_modify_messages"):
+            msg_ids = resolved_params.get("message_id") or resolved_params.get("message_ids") or resolved_params.get("id")
+            self.logger.info(f"EXPAND_TASK: gmail.{task.action} msg_ids={msg_ids} type={type(msg_ids)}")
             # If no message_id provided, but we have legacy $gmail_message_ids in context, use them!
             if (
                 not msg_ids or msg_ids == "{{message_id}}" or msg_ids == _UNRESOLVED_MARKER
@@ -102,7 +149,22 @@ class ResolverMixin:
                 msg_ids = context["gmail_message_ids"]
                 self.logger.info(f"Auto-injected {len(msg_ids)} IDs from context for expansion.")
 
-            if isinstance(msg_ids, list) and msg_ids:
+            if isinstance(msg_ids, list):
+                if not msg_ids:
+                    self.logger.info(f"EXPAND_TASK: gmail.{task.action} msg_ids is empty list, returning []")
+                    return []
+
+                # For batch_modify_messages, we might NOT want to expand into multiple tasks
+                # because gws.exe supports batch. But for consistency with get_message,
+                # if we have multiple, we could.
+                # Actually, the user task might expect a single batch action.
+                if task.action == "batch_modify_messages":
+                    # Just return the task as is, but with resolved parameters
+                    # Wait, if we return [task], it will execute.
+                    # But we want to ensure it has the resolved list.
+                    # Actually, PlanExecutor.execute will call _resolve_task later.
+                    return [task]
+
                 expanded = []
                 for i, m_id in enumerate(msg_ids):
                     if not m_id or not isinstance(m_id, str) or m_id == _UNRESOLVED_MARKER:
@@ -114,8 +176,10 @@ class ResolverMixin:
                 return expanded if expanded else [task]
 
         if task.service == "drive" and task.action == "move_file":
-            file_ids = resolved_params.get("file_id")
-            if isinstance(file_ids, list) and file_ids:
+            file_ids = resolved_params.get("file_id") or resolved_params.get("id")
+            if isinstance(file_ids, list):
+                if not file_ids:
+                    return []
                 expanded = []
                 for i, f_id in enumerate(file_ids):
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
@@ -127,7 +191,7 @@ class ResolverMixin:
                 return expanded if expanded else [task]
 
         if task.service == "drive" and task.action == "delete_file":
-            file_ids = resolved_params.get("file_id")
+            file_ids = resolved_params.get("file_id") or resolved_params.get("id")
             # If no file_id provided, but we have legacy $drive_file_ids in context, use them!
             if (
                 not file_ids or file_ids == "$placeholder" or file_ids == _UNRESOLVED_MARKER
@@ -135,7 +199,9 @@ class ResolverMixin:
                 file_ids = context["drive_file_ids"]
                 self.logger.info(f"Auto-injected {len(file_ids)} Drive IDs from context for deletion expansion.")
 
-            if isinstance(file_ids, list) and file_ids:
+            if isinstance(file_ids, list):
+                if not file_ids:
+                    return []
                 expanded = []
                 for i, f_id in enumerate(file_ids):
                     if not f_id or not isinstance(f_id, str) or f_id == _UNRESOLVED_MARKER:
@@ -147,7 +213,7 @@ class ResolverMixin:
                 return expanded if expanded else [task]
 
         if task.service == "calendar" and task.action == "delete_event":
-            event_ids = resolved_params.get("event_id")
+            event_ids = resolved_params.get("event_id") or resolved_params.get("id")
             # If no event_id provided, but we have $calendar_events in context, use it!
             if (
                 not event_ids or event_ids == "$placeholder" or event_ids == _UNRESOLVED_MARKER or event_ids == "$calendar_events"
@@ -161,6 +227,8 @@ class ResolverMixin:
 
             concrete_event_ids: list[str] = []
             if isinstance(event_ids, list):
+                if not event_ids:
+                    return []
                 for entry in event_ids:
                     if isinstance(entry, str) and entry and entry != _UNRESOLVED_MARKER:
                         concrete_event_ids.append(entry)
@@ -398,10 +466,34 @@ class ResolverMixin:
                 path = stripped[1:].strip()
 
             def resolve_shorthand(shorthand_path):
+                # 0. LOOP VARIABLE HANDLING: Support {{item.field}} or {{it.field}} by mapping over the most recent list
+                if shorthand_path.startswith("item.") or shorthand_path.startswith("it."):
+                    field = shorthand_path.split(".", 1)[1]
+                    for key, val_item in reversed(list(results_map.items())):
+                        if isinstance(val_item, list) and val_item:
+                            # Avoid matching strings or other non-dict lists unless it's a simple list and field is index-like?
+                            # For now, only handle list of dicts.
+                            if isinstance(val_item[0], dict) and field in val_item[0]:
+                                self.logger.info(f"RESOLVER: Loop shorthand '{shorthand_path}' resolved to list mapping from '{key}'")
+                                return [i.get(field) for i in val_item]
+
+                # 1. SMART RESOLUTION: Try to find the exact key inside ANY task result first (Rule 25)
+                # This handles cases like {{ :summary }} or {{ :documentId }}
+                for key, val_item in reversed(list(results_map.items())):
+                    # Look inside numeric or task-N results
+                    if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
+                        if isinstance(val_item, dict) and shorthand_path in val_item:
+                            return val_item[shorthand_path]
+                        if isinstance(val_item, list) and val_item:
+                            # If it's a list, try to map the shorthand_path across all items
+                            if isinstance(val_item[0], dict) and shorthand_path in val_item[0]:
+                                return [item.get(shorthand_path) for item in val_item]
+
+                # 2. TOKENS MATCHING: Try to match the shorthand tokens against task name tokens
                 shorthand_tokens = [t for t in re.split(r"[._]", shorthand_path.lower()) if t]
                 for key, val_item in reversed(list(results_map.items())):
                     # Skip numeric keys and task-N keys for shorthand matching to avoid noise
-                    if re.match(r"^task-\d+$|^\d+$", str(key)):
+                    if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
                         continue
 
                     key_tokens = [t for t in re.split(r"[._]", str(key).lower()) if t]
@@ -426,8 +518,18 @@ class ResolverMixin:
 
                     if matches > 0 and matches >= len(shorthand_tokens):
                         # If we have a perfect or better match, take it.
-                        # Since we are reversed, this is the most recent one.
                         return val_item
+
+                # 3. LOOSE KEY MATCHING: If nothing matched, try matching ANY token in ANY task result
+                # This handles {{ :event_summary }} matching an event's 'summary' field
+                for key, val_item in reversed(list(results_map.items())):
+                     if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
+                        for token in shorthand_tokens:
+                            if isinstance(val_item, dict) and token in val_item:
+                                return val_item[token]
+                            if isinstance(val_item, list) and val_item and isinstance(val_item[0], dict) and token in val_item[0]:
+                                return [item.get(token) for item in val_item]
+
                 return None
 
             if path:
@@ -731,6 +833,19 @@ class ResolverMixin:
             if candidate in data:
                 best_match = candidate
                 best_match_value = data[candidate]
+                # Fix: recalculate remaining_path accurately based on the matched prefix
+                if array_index_match:
+                    # If we matched the prefix up to the index, remaining_path is what follows the index
+                    if candidate == base_path:
+                        remaining_path = path[array_index_match.end():]
+                    else:
+                        # We matched a shorter prefix, so include the rest of the path including index
+                        remaining_path = path[len(candidate):]
+                else:
+                    remaining_path = path[len(candidate):]
+
+                if remaining_path.startswith('.'):
+                    remaining_path = remaining_path[1:]
                 break
 
         if best_match is not None:
@@ -818,13 +933,20 @@ class ResolverMixin:
                         # and the token exists in the list elements, we can auto-unwrap.
                         unwrapped = False
                         for list_key in ["files", "messages", "items", "events", "values", "threads"]:
-                            if list_key in curr and isinstance(curr[list_key], list) and curr[list_key]:
-                                if isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
+                            if list_key in curr and isinstance(curr[list_key], list):
+                                if not curr[list_key]:
+                                    curr = []
+                                    unwrapped = True
+                                    break
+                                elif isinstance(curr[list_key][0], dict) and token in curr[list_key][0]:
                                     curr = [item.get(token) for item in curr[list_key]]
                                     unwrapped = True
                                     break
                         if not unwrapped:
-                            curr = None
+                            if token in ["files", "messages", "items", "events", "values", "threads"]:
+                                curr = []
+                            else:
+                                curr = None
                 elif isinstance(curr, list):
                     # Map the token across the list elements
                     curr = [item.get(token) if isinstance(item, dict) else None for item in curr]
