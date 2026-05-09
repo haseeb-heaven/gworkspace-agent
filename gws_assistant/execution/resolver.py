@@ -246,6 +246,38 @@ class ResolverMixin:
             if (not d_id or d_id.startswith("{{") or d_id == _UNRESOLVED_MARKER) and context.get("last_document_id"):
                 task.parameters["document_id"] = context["last_document_id"]
 
+            # Last-resort text fallback for batch_update:
+            # If text is None/empty/unresolved after placeholder resolution, try to
+            # pull content from the most recent code execution output or document summary.
+            if task.action == "batch_update":
+                text_val = task.parameters.get("text")
+                text_str = str(text_val or "")
+                if not text_val or not text_str.strip() or text_str == _UNRESOLVED_MARKER or text_str.startswith("{{"):
+                    # Priority: last_code_result (structured) > code_stdout (raw) > code_output
+                    fallback_text = None
+                    for key in ("last_code_result", "last_code_result_table", "code_stdout",
+                                "last_code_stdout", "code_output", "code_parsed_value"):
+                        candidate = context.get(key)
+                        if candidate is not None:
+                            if isinstance(candidate, (list, dict)):
+                                fallback_text = json.dumps(candidate, indent=2, default=str)
+                            else:
+                                fallback_text = str(candidate)
+                            if fallback_text.strip():
+                                self.logger.info(
+                                    f"batch_update text fallback: resolved from context['{key}'] "
+                                    f"({len(fallback_text)} chars)"
+                                )
+                                break
+                            fallback_text = None
+
+                    if fallback_text:
+                        task.parameters["text"] = fallback_text
+                    else:
+                        self.logger.warning(
+                            "batch_update text is unresolved and no code output found in context."
+                        )
+
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
             if not f_id or f_id.startswith("{{") or f_id == _UNRESOLVED_MARKER:
