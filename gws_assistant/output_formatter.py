@@ -31,8 +31,9 @@ class HumanReadableFormatter:
             # Use task.sequence_index if available (from langgraph workflow),
             # otherwise fall back to something sensible.
             idx = getattr(task, "sequence_index", "?")
+            display_idx = idx + 1 if isinstance(idx, int) else idx
             status = "completed" if result.success else "failed"
-            lines.append(f"{idx}. {task.service}.{task.action} {status}.")
+            lines.append(f"{display_idx}. {task.service}.{task.action} {status}.")
             detail = self.format_execution_result(result)
             if detail:
                 lines.append(detail)
