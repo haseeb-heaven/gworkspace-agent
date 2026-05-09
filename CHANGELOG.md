@@ -1,3 +1,7 @@
+## [v1.0.5] - 2026-05-09
+### Added/Changed/Fixed
+- fix(pipeline): stabilize GWorkspace Agent pipeline - fix(test): repair output formatter indexing and code execution 'result' conflict - chore: remove diagnostic scripts from tracking and move to scratch - merge: pull from develop and resolve conflicts in langgraph_workflow.py - fix(workflow): resolve infinite loop and stabilize execution pipeline; feat(tests): add 20 manual integration test scenarios - fix(gws): resolve regressions and name errors in workflow nodes - fix(gws): repair multiple workflow execution issues - chore: ignore .worktrees directory - feat: implement assistant service catalog, execution resolver, and workflow orchestration components - fix: refine error classification, reflection logic, and output formatting to ensure deterministic failures halt the plan - Merge branch 'develop' of https://github.com/haseeb-heaven/gworkspace-agent into develop - chore: finalize v1.0.4 - robust env rotation, AST sandbox fixes, and verification hardening - docs: add type hints and docstrings to scripts/run_pytest_safely.py - chore: add missing filelock dependency to manifests - feat: implement LangGraph workflow for assistant task execution and state management - fix(resolver): add batch_update text fallback from code execution context - fix(executor): skip non-destructive tasks gracefully on pre-execution verification failure - fix(verification): downgrade empty content check to WARNING for docs_create_document and add Groq models to allowlist - fix: resolve indentation error in code_execution.py missed during merge - Merge branch 'develop' into master - resolve conflicts in metadata, docs, and core logic - fix(verification): narrow marker leniency to snippets only to fix unit tests - fix(verification): stabilize pipeline by refining placeholder resolution and marker checks - chore(release): fix changelog and releases formatting for v1.0.3 - Release v1.0.2 (#113)
+
 ## [v1.0.4] - 2026-05-09
 ### Added/Changed/Fixed
 - feat: add env_manager module for thread-safe .env file mutations and API key rotation
@@ -358,3 +362,4 @@ All notable changes to this project will be documented in this file.
 - Initial Google Workspace assistant functionality
 - Basic Drive, Gmail, Calendar, and Sheets integration
 - CLI and GUI interfaces
+
