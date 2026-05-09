@@ -568,8 +568,88 @@ class CommandPlanner:
 
         if action == "get_message":
             # Allow message_id or id parameter for flexibility
-            message_id = params.get("message_id") or params.get("id") or "{{message_id}}"
+            message_id = params.get("message_id")
+            if message_id is None:
+                message_id = params.get("id")
+            if message_id is None:
+                message_id = "{{message_id}}"
             return ["gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": message_id})]
+
+        if action == "modify_message":
+            message_id = self._required_text(params, "message_id")
+            add_labels = [s.strip() for s in str(params.get("add_labels") or "").split(",") if s.strip()]
+            remove_labels = [s.strip() for s in str(params.get("remove_labels") or "").split(",") if s.strip()]
+
+            # Handle common 'mark as read' intent
+            if not remove_labels and any(kw in str(params).lower() for kw in ("read", "unread")):
+                remove_labels = ["UNREAD"]
+
+            payload: dict[str, list[str]] = {}
+            if add_labels:
+                payload["addLabelIds"] = add_labels
+            if remove_labels:
+                payload["removeLabelIds"] = remove_labels
+
+            return [
+                "gmail",
+                "users",
+                "messages",
+                "modify",
+                "--params",
+                json.dumps({"userId": "me", "id": message_id}),
+                "--json",
+                json.dumps(payload, ensure_ascii=True),
+            ]
+
+        if action == "batch_modify_messages":
+            message_ids_raw = params.get("message_ids") or params.get("ids")
+            if isinstance(message_ids_raw, str):
+                message_ids = [s.strip() for s in message_ids_raw.split(",") if s.strip()]
+            elif isinstance(message_ids_raw, list):
+                message_ids = [str(id).strip() for id in message_ids_raw]
+            else:
+                message_ids = []
+
+            if not message_ids:
+                message_ids = ["{{message_ids}}"]
+
+            add_labels = [s.strip() for s in str(params.get("add_labels") or "").split(",") if s.strip()]
+            remove_labels = [s.strip() for s in str(params.get("remove_labels") or "").split(",") if s.strip()]
+
+            if not remove_labels and any(kw in str(params).lower() for kw in ("read", "unread")):
+                remove_labels = ["UNREAD"]
+
+            payload = {"ids": message_ids}
+            if add_labels:
+                payload["addLabelIds"] = add_labels
+            if remove_labels:
+                payload["removeLabelIds"] = remove_labels
+
+            return [
+                "gmail",
+                "users",
+                "messages",
+                "batchModify",
+                "--params",
+                json.dumps({"userId": "me"}),
+                "--json",
+                json.dumps(payload, ensure_ascii=True),
+            ]
+
+        if action == "reply_message":
+            message_id = self._required_text(params, "message_id")
+            body = self._required_text(params, "body")
+
+            cmd = ["gmail", "+reply", "--message-id", message_id, "--body", body]
+
+            if params.get("to"):
+                cmd.extend(["--to", str(params["to"])])
+            if params.get("cc"):
+                cmd.extend(["--cc", str(params["cc"])])
+            if params.get("attach"):
+                cmd.extend(["--attach", str(params["attach"])])
+
+            return cmd
 
         if action == "trash_message":
             message_id = self._required_text(params, "message_id")
