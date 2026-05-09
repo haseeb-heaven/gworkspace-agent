@@ -169,6 +169,7 @@ class WorkflowNodes:
                 }
 
             result = self.executor.execute_single_task(resolved, context)
+            resolved.sequence_index = idx + 1
             executions.append(TaskExecution(task=resolved, result=result))
             latest = _normalize_workspace_result(result)
 
@@ -254,11 +255,18 @@ class WorkflowNodes:
         updates: dict[str, Any] = {}
 
         # Check for code execution errors that should be fixed by LLM
+        # Only treat as code error if the failed task IS a code task.
+        idx = state.get("current_task_index", 0)
+        plan = state.get("plan")
+        current_task = plan.tasks[idx] if plan and idx < len(plan.tasks) else None
+        
         last_result = state.get("last_result")
+        is_code_task = current_task and current_task.service in ("code", "computation")
+        
         is_code_error = (
             context.get("needs_code_fix", False)
-            or (error and "code" in str(error).lower())
-            or (last_result and not last_result.get("success") and state.get("context", {}).get("generated_code"))
+            or (is_code_task and error and "code" in str(error).lower())
+            or (is_code_task and last_result and not last_result.get("success") and state.get("context", {}).get("generated_code"))
         )
 
         if is_code_error and attempts < self.config.max_retries:
