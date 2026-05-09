@@ -400,18 +400,54 @@ def _execute_e2b(code: str, api_key: str) -> StructuredToolResult:
 
 
 def execute_generated_code(code: str, config=None, extra_globals: dict[str, Any] | None = None) -> StructuredToolResult:
-    # Replace `with open(...) as VAR:` with a safe single-line assignment.
-    # Multi-line replacements break indentation and cause RestrictedPython to
-    # compile invalid code where identifiers resolve to None.
-    code = re.sub(
-        r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
-        r"\1 = injected_vars[0] if injected_vars else []",
-        code,
-        flags=re.DOTALL,
-    )
-    # Remove return statements since code runs at module level
+    # Remove return statements and line continuations since code runs at module level.
+    # We do this before AST parsing to ensure the code is valid Python.
     code = re.sub(r"^\s*return\s+.*$", "", code, flags=re.MULTILINE)
     code = re.sub(r"\\\s*$", "", code, flags=re.MULTILINE)
+
+    # Replace `with open(...) as VAR:` with a safe single-line assignment.
+    # We use AST to handle multi-line blocks correctly and avoid indentation errors.
+    try:
+        tree = ast.parse(code)
+
+        class WithOpenTransformer(ast.NodeTransformer):
+            def visit_With(self, node):
+                self.generic_visit(node)
+                # Only target 'with open(...) as var:'
+                if (
+                    len(node.items) == 1
+                    and isinstance(node.items[0].context_expr, ast.Call)
+                    and isinstance(node.items[0].context_expr.func, ast.Name)
+                    and node.items[0].context_expr.func.id == "open"
+                    and isinstance(node.items[0].optional_vars, ast.Name)
+                ):
+                    var_name = node.items[0].optional_vars.id
+                    # assignment: var_name = injected_vars[0] if injected_vars else []
+                    assignment = ast.Assign(
+                        targets=[ast.Name(id=var_name, ctx=ast.Store())],
+                        value=ast.IfExp(
+                            test=ast.Name(id="injected_vars", ctx=ast.Load()),
+                            body=ast.Subscript(
+                                value=ast.Name(id="injected_vars", ctx=ast.Load()),
+                                slice=ast.Constant(value=0),
+                                ctx=ast.Load(),
+                            ),
+                            orelse=ast.List(elts=[], ctx=ast.Load()),
+                        ),
+                        lineno=node.lineno,
+                    )
+                    return [assignment] + node.body
+                return node
+
+        code = ast.unparse(WithOpenTransformer().visit(tree))
+    except Exception:
+        # Fallback to regex if AST parsing fails (e.g. if code is still unparsable)
+        code = re.sub(
+            r"with\s+open\s*\([^)]*\)\s+as\s+(\w+)\s*:",
+            r"\1 = injected_vars[0] if injected_vars else []",
+            code,
+            flags=re.DOTALL,
+        )
     timeout_seconds = (
         int(getattr(config, "code_execution_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS))
         if config is not None
