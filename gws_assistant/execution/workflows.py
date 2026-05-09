@@ -38,7 +38,7 @@ class SearchToSheetsWorkflow:
             spreadsheet_id = spreadsheet["spreadsheetId"]
 
             values = [["Title", "Description", "Link"]] + rows
-            self.sheets.append_values(spreadsheet_id, "A1", values)
+            self.sheets.append_values(spreadsheet_id, "Sheet1!A1", values)
 
             logger.info("Successfully created spreadsheet '%s' with %d rows.", title, len(rows))
             return True

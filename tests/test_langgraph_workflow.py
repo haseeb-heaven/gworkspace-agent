@@ -34,7 +34,6 @@ def test_reflection_retry_then_success(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    executor._resolve_placeholders.side_effect = lambda val, *args, **kwargs: val
     from gws_assistant.models import ReflectionDecision
 
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
@@ -66,7 +65,6 @@ def test_replan_path_retains_history(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    executor._resolve_placeholders.side_effect = lambda val, *args, **kwargs: val
     from gws_assistant.models import ReflectionDecision
 
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
@@ -115,7 +113,6 @@ def test_silent_failure_guard(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    executor._resolve_placeholders.side_effect = lambda val, *args, **kwargs: val
     from gws_assistant.models import ReflectionDecision
 
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
@@ -134,7 +131,6 @@ def test_history_trimming(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    executor._resolve_placeholders.side_effect = lambda val, *args, **kwargs: val
     from gws_assistant.models import ReflectionDecision
 
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
@@ -162,7 +158,6 @@ def test_computation_routes_generate_code_and_executes(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    executor._resolve_placeholders.side_effect = lambda val, *args, **kwargs: val
     from gws_assistant.models import ReflectionDecision
 
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)
@@ -178,7 +173,6 @@ def test_code_execution_respects_config_flag(config):
     logger = logging.getLogger("test")
     system = MagicMock()
     executor = MagicMock()
-    executor._resolve_placeholders.side_effect = lambda val, *args, **kwargs: val
     from gws_assistant.models import ReflectionDecision
 
     executor.reflect_on_error.return_value = (ReflectionDecision(action="continue", reason="ok"), False)

@@ -209,7 +209,6 @@ class WorkspaceAgentSystem:
             return text
 
     def plan(self, user_text: str) -> RequestPlan:
-        print(f"DEBUG: agent_system.plan called with '{user_text[:50]}...'")
         from .memory import recall_similar
 
         # Local episodic memory
@@ -758,7 +757,7 @@ print(result)"""
                     action="append_values",
                     parameters={
                         "spreadsheet_id": "$last_spreadsheet_id",
-                        "range": "A1",
+                        "range": "Sheet1!A1",
                         "values": "$last_code_result" if wants_code else "$search_summary_rows",
                     },
                     reason="Save the search results to the spreadsheet.",
@@ -861,7 +860,7 @@ print(result)"""
                 action="append_values",
                 parameters={
                     "spreadsheet_id": "$last_spreadsheet_id",
-                    "range": "A1",
+                    "range": "Sheet1!A1",
                     "values": "$gmail_details_values",
                 },
                 reason="Save detailed results to Sheets.",
@@ -906,7 +905,7 @@ Please find the spreadsheet here: $last_spreadsheet_url""",
                 id=f"task-{len(tasks) + 1}",
                 service="sheets",
                 action="get_values",
-                parameters={"spreadsheet_id": s_id, "range": "A1:Z500"},
+                parameters={"spreadsheet_id": s_id, "range": "Sheet1!A1:Z500"},
                 reason="Read data from the spreadsheet.",
             )
         )
@@ -1302,7 +1301,7 @@ Files moved to '{folder_name}'. Link: $last_folder_url""",
             parameters["document_id"] = _extract_id(lowered) or "{{task-1.id}}"
         elif service == "sheets" and action == "get_values":
             parameters["spreadsheet_id"] = _extract_id(lowered) or "{{task-1.id}}"
-            parameters["range"] = "A1"
+            parameters["range"] = "Sheet1!A1"
         elif service == "gmail" and action == "send_message":
             parameters["to_email"] = _extract_email(lowered, default=self.config.default_recipient_email)
             parameters["subject"] = "GWorkspace Notification"

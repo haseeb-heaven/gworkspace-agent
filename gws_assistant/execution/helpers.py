@@ -61,8 +61,9 @@ def _is_safe_file_path(file_path: str) -> bool:
             os.environ.get('GWS_DOWNLOADS_DIR', 'downloads'),
         ]
         # Allow absolute paths only if they're within sandbox directories
+        normalized_check = os.path.normpath(normalized.replace("\\", os.sep))
         is_in_sandbox = any(
-            normalized.startswith(sandbox_dir.rstrip(os.sep) + os.sep)
+            normalized_check.startswith(os.path.normpath(sandbox_dir.replace("\\", os.sep)).rstrip(os.sep) + os.sep)
             for sandbox_dir in sandbox_dirs if sandbox_dir
         )
         if not is_in_sandbox:
@@ -259,19 +260,10 @@ class HelpersMixin:
             injected_vars = _normalize_injected_vars(injected_vars)
 
             # Auto-fetch spreadsheet data if injected_vars contains spreadsheet references
-            # Only attempt auto-fetch for short strings that look like spreadsheet names/IDs
-            # Skip long text content (like email bodies) to avoid false positives
             fetched_vars = []
             for var in injected_vars:
                 logger.info("Processing injected_vars item: type=%s", type(var))
                 if isinstance(var, str) and (".csv" in var.lower() or "sheet" in var.lower()):
-                    # Only attempt auto-fetch if the string is reasonably short (likely a name/ID)
-                    # Skip long text content (>200 chars) which is likely email body or other content
-                    if len(var) > 200:
-                        logger.info("Skipping auto-fetch for long content (%d chars)", len(var))
-                        fetched_vars.append(var)
-                        continue
-
                     # Try to fetch spreadsheet data by name from drive
                     logger.info("Auto-fetching spreadsheet data for: %s", var)
                     try:

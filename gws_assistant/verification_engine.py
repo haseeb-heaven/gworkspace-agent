@@ -87,58 +87,57 @@ class VerificationEngine:
     @classmethod
     def _get_config(cls):
         """Get the current AppConfig instance with caching."""
-        # BUG FIX: Instead of a permanent local cache that gets stale when AppConfig is cleared,
-        # we try AppConfig.from_env() and only use a temporary fallback if it fails.
-        try:
-            return AppConfig.from_env()
-        except Exception as e:
-            logger.warning(f"Could not load AppConfig from environment: {e}. Using verification defaults.")
-
-            # Return a minimal verification-only defaults object
-            class VerificationDefaults:
-                def __init__(self):
-                    self.verification_exact_placeholders = {
-                        "none", "null", "undefined",
-                        "todo", "fixme", "placeholder", "example", "sample", "dummy",
-                        "your_value", "insert_here", "replace_me", "changeme", "default",
-                        "fake", "mock", "temporary", "tbd", "missing"
-                    }
-                    self.verification_numeric_placeholders = {"0000", "1234", "9999", "00000000"}
-                    self.verification_exact_emails = {"noreply@domain.com", "noreply@example.com"}
-                    self.verification_email_placeholder_domains = ["@test.com"]
-                    self.verification_destructive_operations = {
-                        "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
-                        "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
-                        "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
-                        "docs_delete_document",
-                        "calendar_delete_event", "calendar_delete_calendar",
-                        "contacts_delete_contact",
-                    }
-                    self.verification_bulk_indicators = ["batch", "bulk", "multiple", "all"]
-                    self.verification_id_fields = ["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
-                    self.verification_content_fields = ["body", "content", "message", "text", "description"]
-                    self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
-                    self.verification_suspicious_patterns = {
-                        "delete_all": r"delete.*all",
-                        "remove_everything": r"remove.*everything",
-                        "wipe_all": r"wipe.*all",
-                        "clear_all": r"clear.*all",
-                    }
-                    self.verification_min_content_length = {
-                        "document": 5,
-                        "email_body": 10,
-                        "spreadsheet_cell": 1,
-                        "task_title": 2,
-                        "event_summary": 2,
-                        "contact_name": 2,
-                    }
-
-            return VerificationDefaults()
+        if cls._config_cache is None:
+            try:
+                cls._config_cache = AppConfig.from_env()
+            except Exception as e:
+                logger.warning(f"Could not load AppConfig from environment: {e}. Using verification defaults.")
+                # Return a minimal verification-only defaults object that mirrors real config defaults
+                # Use instance-level __init__ to avoid shared mutable class-level state
+                class VerificationDefaults:
+                    def __init__(self):
+                        self.verification_exact_placeholders = {
+                            "none", "null", "n/a", "na", "undefined",
+                            "todo", "fixme", "placeholder", "example", "sample", "dummy",
+                            "your_value", "insert_here", "replace_me", "changeme", "default",
+                            "fake", "mock", "temporary", "tbd", "missing"
+                        }
+                        self.verification_numeric_placeholders = {"0000", "1234", "9999", "00000000"}
+                        self.verification_exact_emails = {"noreply@domain.com", "noreply@example.com"}
+                        self.verification_email_placeholder_domains = ["@test.com"]
+                        self.verification_destructive_operations = {
+                            "drive_delete_file", "drive_empty_trash", "drive_move_to_trash",
+                            "gmail_delete_message", "gmail_trash_message", "gmail_batch_delete", "gmail_empty_trash",
+                            "sheets_delete_spreadsheet", "sheets_clear_all_data", "sheets_delete_sheet_tab",
+                            "docs_delete_document",
+                            "calendar_delete_event", "calendar_delete_calendar",
+                            "contacts_delete_contact",
+                        }
+                        self.verification_bulk_indicators = ["batch", "bulk", "multiple", "all"]
+                        self.verification_id_fields = ["file_id", "document_id", "spreadsheet_id", "message_id", "event_id", "task_id", "contact_id"]
+                        self.verification_content_fields = ["body", "content", "message", "text", "description"]
+                        self.verification_create_id_fields = ["id", "documentId", "spreadsheetId", "fileId", "messageId", "resourceName", "threadId", "name", "formId", "taskId", "contactId", "presentationId"]
+                        self.verification_suspicious_patterns = {
+                            "delete_all": r"delete.*all",
+                            "remove_everything": r"remove.*everything",
+                            "wipe_all": r"wipe.*all",
+                            "clear_all": r"clear.*all",
+                        }
+                        # Content validation settings
+                        self.verification_min_content_length = {
+                            "document": 5,  # Min chars for document content
+                            "email_body": 10,  # Min chars for email body
+                            "spreadsheet_cell": 1,  # Min chars per cell
+                            "task_title": 2,  # Min chars for task title
+                            "event_summary": 2,  # Min chars for event title
+                            "contact_name": 2,  # Min chars for contact name
+                        }
+                cls._config_cache = VerificationDefaults()
+        return cls._config_cache
 
     @classmethod
     def clear_config_cache(cls):
-        """Clear the config cache (delegates to AppConfig)."""
-        AppConfig.clear_cache()
+        """Clear the config cache (useful for testing)."""
         cls._config_cache = None
 
     @classmethod
@@ -969,11 +968,11 @@ class VerificationEngine:
                     tool_name, params, field="title", min_length=2, block_placeholders=True
                 )
 
-                # Notes validation if provided (relaxed min_length for optional field)
+                # STRICT notes validation if provided
                 notes = params.get("notes")
                 if notes is not None:
                     cls._validate_content_not_empty(
-                        tool_name, params, field="notes", min_length=1, block_placeholders=True
+                        tool_name, params, field="notes", min_length=5, block_placeholders=True
                     )
 
             due = params.get("due")
@@ -1242,16 +1241,7 @@ class VerificationEngine:
             content = params.get("content")
             values = params.get("values")
             if content is not None and cls._contains_invalid_content(str(content)):
-                # For create_document, content is optional — the doc can be created
-                # with just a title and populated later via batch_update.
-                # Downgrade to WARNING so the pipeline doesn't halt.
-                if normalized_name == "create_document":
-                    logger.warning(
-                        "[CHECK 4] docs_create_document has empty/invalid content param — "
-                        "document was created with title only. Content may be added via batch_update."
-                    )
-                else:
-                    raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
+                raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=VerificationSeverity.ERROR, field="content")
             if values is not None and (values == [] or values == [[]]):
                 severity = VerificationSeverity.WARNING if ("sheets" in tool_name and "append" in tool_name) else VerificationSeverity.ERROR
                 raise VerificationError(tool_name, "Operation created/wrote an empty document or sheet", severity=severity, field="values")
@@ -1279,29 +1269,15 @@ class VerificationEngine:
     ) -> None:
         """Recursively block placeholders, empty generated content, and invalid sentinel values."""
         for path, value in cls._iter_payload_leaf_values(payload, location):
-            # Always block unresolved placeholders in PARAMS (they indicate a resolution failure before execution)
-            # In RESULTS, we are more lenient if the path is ignored (e.g. snippet)
-            if isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
-                is_ignored = cls._is_ignored_validation_path(path)
-
-                # We are lenient with the marker in non-critical fields
-                # 1. Snippets in results (they are often truncated or messy)
-                if location == "result" and is_ignored and path.endswith(".snippet"):
-                    logger.warning(f"Field {path} contains unresolved marker but is a snippet. Skipping strict block.")
-                    continue
-
-                # 2. Code blocks in params (they contain templates that are resolved at EXECUTION time, not pre-execution)
-                if location == "params" and is_ignored and path == "params.code":
-                    logger.debug(f"Field {path} contains unresolved marker but is code. Skipping strict block.")
-                    continue
-
+            # Always block unresolved placeholders in RESULT data (before ignored check)
+            # Params may contain unresolved placeholders that will be resolved by executor
+            if location == "result" and isinstance(value, str) and "___UNRESOLVED_PLACEHOLDER___" in value:
                 raise VerificationError(
                     tool_name,
                     f"{location} contains unresolved placeholder data at {path}",
                     severity=VerificationSeverity.ERROR,
                     field=path,
                 )
-
             if cls._is_ignored_validation_path(path):
                 continue
             if isinstance(value, str):
@@ -1443,8 +1419,9 @@ class VerificationEngine:
             return True
         if not block_empty and not val_str:
             return False
-        # Always block system unresolved markers (they indicate a resolution failure)
-        if "___UNRESOLVED_PLACEHOLDER___" in val_str:
+        # Only block unresolved placeholders if block_generic_placeholders is True
+        # This allows params to have placeholders that will be resolved by executor
+        if block_generic_placeholders and "___UNRESOLVED_PLACEHOLDER___" in val_str:
             return True
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
 
@@ -1507,11 +1484,6 @@ class VerificationEngine:
         for domain in cls.email_placeholder_domains():
             if val_lower.endswith(domain):
                 return True
-
-        # Explicitly block system unresolved markers
-        if "___UNRESOLVED_PLACEHOLDER___" in val_str:
-            return True
-
         # Check for placeholder patterns anywhere in the string (not just exact match)
         # BUT allow known resolvable placeholders from LEGACY_PLACEHOLDER_MAP
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
@@ -1544,10 +1516,6 @@ class VerificationEngine:
         # Import known resolvable placeholders
         from gws_assistant.execution.resolver import LEGACY_PLACEHOLDER_MAP
         known_placeholders = set(LEGACY_PLACEHOLDER_MAP.keys())
-
-        # Explicitly block system unresolved markers
-        if "___UNRESOLVED_PLACEHOLDER___" in value:
-            return True
 
         for pattern in cls.UNRESOLVED_TEMPLATE_PATTERNS:
             match = pattern.search(value)
