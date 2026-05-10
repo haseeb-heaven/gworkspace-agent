@@ -84,7 +84,7 @@ class TestRetryCountIncremented(unittest.TestCase):
         executor = MagicMock()
         system = MagicMock()
         logger = MagicMock()
-        nodes = WorkflowNodes(config, system, executor, logger)
+        WorkflowNodes(config, system, executor, logger)
 
         # Simulate state after 3 replans
         state: dict[str, Any] = {
@@ -223,7 +223,7 @@ class TestVerificationEngineConfigCache(unittest.TestCase):
             "gws_assistant.verification_engine.AppConfig.from_env",
             side_effect=ValueError("no env"),
         ):
-            cfg1 = VerificationEngine._get_config()
+            VerificationEngine._get_config()
 
         # Cache must still be None (not the dummy)
         self.assertIsNone(

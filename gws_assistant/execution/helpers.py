@@ -52,8 +52,12 @@ def _is_safe_file_path(file_path: str) -> bool:
     if '..' in normalized:
         return False
 
+    # Check for Windows path traversal attempts disguised as absolute paths on non-Windows
+    if os.name != 'nt' and ('\\' in normalized or ':' in normalized):
+        normalized = normalized.replace('\\', '/')
+
     # Check for absolute paths - only allow if within sandbox directories
-    if os.path.isabs(normalized):
+    if os.path.isabs(normalized) or (os.name != 'nt' and re.match(r'^[a-zA-Z]:[/\\]', normalized)):
         # Get sandbox directories from environment or use defaults
         sandbox_dirs = [
             os.environ.get('GWS_SANDBOX_DIR', ''),
