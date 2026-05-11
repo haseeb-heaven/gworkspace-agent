@@ -645,8 +645,10 @@ def test_is_safe_file_path_blocks_path_traversal() -> None:
     assert not _is_safe_file_path("test\x00file.txt")
 
     # Test absolute paths outside sandbox (default sandbox dirs not set)
+    import os
     assert not _is_safe_file_path("/etc/passwd")
-    assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
+    if os.name == "nt":
+        assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
 
     # Test safe relative paths
     assert _is_safe_file_path("test.txt")
