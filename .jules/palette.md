@@ -1,0 +1,1 @@
+## 2024-05-12 - Primary buttons in Gradio\n**Learning:** In Gradio applications, main action buttons next to secondary actions should use `variant="primary"` to establish clear visual hierarchy.\n**Action:** Assign primary variant to main action buttons in Gradio apps.
