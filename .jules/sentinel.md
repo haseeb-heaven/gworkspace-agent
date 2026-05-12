@@ -1,0 +1,4 @@
+## 2024-05-12 - [HIGH] Command Injection vulnerability on Windows via shell=os.name == 'nt'
+**Vulnerability:** Found `subprocess.run(..., shell=os.name == 'nt')` being used with a list of arguments (`cmd`). Passing `shell=True` (which evaluates to True on Windows) with a list of arguments does not completely prevent shell injection on Windows because the shell still interprets some metacharacters, unlike POSIX.
+**Learning:** Using `shell=True` on Windows with a list in `subprocess` is insecure and can still lead to command injection.
+**Prevention:** Always use `shell=False` (which is the default) in `subprocess` calls unless specifically required for shell features, and ensure user inputs are sanitized if `shell=True` must be used.
