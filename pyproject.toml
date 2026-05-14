@@ -38,7 +38,7 @@ dependencies = [
     # litellm pinned to 1.83.7 — the version that hard-pins openai==2.36.0 and python-dotenv==1.0.1.
     # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
     # via /guardrails/test_custom_code. Upgrade only when a patched release is available.
-    "litellm==1.83.7",
+    "litellm==1.84.0",
     "python-telegram-bot>=22.7",
     "google-auth>=2.23.0",
     "google-auth-oauthlib>=1.1.0",
