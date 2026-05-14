@@ -1,0 +1,3 @@
+## 2024-06-25 - [Python Prefix Checking Optimization]
+**Learning:** Using `str.startswith(tuple_of_prefixes)` is significantly faster than using a generator expression like `any(val.startswith(prefix) for prefix in list_of_prefixes)` or chaining multiple `or` clauses (`val.startswith(a) or val.startswith(b)`), because the tuple variant is implemented natively in C.
+**Action:** Always prefer `str.startswith(tuple)` over `any()` with generator expressions or chained `or` clauses when checking for multiple string prefixes in hot code paths.

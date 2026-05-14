@@ -66,7 +66,7 @@ def scan() -> list[str]:
                 findings.append(f"{rel}:{line_number}: hardcoded gws.exe reference")
             if SECRET_RE.search(line):
                 findings.append(f"{rel}:{line_number}: secret-like literal")
-            if not any(rel.startswith(prefix) for prefix in ALLOW_NON_FREE_MODEL_FILES):
+            if not rel.startswith(tuple(ALLOW_NON_FREE_MODEL_FILES)):
                 if NON_FREE_MODEL_RE.search(line):
                     findings.append(f"{rel}:{line_number}: non-free model literal")
     return findings
