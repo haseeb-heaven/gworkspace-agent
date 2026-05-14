@@ -1,0 +1,3 @@
+## 2024-05-14 - Improve visual hierarchy of main action buttons
+**Learning:** In Gradio interfaces, when placing main action buttons (like "Run" or "Authenticate") next to secondary ones (like "Clear"), it's crucial to explicitly assign `variant='primary'` to establish clear visual hierarchy. Otherwise, all buttons look the same, making the primary action ambiguous and increasing the chance of accidental clicks on the secondary action.
+**Action:** Always assign `variant='primary'` to main action buttons in Gradio when they are grouped with secondary buttons.
