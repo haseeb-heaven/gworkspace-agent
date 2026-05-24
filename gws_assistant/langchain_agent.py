@@ -186,11 +186,7 @@ def _derive_email_body_placeholder(tasks_data: list[dict]) -> str:
     the sole service in the plan (e.g. forwarding a previously-fetched
     message).
     """
-    services_used = {
-        str(t.get("service", "")).strip().lower()
-        for t in tasks_data
-        if isinstance(t, dict)
-    }
+    services_used = {str(t.get("service", "")).strip().lower() for t in tasks_data if isinstance(t, dict)}
     services_used.discard("")
 
     for service, placeholder in _EMAIL_BODY_SOURCE_PRIORITY:
@@ -309,9 +305,7 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
         any(re.search(r"\b" + re.escape(kw) + r"\b", lowered) for kw in _web_search_intent_keywords())
         and "web_search" not in actions_in_plan
     ):
-        logging.info(
-            "Plan incomplete: user asked for a web search but plan has no search.web_search task."
-        )
+        logging.info("Plan incomplete: user asked for a web search but plan has no search.web_search task.")
         return False
 
     # If user mentions sheets/spreadsheet but plan has no sheets task → incomplete
@@ -321,7 +315,19 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
 
     # If user wants to send email but plan has no send_message → incomplete
     if (
-        any(kw in lowered for kw in ("send email", "send mail", "email to", "mail to", "send to", "send an email", "compose mail", "compose email"))
+        any(
+            kw in lowered
+            for kw in (
+                "send email",
+                "send mail",
+                "email to",
+                "mail to",
+                "send to",
+                "send an email",
+                "compose mail",
+                "compose email",
+            )
+        )
         and "send_message" not in actions_in_plan
     ):
         logging.info("Plan incomplete: user wants to send email but plan has no send_message.")
@@ -337,13 +343,8 @@ def _is_plan_complete(plan_data: Any, request_text: str) -> bool:
 
     # If user explicitly asks the agent to use a code executor / sort /
     # compute, the plan should include a code (or computation) step.
-    if (
-        any(kw in lowered for kw in _CODE_EXECUTOR_INTENT_KEYWORDS)
-        and not (services_in_plan & {"code", "computation"})
-    ):
-        logging.info(
-            "Plan incomplete: user asked for code execution but plan has no code/computation task."
-        )
+    if any(kw in lowered for kw in _CODE_EXECUTOR_INTENT_KEYWORDS) and not (services_in_plan & {"code", "computation"}):
+        logging.info("Plan incomplete: user asked for code execution but plan has no code/computation task.")
         return False
 
     return True
@@ -482,7 +483,8 @@ def _invoke_with_backoff(
             return None
 
         try:
-            if model_name.startswith("groq/") or model_name.startswith("openrouter/") or model_name.startswith("google/") or model_name.startswith("gemini/") or model_name.startswith("cerebras/"):
+            # Bolt: startswith with a tuple is implemented in C and evaluates faster.
+            if model_name.startswith(("groq/", "openrouter/", "google/", "gemini/", "cerebras/")):
                 # Groq's tool-calling implementation via LangChain's with_structured_output
                 # is currently unstable (tool_choice errors). We bypass it and call LiteLLM
                 # directly with a JSON instruction.
@@ -495,13 +497,11 @@ def _invoke_with_backoff(
 
                 # Append explicit JSON instruction to user message
                 schema_json = json.dumps(_REQUEST_PLAN_SCHEMA, indent=2)
-                llm_messages[-1]["content"] += f"\n\nIMPORTANT: Return ONLY a valid JSON object matching the RequestPlan schema:\n{schema_json}"
-
-                response = call_llm(
-                    messages=llm_messages,
-                    config=config,
-                    model_override=model_name
+                llm_messages[-1]["content"] += (
+                    f"\n\nIMPORTANT: Return ONLY a valid JSON object matching the RequestPlan schema:\n{schema_json}"
                 )
+
+                response = call_llm(messages=llm_messages, config=config, model_override=model_name)
                 raw_content = response.choices[0].message.content or ""
 
                 # Extract JSON (handles markdown blocks)
@@ -513,7 +513,11 @@ def _invoke_with_backoff(
 
                 try:
                     plan_data = json.loads(json_str)
-                    logger.debug("LLM response parsed: raw_content=%s..., plan_data keys=%s", raw_content[:100] if raw_content else "", list(plan_data.keys()) if isinstance(plan_data, dict) else "")
+                    logger.debug(
+                        "LLM response parsed: raw_content=%s..., plan_data keys=%s",
+                        raw_content[:100] if raw_content else "",
+                        list(plan_data.keys()) if isinstance(plan_data, dict) else "",
+                    )
                     # Handle models that return the schema's outer wrapper (name/parameters)
                     if "parameters" in plan_data and isinstance(plan_data["parameters"], dict):
                         plan_data = plan_data["parameters"]
