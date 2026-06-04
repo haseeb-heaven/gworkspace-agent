@@ -1,0 +1,3 @@
+## 2025-02-24 - Clear Visual Hierarchy in Gradio Forms
+**Learning:** In Gradio interfaces, having multiple buttons with the default visual weight placed adjacent to one another leads to unclear action hierarchies, increasing the cognitive load and likelihood of misclicks.
+**Action:** Always assign `variant='primary'` to the primary action buttons (like 'Run' or 'Authenticate') when paired with secondary buttons (like 'Clear' or 'Generate New') to establish a distinct visual hierarchy.
