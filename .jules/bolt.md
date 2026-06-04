@@ -1,0 +1,3 @@
+## 2024-05-24 - String prefix/suffix matching in hot paths
+**Learning:** Checking for multiple string prefixes or suffixes in Python using generator expressions like `any(s.startswith(p) for p in prefixes)` is significantly slower than passing a tuple to `str.startswith(prefixes)` or `str.endswith(suffixes)` because the tuple method is implemented in C and executes faster. This is especially true in hot paths like placeholder resolution and ID validation.
+**Action:** Always prefer using tuples with `.startswith()` and `.endswith()` for multiple prefix/suffix checks to improve performance, especially in frequently called functions.
