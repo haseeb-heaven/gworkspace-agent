@@ -8,75 +8,74 @@ _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
 logger = logging.getLogger(__name__)
 
 LEGACY_PLACEHOLDER_MAP = {
-    "$last_spreadsheet_id":     "last_spreadsheet_id",
-    "$last_spreadsheet_url":    "last_spreadsheet_url",
-    "$last_document_id":        "last_document_id",
-    "$last_document_url":       "last_document_url",
-    "$last_presentation_id":    "last_presentation_id",
-    "$last_presentation_url":   "last_presentation_url",
-    "$last_form_id":            "last_form_id",
-    "$last_form_url":           "last_form_url",
-    "$last_meeting_url":        "last_meeting_url",
-    "$last_event_url":          "last_event_url",
+    "$last_spreadsheet_id": "last_spreadsheet_id",
+    "$last_spreadsheet_url": "last_spreadsheet_url",
+    "$last_document_id": "last_document_id",
+    "$last_document_url": "last_document_url",
+    "$last_presentation_id": "last_presentation_id",
+    "$last_presentation_url": "last_presentation_url",
+    "$last_form_id": "last_form_id",
+    "$last_form_url": "last_form_url",
+    "$last_meeting_url": "last_meeting_url",
+    "$last_event_url": "last_event_url",
     "$gmail_message_body": "gmail_message_body_text",
     "$gmail_message_id": "gmail_message_id",
-    "$gmail_message_ids":       "gmail_message_ids",
-    "$gmail_details_values":    "gmail_details_values",
-    "$calendar_events":         "calendar_events",
-    "$calendar_items":          "calendar_events",
-    "$drive_file_ids":          "drive_file_ids",
-    "$last_folder_id":          "last_folder_id",
-    "$last_folder_url":         "last_folder_url",
-    "$drive_export_content":    "drive_export_content",
-    "$drive_export_file":       "drive_export_content",
-    "$drive_export_path":       "drive_export_path",
+    "$gmail_message_ids": "gmail_message_ids",
+    "$gmail_details_values": "gmail_details_values",
+    "$calendar_events": "calendar_events",
+    "$calendar_items": "calendar_events",
+    "$drive_file_ids": "drive_file_ids",
+    "$last_folder_id": "last_folder_id",
+    "$last_folder_url": "last_folder_url",
+    "$drive_export_content": "drive_export_content",
+    "$drive_export_file": "drive_export_content",
+    "$drive_export_path": "drive_export_path",
     "$last_export_file_content": "last_export_file_content",
-    "$last_export_content":      "last_export_file_content",
-    "$last_file_content":        "last_export_file_content",
-    "$last_contacts_list":       "last_contacts_list",
-    "$contacts_summary_table":   "contacts_summary_table",
-    "$contacts_summary_count":   "contacts_summary_count",
-    "$last_admin_activities":    "last_admin_activities",
-    "$admin_summary_table":      "admin_summary_table",
-    "$admin_summary_count":      "admin_summary_count",
-    "$last_chat_spaces":         "last_chat_spaces",
-    "$chat_summary_table":       "chat_summary_table",
-    "$chat_summary_count":       "chat_summary_count",
-
+    "$last_export_content": "last_export_file_content",
+    "$last_file_content": "last_export_file_content",
+    "$last_contacts_list": "last_contacts_list",
+    "$contacts_summary_table": "contacts_summary_table",
+    "$contacts_summary_count": "contacts_summary_count",
+    "$last_admin_activities": "last_admin_activities",
+    "$admin_summary_table": "admin_summary_table",
+    "$admin_summary_count": "admin_summary_count",
+    "$last_chat_spaces": "last_chat_spaces",
+    "$chat_summary_table": "chat_summary_table",
+    "$chat_summary_count": "chat_summary_count",
     # Standardized output contracts mapping (legacy -> new)
-    "$drive_summary_values":    "drive_summary_rows",
-    "$last_code_stdout":        "code_output",
-    "$last_code_result":        "last_code_result",
-    "$gmail_summary_values":    "gmail_summary_rows",
+    "$drive_summary_values": "drive_summary_rows",
+    "$last_code_stdout": "code_output",
+    "$last_code_result": "last_code_result",
+    "$gmail_summary_values": "gmail_summary_rows",
     "$web_search_table_values": "search_summary_rows",
-    "$web_search_markdown":     "search_summary_table",
-    "$web_search_rows":         "search_summary_rows",
-    "$web_search_summary":      "search_summary_table",
-    "$sheet_email_body":        "sheet_summary_table",
-    "$search_rows":             "search_summary_rows",
-    "$search_results":          "search_summary_rows",
-
+    "$web_search_markdown": "search_summary_table",
+    "$web_search_rows": "search_summary_rows",
+    "$web_search_summary": "search_summary_table",
+    "$sheet_email_body": "sheet_summary_table",
+    "$search_rows": "search_summary_rows",
+    "$search_results": "search_summary_rows",
     # Include the new standardized ones too to resolve if called explicitly
-    "$drive_metadata_rows":     "drive_metadata_rows",
-    "$drive_file_count":        "drive_file_count",
-    "$drive_metadata_table":    "drive_metadata_table",
-    "$drive_file_links":        "drive_file_links",
-    "$code_output":             "code_output",
-    "$code_exit_code":          "code_exit_code",
-    "$code_error":              "code_error",
-    "$drive_summary_rows":      "drive_summary_rows",
-    "$drive_summary_table":     "drive_summary_table",
-    "$drive_summary_count":     "drive_summary_count",
-    "$gmail_summary_rows":      "gmail_summary_rows",
-    "$gmail_summary_table":     "gmail_summary_table",
-    "$gmail_summary_count":     "gmail_summary_count",
-    "$search_summary_rows":     "search_summary_rows",
-    "$search_summary_table":    "search_summary_table",
-    "$search_summary_count":    "search_summary_count",
-    "$sheet_summary_rows":      "sheet_summary_rows",
-    "$sheet_summary_table":     "sheet_summary_table",
-    "$calendar_events_table":   "calendar_events_table",
+    "$drive_metadata_rows": "drive_metadata_rows",
+    "$drive_file_count": "drive_file_count",
+    "$drive_metadata_table": "drive_metadata_table",
+    "$drive_file_links": "drive_file_links",
+    "$code_output": "code_output",
+    "$code_exit_code": "code_exit_code",
+    "$code_error": "code_error",
+    "$drive_summary_rows": "drive_summary_rows",
+    "$drive_summary_table": "drive_summary_table",
+    "$drive_summary_count": "drive_summary_count",
+    "$gmail_summary_rows": "gmail_summary_rows",
+    "$gmail_summary_table": "gmail_summary_table",
+    "$gmail_summary_count": "gmail_summary_count",
+    "$search_summary_rows": "search_summary_rows",
+    "$search_summary_table": "search_summary_table",
+    "$search_summary_count": "search_summary_count",
+    "$sheet_summary_rows": "sheet_summary_rows",
+    "$sheet_summary_table": "sheet_summary_table",
+    "$calendar_events_table": "calendar_events_table",
 }
+
 
 class ResolverMixin:
     # Type hints for mypy
@@ -92,24 +91,34 @@ class ResolverMixin:
         import copy
 
         resolved_params = self._resolve_placeholders(copy.deepcopy(task.parameters), context)
-        self.logger.info(f"EXPAND_TASK: {task.service}.{task.action} parameters={task.parameters} resolved={resolved_params}")
+        self.logger.info(
+            f"EXPAND_TASK: {task.service}.{task.action} parameters={task.parameters} resolved={resolved_params}"
+        )
 
         # Check for any parameter that resolved to a list (Generic Expansion)
         # We skip services that have specialized expansion logic below.
         generic_expandable_actions = (
-            "create_document", "send_message", "create_event", "create_task", "create_spreadsheet",
-            "append_values", "batch_update", "update_event", "update_task"
+            "create_document",
+            "send_message",
+            "create_event",
+            "create_task",
+            "create_spreadsheet",
+            "append_values",
+            "batch_update",
+            "update_event",
+            "update_task",
         )
 
         # Identify if we should try generic expansion
         should_generic_expand = (
             task.action in generic_expandable_actions
-            and task.service not in ("gmail", "drive", "calendar", "sheets") # Special cases handled below or tools that handle lists
+            and task.service
+            not in ("gmail", "drive", "calendar", "sheets")  # Special cases handled below or tools that handle lists
         )
 
         # Calendar specialized expansion for non-delete actions
         if task.service == "calendar" and task.action != "delete_event":
-             should_generic_expand = True
+            should_generic_expand = True
 
         if should_generic_expand:
             # Find the first parameter that is a list
@@ -122,7 +131,9 @@ class ResolverMixin:
                     break
 
             if expand_list:
-                self.logger.info(f"Generic expansion triggered for {task.service}.{task.action} on parameter '{expand_param}' ({len(expand_list)} items)")
+                self.logger.info(
+                    f"Generic expansion triggered for {task.service}.{task.action} on parameter '{expand_param}' ({len(expand_list)} items)"
+                )
                 expanded = []
                 for i, item in enumerate(expand_list):
                     new_task = copy.deepcopy(task)
@@ -140,7 +151,9 @@ class ResolverMixin:
                 return expanded
 
         if task.service == "gmail" and task.action in ("get_message", "batch_modify_messages"):
-            msg_ids = resolved_params.get("message_id") or resolved_params.get("message_ids") or resolved_params.get("id")
+            msg_ids = (
+                resolved_params.get("message_id") or resolved_params.get("message_ids") or resolved_params.get("id")
+            )
             self.logger.info(f"EXPAND_TASK: gmail.{task.action} msg_ids={msg_ids} type={type(msg_ids)}")
             # If no message_id provided, but we have legacy $gmail_message_ids in context, use them!
             if (
@@ -222,7 +235,10 @@ class ResolverMixin:
             event_ids = resolved_params.get("event_id") or resolved_params.get("id")
             # If no event_id provided, but we have $calendar_events in context, use it!
             if (
-                not event_ids or event_ids == "$placeholder" or event_ids == _UNRESOLVED_MARKER or event_ids == "$calendar_events"
+                not event_ids
+                or event_ids == "$placeholder"
+                or event_ids == _UNRESOLVED_MARKER
+                or event_ids == "$calendar_events"
             ) and "calendar_events" in context:
                 events = context["calendar_events"]
                 if isinstance(events, list) and events:
@@ -329,8 +345,14 @@ class ResolverMixin:
                 if not text_val or not text_str.strip() or text_str == _UNRESOLVED_MARKER or text_str.startswith("{{"):
                     # Priority: last_code_result (structured) > code_stdout (raw) > code_output
                     fallback_text = None
-                    for key in ("last_code_result", "last_code_result_table", "code_stdout",
-                                "last_code_stdout", "code_output", "code_parsed_value"):
+                    for key in (
+                        "last_code_result",
+                        "last_code_result_table",
+                        "code_stdout",
+                        "last_code_stdout",
+                        "code_output",
+                        "code_parsed_value",
+                    ):
                         candidate = context.get(key)
                         if candidate is not None:
                             if isinstance(candidate, (list, dict)):
@@ -348,9 +370,7 @@ class ResolverMixin:
                     if fallback_text:
                         task.parameters["text"] = fallback_text
                     else:
-                        self.logger.warning(
-                            "batch_update text is unresolved and no code output found in context."
-                        )
+                        self.logger.warning("batch_update text is unresolved and no code output found in context.")
 
         if task.service == "drive":
             f_id = str(task.parameters.get("file_id") or "")
@@ -366,7 +386,9 @@ class ResolverMixin:
 
         if task.service == "slides":
             p_id = str(task.parameters.get("presentation_id") or "")
-            if (not p_id or p_id.startswith("{{") or p_id == _UNRESOLVED_MARKER) and context.get("last_presentation_id"):
+            if (not p_id or p_id.startswith("{{") or p_id == _UNRESOLVED_MARKER) and context.get(
+                "last_presentation_id"
+            ):
                 task.parameters["presentation_id"] = context["last_presentation_id"]
 
         if task.service == "forms":
@@ -414,6 +436,7 @@ class ResolverMixin:
         # BUG FIX: Use threading.local to make _resolve_cache thread-safe.
         if not hasattr(self, "_local_storage"):
             import threading
+
             self._local_storage = threading.local()
 
         if not hasattr(self._local_storage, "resolve_cache"):
@@ -434,7 +457,9 @@ class ResolverMixin:
         else:
             return self._resolve_placeholders_impl(val, context, use_repr_for_complex, depth)
 
-    def _resolve_placeholders_impl(self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None) -> Any:
+    def _resolve_placeholders_impl(
+        self, val: Any, context: dict, use_repr_for_complex: bool = False, depth: int = 0, clone: Any = None
+    ) -> Any:
         if isinstance(val, str):
             if "{" not in val and "$" not in val:
                 return val
@@ -480,7 +505,9 @@ class ResolverMixin:
                             # Avoid matching strings or other non-dict lists unless it's a simple list and field is index-like?
                             # For now, only handle list of dicts.
                             if isinstance(val_item[0], dict) and field in val_item[0]:
-                                self.logger.info(f"RESOLVER: Loop shorthand '{shorthand_path}' resolved to list mapping from '{key}'")
+                                self.logger.info(
+                                    f"RESOLVER: Loop shorthand '{shorthand_path}' resolved to list mapping from '{key}'"
+                                )
                                 return [i.get(field) for i in val_item]
 
                 # 1. SMART RESOLUTION: Try to find the exact key inside ANY task result first (Rule 25)
@@ -529,11 +556,16 @@ class ResolverMixin:
                 # 3. LOOSE KEY MATCHING: If nothing matched, try matching ANY token in ANY task result
                 # This handles {{ :event_summary }} matching an event's 'summary' field
                 for key, val_item in reversed(list(results_map.items())):
-                     if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
+                    if re.match(r"^task-\d+$|^\d+$|t\d+$", str(key)):
                         for token in shorthand_tokens:
                             if isinstance(val_item, dict) and token in val_item:
                                 return val_item[token]
-                            if isinstance(val_item, list) and val_item and isinstance(val_item[0], dict) and token in val_item[0]:
+                            if (
+                                isinstance(val_item, list)
+                                and val_item
+                                and isinstance(val_item[0], dict)
+                                and token in val_item[0]
+                            ):
                                 return [item.get(token) for item in val_item]
 
                 return None
@@ -565,8 +597,10 @@ class ResolverMixin:
                             resolved = resolve_shorthand(key_to_find)
 
                     if resolved is None:
-                         keys_summary = {k: type(v).__name__ for k, v in results_map.items()}
-                         self.logger.warning(f"RESOLVER: Failed to resolve '{val}'. Path: '{path}'. Available keys/types: {keys_summary}")
+                        keys_summary = {k: type(v).__name__ for k, v in results_map.items()}
+                        self.logger.warning(
+                            f"RESOLVER: Failed to resolve '{val}'. Path: '{path}'. Available keys/types: {keys_summary}"
+                        )
 
                 # Smart unwrap:
                 # 1. If the resolved value is a dict with 'content', promote the content.
@@ -575,7 +609,7 @@ class ResolverMixin:
 
                 # 2. If we resolved to a list, but we are a single-token placeholder
                 # (e.g. {{task-1.id}}), pick the first item.
-                singular_suffixes = [
+                singular_suffixes = (
                     ".id",
                     ".name",
                     ".url",
@@ -587,14 +621,15 @@ class ResolverMixin:
                     ".documentId",
                     ".fileId",
                     ".file_id",
-                ]
-                if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
+                )
+                # Performance: endswith with a tuple is implemented in C and evaluates faster
+                if isinstance(resolved, list) and resolved and path.endswith(singular_suffixes):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     # We have a list. Check if we need to do the folder heuristic.
                     # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
                     # we can't easily check mime types unless we look at the original objects.
                     # Let's get the original objects using a parent path.
-                    parent_path = path.rsplit('.', 1)[0]
+                    parent_path = path.rsplit(".", 1)[0]
                     parent_objects = self._get_value_by_path(results_map, parent_path)
 
                     picked = resolved[0]
@@ -609,8 +644,7 @@ class ResolverMixin:
                     return resolved
 
                 self.logger.warning(
-                    f"Placeholder '{path}' resolved to None in context. "
-                    f"Available context keys: {list(context.keys())}"
+                    f"Placeholder '{path}' resolved to None in context. Available context keys: {list(context.keys())}"
                 )
                 return _UNRESOLVED_MARKER
 
@@ -666,13 +700,26 @@ class ResolverMixin:
                         # Unwrap common API response wrappers so generated code can iterate directly
                         inject_val = res
                         if isinstance(res, dict):
-                            for key in ("messages", "items", "files", "events", "tasks", "notes", "spaces", "connections", "people", "activities"):
+                            for key in (
+                                "messages",
+                                "items",
+                                "files",
+                                "events",
+                                "tasks",
+                                "notes",
+                                "spaces",
+                                "connections",
+                                "people",
+                                "activities",
+                            ):
                                 if key in res and isinstance(res[key], list):
                                     inject_val = res[key]
                                     break
 
                         # Auto-fetch spreadsheet data if inject_val is a string reference
-                        if isinstance(inject_val, str) and (".csv" in inject_val.lower() or "sheet" in inject_val.lower()):
+                        if isinstance(inject_val, str) and (
+                            ".csv" in inject_val.lower() or "sheet" in inject_val.lower()
+                        ):
                             # Try to fetch actual spreadsheet data
                             try:
                                 # Find spreadsheet in drive results
@@ -687,22 +734,47 @@ class ResolverMixin:
                                 for file_info in files:
                                     if isinstance(file_info, dict):
                                         file_name = file_info.get("name", "")
-                                        if inject_val.lower() in file_name.lower() or file_name.lower().endswith(".csv"):
+                                        if inject_val.lower() in file_name.lower() or file_name.lower().endswith(
+                                            ".csv"
+                                        ):
                                             file_id = file_info.get("id")
                                             if file_id:
                                                 # Fetch the actual data using the runner - use empty range to get first sheet
                                                 # First try to get spreadsheet metadata to find sheet name
-                                                meta_args = ["sheets", "spreadsheets", "get", "--params", json.dumps({"spreadsheetId": file_id, "fields": "sheets.properties.title"})]
+                                                meta_args = [
+                                                    "sheets",
+                                                    "spreadsheets",
+                                                    "get",
+                                                    "--params",
+                                                    json.dumps(
+                                                        {"spreadsheetId": file_id, "fields": "sheets.properties.title"}
+                                                    ),
+                                                ]
                                                 meta_res = self.runner.run(meta_args)
                                                 sheet_name = "Sheet1"  # default
                                                 if meta_res.success and meta_res.stdout:
                                                     try:
                                                         meta_parsed = json.loads(meta_res.stdout)
-                                                        if isinstance(meta_parsed, dict) and "sheets" in meta_parsed and meta_parsed["sheets"]:
-                                                            sheet_name = meta_parsed["sheets"][0].get("properties", {}).get("title", "Sheet1")
+                                                        if (
+                                                            isinstance(meta_parsed, dict)
+                                                            and "sheets" in meta_parsed
+                                                            and meta_parsed["sheets"]
+                                                        ):
+                                                            sheet_name = (
+                                                                meta_parsed["sheets"][0]
+                                                                .get("properties", {})
+                                                                .get("title", "Sheet1")
+                                                            )
                                                     except json.JSONDecodeError:
                                                         pass
-                                                get_args = ["sheets", "spreadsheets", "values", "get", "--params", json.dumps({"spreadsheetId": file_id, "range": f"{sheet_name}"})]
+                                                get_args = [
+                                                    "sheets",
+                                                    "spreadsheets",
+                                                    "values",
+                                                    "get",
+                                                    "--params",
+                                                    json.dumps({"spreadsheetId": file_id, "range": f"{sheet_name}"}),
+                                                ]
                                                 get_res = self.runner.run(get_args)
                                                 if get_res.success and get_res.stdout:
                                                     try:
@@ -809,33 +881,33 @@ class ResolverMixin:
 
         # 2. Handle flattened keys (e.g., 'task-7.result[0]', 'task-1.messages[0].id', or 'task-1.messages.id')
         # Check if the path contains an array index like [0], [1], etc.
-        array_index_match = re.search(r'\[(\d+)\]', path)
+        array_index_match = re.search(r"\[(\d+)\]", path)
 
         # Find the longest matching flattened key prefix
         # For 'task-1.messages[0].id', we try 'task-1.messages', then 'task-1', etc.
         # For 'task-1.messages.id', we try 'task-1.messages', then 'task-1', etc.
         if array_index_match:
-            base_path = path[:array_index_match.start()]
-            remaining_path = path[array_index_match.end():]
+            base_path = path[: array_index_match.start()]
+            remaining_path = path[array_index_match.end() :]
         else:
             # No array index, so the entire path up to the last dot might be a flattened key
             # For 'task-1.messages.id', we try 'task-1.messages', then 'task-1'
-            last_dot = path.rfind('.')
+            last_dot = path.rfind(".")
             if last_dot > 0:
                 base_path = path[:last_dot]
-                remaining_path = path[last_dot + 1:]
+                remaining_path = path[last_dot + 1 :]
             else:
                 base_path = path
-                remaining_path = ''
+                remaining_path = ""
 
         # Try to find the longest matching key in data
         best_match = None
         best_match_value = None
 
         # Split by dots to try progressively shorter prefixes
-        parts = base_path.split('.')
+        parts = base_path.split(".")
         for i in range(len(parts), 0, -1):
-            candidate = '.'.join(parts[:i])
+            candidate = ".".join(parts[:i])
             if candidate in data:
                 best_match = candidate
                 best_match_value = data[candidate]
@@ -843,14 +915,14 @@ class ResolverMixin:
                 if array_index_match:
                     # If we matched the prefix up to the index, remaining_path is what follows the index
                     if candidate == base_path:
-                        remaining_path = path[array_index_match.end():]
+                        remaining_path = path[array_index_match.end() :]
                     else:
                         # We matched a shorter prefix, so include the rest of the path including index
-                        remaining_path = path[len(candidate):]
+                        remaining_path = path[len(candidate) :]
                 else:
-                    remaining_path = path[len(candidate):]
+                    remaining_path = path[len(candidate) :]
 
-                if remaining_path.startswith('.'):
+                if remaining_path.startswith("."):
                     remaining_path = remaining_path[1:]
                 break
 
@@ -880,7 +952,9 @@ class ResolverMixin:
                     return curr
                 else:
                     # Not a list or index out of range, fall through to step 3
-                    self.logger.debug(f"DEBUG: base path '{best_match}' exists but is not a list or index out of range, falling through to nested path handling")
+                    self.logger.debug(
+                        f"DEBUG: base path '{best_match}' exists but is not a list or index out of range, falling through to nested path handling"
+                    )
             elif isinstance(curr, list) and remaining_path:
                 # No array index, but we have a list and a remaining path
                 # This handles cases like 'task-1.messages.id' where we want to map 'id' across the list
