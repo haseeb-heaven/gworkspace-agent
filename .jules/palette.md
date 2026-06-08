@@ -1,0 +1,3 @@
+## 2024-06-08 - Visual Hierarchy for Main Actions in Gradio
+**Learning:** When main action buttons like 'Run' or 'Authenticate' are placed near secondary buttons (like 'Clear' or 'Generate New Auth URL'), users can accidentally click the wrong one due to a lack of visual distinction.
+**Action:** Always assign `variant='primary'` to main action buttons in Gradio to establish a clear visual hierarchy.

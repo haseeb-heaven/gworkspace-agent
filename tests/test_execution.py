@@ -635,6 +635,7 @@ def test_coerce_structured_value_preserves_none() -> None:
 def test_is_safe_file_path_blocks_path_traversal() -> None:
     """Test that _is_safe_file_path blocks path traversal attempts."""
     from gws_assistant.execution.helpers import _is_safe_file_path
+    import os
 
     # Test path traversal attempts
     assert not _is_safe_file_path("../../../etc/passwd")
@@ -646,7 +647,8 @@ def test_is_safe_file_path_blocks_path_traversal() -> None:
 
     # Test absolute paths outside sandbox (default sandbox dirs not set)
     assert not _is_safe_file_path("/etc/passwd")
-    assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
+    if os.name == 'nt':
+        assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
 
     # Test safe relative paths
     assert _is_safe_file_path("test.txt")
