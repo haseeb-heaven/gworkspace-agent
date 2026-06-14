@@ -1,0 +1,4 @@
+## 2026-06-14 - Fix Shell Injection Vulnerability on Windows Subprocess Calls
+**Vulnerability:** Found `subprocess.run` called with `shell=os.name == "nt"` in `framework/task_runner.py`.
+**Learning:** Even when `cmd` is passed as a list, setting `shell=True` on Windows causes Python to convert the list to a string and execute it via `cmd.exe`. If the list contains user-controlled elements (like `marker_expr`), this allows shell injection of metacharacters (e.g. `&`, `|`).
+**Prevention:** Avoid `shell=True` (or conditional equivalents like `shell=os.name == "nt"`) entirely when passing lists to `subprocess`, and rely on default `shell=False` execution logic unless shell features are strictly required and input is sanitized.
