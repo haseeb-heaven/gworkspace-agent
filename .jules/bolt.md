@@ -1,0 +1,3 @@
+## 2024-05-18 - startswith with tuple
+**Learning:** Checking `startswith` or `endswith` against multiple strings can be significantly faster if we pass a tuple of strings directly to the method, since the tuple check is implemented in C and runs much faster than a generator expression using `any()`. However, the tuple must be a static literal to avoid the overhead of dynamically converting lists or generators. This optimization is particularly beneficial in hot loops like `verification_engine.py`'s drive ID checks.
+**Action:** Replace `any(val.startswith(prefix) for prefix in [...])` with `val.startswith((...))` where applicable, specifically in hot paths like validation methods.
