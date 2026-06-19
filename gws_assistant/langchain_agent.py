@@ -401,7 +401,8 @@ def create_agent(
         elif model_to_use.startswith("ollama/"):
             extra_kwargs["api_base"] = config.ollama_api_base or "http://localhost:11434"
             api_key = "ollama"
-        elif model_to_use.startswith("google/") or model_to_use.startswith("gemini/"):
+        # startswith with a tuple is implemented in C and evaluates faster
+        elif model_to_use.startswith(("google/", "gemini/")):
             # LiteLLM uses 'gemini/' prefix internally for Google Gemini API
             extra_kwargs["custom_llm_provider"] = "gemini"
             # Ensure we use the Gemini-specific API key if available
@@ -482,7 +483,8 @@ def _invoke_with_backoff(
             return None
 
         try:
-            if model_name.startswith("groq/") or model_name.startswith("openrouter/") or model_name.startswith("google/") or model_name.startswith("gemini/") or model_name.startswith("cerebras/"):
+            # startswith with a tuple is implemented in C and evaluates faster
+            if model_name.startswith(("groq/", "openrouter/", "google/", "gemini/", "cerebras/")):
                 # Groq's tool-calling implementation via LangChain's with_structured_output
                 # is currently unstable (tool_choice errors). We bypass it and call LiteLLM
                 # directly with a JSON instruction.
