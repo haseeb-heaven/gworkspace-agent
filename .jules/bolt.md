@@ -1,0 +1,3 @@
+## 2024-05-24 - Tuple-based Prefix/Suffix Checking
+**Learning:** Checking multiple string prefixes or suffixes using `any(s.startswith(prefix) for prefix in prefixes)` requires Python to instantiate a generator and loop through elements. Passing a tuple of prefixes directly to `s.startswith(prefixes)` delegates the iteration to C, providing a significant performance boost on hot paths.
+**Action:** Always prefer `startswith(tuple)` or `endswith(tuple)` over `any()` with a generator for prefix/suffix checks. Ensure the tuple is defined as a static literal or at the module/class level to avoid reallocation overhead.
