@@ -49,7 +49,7 @@ mem0ai>=2.0.0
 # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
 # via /guardrails/test_custom_code. Upgrade only when a patched release is available that also
 # allows openai>=2.26.0 and a newer python-dotenv.
-litellm==1.83.7
+litellm==1.89.3
 
 # Telegram polling bot
 python-telegram-bot>=22.7
