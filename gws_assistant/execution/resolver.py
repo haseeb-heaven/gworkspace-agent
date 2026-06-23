@@ -7,6 +7,20 @@ from typing import Any
 _UNRESOLVED_MARKER = "___UNRESOLVED_PLACEHOLDER___"
 logger = logging.getLogger(__name__)
 
+_SINGULAR_SUFFIXES = (
+    ".id",
+    ".name",
+    ".url",
+    ".title",
+    ".email",
+    ".spreadsheet_id",
+    ".document_id",
+    ".spreadsheetId",
+    ".documentId",
+    ".fileId",
+    ".file_id",
+)
+
 LEGACY_PLACEHOLDER_MAP = {
     "$last_spreadsheet_id":     "last_spreadsheet_id",
     "$last_spreadsheet_url":    "last_spreadsheet_url",
@@ -575,20 +589,8 @@ class ResolverMixin:
 
                 # 2. If we resolved to a list, but we are a single-token placeholder
                 # (e.g. {{task-1.id}}), pick the first item.
-                singular_suffixes = [
-                    ".id",
-                    ".name",
-                    ".url",
-                    ".title",
-                    ".email",
-                    ".spreadsheet_id",
-                    ".document_id",
-                    ".spreadsheetId",
-                    ".documentId",
-                    ".fileId",
-                    ".file_id",
-                ]
-                if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
+                # endswith with a tuple is implemented in C and evaluates faster
+                if isinstance(resolved, list) and resolved and path.endswith(_SINGULAR_SUFFIXES):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     # We have a list. Check if we need to do the folder heuristic.
                     # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
