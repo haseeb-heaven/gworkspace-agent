@@ -1,0 +1,4 @@
+## 2024-05-24 - [Secret Leakage via HTTP Exceptions]
+**Vulnerability:** The application caught HTTP exceptions during Telegram API calls and logged the raw exception objects. Standard HTTP exceptions (like `urllib.error.HTTPError` or `requests.exceptions.HTTPError`) often include the full request URL in their string representation. Because the Telegram API requires embedding the secret bot token directly in the URL path (`/bot<token>/`), logging the error leaked the secret token.
+**Learning:** Failing securely means ensuring error logs and stack traces never expose sensitive data. APIs that use path-based or query-parameter-based authentication are especially vulnerable to this type of leakage during error handling.
+**Prevention:** Always pass exception messages through a redaction function (e.g., `redact_sensitive(e)`) or manually strip URLs before logging them when interacting with APIs that embed secrets in the URL.
