@@ -4,11 +4,11 @@
 
 # LangChain / LangGraph stack
 # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
-# but the current constraint langchain-openai>=1.1.10,<1.2.2 excludes 1.1.14, so the CVE remains unpatched.
+# but the current constraint langchain-openai>=1.1.10,<1.3.6 excludes 1.1.14, so the CVE remains unpatched.
 # Upgrade is deferred due to litellm 1.83.7 pinning openai==2.36.0; re-evaluate whether CVE-2026-41488 can now be addressed via langchain-openai>=1.1.14.
 # This is tracked and will be upgraded when litellm supports the required openai version.
 langchain-core>=0.3.84
-langchain-openai>=1.1.10,<1.2.2
+langchain-openai>=1.1.10,<1.3.6
 langgraph>=0.3.34
 langchain-community>=0.3.31
 langchain-tavily>=0.2.0
