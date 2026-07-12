@@ -1,0 +1,3 @@
+## 2024-07-12 - Primary buttons and input submission
+**Learning:** In Gradio applications with multiple inputs and buttons, users often paste long strings (like auth codes) which can cause the layout to jump and stretch awkwardly. Also, it's critical to make the primary call-to-action (Authenticate, Run) visually distinct from secondary buttons (Generate New Auth URL, Clear) to guide the user's focus, and also make inputs submittable using the 'Enter' key.
+**Action:** Added `max_lines=1` to the authorization code input to prevent layout stretching upon pasting. Added `variant="primary"` to the "Authenticate" and "Run" buttons to emphasize them. Bound the `submit` event to the `auth_code_input` to allow keyboard submission.
