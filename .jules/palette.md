@@ -1,0 +1,3 @@
+## 2024-07-24 - Primary Actions and Token Pasting
+**Learning:** In Gradio applications, primary actions (like "Run" or "Authenticate") blend in with secondary actions if they don't have a distinct variant. Additionally, long authentication tokens pasted into `Textbox` components cause awkward layout stretching if `max_lines` is not constrained to 1, and users expect to be able to submit tokens by pressing Enter instead of just clicking the button.
+**Action:** Use `variant="primary"` on primary `gr.Button` elements, set `max_lines=1` on textboxes intended for token pasting, and bind `.submit()` events to these textboxes to allow Enter-key submissions.
