@@ -281,9 +281,10 @@ def create_interface() -> gr.Blocks:
                 auth_code_input = gr.Textbox(
                     label="Paste Authorization Code",
                     placeholder="Paste the code from Google after signing in",
-                    visible=False
+                    visible=False,
+                    max_lines=1
                 )
-                submit_auth_button = gr.Button("Authenticate", visible=False)
+                submit_auth_button = gr.Button("Authenticate", variant="primary", visible=False)
                 regenerate_url_button = gr.Button("Generate New Auth URL", visible=False)
 
             auth_message = gr.Textbox(
@@ -303,7 +304,7 @@ def create_interface() -> gr.Blocks:
                 placeholder="Example: List recent Gmail messages and show details",
             )
         with gr.Row():
-            run_button = gr.Button("Run")
+            run_button = gr.Button("Run", variant="primary")
             clear_button = gr.Button("Clear")
         output = gr.Textbox(label="Result", lines=18)
         plan_preview = gr.Textbox(label="Planned Tasks", lines=8)
@@ -376,6 +377,18 @@ def create_interface() -> gr.Blocks:
                 submit_auth_button,
                 regenerate_url_button,
                 auth_message,
+                auth_message
+            ]
+        )
+
+        auth_code_input.submit(
+            fn=on_auth_submit,
+            inputs=[client_config_state, auth_code_input],
+            outputs=[
+                credentials_file_state,
+                auth_status,
+                auth_code_input,
+                regenerate_url_button,
                 auth_message
             ]
         )
