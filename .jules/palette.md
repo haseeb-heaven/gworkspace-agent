@@ -1,0 +1,3 @@
+## 2024-07-28 - Gradio Primary Actions & Input Handling
+**Learning:** Gradio buttons default to a secondary visual style, making primary calls-to-action (like "Run" or "Authenticate") blend in with secondary actions (like "Clear"). Additionally, textboxes for tokens can stretch awkwardly if they lack `max_lines=1`, and missing `.submit()` bindings force users to click buttons instead of pressing Enter.
+**Action:** Always set `variant="primary"` on the main action buttons to improve visual hierarchy, enforce `max_lines=1` on single-line token inputs, and bind `.submit()` events to text inputs for a smoother, keyboard-friendly UX.
