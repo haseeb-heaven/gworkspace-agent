@@ -16,6 +16,7 @@ import math
 import re
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.tools import tool
@@ -39,19 +40,27 @@ _BANNED_PATTERNS = [
 # Safe stdlib modules that the LLM commonly needs for numeric/currency/date work.
 # These are pre-injected into the sandbox globals so LLM-generated `import X`
 # statements can be stripped without breaking the computation.
+def _safe_namespace(module: Any, names: tuple[str, ...]) -> SimpleNamespace:
+    """Expose selected module members without exposing the module object itself."""
+    return SimpleNamespace(**{name: getattr(module, name) for name in names})
+
+
 _SAFE_MODULES: dict[str, Any] = {
-    "math": math,
-    "re": re,
-    "json": json,
-    "datetime": datetime,
-    "time": time,
-    "csv": __import__("csv"),
-    "io": io,
-    "statistics": __import__("statistics"),
+    "math": _safe_namespace(math, ("ceil", "floor", "log", "pi", "e", "sqrt")),
+    "re": _safe_namespace(
+        re,
+        ("IGNORECASE", "MULTILINE", "DOTALL", "compile", "findall", "match", "search", "sub"),
+    ),
+    "json": _safe_namespace(json, ("dumps", "loads")),
+    "datetime": _safe_namespace(datetime, ("date", "datetime", "timedelta", "timezone")),
+    "time": _safe_namespace(time, ("time",)),
+    "csv": _safe_namespace(__import__("csv"), ("DictReader", "DictWriter", "reader", "writer")),
+    "io": _safe_namespace(io, ("BytesIO", "StringIO")),
+    "statistics": _safe_namespace(__import__("statistics"), ("mean", "median", "stdev")),
 }
 try:
     import pandas as pd
-    _SAFE_MODULES["pandas"] = pd
+    _SAFE_MODULES["pandas"] = _safe_namespace(pd, ("DataFrame", "Series", "read_csv"))
 except ImportError:
     pass
 
