@@ -41,3 +41,22 @@ def test_run_code_invalid_b64():
     result = run_code("invalid!!!")
     assert result["success"] is False
     assert "Base64DecodingError" in result["error"]
+
+
+def test_run_code_registers_safe_getattr_guard():
+    globals_dict = get_sandbox_globals()
+    assert globals_dict["_getattr_"] is not None
+
+
+def test_run_code_blocks_module_attribute_traversal():
+    code = "result = math.__class__.__mro__"
+    code_b64 = base64.b64encode(code.encode("utf-8")).decode("ascii")
+    result = run_code(code_b64)
+    assert result["success"] is False
+
+
+def test_run_code_uses_print_collector():
+    code_b64 = base64.b64encode(b"print('captured')").decode("ascii")
+    result = run_code(code_b64)
+    assert result["success"] is True
+    assert result["stdout"].strip() == "captured"
