@@ -473,7 +473,7 @@ class ResolverMixin:
 
             def resolve_shorthand(shorthand_path):
                 # 0. LOOP VARIABLE HANDLING: Support {{item.field}} or {{it.field}} by mapping over the most recent list
-                if shorthand_path.startswith("item.") or shorthand_path.startswith("it."):
+                if shorthand_path.startswith(("item.", "it.")):
                     field = shorthand_path.split(".", 1)[1]
                     for key, val_item in reversed(list(results_map.items())):
                         if isinstance(val_item, list) and val_item:
@@ -588,7 +588,7 @@ class ResolverMixin:
                     ".fileId",
                     ".file_id",
                 ]
-                if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
+                if isinstance(resolved, list) and resolved and path.endswith(tuple(singular_suffixes)):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     # We have a list. Check if we need to do the folder heuristic.
                     # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
