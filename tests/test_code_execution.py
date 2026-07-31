@@ -41,3 +41,18 @@ def test_code_execution_tool_sandbox_escape_format():
     result = code_execution_tool.invoke({"code": "s = '{0.__class__.__base__.__subclasses__}'.format(1)"})
     assert result["success"] is False  # nosec B101: Test assertion
     assert "SecurityError" in (result["error"] or "") or "AttributeError" in (result["error"] or "") or "SyntaxError" in (result["error"] or "") or "KeyError" in (result["error"] or "") or "ValueError" in (result["error"] or "") or "NotImplementedError" in (result["error"] or "")  # nosec B101: Test assertion
+
+
+def test_code_execution_tool_blocks_module_attribute_traversal():
+    for code in (
+        "result = re.enum.sys.modules['os'].popen('echo escaped').read()",
+        "result = json.codecs.sys.modules['os'].popen('echo escaped').read()",
+    ):
+        result = code_execution_tool.invoke({"code": code})
+        assert result["success"] is False  # nosec B101: Test assertion
+
+
+def test_code_execution_tool_keeps_safe_module_operations():
+    result = code_execution_tool.invoke({"code": "result = math.sqrt(144) + len(json.dumps({'a': 1}))"})
+    assert result["success"] is True  # nosec B101: Test assertion
+    assert result["output"]["parsed_value"] == 20.0  # nosec B101: Test assertion
