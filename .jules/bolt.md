@@ -1,0 +1,3 @@
+## 2024-05-18 - [Optimizing startswith/endswith checks]
+**Learning:** Checking against multiple string prefixes or suffixes in Python using generator expressions like `any(path.endswith(s) for s in list_of_suffixes)` is an order of magnitude slower than passing a tuple directly to `endswith` or `startswith`. The tuple approach uses the C implementation in CPython, executing significantly faster.
+**Action:** Always prefer using a static literal tuple with `str.startswith` or `str.endswith` instead of generator expressions with `any()`, as long as dynamic list-to-tuple conversions on every call are avoided.
