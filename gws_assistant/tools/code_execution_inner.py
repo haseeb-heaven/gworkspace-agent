@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import sys
+from types import SimpleNamespace
 
 try:
     import resource
@@ -26,6 +27,11 @@ from RestrictedPython.Guards import full_write_guard, guarded_setattr, safer_get
 from RestrictedPython.PrintCollector import PrintCollector
 
 
+def _safe_namespace(module: object, names: tuple[str, ...]) -> SimpleNamespace:
+    """Expose selected module members without exposing the module object itself."""
+    return SimpleNamespace(**{name: getattr(module, name) for name in names})
+
+
 def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals = safe_globals.copy()
     sandbox_globals["__builtins__"] = safe_builtins.copy()
@@ -38,8 +44,6 @@ def get_sandbox_globals() -> dict[str, object]:
     def _safe_import(name, *args, **kwargs):
         allowed_modules = {"csv", "io", "math", "random"}
         # Debug: log import attempts
-        import sys
-        print(f"DEBUG: Import requested for '{name}'", file=sys.stderr)
         if name in allowed_modules:
             return __import__(name, *args, **kwargs)
         raise ImportError(f"Import of '{name}' is disabled inside the code sandbox.")
@@ -60,10 +64,10 @@ def get_sandbox_globals() -> dict[str, object]:
     sandbox_globals["_print_"] = PrintCollector
 
     # Whitelist allowed modules
-    sandbox_globals["csv"] = csv
-    sandbox_globals["io"] = io
-    sandbox_globals["math"] = math
-    sandbox_globals["random"] = random
+    sandbox_globals["csv"] = _safe_namespace(csv, ("DictReader", "DictWriter", "reader", "writer"))
+    sandbox_globals["io"] = _safe_namespace(io, ("BytesIO", "StringIO"))
+    sandbox_globals["math"] = _safe_namespace(math, ("ceil", "floor", "log", "pi", "e", "sqrt"))
+    sandbox_globals["random"] = _safe_namespace(random, ("choice", "randint", "random", "shuffle"))
     return sandbox_globals
 
 
