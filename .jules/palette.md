@@ -1,0 +1,3 @@
+## 2024-07-29 - Improve button visual hierarchy and token input UX
+**Learning:** In Gradio applications, primary actions (like "Run" or "Authenticate") can blend in with secondary actions (like "Clear") leading to a less intuitive experience. Additionally, token/code inputs should restrict line growth to avoid layout awkwardness, and forms feel broken if "Enter" doesn't submit.
+**Action:** Always apply `variant="primary"` to primary action buttons. Add `max_lines=1` to inputs meant for short strings or codes. Bind `.submit()` events on textboxes to matching button click actions for better keyboard accessibility.
