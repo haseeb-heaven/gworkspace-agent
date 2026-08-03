@@ -1,0 +1,3 @@
+## 2024-07-06 - Optimize string prefix/suffix checking with C-level tuple evaluations
+**Learning:** Using a generator expression like `any(string.endswith(suffix) for suffix in suffixes)` evaluates slowly because it processes elements dynamically at runtime in Python. Passing a literal tuple directly to `string.endswith(tuple_of_suffixes)` delegates the entire iteration loop down to the underlying C implementation, yielding up to a 10x evaluation speedup in tight paths.
+**Action:** Always prefer statically defining multi-prefix or multi-suffix patterns as tuples and passing them directly into `.startswith()` or `.endswith()` for faster performance, avoiding generator expressions or dynamic list-to-tuple conversions which add overhead.
