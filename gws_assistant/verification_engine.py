@@ -1082,7 +1082,8 @@ class VerificationEngine:
             for k, v in result.items():
                 if k in ("id", "file_id", "message_id", "event_id") and v is None:
                     raise VerificationError(tool_name, f"ID field '{k}' is None", severity=VerificationSeverity.ERROR, field=k)
-                if isinstance(v, str) and (k.endswith("Url") or k.endswith("Link")):
+                # Note: endswith with a tuple evaluates faster
+                if isinstance(v, str) and k.endswith(("Url", "Link")):
                     if not v.startswith("http"):
                         raise VerificationError(tool_name, f"URL field '{k}' does not start with http", severity=VerificationSeverity.ERROR, field=k)
 
@@ -1504,9 +1505,10 @@ class VerificationEngine:
             return True
         if val_lower in cls.exact_emails():
             return True
-        for domain in cls.email_placeholder_domains():
-            if val_lower.endswith(domain):
-                return True
+
+        # Note: endswith with a tuple evaluates faster
+        if val_lower.endswith(tuple(cls.email_placeholder_domains())):
+            return True
 
         # Explicitly block system unresolved markers
         if "___UNRESOLVED_PLACEHOLDER___" in val_str:
@@ -1676,7 +1678,8 @@ class VerificationEngine:
     def _is_valid_drive_id(cls, value: str) -> bool:
         val_str = str(value)
         # Allow internal placeholders and specific recognized prefixes
-        if any(val_str.startswith(prefix) for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{"]):
+        # Note: startswith with a tuple is implemented in C and evaluates faster than a generator expression
+        if val_str.startswith(("sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{")):
             return len(val_str) > 2
         # Regular Drive IDs are URL-safe base64 encoded (25-60 chars).
         # Allow: alphanumeric, hyphen, underscore, period, and equals padding.
