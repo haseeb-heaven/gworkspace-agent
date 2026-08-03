@@ -1,0 +1,3 @@
+## 2024-06-14 - Replace generator expressions with tuples for string matching
+**Learning:** Checking multiple string prefixes/suffixes with generator expressions like `any(s.startswith(p) for p in [a, b, c])` is about 10x slower than passing a tuple directly `s.startswith((a, b, c))`, as the latter is implemented in C and avoids generator overhead. I found this anti-pattern in `verification_engine.py` and `resolver.py`.
+**Action:** Always prefer `str.startswith(tuple_of_prefixes)` and `str.endswith(tuple_of_suffixes)` for checking multiple patterns. Convert existing slow usages where measurable performance gains can be achieved.
