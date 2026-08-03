@@ -1,0 +1,4 @@
+## 2026-06-04 - subprocess call with shell=True identified
+**Vulnerability:** subprocess.run was called with `shell=os.name == "nt"` in `framework/task_runner.py`, which evaluates to `True` on Windows.
+**Learning:** Avoid using `shell=True` in `subprocess` calls, especially when passing a list of arguments. On Windows, `shell=True` with a list still triggers shell interpretation of metacharacters, leading to potential command injection.
+**Prevention:** Always set `shell=False` (or omit the parameter as it defaults to `False`) when executing scripts or modules via subprocess to prevent shell injection vulnerabilities.
