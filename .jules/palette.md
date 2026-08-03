@@ -1,0 +1,3 @@
+## 2024-05-24 - Gradio Button Actions & Input UX
+**Learning:** In Gradio applications, primary actions (like "Run" or "Authenticate") blend in with secondary actions by default, which can cause confusion. Furthermore, textboxes used for long tokens like auth codes can stretch the layout awkwardly if `max_lines=1` is not set, and lack Enter-key submission by default, requiring keyboard users to tab out.
+**Action:** Always add `variant="primary"` to primary action buttons, set `max_lines=1` for single-line token inputs to prevent UI jumps, and bind the `.submit()` method on textboxes so users can submit by pressing Enter without breaking their flow.
