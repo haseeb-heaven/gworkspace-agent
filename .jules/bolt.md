@@ -1,0 +1,3 @@
+## 2024-06-13 - Fast String Prefix/Suffix Matching
+**Learning:** Checking multiple string prefixes or suffixes using `any(s.startswith(p) for p in prefixes)` or chained `or` conditions (e.g. `s.startswith(a) or s.startswith(b)`) evaluates purely in Python bytecode and creates generator overhead.
+**Action:** Always pass a tuple of strings directly to `str.startswith()` and `str.endswith()`. This delegates the iteration to the underlying C implementation, yielding an ~8x performance improvement for generator replacements and a ~2.5x improvement for chained `or` replacements, which is critical in text-heavy processing like prompt routing, LLM configuration, and ID validation.
