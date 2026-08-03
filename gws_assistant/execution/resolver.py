@@ -588,7 +588,8 @@ class ResolverMixin:
                     ".fileId",
                     ".file_id",
                 ]
-                if isinstance(resolved, list) and resolved and any(path.endswith(s) for s in singular_suffixes):
+                # C-level optimization: endswith with a tuple evaluates faster than any(s.endswith(p) for p in prefixes)
+                if isinstance(resolved, list) and resolved and path.endswith(tuple(singular_suffixes)):
                     self.logger.debug(f"DEBUG: Smart-unwrapping list result for '{path}' to first item.")
                     # We have a list. Check if we need to do the folder heuristic.
                     # Since resolved is likely just strings here (e.g. ['folder_id', 'doc_id']),
