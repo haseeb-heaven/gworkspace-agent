@@ -37,8 +37,19 @@ class TaskRunner:
 
         # Check for environment auth failures first
         combined_output = result.stdout + result.stderr
-        if any(msg in combined_output for msg in ["missing field client_id", "Authentication failed", "insufficient authentication scopes", "403", "Permission denied"]):
-            framework_logger.warning("Auth not configured locally or scopes missing, skipping test to maintain CI progression")
+        if any(
+            msg in combined_output
+            for msg in [
+                "missing field client_id",
+                "Authentication failed",
+                "insufficient authentication scopes",
+                "403",
+                "Permission denied",
+            ]
+        ):
+            framework_logger.warning(
+                "Auth not configured locally or scopes missing, skipping test to maintain CI progression"
+            )
             pytest.skip("GWS Auth/Scopes not configured. Skipping active side-effect validation.")
         if "Only OpenRouter free models are supported" in result.stderr:
             framework_logger.warning("OpenRouter free-model environment is not configured, skipping active validation")
@@ -75,7 +86,8 @@ class TaskRunner:
             cmd = [sys.executable, "-m", "pytest", "-v", "-m", marker_expr]
 
             try:
-                process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == "nt", timeout=60)
+                # Security: shell=False prevents shell injection vulnerabilities, even on Windows with list arguments.
+                process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=False, timeout=60)
             except subprocess.TimeoutExpired:
                 self.status = "FAILED"
                 logger.warning(f"Runner {self.agent_id} ({self.service}) FAILED: Timeout Expired")
