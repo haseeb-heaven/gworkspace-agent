@@ -1,0 +1,4 @@
+## 2024-05-20 - [Fix Command Injection Vulnerability in Task Runner]
+**Vulnerability:** Found `shell=os.name == "nt"` in `subprocess.run` inside `framework/task_runner.py` (line 78). This is insecure since the command args are passed as a list, and `shell=True` on Windows will use the list as a command string and its arguments to the shell in an unsafe way, or just generally `shell=True` exposes command injection risks and is discouraged.
+**Learning:** `subprocess.run(cmd, shell=os.name == "nt")` is commonly misapplied thinking Windows needs `shell=True` to execute things, but this is only true for built-in shell commands (like `dir`), not `.exe` or executable scripts if passed securely via `cmd` array, or it's simply better to use `shell=False`.
+**Prevention:** Always use `shell=False` (the default) when using `subprocess.run` or `subprocess.Popen` with a list of arguments, even on Windows.
