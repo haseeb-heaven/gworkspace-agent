@@ -75,7 +75,9 @@ class TaskRunner:
             cmd = [sys.executable, "-m", "pytest", "-v", "-m", marker_expr]
 
             try:
-                process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=os.name == "nt", timeout=60)
+                # Security note: shell=False prevents shell injection vulnerabilities,
+                # especially on Windows where shell=True with a list triggers shell interpretation.
+                process = subprocess.run(cmd, capture_output=True, text=True, env=env, shell=False, timeout=60)
             except subprocess.TimeoutExpired:
                 self.status = "FAILED"
                 logger.warning(f"Runner {self.agent_id} ({self.service}) FAILED: Timeout Expired")
