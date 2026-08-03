@@ -83,10 +83,10 @@ def send_telegram(message, context=None):
         print("Telegram message sent.")
         return True
     except urllib.error.URLError as e:
-        print(f"Error sending Telegram message: {e}")
+        print(redact_sensitive(f"Error sending Telegram message: {e}"))
         return False
     except Exception as e:
-        print(f"Exception sending Telegram message: {e}")
+        print(redact_sensitive(f"Exception sending Telegram message: {e}"))
         return False
 
 
