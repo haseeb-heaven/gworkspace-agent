@@ -39,11 +39,11 @@ from tests.manual.scenarios.scenarios_data import SCENARIOS
 def test_{scenario_id}():
     \"\"\"Manual test for {scenario_id}\"\"\"
     scenario = next(s for s in SCENARIOS if s["id"] == "{scenario_id}")
-    
+
     # Identify primary service for verification
     # Note: run_task will use this for TripleVerifier and gws.exe verification
     primary_service = "{primary_service}"
-    
+
     run_task(
         scenario["task"],
         expected=["completed"],

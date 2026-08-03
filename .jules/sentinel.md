@@ -1,0 +1,4 @@
+## 2024-05-24 - [CRITICAL] Prevent shell=True vulnerabilities on Windows
+**Vulnerability:** Found `subprocess.run(..., shell=os.name == "nt")` usage in `framework/task_runner.py`. This leads to `shell=True` on Windows, causing the command to be executed via `cmd.exe`.
+**Learning:** Even when passing a list to `subprocess.run`, `shell=True` on Windows can still cause the arguments to be concatenated and interpreted by the shell, exposing the application to shell injection via metacharacters. In this case, `cmd` contained user-controlled or potentially unsanitized strings in the form of `self.service` embedded inside `marker_expr`.
+**Prevention:** Always use `shell=False` (default behavior) in `subprocess.run`, regardless of OS, when passing a list of arguments. Avoid `shell=True` entirely unless explicitly passing a validated, single string command block to the shell, and never with unsanitized data.

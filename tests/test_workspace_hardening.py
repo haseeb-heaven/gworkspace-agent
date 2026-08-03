@@ -1,8 +1,9 @@
 import pytest
-from gws_assistant.verification_engine import VerificationEngine, VerificationError
+
 from gws_assistant.execution.context_updater import ContextUpdaterMixin
 from gws_assistant.tools.code_execution import execute_generated_code
-from gws_assistant.models import PlannedTask
+from gws_assistant.verification_engine import VerificationEngine, VerificationError
+
 
 class MockTask:
     def __init__(self, service, action, parameters=None):
