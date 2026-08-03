@@ -9,6 +9,8 @@ from .models import AppConfigModel
 
 logger = logging.getLogger(__name__)
 
+_DRIVE_ID_PREFIXES = ("sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{")
+
 
 class VerificationSeverity(Enum):
     """Severity levels for verification checks."""
@@ -1676,7 +1678,8 @@ class VerificationEngine:
     def _is_valid_drive_id(cls, value: str) -> bool:
         val_str = str(value)
         # Allow internal placeholders and specific recognized prefixes
-        if any(val_str.startswith(prefix) for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{"]):
+        # tuple passed to startswith is implemented in C and evaluates faster
+        if val_str.startswith(_DRIVE_ID_PREFIXES):
             return len(val_str) > 2
         # Regular Drive IDs are URL-safe base64 encoded (25-60 chars).
         # Allow: alphanumeric, hyphen, underscore, period, and equals padding.
