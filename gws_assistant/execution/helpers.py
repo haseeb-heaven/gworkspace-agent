@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+import pathlib
 import re
 from datetime import datetime
 from typing import Any
@@ -52,8 +53,13 @@ def _is_safe_file_path(file_path: str) -> bool:
     if '..' in normalized:
         return False
 
-    # Check for absolute paths - only allow if within sandbox directories
-    if os.path.isabs(normalized):
+    # Check for absolute paths (cross-platform) - only allow if within sandbox directories
+    is_absolute = (
+        os.path.isabs(normalized) or
+        pathlib.PureWindowsPath(normalized).is_absolute() or
+        pathlib.PurePosixPath(normalized).is_absolute()
+    )
+    if is_absolute:
         # Get sandbox directories from environment or use defaults
         sandbox_dirs = [
             os.environ.get('GWS_SANDBOX_DIR', ''),
