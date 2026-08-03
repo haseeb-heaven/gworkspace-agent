@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+import pathlib
 import re
 from datetime import datetime
 from typing import Any
@@ -42,6 +43,10 @@ def _is_safe_file_path(file_path: str) -> bool:
     if '\x00' in file_path:
         return False
 
+    # Check for path traversal sequences before normalization to catch Windows-style traversals on Linux
+    if '..' in file_path:
+        return False
+
     # Normalize the path to resolve any traversal attempts
     try:
         normalized = os.path.normpath(file_path)
@@ -53,7 +58,7 @@ def _is_safe_file_path(file_path: str) -> bool:
         return False
 
     # Check for absolute paths - only allow if within sandbox directories
-    if os.path.isabs(normalized):
+    if pathlib.PureWindowsPath(file_path).is_absolute() or pathlib.PurePosixPath(file_path).is_absolute():
         # Get sandbox directories from environment or use defaults
         sandbox_dirs = [
             os.environ.get('GWS_SANDBOX_DIR', ''),
