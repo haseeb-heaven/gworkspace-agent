@@ -1,0 +1,3 @@
+## 2024-07-14 - Optimize multiple startswith conditions
+**Learning:** Chaining multiple `str.startswith()` conditions with `or` (e.g., `s.startswith("a") or s.startswith("b")`) is significantly slower than passing a single tuple of strings to `startswith` (e.g., `s.startswith(("a", "b"))`) because the tuple version is implemented natively in C and avoids the overhead of multiple Python-level function calls.
+**Action:** Use `str.startswith(tuple_of_prefixes)` when checking for multiple prefixes in the same string, especially in hot paths or frequently called functions. Add a comment explaining the performance rationale.

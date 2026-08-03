@@ -46,7 +46,8 @@ def _build_api_kwargs(model: str, config: Any) -> dict:
     elif model.startswith("openai/"):
         kwargs["api_key"] = config.openai_api_key
 
-    elif model.startswith("google/") or model.startswith("gemini/"):
+    # Performance optimization: startswith with a tuple is implemented in C and evaluates faster
+    elif model.startswith(("google/", "gemini/")):
         kwargs["api_key"] = config.google_api_key
 
     elif model.startswith("anthropic/"):
