@@ -1,0 +1,3 @@
+## 2024-05-19 - Tuple arguments for startswith/endswith
+**Learning:** Checking for multiple string prefixes or suffixes using a generator expression like `any(s.startswith(p) for p in prefixes)` is significantly slower than passing a tuple of prefixes directly to `s.startswith(tuple_of_prefixes)`. This is because the tuple variant is implemented natively in C, avoiding Python interpreter overhead for the loop.
+**Action:** When identifying hot paths doing string prefix/suffix checking against multiple possibilities, always convert lists/sets to tuples and pass them directly to `startswith()` or `endswith()`. Add a comment explaining this optimization to prevent regression.
