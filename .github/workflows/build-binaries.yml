@@ -98,7 +98,7 @@ jobs:
           move dist\gws-agent.exe dist\${{ matrix.artifact_name }}
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/${{ matrix.artifact_name }}
