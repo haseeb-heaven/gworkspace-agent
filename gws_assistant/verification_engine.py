@@ -1676,7 +1676,9 @@ class VerificationEngine:
     def _is_valid_drive_id(cls, value: str) -> bool:
         val_str = str(value)
         # Allow internal placeholders and specific recognized prefixes
-        if any(val_str.startswith(prefix) for prefix in ["sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{"]):
+        # ⚡ Bolt: Using a tuple for `startswith` executes at C level,
+        # which is significantly faster than generator expressions like `any(...)`.
+        if val_str.startswith(("sheet-", "doc-", "folder-", "file-", "evt-", "sent-", "$", "{{")):
             return len(val_str) > 2
         # Regular Drive IDs are URL-safe base64 encoded (25-60 chars).
         # Allow: alphanumeric, hyphen, underscore, period, and equals padding.
