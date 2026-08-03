@@ -10,7 +10,7 @@ mock_gr.Blocks.return_value.__enter__.return_value = MagicMock()
 
 with patch.dict(sys.modules, {"gradio": mock_gr}):
     # Pre-patch setup_logging before importing
-    with patch("gws_assistant.gradio_app.setup_logging"):
+    with patch("gws_assistant.logging_utils.setup_logging"):
         from gws_assistant.gradio_app import GradioAssistant, create_interface
 
 
@@ -53,7 +53,7 @@ def test_create_interface():
     with patch("gws_assistant.gradio_app.AppConfig.from_env") as mock_conf:
         mock_conf.return_value.log_level = "INFO"
         mock_conf.return_value.log_file_path = "test.log"
-        with patch("gws_assistant.gradio_app.setup_logging"):
+        with patch("gws_assistant.logging_utils.setup_logging"):
             with patch("gws_assistant.gradio_app.GWSRunner"):
                 with patch("gws_assistant.gradio_app.WorkspaceAgentSystem"):
                     with patch("gws_assistant.gradio_app.PlanExecutor"):
