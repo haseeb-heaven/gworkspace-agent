@@ -23,6 +23,7 @@ from gws_assistant.planner import CommandPlanner
 class FakeRunner(GWSRunner):
     def __init__(self) -> None:
         from gws_assistant.config import AppConfig
+
         self.cfg = AppConfig.from_env()
         super().__init__(
             Path(os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws")), logging.getLogger("test")
@@ -121,59 +122,67 @@ class FakeRunner(GWSRunner):
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "files": [
-                        {
-                            "id": "d1",
-                            "name": self.cfg.test_doc_name,
-                            "mimeType": "application/vnd.google-apps.document",
-                            "webViewLink": "https://docs.google.com/document/d/test123/edit"
-                        },
-                        {
-                            "id": "d2",
-                            "name": "weapon_244.qvm",
-                            "mimeType": "application/octet-stream",
-                            "webViewLink": "https://drive.google.com/file/d/xxx"
-                        }
-                    ]
-                }),
+                stdout=json.dumps(
+                    {
+                        "files": [
+                            {
+                                "id": "d1",
+                                "name": self.cfg.test_doc_name,
+                                "mimeType": "application/vnd.google-apps.document",
+                                "webViewLink": "https://docs.google.com/document/d/test123/edit",
+                            },
+                            {
+                                "id": "d2",
+                                "name": "weapon_244.qvm",
+                                "mimeType": "application/octet-stream",
+                                "webViewLink": "https://drive.google.com/file/d/xxx",
+                            },
+                        ]
+                    }
+                ),
             )
         if args[:3] == ["drive", "files", "create"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "id": "folder-1",
-                    "name": self.cfg.test_folder_name,
-                    "mimeType": "application/vnd.google-apps.folder",
-                    "kind": "drive#file"
-                }),
+                stdout=json.dumps(
+                    {
+                        "id": "folder-1",
+                        "name": self.cfg.test_folder_name,
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "kind": "drive#file",
+                    }
+                ),
             )
         if args[:3] == ["calendar", "events", "insert"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "id": "evt-1",
-                    "created": "2026-04-11",
-                    "summary": self.cfg.test_event_name,
-                    "htmlLink": "https://calendar.google.com/event?id=evt-1"
-                }),
+                stdout=json.dumps(
+                    {
+                        "id": "evt-1",
+                        "created": "2026-04-11",
+                        "summary": self.cfg.test_event_name,
+                        "htmlLink": "https://calendar.google.com/event?id=evt-1",
+                    }
+                ),
             )
         if args[:3] == ["calendar", "events", "list"]:
             return ExecutionResult(
                 success=True,
                 command=[os.getenv("GWS_BINARY_PATH", "gws.exe" if os.name == "nt" else "gws"), *args],
-                stdout=json.dumps({
-                    "items": [
-                        {
-                            "id": "evt-1",
-                            "summary": self.cfg.test_event_name,
-                            "start": {"date": "2026-04-15"},
-                            "end": {"date": "2026-04-15"}
-                        }
-                    ]
-                }),
+                stdout=json.dumps(
+                    {
+                        "items": [
+                            {
+                                "id": "evt-1",
+                                "summary": self.cfg.test_event_name,
+                                "start": {"date": "2026-04-15"},
+                                "end": {"date": "2026-04-15"},
+                            }
+                        ]
+                    }
+                ),
             )
         return ExecutionResult(
             success=True,
@@ -205,7 +214,11 @@ def test_executor_resolves_gmail_to_sheet_placeholders():
                 id="task-3",
                 service="sheets",
                 action="append_values",
-                parameters={"spreadsheet_id": "$last_spreadsheet_id", "range": "Sheet1!A1", "values": "$gmail_summary_rows"},
+                parameters={
+                    "spreadsheet_id": "$last_spreadsheet_id",
+                    "range": "Sheet1!A1",
+                    "values": "$gmail_summary_rows",
+                },
             ),
         ],
     )
@@ -368,9 +381,7 @@ def test_executor_runs_research_to_docs_sheets_and_email_pipeline(mocker):
             PlannedTask(
                 id="task-1", service="search", action="web_search", parameters={"query": "top 3 agentic ai frameworks"}
             ),
-            PlannedTask(
-                id="task-2", service="docs", action="create_document", parameters={"title": cfg.test_doc_name}
-            ),
+            PlannedTask(id="task-2", service="docs", action="create_document", parameters={"title": cfg.test_doc_name}),
             PlannedTask(
                 id="task-3",
                 service="docs",
@@ -441,11 +452,12 @@ def test_coerce_structured_value_handles_calendar_logs():
 
 
 def test_normalize_injected_vars_returns_sanitized_elements():
-    raw_values = [None, "[{\"id\": \"evt-1\"}]", "Found 0 calendar events."]
+    raw_values = [None, '[{"id": "evt-1"}]', "Found 0 calendar events."]
     normalized = _normalize_injected_vars(raw_values)
     assert normalized[0] is None
     assert isinstance(normalized[1], list)
     assert normalized[2] == []
+
 
 def test_gmail_details_accumulation():
     runner = FakeRunner()
@@ -493,6 +505,7 @@ def test_gmail_details_accumulation():
     assert values[0][1] == "Job offer m1"
     assert values[1][1] == "Job offer m2"
 
+
 def test_code_output_resolution():
     runner = FakeRunner()
     executor = PlanExecutor(planner=CommandPlanner(), runner=runner, logger=logging.getLogger("test"))
@@ -503,8 +516,13 @@ def test_code_output_resolution():
         raw_text="run code and send",
         tasks=[
             PlannedTask(id="task-1", service="code", action="execute", parameters={"code": "print('hello world')"}),
-            PlannedTask(id="task-2", service="gmail", action="send_message", parameters={"to_email": cfg.default_recipient_email, "subject": "Code", "body": "Result: $code_output"}),
-        ]
+            PlannedTask(
+                id="task-2",
+                service="gmail",
+                action="send_message",
+                parameters={"to_email": cfg.default_recipient_email, "subject": "Code", "body": "Result: $code_output"},
+            ),
+        ],
     )
 
     # We need to mock _handle_code_execution_task to simulate the updated code outputs
@@ -513,6 +531,7 @@ def test_code_output_resolution():
 
     def fake_code_execute(task, context):
         from gws_assistant.models import ExecutionResult
+
         # Mimic context updater directly since the real handler calls runner
         result_data = {"stdout": "hello world\n", "parsed_value": "hello world"}
         context["code_output"] = result_data["parsed_value"]
@@ -555,7 +574,7 @@ def test_legacy_placeholder_resolution():
         "drive_metadata_rows": [["file1.txt", "text/plain", "link1"]],
         "code_output": "test_output_123",
         "last_code_result": "test_output_123",
-        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |"
+        "sheet_summary_table": "| Col1 | Col2 |\n|---|---|\n| A | B |",
     }
 
     # Should resolve correctly mapping from legacy to new
@@ -622,6 +641,7 @@ def test_execute_single_task_rejects_unsafe_local_attachment_path():
 
 # Security tests for PII logging prevention and input validation
 
+
 def test_coerce_structured_value_preserves_none() -> None:
     """Test that _coerce_structured_value preserves None values instead of converting to empty list."""
     assert _coerce_structured_value(None) is None
@@ -646,7 +666,10 @@ def test_is_safe_file_path_blocks_path_traversal() -> None:
 
     # Test absolute paths outside sandbox (default sandbox dirs not set)
     assert not _is_safe_file_path("/etc/passwd")
-    assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
+    import os
+
+    if os.name == "nt":
+        assert not _is_safe_file_path("C:\\Windows\\System32\\config\\sam")
 
     # Test safe relative paths
     assert _is_safe_file_path("test.txt")
