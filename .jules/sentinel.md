@@ -1,0 +1,6 @@
+# Sentinel Journal
+
+## 2024-05-18 - [Subprocess Shell Injection Risk]
+**Vulnerability:** A `subprocess.run` call in `framework/task_runner.py` on line 78 conditionally uses `shell=os.name == "nt"`. Using `shell=True` on Windows with list-based command arguments still triggers shell interpretation of metacharacters, potentially causing command injection if the command arguments contain unescaped user input or environment variable manipulation.
+**Learning:** In python, when using `subprocess` calls on Windows, `shell=True` does not behave identically to Unix when combined with lists. On Windows, it converts the list to a string under the hood using rules that can lead to command injection if arguments aren't carefully vetted. Using `shell=False` is safer and generally preferred. If `pytest` module execution works with `shell=False`, it should be used universally.
+**Prevention:** Always avoid `shell=True` in `subprocess` unless strictly necessary for built-in shell commands (like `dir` or `echo`), and even then, use with extreme caution. When running Python modules (e.g., `-m pytest`), use the executable path (`sys.executable`) directly with `shell=False` to avoid shell interpretation entirely.
