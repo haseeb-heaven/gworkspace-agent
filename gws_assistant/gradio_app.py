@@ -38,15 +38,15 @@ SCOPES = [
 def generate_code_verifier() -> str:
     """Generate a PKCE code verifier."""
     # Generate a random 32-byte string and base64url encode it
-    code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+    code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
     return code_verifier
 
 
 def generate_code_challenge(code_verifier: str) -> str:
     """Generate a PKCE code challenge from the code verifier."""
     # SHA256 hash the code verifier and base64url encode it
-    challenge_bytes = hashlib.sha256(code_verifier.encode('utf-8')).digest()
-    code_challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
+    challenge_bytes = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    code_challenge = base64.urlsafe_b64encode(challenge_bytes).decode("utf-8").rstrip("=")
     return code_challenge
 
 
@@ -88,7 +88,11 @@ def handle_credentials_upload(file_data: bytes | None) -> tuple[str, str, str]:
 
         # Check if it's a service account (not supported for OAuth flow)
         if credentials_info.get("type") == "service_account":
-            return "", "Service account keys are not supported for OAuth flow. Please use an OAuth 2.0 Client ID from Google Cloud Console (Desktop app or Web application type).", "🔴 Not authenticated"
+            return (
+                "",
+                "Service account keys are not supported for OAuth flow. Please use an OAuth 2.0 Client ID from Google Cloud Console (Desktop app or Web application type).",
+                "🔴 Not authenticated",
+            )
 
         # Validate credentials structure
         if "installed" in credentials_info:
@@ -103,7 +107,11 @@ def handle_credentials_upload(file_data: bytes | None) -> tuple[str, str, str]:
             client_type = None
 
         if "client_id" not in client_config or "client_secret" not in client_config:
-            return "", f"Invalid credentials.json format. Must contain 'client_id' and 'client_secret'. Found keys: {list(credentials_info.keys())}. Please download OAuth 2.0 Client ID credentials from Google Cloud Console.", "🔴 Not authenticated"
+            return (
+                "",
+                f"Invalid credentials.json format. Must contain 'client_id' and 'client_secret'. Found keys: {list(credentials_info.keys())}. Please download OAuth 2.0 Client ID credentials from Google Cloud Console.",
+                "🔴 Not authenticated",
+            )
 
         # Construct the proper client secrets structure for Flow
         if client_type:
@@ -113,16 +121,18 @@ def handle_credentials_upload(file_data: bytes | None) -> tuple[str, str, str]:
             client_secrets = client_config
 
         # Create OAuth flow with out-of-band redirect
-        flow = Flow.from_client_config(
-            client_secrets, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob"
-        )
+        flow = Flow.from_client_config(client_secrets, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob")
         # Generate PKCE code verifier and challenge
         code_verifier = generate_code_verifier()
         code_challenge = generate_code_challenge(code_verifier)
         auth_url, _ = flow.authorization_url(prompt="consent", code_challenge=code_challenge)
 
         # Store client_config, client_type, and code_verifier for later use
-        return json.dumps({"client_config": client_config, "client_type": client_type, "code_verifier": code_verifier}), auth_url, "🟡 Waiting for auth code"
+        return (
+            json.dumps({"client_config": client_config, "client_type": client_type, "code_verifier": code_verifier}),
+            auth_url,
+            "🟡 Waiting for auth code",
+        )
 
     except Exception as e:
         logging.getLogger(__name__).error(f"Error processing credentials: {str(e)}")
@@ -145,9 +155,7 @@ def regenerate_auth_url(client_config_json: str) -> tuple[str, str]:
         else:
             client_secrets = client_config
 
-        flow = Flow.from_client_config(
-            client_secrets, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob"
-        )
+        flow = Flow.from_client_config(client_secrets, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob")
         # Generate new code_verifier and code_challenge for PKCE
         code_verifier = generate_code_verifier()
         code_challenge = generate_code_challenge(code_verifier)
@@ -178,9 +186,7 @@ def handle_auth_code(client_config_json: str, auth_code: str) -> tuple[str, str]
         else:
             client_secrets = client_config
 
-        flow = Flow.from_client_config(
-            client_secrets, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob"
-        )
+        flow = Flow.from_client_config(client_secrets, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob")
 
         # Set code_verifier for PKCE
         if code_verifier:
@@ -255,43 +261,32 @@ def create_interface() -> gr.Blocks:
 
         # Authentication section
         with gr.Accordion("🔐 Google Authentication", open=True):
-            gr.Markdown("Upload your Google Cloud `credentials.json` file to authenticate with your own Google account.")
+            gr.Markdown(
+                "Upload your Google Cloud `credentials.json` file to authenticate with your own Google account."
+            )
 
             with gr.Row():
-                credentials_upload = gr.File(
-                    label="Upload credentials.json",
-                    file_types=[".json"],
-                    type="binary"
-                )
+                credentials_upload = gr.File(label="Upload credentials.json", file_types=[".json"], type="binary")
 
-            auth_status = gr.Textbox(
-                label="Authentication Status",
-                value="🔴 Not authenticated",
-                interactive=False
-            )
+            auth_status = gr.Textbox(label="Authentication Status", value="🔴 Not authenticated", interactive=False)
 
             auth_url_output = gr.Textbox(
                 label="Authorization URL",
                 placeholder="Upload credentials.json to generate authorization URL",
                 interactive=False,
-                lines=2
+                lines=2,
             )
 
             with gr.Row():
                 auth_code_input = gr.Textbox(
                     label="Paste Authorization Code",
                     placeholder="Paste the code from Google after signing in",
-                    visible=False
+                    visible=False,
                 )
-                submit_auth_button = gr.Button("Authenticate", visible=False)
+                submit_auth_button = gr.Button("Authenticate", visible=False, variant="primary")
                 regenerate_url_button = gr.Button("Generate New Auth URL", visible=False)
 
-            auth_message = gr.Textbox(
-                label="Message",
-                value="",
-                interactive=False,
-                visible=False
-            )
+            auth_message = gr.Textbox(label="Message", value="", interactive=False, visible=False)
 
         gr.Markdown("---")
         gr.Markdown("Describe your Google Workspace task in natural language.")
@@ -303,7 +298,7 @@ def create_interface() -> gr.Blocks:
                 placeholder="Example: List recent Gmail messages and show details",
             )
         with gr.Row():
-            run_button = gr.Button("Run")
+            run_button = gr.Button("Run", variant="primary")
             clear_button = gr.Button("Clear")
         output = gr.Textbox(label="Result", lines=18)
         plan_preview = gr.Textbox(label="Planned Tasks", lines=8)
@@ -325,7 +320,7 @@ def create_interface() -> gr.Blocks:
                     gr.update(visible=True),
                     gr.update(visible=True),
                     gr.update(value="", visible=True),
-                    ""
+                    "",
                 )
             else:
                 return (
@@ -337,7 +332,7 @@ def create_interface() -> gr.Blocks:
                     gr.update(visible=False),
                     gr.update(visible=False),
                     gr.update(value=auth_url, visible=True),
-                    auth_url
+                    auth_url,
                 )
 
         def on_regenerate_url(client_config):
@@ -353,7 +348,7 @@ def create_interface() -> gr.Blocks:
                     status,
                     gr.update(value="", visible=False),
                     gr.update(visible=False),
-                    gr.update(value="Authentication successful! You can now use the assistant.", visible=True)
+                    gr.update(value="Authentication successful! You can now use the assistant.", visible=True),
                 )
             else:
                 return (
@@ -361,7 +356,7 @@ def create_interface() -> gr.Blocks:
                     "🔴 Authentication failed",
                     gr.update(value=auth_code, visible=True),
                     gr.update(visible=True),
-                    gr.update(value=status, visible=True)
+                    gr.update(value=status, visible=True),
                 )
 
         credentials_upload.upload(
@@ -376,44 +371,29 @@ def create_interface() -> gr.Blocks:
                 submit_auth_button,
                 regenerate_url_button,
                 auth_message,
-                auth_message
-            ]
+                auth_message,
+            ],
         )
 
         regenerate_url_button.click(
-            fn=on_regenerate_url,
-            inputs=[client_config_state],
-            outputs=[auth_url_output, client_config_state]
+            fn=on_regenerate_url, inputs=[client_config_state], outputs=[auth_url_output, client_config_state]
         )
 
         submit_auth_button.click(
             fn=on_auth_submit,
             inputs=[client_config_state, auth_code_input],
-            outputs=[
-                credentials_file_state,
-                auth_status,
-                auth_code_input,
-                regenerate_url_button,
-                auth_message
-            ]
+            outputs=[credentials_file_state, auth_status, auth_code_input, regenerate_url_button, auth_message],
         )
 
         run_button.click(
-            fn=run_request_with_auth_check,
-            inputs=[request, credentials_file_state],
-            outputs=[output, plan_preview]
+            fn=run_request_with_auth_check, inputs=[request, credentials_file_state], outputs=[output, plan_preview]
         )
 
         request.submit(
-            fn=run_request_with_auth_check,
-            inputs=[request, credentials_file_state],
-            outputs=[output, plan_preview]
+            fn=run_request_with_auth_check, inputs=[request, credentials_file_state], outputs=[output, plan_preview]
         )
 
-        clear_button.click(
-            fn=lambda: ("", "", ""),
-            outputs=[request, output, plan_preview]
-        )
+        clear_button.click(fn=lambda: ("", "", ""), outputs=[request, output, plan_preview])
 
     return demo
 
