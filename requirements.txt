@@ -5,7 +5,7 @@
 # LangChain / LangGraph stack
 # NOTE: langchain-openai 1.1.14 patches CVE-2026-41488 (GHSA-qh6h-p6c9-ff54, GHSA-2g6r-c272-w58r)
 # but the current constraint langchain-openai>=1.1.10,<1.2.2 excludes 1.1.14, so the CVE remains unpatched.
-# Upgrade is deferred due to litellm 1.83.7 pinning openai==2.36.0; re-evaluate whether CVE-2026-41488 can now be addressed via langchain-openai>=1.1.14.
+# Upgrade is deferred due to litellm 1.83.7 pinning openai==2.30.0; re-evaluate whether CVE-2026-41488 can now be addressed via langchain-openai>=1.1.14.
 # This is tracked and will be upgraded when litellm supports the required openai version.
 langchain-core>=0.3.84
 langchain-openai>=1.1.10,<1.2.2
@@ -18,9 +18,9 @@ RestrictedPython>=8.1
 
 # HTTP / OpenAI
 # openai is pinned to exactly what litellm 1.83.7 requires to avoid ResolutionImpossible.
-# litellm 1.83.7 hard-pins openai==2.36.0 — any deviation causes pip to fail.
+# litellm 1.83.7 hard-pins openai==2.30.0 — any deviation causes pip to fail.
 httpx>=0.28.1
-openai==2.36.0
+openai==2.30.0
 
 # Config / CLI / GUI
 # python-dotenv is pinned to 1.0.1 — the exact version litellm 1.83.7 hard-requires.
@@ -45,7 +45,7 @@ duckduckgo-search>=6.0.0
 # Memory + sandbox + LLM router
 e2b-code-interpreter>=1.0.0
 mem0ai>=2.0.0
-# NOTE: litellm pinned to 1.83.7 — the version that hard-pins openai==2.36.0 and python-dotenv==1.0.1.
+# NOTE: litellm pinned to 1.83.7 — the version that hard-pins openai==2.30.0 and python-dotenv==1.0.1.
 # Do NOT use >=1.83.14: that range introduced a critical Arbitrary Code Injection vulnerability
 # via /guardrails/test_custom_code. Upgrade only when a patched release is available that also
 # allows openai>=2.26.0 and a newer python-dotenv.
