@@ -473,7 +473,8 @@ class ResolverMixin:
 
             def resolve_shorthand(shorthand_path):
                 # 0. LOOP VARIABLE HANDLING: Support {{item.field}} or {{it.field}} by mapping over the most recent list
-                if shorthand_path.startswith("item.") or shorthand_path.startswith("it."):
+                # ⚡ Bolt: Using a tuple with startswith is significantly faster than chained conditions
+                if shorthand_path.startswith(("item.", "it.")):
                     field = shorthand_path.split(".", 1)[1]
                     for key, val_item in reversed(list(results_map.items())):
                         if isinstance(val_item, list) and val_item:
