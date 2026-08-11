@@ -1,0 +1,3 @@
+## 2024-08-11 - [UX] Improve Gradio component visual hierarchy and layout
+**Learning:** Using `variant="primary"` on primary Gradio buttons (like Run or Authenticate) clarifies the visual hierarchy, distinguishing them from secondary actions. Setting `max_lines=1` on text inputs designed for long, single-line tokens prevents awkward UI stretching when pasting. Binding `.submit()` to text inputs allows seamless Enter-key submission for better keyboard UX.
+**Action:** Apply `variant="primary"` to key action buttons, `max_lines=1` to token inputs, and bind `.submit()` events to inputs where users naturally press Enter.
