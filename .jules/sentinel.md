@@ -1,0 +1,4 @@
+## 2024-08-12 - Fix Command Injection Vulnerability in task_runner.py
+**Vulnerability:** A `subprocess.run` call in `framework/task_runner.py` uses `shell=os.name == "nt"`. On Windows, this means `shell=True` when passing a list command arguments, which can be interpreted improperly by the shell and lead to command injection or unexpected execution. According to Bandit (B602), passing a list of arguments and `shell=True` can be dangerous and is explicitly discouraged. Windows does not strictly require `shell=True` to execute binaries like `sys.executable`.
+**Learning:** `subprocess.run` with a command list (e.g., executing Python modules or scripts) should explicitly pass `shell=False` across all platforms (including Windows) to prevent Command Injection vulnerabilities.
+**Prevention:** Avoid dynamic logic for `shell=` and default to `shell=False` everywhere. Ensure that tests validating logic are correctly decoupled from system commands.
