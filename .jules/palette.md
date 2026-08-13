@@ -1,0 +1,3 @@
+## 2024-05-24 - Primary Actions and Enter Key Submissions in Gradio
+**Learning:** Users naturally hit the "Enter" key after typing a code into an input field, but Gradio `gr.Textbox` does not trigger `gr.Button` clicks by default. Primary actions (like "Run" or "Authenticate") also visually blend with secondary actions ("Clear" or "Generate New") without a distinct `variant`. Setting `max_lines=1` on text inputs prevents the input from awkwardly expanding into a multi-line textarea when users paste long tokens.
+**Action:** Use `variant="primary"` on primary buttons. Always bind `.submit()` events to text inputs meant for short data (like tokens) and restrict them with `max_lines=1`.
