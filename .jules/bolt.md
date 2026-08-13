@@ -1,0 +1,3 @@
+## 2026-08-13 - [Optimize string prefix/suffix checking]
+**Learning:** Checking for multiple string prefixes or suffixes in Python using generator expressions like `any(...)` or chained `or` conditions is significantly slower than using `str.startswith(tuple)` or `str.endswith(tuple)` because passing a tuple to these methods is implemented in C and executes much faster. However, ensure the tuple is a static literal; dynamic list-to-tuple conversions (e.g., `tuple(func_returning_list())`) on every call introduce overhead that negates the performance benefit.
+**Action:** Use `str.startswith(tuple_of_prefixes)` or `str.endswith(tuple_of_suffixes)` instead of `any(val.startswith(p) for p in list)`. Always use static tuples (or convert sets to tuples at definition).
