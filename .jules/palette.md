@@ -1,0 +1,3 @@
+## 2024-05-18 - Improve Gradio primary actions and form UX
+**Learning:** In Gradio applications, primary action buttons (like "Authenticate" and "Run") lack visual emphasis, and token input fields can stretch awkwardly when users paste long auth codes. Additionally, users expect to submit single-line token inputs by pressing Enter, which Gradio doesn't support out-of-the-box without binding the `.submit()` event.
+**Action:** Use `variant="primary"` on primary `gr.Button` elements to distinguish them from secondary actions. Use `max_lines=1` on token textboxes to prevent awkward layout stretching. Bind `.submit()` events to inputs that should allow Enter-key submissions.
