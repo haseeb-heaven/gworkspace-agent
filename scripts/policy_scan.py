@@ -24,9 +24,10 @@ NON_FREE_MODEL_RE = re.compile(
     r"(?:gpt-4|gpt-5|openai/gpt|gpt-4o|claude-[A-Za-z0-9.-]+)(?![^\"'\s]*:free)", re.IGNORECASE
 )
 
-ALLOW_NON_FREE_MODEL_FILES = {
+# ⚡ Bolt: converted to tuple for C-optimized startswith matching
+ALLOW_NON_FREE_MODEL_FILES = (
     "tests",
-}
+)
 
 
 def _iter_files() -> list[Path]:
@@ -66,7 +67,8 @@ def scan() -> list[str]:
                 findings.append(f"{rel}:{line_number}: hardcoded gws.exe reference")
             if SECRET_RE.search(line):
                 findings.append(f"{rel}:{line_number}: secret-like literal")
-            if not any(rel.startswith(prefix) for prefix in ALLOW_NON_FREE_MODEL_FILES):
+            # ⚡ Bolt: optimized prefix checking with C-optimized tuple matching
+            if not rel.startswith(ALLOW_NON_FREE_MODEL_FILES):
                 if NON_FREE_MODEL_RE.search(line):
                     findings.append(f"{rel}:{line_number}: non-free model literal")
     return findings
