@@ -1,0 +1,3 @@
+## 2024-05-14 - Improve Gradio Buttons and Textbox UX
+**Learning:** Gradio UI default secondary buttons blend into the background, missing the primary call to actions (like 'Authenticate' or 'Run'). Additionally, placing single-token textboxes (like the Auth code input) without restricting `max_lines` causes awkward stretching if users accidentally hit 'Enter' inside the box, which ruins form alignment.
+**Action:** Always set `variant="primary"` for main submission actions (like `.click()` triggers) in Gradio interfaces to naturally guide the user's eye. Restrict single-token input fields with `max_lines=1` and bind them with `.submit()` events so power-users can submit straight from the keyboard without breaking the visual layout.
