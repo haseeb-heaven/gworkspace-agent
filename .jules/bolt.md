@@ -1,0 +1,3 @@
+## 2024-08-26 - [Optimize startswith with Tuple Matching]
+**Learning:** Using `startswith` with a generator expression (e.g. `any(s.startswith(p) for p in prefixes)`) or chaining multiple `startswith` calls with `or` creates unnecessary overhead in Python. Passing a static literal tuple directly to `startswith` (e.g. `s.startswith(tuple_of_prefixes)`) utilizes the C-optimized CPython implementation and is much faster.
+**Action:** Always use tuple arguments for `startswith` and `endswith` instead of generator expressions or multiple `or` conditions when checking against multiple static prefixes/suffixes.
