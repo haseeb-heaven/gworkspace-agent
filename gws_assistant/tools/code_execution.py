@@ -86,7 +86,7 @@ def _sanitize_llm_code(code: str) -> tuple[str, dict[str, Any]]:
     for line in code.splitlines():
         stripped = line.lstrip()
         is_safe_import = False
-        if stripped.startswith("import ") or stripped.startswith("from "):
+        if stripped.startswith(("import ", "from ")):
             # Check if this import targets a safe module we pre-injected.
             # Example: "import math", "from json import loads"
             words = stripped.split()

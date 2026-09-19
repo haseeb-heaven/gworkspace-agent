@@ -46,7 +46,7 @@ def _build_api_kwargs(model: str, config: Any) -> dict:
     elif model.startswith("openai/"):
         kwargs["api_key"] = config.openai_api_key
 
-    elif model.startswith("google/") or model.startswith("gemini/"):
+    elif model.startswith(("google/", "gemini/")):
         kwargs["api_key"] = config.google_api_key
 
     elif model.startswith("anthropic/"):
