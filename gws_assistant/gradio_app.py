@@ -303,7 +303,7 @@ def create_interface() -> gr.Blocks:
                 placeholder="Example: List recent Gmail messages and show details",
             )
         with gr.Row():
-            run_button = gr.Button("Run")
+            run_button = gr.Button("Run", variant="primary")
             clear_button = gr.Button("Clear")
         output = gr.Textbox(label="Result", lines=18)
         plan_preview = gr.Textbox(label="Planned Tasks", lines=8)
