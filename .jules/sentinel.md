@@ -1,0 +1,4 @@
+## 2024-05-24 - Fix subprocess shell=True vulnerability
+**Vulnerability:** Found `subprocess.run` with `shell=os.name == "nt"` in `framework/task_runner.py`, creating a potential command injection vulnerability on Windows if user-controlled input was passed to the command list.
+**Learning:** Even though `sys.executable` and `pytest` are hardcoded in the list, Bandit flags this as a B602 (subprocess_popen_with_shell_equals_true) issue because using `shell=True` with a list command on Windows can still have unexpected token parsing behavior and violates secure coding best practices which strictly dictate `shell=False`. Windows does not require `shell=True` to execute binaries like `sys.executable`.
+**Prevention:** Always explicitly use `shell=False` for all `subprocess` calls using a list command across all platforms.
