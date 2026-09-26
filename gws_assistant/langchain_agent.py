@@ -482,7 +482,7 @@ def _invoke_with_backoff(
             return None
 
         try:
-            if model_name.startswith("groq/") or model_name.startswith("openrouter/") or model_name.startswith("google/") or model_name.startswith("gemini/") or model_name.startswith("cerebras/"):
+            if model_name.startswith(("groq/", "openrouter/", "google/", "gemini/", "cerebras/")):
                 # Groq's tool-calling implementation via LangChain's with_structured_output
                 # is currently unstable (tool_choice errors). We bypass it and call LiteLLM
                 # directly with a JSON instruction.
