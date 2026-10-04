@@ -1,3 +1,3 @@
-## 2025-01-20 - Optimize string suffix matching
-**Learning:** Python's C-level tuple matching `str.endswith(("a", "b"))` is >10x faster than generator expressions `any(str.endswith(s) for s in list)`.
-**Action:** Always convert static suffix lists to tuples and pass them directly to `endswith()` instead of using `any()`.
+## 2024-05-13 - Python Prefix Checking Performance
+**Learning:** Found multiple instances of string prefix checking using long chains of `startswith()` calls (e.g., `model_name.startswith("groq/") or model_name.startswith("openrouter/") or ...`). This is slower than using a single `startswith()` call with a tuple of prefixes (e.g., `model_name.startswith(("groq/", "openrouter/", ...))`) since the latter is optimized in C.
+**Action:** Replace chains of `startswith()` or `endswith()` calls on the same variable with a single call passing a tuple of prefixes/suffixes.
