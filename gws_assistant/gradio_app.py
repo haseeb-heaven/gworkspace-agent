@@ -274,7 +274,8 @@ def create_interface() -> gr.Blocks:
                 label="Authorization URL",
                 placeholder="Upload credentials.json to generate authorization URL",
                 interactive=False,
-                lines=2
+                lines=2,
+                buttons=["copy"]
             )
 
             with gr.Row():
@@ -305,8 +306,8 @@ def create_interface() -> gr.Blocks:
         with gr.Row():
             run_button = gr.Button("Run", variant="primary")
             clear_button = gr.Button("Clear", variant="secondary")
-        output = gr.Textbox(label="Result", lines=18)
-        plan_preview = gr.Textbox(label="Planned Tasks", lines=8)
+        output = gr.Textbox(label="Result", lines=18, buttons=["copy"])
+        plan_preview = gr.Textbox(label="Planned Tasks", lines=8, buttons=["copy"])
 
         # Session state for storing client config and credentials file
         client_config_state = gr.State(value="")
