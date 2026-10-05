@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Google Workspace Assistant in Gradio.")
-    parser.add_argument("--host", default="0.0.0.0", help="Host interface for Gradio server.")
+    # SECURITY: Default to localhost to prevent unintentional exposure to the local network
+    parser.add_argument("--host", default="127.0.0.1", help="Host interface for Gradio server.")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 7860)), help="Port for Gradio server.")
     parser.add_argument("--share", action="store_true", help="Enable public Gradio share link.")
     return parser.parse_args()
