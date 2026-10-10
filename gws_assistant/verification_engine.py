@@ -1082,7 +1082,8 @@ class VerificationEngine:
             for k, v in result.items():
                 if k in ("id", "file_id", "message_id", "event_id") and v is None:
                     raise VerificationError(tool_name, f"ID field '{k}' is None", severity=VerificationSeverity.ERROR, field=k)
-                if isinstance(v, str) and (k.endswith("Url") or k.endswith("Link")):
+                # ⚡ Bolt: tuple-based endswith is evaluated in C and faster than chained ORs
+                if isinstance(v, str) and k.endswith(("Url", "Link")):
                     if not v.startswith("http"):
                         raise VerificationError(tool_name, f"URL field '{k}' does not start with http", severity=VerificationSeverity.ERROR, field=k)
 
