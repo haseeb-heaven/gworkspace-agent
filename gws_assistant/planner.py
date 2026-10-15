@@ -277,8 +277,8 @@ class CommandPlanner:
             # upload to a folder produced by a previous task and that task failed to
             # resolve, fail loudly rather than silently uploading to Drive root.
             if folder_id and (
-                folder_id.startswith("{{")
-                or folder_id.startswith("<")
+                # ⚡ Bolt: Using a static tuple with startswith is faster than chained ORs
+                folder_id.startswith(("{{", "<"))
                 or folder_id.lower() in {"none", "null"}
             ):
                 raise ValidationError(
