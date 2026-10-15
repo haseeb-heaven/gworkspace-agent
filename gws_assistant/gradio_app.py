@@ -305,8 +305,8 @@ def create_interface() -> gr.Blocks:
         with gr.Row():
             run_button = gr.Button("Run", variant="primary")
             clear_button = gr.Button("Clear", variant="secondary")
-        output = gr.Textbox(label="Result", lines=18)
-        plan_preview = gr.Textbox(label="Planned Tasks", lines=8)
+        output = gr.Textbox(label="Result", lines=18, interactive=False)
+        plan_preview = gr.Textbox(label="Planned Tasks", lines=8, interactive=False)
 
         # Session state for storing client config and credentials file
         client_config_state = gr.State(value="")
