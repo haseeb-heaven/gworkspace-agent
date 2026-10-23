@@ -276,9 +276,9 @@ class CommandPlanner:
             # Reject unresolved placeholder folder ids - if the planner is asked to
             # upload to a folder produced by a previous task and that task failed to
             # resolve, fail loudly rather than silently uploading to Drive root.
+            # Performance: Use tuple for startswith checking to avoid multiple function calls
             if folder_id and (
-                folder_id.startswith("{{")
-                or folder_id.startswith("<")
+                folder_id.startswith(("{{", "<"))
                 or folder_id.lower() in {"none", "null"}
             ):
                 raise ValidationError(
