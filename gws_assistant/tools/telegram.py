@@ -15,7 +15,7 @@ _SECRET_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH
 _SECRET_PATTERNS = (
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
     re.compile(r"(sk|or|m0)-[A-Za-z0-9._-]{12,}"),
-    re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\d{6,}:[A-Za-z0-9_-]{20,}"),
 )
 
 
