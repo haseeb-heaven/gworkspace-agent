@@ -274,7 +274,8 @@ def create_interface() -> gr.Blocks:
                 label="Authorization URL",
                 placeholder="Upload credentials.json to generate authorization URL",
                 interactive=False,
-                lines=2
+                lines=2,
+                show_copy_button=True
             )
 
             with gr.Row():
